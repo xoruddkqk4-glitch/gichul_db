@@ -81,6 +81,133 @@
 
 ---
 
+## 🔮 향후 웹 배포 기술 가이드: 사용자(교사) 아이디별 메타데이터 격리 관리
+
+본 애플리케이션을 단일 로컬 환경에서 향후 **다중 교사가 접속하는 클라우드/웹 서비스(SaaS)**로 확장·배포할 때, 모든 사용자가 **동일한 문제·문장 데이터베이스를 공유**하면서도 **태그 정보와 문장 어법 분석 결과는 교사 아이디별로 독립적으로 관리**되도록 구현하기 위한 아키텍처 청사진입니다.
+
+```text
+[ 전체 사용자 공통 공유 DB (Master Data - 불변 자산) ]
+  ├── exams (시험지 정보: 학년, 연도, 월, 시험구분)
+  ├── passages (지문 원문, 발문, 보기 선지, 정답, 공식 해설, 크롭 이미지)
+  └── sentences (순수 문장 원문, 문장 번호, 단어 수)
+         ▲
+         │ (user_id 외래키로 교사별 완전 격리)
+         ▼
+[ 교사 아이디별 독립 메타데이터 (User-Specific Metadata) ]
+  ├── 교사 A: A교사만의 태그 목록, A교사의 243개 어법 분석 및 해설, A교사의 중요 문장(⭐)
+  └── 교사 B: B교사만의 태그 목록, B교사의 243개 어법 분석 및 해설, B교사의 중요 문장(⭐)
+```
+
+---
+
+### 1. 데이터베이스 스키마 마이그레이션 청사진
+
+#### 1) 사용자 테이블 신설 (`users`)
+```sql
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,                 -- 교사 고유 아이디 (e.g. 'teacher_kim', UUID)
+    email TEXT UNIQUE NOT NULL,          -- 교사 이메일
+    name TEXT NOT NULL,                  -- 교사 이름/닉네임
+    role TEXT DEFAULT 'teacher',         -- 'teacher', 'admin' 등
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+#### 2) 태그 테이블에 `user_id` 외래키 복합 유니크 제약 추가
+- **지문 태그 (`passage_tags`)**:
+  ```sql
+  CREATE TABLE passage_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,             -- 태그를 등록한 교사 ID
+      passage_id TEXT NOT NULL,          -- 대상 지문 ID
+      tag_name TEXT NOT NULL,            -- 태그명 (e.g. '빈칸추론', '오답률Top3')
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, passage_id, tag_name),
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (passage_id) REFERENCES passages (id) ON DELETE CASCADE
+  );
+  ```
+- **문장 태그 (`sentence_tags`)**:
+  ```sql
+  CREATE TABLE sentence_tags (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,             -- 태그를 등록한 교사 ID
+      sentence_id TEXT NOT NULL,         -- 대상 문장 ID
+      tag_name TEXT NOT NULL,            -- 태그명 (e.g. '도치구문', '서술형후보')
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, sentence_id, tag_name),
+      FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+      FOREIGN KEY (sentence_id) REFERENCES sentences (id) ON DELETE CASCADE
+  );
+  ```
+
+#### 3) 문장 어법 범주 분석 테이블 (`sentence_grammar_annotations`)
+교사마다 AI로 분석한 결과나 직접 수정한 어법 범주·해설이 교사별로 격리 보관됩니다.
+```sql
+CREATE TABLE sentence_grammar_annotations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,               -- 분석/편집한 교사 ID
+    sentence_id TEXT NOT NULL,           -- 대상 문장 ID
+    category_id INTEGER NOT NULL,        -- 243개 세부 어법 범주 ID (1~243)
+    pos TEXT NOT NULL,                   -- 대분류 품사 (명사, 동사 등)
+    full_path TEXT NOT NULL,             -- 계층 트리 전체 경로
+    leaf_name TEXT NOT NULL,             -- 최하위 범주명
+    target_expression TEXT,              -- 해당 문장 내 타깃 어구
+    explanation TEXT,                    -- 어법 포인트 해설
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, sentence_id, category_id),
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (sentence_id) REFERENCES sentences (id) ON DELETE CASCADE
+);
+```
+
+#### 4) 교사별 문장 상태 분리 테이블 신설 (`user_sentence_status`)
+문장 본체 테이블(`sentences`)은 모든 교사가 공유하는 불변 데이터이므로, 교사별 상태값(별표, 분석 여부 등)을 분리합니다.
+```sql
+CREATE TABLE user_sentence_status (
+    user_id TEXT NOT NULL,
+    sentence_id TEXT NOT NULL,
+    is_starred INTEGER DEFAULT 0,        -- 해당 교사의 중요 문장(⭐) 플래그
+    grammar_analyzed INTEGER DEFAULT 0,  -- 해당 교사의 어법 분석 수행 완료 여부
+    memo TEXT,                           -- 해당 교사의 개인 수업 메모
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, sentence_id),
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (sentence_id) REFERENCES sentences (id) ON DELETE CASCADE
+);
+```
+
+---
+
+### 2. 백엔드 API 및 쿼리 처리 방식
+
+1. **인증(Authentication) 의존성 주입**:
+   - FastAPI 엔드포인트에 세션 또는 JWT 토큰을 통한 `current_user: User = Depends(get_current_user)` 적용.
+2. **문장 목록 조회 시 조인 (JOIN)**:
+   ```sql
+   SELECT 
+       s.id, s.passage_id, s.order_index, s.sentence_text, s.word_count,
+       COALESCE(uss.is_starred, 0) AS is_starred,
+       COALESCE(uss.grammar_analyzed, 0) AS grammar_analyzed
+   FROM sentences s
+   LEFT JOIN user_sentence_status uss 
+       ON s.id = uss.sentence_id AND uss.user_id = :current_user_id
+   WHERE s.passage_id = :passage_id
+   ORDER BY s.order_index ASC;
+   ```
+3. **태그 및 어법 분석 조회/수정 시**:
+   - 조회: `WHERE sentence_id = :sent_id AND user_id = :current_user_id`
+   - 추가/삭제: `user_id`를 항상 세션의 `current_user_id`로 자동 바인딩하여 타 사용자의 데이터 침범을 원천 차단.
+
+---
+
+### 3. 아키텍처 확장 시의 핵심 이점
+- **서버 스토리지 비용의 획기적 절감**: 수백~수천 명의 교사가 가입해도 수능/모의고사 기출 본문 및 고화질 PDF 크롭 이미지는 단 1벌만 유지되므로 DB 용량이 급증하지 않습니다.
+- **교과 협의회/동료 교사 간 공유 기능 확장**: "A선생님이 완료한 고3 7월 모의고사 어법 분석 세트 가져오기(Clone)", 학교별 그룹 공유 태그 등 교육 협업 기능을 손쉽게 추가할 수 있습니다.
+- **공식 표준 분석(Preset) 제공**: 관리자/연구회가 사전에 검증해 둔 표준 어법 분석을 '기본값'으로 배포하고, 교사는 이를 자신만의 스타일로 수정·가감할 수 있는 유연성을 제공합니다.
+
+---
+
 ## 🚀 실행 방법
 
 1. **필수 라이브러리 설치**:
@@ -465,5 +592,33 @@
 - **검증 결과**:
   - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+
+### [2026-09-20 20:10] 업데이트 이력 (Commit ID: c3aeb2f)
+- **수정 내용**:
+  - **실시간 AI 어법 일괄 분석 모달창 구축 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - 어법 분석 진행 상황을 실시간으로 직관 확인 가능한 전용 모달(`batchAnalysisModal`) 신설
+    - 전체 진행률 및 퍼센트 게이지 바, 현재 처리 중인 문장 카드(출처 번호, 문장 본문 텍스트 프리뷰), 라이브 스트리밍 로그 콘솔(성공 뱃지, 어법 개수, 해당사항 없음 및 에러 메시지) 구현
+    - 단일 문장 단위 비동기 순차 처리로 브라우저 프리징 및 서버 타임아웃 방지
+  - **어법 '✓ 해당사항 없음(분석 완료)'과 '미분석'의 엄격한 분리 (`database.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - `sentences` 테이블에 `grammar_analyzed` 컬럼(0: 미분석, 1: 분석 완료) 신설 및 자동 마이그레이션 적용
+    - AI 분석 완료 후 어법 포인트가 0개인 문장도 `✓ 해당사항 없음`(연회색 배지)으로 명확히 구분 표기하여 불필요한 재분석 방지
+    - 홈 및 결과창 어법 필터에 `[전체 어법]`, `[어법 적용 문장]`, `[✓ 해당사항 없음]`, `[⏳ 미분석 문장]` 선별 필터링 옵션 완비
+  - **문장 결과 테이블 세로 스크롤 시 상단 헤더 고정 (Sticky Header) (`static/css/style.css`, `static/js/main.js`)**:
+    - 문장 결과 요약 바(`.sentence-header-bar`) 및 테이블 컬럼 헤더(`.sentence-table thead th`)에 `position: sticky` 및 적정 z-index 부여
+    - 스크롤을 끝까지 내려도 열 명칭(순번, 출처, 해당 문장, 어법 범주, 태그 등)이 화면 상단에 영구 고정되어 데이터 가독성 극대화
+  - **어법 범주 클릭형 대화식 팝오버 창 구축 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - 마우스를 오래 올려두어야 하던 기본 브라우저 툴팁 방식에서 벗어나, 어법 태그 배지 클릭 시 즉시 상세 해설이 뜨는 대화식 팝오버(`grammarExplanationPopover`) 구현
+    - 어법 배지 위치에 맞춘 자동 좌표 산출, 상단 그라데이션 타이틀 바, 타깃 표현 하이라이트 박스, 상세 AI 해설 본문, 외부 클릭 및 ESC 키 닫기 이벤트 지원
+  - **문장 태그 인플레이스(In-Place) 갱신 및 지문 8문장 뷰 화면 풀림 버그 해결 (`static/js/main.js`)**:
+    - 문장 태그 추가/삭제 시 전체 검색(`executeSearch("results")`)이 실행되어 단일 지문 8문장 화면이 DB 전체 539문장으로 리셋되던 문제 원천 차단
+    - 해당 행의 태그 컨테이너(`.tags-container-...`)만 즉시 부분 DOM 갱신(`updateTagsCell`, `bindTagRemoveBtns`)하여 스크롤 및 지문 8문장 상태 완벽 보존
+    - 어법 필터 초기화, 별표 필터 토글 시에도 `refreshCurrentSentenceView()`를 호출하여 지문 문장 컨텍스트 보호
+  - **향후 웹 서비스 배포용 멀티테넌트(아이디별 메타데이터 격리) 아키텍처 가이드 반영 (`README.md`)**:
+    - 수능/모의고사 기출 원문 DB는 전 교사가 100% 공유하면서도 태그, 어법 분석 결과, 중요(⭐) 문장은 교사 ID별로 독립 보관되는 Multi-Tenant 아키텍처 설계 청사진 문서화 (DDL, SQL JOIN 쿼리, REST API 설계 원칙)
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
+  - 로컬 HTTP 서버 정상 200 OK 응답 및 기능 무결성 확인
+
 
 

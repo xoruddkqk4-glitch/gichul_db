@@ -345,7 +345,8 @@ async def api_analyze_sentence_grammar(sentence_id: str):
             "success": True,
             "sentence_id": clean_id,
             "annotations": annos,
-            "count": len(annos)
+            "count": len(annos),
+            "grammar_analyzed": 1
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 어법 분석 실패: {str(e)}")
@@ -426,9 +427,9 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
         limit_val = req.limit or 5000
         sentences = db.search_sentences(is_starred=True if req.starred_only else None, limit=limit_val)
 
-    # 이미 어법 분석이 완료된 문장 필터링 (토큰 절약 및 중복 분석 방지)
+    # 이미 어법 분석이 완료된 문장 필터링 (토큰 절약 및 중복 분석 방지: 어법 배지가 있거나 특이 어법 없음으로 분석된 문장 제외)
     if req.skip_already_analyzed:
-        sentences = [s for s in sentences if not s.get("grammar_annotations")]
+        sentences = [s for s in sentences if not s.get("grammar_analyzed") and not s.get("grammar_annotations")]
 
     if not sentences:
         return {
@@ -441,11 +442,24 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
     for s in sentences:
         try:
             annos = grammar_analyzer.analyze_sentence(s["sentence_text"], provider, api_key, model)
-            if annos:
-                db.save_grammar_annotations(s["id"], annos)
-            results.append({"sentence_id": s["id"], "count": len(annos), "success": True})
+            db.save_grammar_annotations(s["id"], annos)
+            results.append({
+                "sentence_id": s["id"],
+                "sentence_text": s.get("sentence_text", ""),
+                "count": len(annos),
+                "success": True,
+                "annotations": annos,
+                "grammar_analyzed": 1
+            })
         except Exception as e:
-            results.append({"sentence_id": s["id"], "error": str(e), "success": False})
+            results.append({
+                "sentence_id": s["id"],
+                "sentence_text": s.get("sentence_text", ""),
+                "error": str(e),
+                "success": False,
+                "annotations": [],
+                "grammar_analyzed": 0
+            })
 
     return {
         "total_processed": len(results),
@@ -465,11 +479,10 @@ def background_auto_analyze_exam_grammar(exam_id: str):
         target_sentences = [s for s in sentences if s["id"].startswith(prefix)]
         for s in target_sentences:
             try:
-                if s.get("grammar_annotations"):
+                if s.get("grammar_analyzed") or s.get("grammar_annotations"):
                     continue
                 annos = grammar_analyzer.analyze_sentence(s["sentence_text"], provider, api_key, model)
-                if annos:
-                    db.save_grammar_annotations(s["id"], annos)
+                db.save_grammar_annotations(s["id"], annos)
             except Exception as ex:
                 print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
     except Exception as e:

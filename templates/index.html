@@ -471,7 +471,7 @@
 
       <!-- [문장 검색 결과 화면] : 1행 테이블 레이아웃 -->
       <div class="sentence-view-container" id="sentenceViewContainer" style="display: none;">
-        <div class="sentence-header-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div class="sentence-header-bar">
           <div>
             <span style="font-weight: 700; color: var(--secondary);">
               검색 결과: <strong id="sentenceMatchCount" style="color: var(--primary);">0</strong>개의 문장
@@ -767,6 +767,89 @@
           <button type="button" class="btn btn-secondary" id="btnCancelGrammarModal">취소</button>
           <button type="button" class="btn btn-primary" id="btnApplyGrammarSelection">✔ 선택 완료 및 적용</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       모달 4: AI 어법 일괄 분석 실시간 진행 창
+       ==================================================================== -->
+  <div class="modal-backdrop" id="batchAnalysisModal" style="display: none;">
+    <div class="modal-content modal-batch-content">
+      <div class="modal-header batch-modal-header">
+        <div class="batch-header-title-group">
+          <h3 class="modal-title">🤖 AI 어법 분석 진행 상황</h3>
+          <p class="modal-subtitle">문장별 어법 포인트를 실시간으로 정밀 분석 중입니다.</p>
+        </div>
+        <span class="batch-status-badge running" id="batchModalStatusBadge">⏳ 분석 중</span>
+      </div>
+
+      <div class="modal-body batch-modal-body">
+        <!-- 진행률 막대 & 수치 -->
+        <div class="batch-progress-section">
+          <div class="batch-progress-header">
+            <span class="batch-progress-label" id="batchProgressLabel">진행률: 0%</span>
+            <span class="batch-progress-counter" id="batchProgressCounter">0 / 0 문장 완료</span>
+          </div>
+          <div class="batch-progress-track">
+            <div class="batch-progress-bar" id="batchProgressBar" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- 현재 분석 중인 문장 카드 -->
+        <div class="batch-current-card" id="batchCurrentCard">
+          <div class="batch-current-header">
+            <span class="batch-current-tag">📍 현재 분석 중인 문장</span>
+            <span class="batch-current-id" id="batchCurrentSentId">-</span>
+          </div>
+          <p class="batch-current-text" id="batchCurrentSentText">분석을 준비하고 있습니다...</p>
+        </div>
+
+        <!-- 실시간 완료 로그 스트림 -->
+        <div class="batch-log-section">
+          <div class="batch-log-title">
+            <span>📋 분석 완료 내역</span>
+            <span class="batch-log-count" id="batchLogCount">0건</span>
+          </div>
+          <div class="batch-log-list" id="batchLogList">
+            <!-- JS에서 분석 완료된 문장들이 실시간으로 추가됩니다 -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer batch-modal-footer">
+        <div class="batch-footer-info" id="batchFooterInfo">
+          <span class="footer-spin-icon">⏳</span> AI 분석이 진행 중입니다. 잠시만 기다려 주세요.
+        </div>
+        <div class="batch-footer-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnCancelBatchAnalysis">
+            ⏹️ 분석 중단
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" id="btnCloseBatchModal" style="display: none;">
+            ✔ 확인 및 결과 확인
+          </button>
+        </div>
+      </div>
+    </div>
+  <!-- ====================================================================
+       어법 범주 상세 해설 플로팅 팝오버 (클릭 시 표시)
+       ==================================================================== -->
+  <div class="grammar-popover" id="grammarExplanationPopover" style="display: none;">
+    <div class="grammar-popover-header">
+      <div class="grammar-popover-title-group">
+        <span class="grammar-popover-badge" id="popoverBadge">🏷️ 어법 범주</span>
+        <span class="grammar-popover-path" id="popoverPath">계층 경로</span>
+      </div>
+      <button type="button" class="grammar-popover-close" id="btnCloseGrammarPopover" title="닫기 (ESC)">&times;</button>
+    </div>
+    <div class="grammar-popover-body">
+      <div class="grammar-popover-section" id="popoverPhraseSection" style="display: none;">
+        <span class="popover-section-label">📍 해당 어구</span>
+        <div class="popover-phrase-text" id="popoverPhraseText"></div>
+      </div>
+      <div class="grammar-popover-section">
+        <span class="popover-section-label">💡 어법 해설</span>
+        <div class="popover-explanation-text" id="popoverExplanationText"></div>
       </div>
     </div>
   </div>

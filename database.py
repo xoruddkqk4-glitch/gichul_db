@@ -97,6 +97,23 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # 이미 컬럼이 존재함
 
+        # sentences 테이블에 grammar_analyzed 컬럼 안전 마이그레이션 (0: 미분석, 1: 분석 완료)
+        try:
+            cursor.execute("ALTER TABLE sentences ADD COLUMN grammar_analyzed INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass  # 이미 컬럼이 존재함
+
+        # 기존에 이미 어법 분석 결과가 등록된 문장들은 분석 완료(1)로 동기화
+        try:
+            cursor.execute("""
+                UPDATE sentences 
+                SET grammar_analyzed = 1 
+                WHERE id IN (SELECT DISTINCT sentence_id FROM sentence_grammar_annotations)
+            """)
+        except Exception:
+            pass
+
+
         # 4. 지문 태그 테이블
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS passage_tags (
@@ -155,6 +172,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_cat ON sentence_grammar_annotations(category_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_pos ON sentence_grammar_annotations(pos);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_starred ON sentences(is_starred);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_analyzed ON sentences(grammar_analyzed);")
 
         conn.commit()
 
@@ -443,6 +461,7 @@ def save_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]
                 ))
             except Exception:
                 pass
+        cursor.execute("UPDATE sentences SET grammar_analyzed = 1 WHERE id = ?", (clean_id,))
         conn.commit()
 
 
@@ -469,6 +488,7 @@ def add_sentence_grammar_annotation(sentence_id: str, annotation: Dict[str, Any]
             (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (clean_id, cat_id, pos, full_path, leaf_name, target_expression, explanation))
+        cursor.execute("UPDATE sentences SET grammar_analyzed = 1 WHERE id = ?", (clean_id,))
         conn.commit()
         return True
 
@@ -534,6 +554,7 @@ def set_sentence_grammar_annotations(sentence_id: str, annotations: List[Dict[st
                 ))
             except Exception:
                 pass
+        cursor.execute("UPDATE sentences SET grammar_analyzed = 1 WHERE id = ?", (clean_id,))
         conn.commit()
 
     return get_sentence_grammar_annotations(clean_id)
@@ -682,6 +703,7 @@ def search_sentences(
             s_dict = dict(r)
             s_dict["row_num"] = idx
             s_dict["is_starred"] = 1 if r["is_starred"] == 1 else 0
+            s_dict["grammar_analyzed"] = 1 if r["grammar_analyzed"] == 1 else 0
             s_dict["tags"] = tags_by_sent.get(r["id"], [])
             s_dict["grammar_annotations"] = annos_by_sent.get(r["id"], [])
             results.append(s_dict)
