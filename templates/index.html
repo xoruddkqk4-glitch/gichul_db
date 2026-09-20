@@ -165,6 +165,7 @@
             autocomplete="off"
           >
           <button type="button" class="btn btn-primary btn-sm" id="btnResultsSearch">검색</button>
+          <button type="button" class="btn btn-secondary btn-sm btn-within-search" id="btnSearchWithinResults" title="현재 검색 결과 목록 내에서 재검색">결과 내 검색</button>
         </div>
 
         <div class="results-filters-group">
@@ -253,9 +254,7 @@
               <span class="tab-bar-title">문항별 선택 탭 (<span id="passageTabCount">0</span>개 문항)</span>
             </div>
             <div class="tab-bar-controls">
-              <button type="button" class="btn-tab-scroll" id="btnTabScrollLeft" title="왼쪽 스크롤">◀</button>
-              <button type="button" class="btn-tab-scroll" id="btnTabScrollRight" title="오른쪽 스크롤">▶</button>
-              <span class="tab-bar-hint">※ 탭을 클릭하면 해당 문항의 2x2 정보로 즉시 전환됩니다.</span>
+              <span class="tab-bar-hint">※ 탭을 클릭하면 해당 문항의 2x2 정보로 즉시 전환됩니다. (1행 10개 문항 배치)</span>
             </div>
           </div>
           <div class="passage-tab-bar" id="passageTabBar">
@@ -331,6 +330,10 @@
                 <div class="meta-item">
                   <span class="meta-label">문항 번호</span>
                   <span class="meta-val" id="metaQNum">-</span>
+                </div>
+                <div class="meta-item">
+                  <span class="meta-label">문제 유형</span>
+                  <span class="meta-val" id="metaQuestionType" style="color: #4338ca; font-weight: 700;">-</span>
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">정답</span>

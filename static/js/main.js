@@ -15,6 +15,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentPassageIndex = 0;
   let passagesData = [];
   let sentencesData = [];
+  let rawPassagesData = []; // '결과 내 검색' 필터링용 원본 지문 목록 캐시
+  let rawSentencesData = []; // '결과 내 검색' 필터링용 원본 문장 목록 캐시
 
   // =========================================================================
   // DOM 요소 캐싱
@@ -51,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnBackToSearch = document.getElementById("btnBackToSearch");
   const resultsSearchInput = document.getElementById("resultsSearchInput");
   const btnResultsSearch = document.getElementById("btnResultsSearch");
+  const btnSearchWithinResults = document.getElementById("btnSearchWithinResults");
   const resultsTabModePassage = document.getElementById("resultsTabModePassage");
   const resultsTabModeSentence = document.getElementById("resultsTabModeSentence");
 
@@ -83,6 +86,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const metaQNum = document.getElementById("metaQNum");
   const metaAnswer = document.getElementById("metaAnswer");
   const metaQuestionTitle = document.getElementById("metaQuestionTitle");
+  const metaQuestionType = document.getElementById("metaQuestionType");
   const selectQuestionType = document.getElementById("selectQuestionType");
   const validationBadge = document.getElementById("validationBadge");
   const passageTagsList = document.getElementById("passageTagsList");
@@ -333,6 +337,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch(`/api/search/passages?${params.toString()}`);
         const data = await res.json();
         passagesData = groupPassageItems(data.items || []);
+        rawPassagesData = [...passagesData]; // 원본 캐시 갱신
         resultsTotalCount.textContent = passagesData.length;
         renderPassageView(passagesData);
         setHeaderSlotState("passage");
@@ -340,6 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch(`/api/search/sentences?${params.toString()}`);
         const data = await res.json();
         sentencesData = data.items || [];
+        rawSentencesData = [...sentencesData]; // 원본 캐시 갱신
         resultsTotalCount.textContent = sentencesData.length;
         renderSentenceView(sentencesData);
         setHeaderSlotState("sentence");
@@ -352,6 +358,84 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /** 현재 로드된 결과 목록 내에서 키워드로 즉시 필터링(결과 내 검색) */
+  function executeSearchWithinResults() {
+    const kw = resultsSearchInput ? resultsSearchInput.value.trim().toLowerCase() : "";
+
+    if (!kw) {
+      // 키워드가 비어있으면 원본 목록 전체 복원
+      if (currentMode === "passage") {
+        passagesData = [...rawPassagesData];
+        resultsTotalCount.textContent = passagesData.length;
+        renderPassageView(passagesData);
+      } else {
+        sentencesData = [...rawSentencesData];
+        resultsTotalCount.textContent = sentencesData.length;
+        renderSentenceView(sentencesData);
+      }
+      showToast("전체 검색 결과가 다시 표시됩니다.", "info");
+      return;
+    }
+
+    if (currentMode === "passage") {
+      if (!rawPassagesData || rawPassagesData.length === 0) {
+        showToast("필터링할 지문 검색 결과가 없습니다.", "warning");
+        return;
+      }
+
+      const filtered = rawPassagesData.filter(p => {
+        const inBody = (p.passage_text || "").toLowerCase().includes(kw);
+        const inTitle = (p.question_title || "").toLowerCase().includes(kw);
+        const inId = (p.display_id || p.id || "").toLowerCase().includes(kw);
+        const inExp = (p.explanation_text || "").toLowerCase().includes(kw);
+        const inType = (p.question_type || "").toLowerCase().includes(kw);
+        const inTags = (p.tags || []).some(t => t.toLowerCase().includes(kw));
+        
+        let inSub = false;
+        if (p.isGroup && p.subItems) {
+          inSub = p.subItems.some(si => 
+            (si.passage_text || "").toLowerCase().includes(kw) ||
+            (si.question_title || "").toLowerCase().includes(kw)
+          );
+        }
+
+        return inBody || inTitle || inId || inExp || inType || inTags || inSub;
+      });
+
+      if (filtered.length === 0) {
+        showToast(`결과 목록 내에서 '${kw}' 키워드를 포함하는 문항이 없습니다.`, "warning");
+      } else {
+        showToast(`결과 내 검색: ${filtered.length}개 문항이 필터링되었습니다.`, "success");
+      }
+
+      passagesData = filtered;
+      resultsTotalCount.textContent = filtered.length;
+      renderPassageView(passagesData);
+    } else {
+      if (!rawSentencesData || rawSentencesData.length === 0) {
+        showToast("필터링할 문장 검색 결과가 없습니다.", "warning");
+        return;
+      }
+
+      const filtered = rawSentencesData.filter(s => {
+        const inEng = (s.sentence_text || "").toLowerCase().includes(kw);
+        const inKor = (s.korean_translation || "").toLowerCase().includes(kw);
+        const inId = (s.sentence_id || "").toLowerCase().includes(kw);
+        return inEng || inKor || inId;
+      });
+
+      if (filtered.length === 0) {
+        showToast(`결과 목록 내에서 '${kw}' 키워드를 포함하는 문장이 없습니다.`, "warning");
+      } else {
+        showToast(`결과 내 검색: ${filtered.length}개 문장이 필터링되었습니다.`, "success");
+      }
+
+      sentencesData = filtered;
+      resultsTotalCount.textContent = filtered.length;
+      renderSentenceView(sentencesData);
+    }
+  }
+
   // 홈 검색 트리거
   btnSearch.addEventListener("click", () => executeSearch("home"));
   mainSearchInput.addEventListener("keydown", (e) => {
@@ -361,6 +445,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // 결과창 검색 트리거
   if (btnResultsSearch) {
     btnResultsSearch.addEventListener("click", () => executeSearch("results"));
+  }
+  if (btnSearchWithinResults) {
+    btnSearchWithinResults.addEventListener("click", executeSearchWithinResults);
   }
   if (resultsSearchInput) {
     resultsSearchInput.addEventListener("keydown", (e) => {
@@ -513,12 +600,27 @@ document.addEventListener("DOMContentLoaded", () => {
       tabBtn.dataset.index = idx;
       tabBtn.dataset.id = p.id;
 
-      const qLabel = p.q_num_label || (p.q_num ? `${p.q_num}번` : p.id);
-      const typeLabel = p.question_type ? escapeHtml(p.question_type) : "기타";
+      // 1행: [고O-OOOO년], 2행: [OO월-OO번] (41~42번 등 복합 문항은 [07월-41~42번])
+      let line1 = "[고3-2026년]";
+      let line2 = "[07월-18번]";
+
+      const rawId = p.display_id || p.id || "";
+      const match = rawId.match(/^\[?([^-]+)-(\d{4}년)-(\d{1,2}월)-(.+?)\]?$/);
+      if (match) {
+        line1 = `[${match[1]}-${match[2]}]`;
+        line2 = `[${match[3]}-${match[4]}]`;
+      } else {
+        const gradeStr = p.grade || "고3";
+        const yearStr = p.year ? `${p.year}년` : "2026년";
+        const monthNum = p.month ? `${String(p.month).padStart(2, "0")}월` : "07월";
+        const qLabel = p.q_num_label || (p.q_num ? `${p.q_num}번` : "");
+        line1 = `[${gradeStr}-${yearStr}]`;
+        line2 = `[${monthNum}-${qLabel}]`;
+      }
 
       tabBtn.innerHTML = `
-        <span class="tab-q-number">${qLabel}</span>
-        <span class="tab-type-tag">${typeLabel}</span>
+        <span class="tab-line-exam">${escapeHtml(line1)}</span>
+        <span class="tab-line-q">${escapeHtml(line2)}</span>
       `;
 
       tabBtn.addEventListener("click", () => {
@@ -639,6 +741,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // [우측 하단]: 지문 메타 정보, 문제 유형, 태그 관리
     metaPassageId.textContent = p.display_id || p.id;
     metaQNum.textContent = p.q_num_label || (p.q_num ? `${p.q_num}번` : "-");
+    if (metaQuestionType) metaQuestionType.textContent = p.question_type || "-";
     metaAnswer.textContent = p.answer_text ? `${p.answer_text}` : "-";
     if (metaQuestionTitle) metaQuestionTitle.textContent = p.question_title || "-";
     validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
@@ -680,6 +783,7 @@ document.addEventListener("DOMContentLoaded", () => {
     panelExplanation.textContent = "-";
     metaPassageId.textContent = "-";
     metaQNum.textContent = "-";
+    if (metaQuestionType) metaQuestionType.textContent = "-";
     metaAnswer.textContent = "-";
     if (metaQuestionTitle) metaQuestionTitle.textContent = "-";
     passageTagsList.innerHTML = "";

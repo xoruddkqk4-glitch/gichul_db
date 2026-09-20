@@ -156,3 +156,16 @@
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
   - 43~45번 결합 크롭 이미지(`고3_2026_07_43.png`, 1058x3429px) 생성 및 데이터베이스 연동 확인
+### [2026-09-20 14:17] 업데이트 이력 (Commit ID: f305f9d)
+- **수정 내용**:
+  - **문항별 선택 탭 표시 개편 (2행 구조 & 1행 10개 그리드)**:
+    - 탭 버튼에서 문제 유형 라벨을 제거하고, 1행 `[고O-OOOO년]`, 2행 `[OO월-OO번]`의 2행 텍스트 구조로 변경하여 언제 기출인지 직관적으로 파악할 수 있도록 개선 (`static/js/main.js`, `static/css/style.css`)
+    - 가로 스크롤바를 완전히 제거하고 CSS Grid(`repeat(10, minmax(0, 1fr))`)를 적용하여 1행에 항상 10개 문항 탭이 정갈하게 배열되고 11번째 문항부터 아래 행에 자동 추가되도록 레이아웃 고도화 (`static/css/style.css`, `templates/index.html`)
+  - **우측 하단 '추가 정보' 패널 내 '문제 유형' 항목 표시**:
+    - 탭에서 제외된 문제 유형 정보를 우측 하단 '추가 정보' 패널 메타 정보 행(`meta-info-row`)에 신설(`metaQuestionType`)하여 지문 식별자, 문항 번호, 문제 유형, 정답을 한눈에 체계적으로 확인 가능하도록 연동 (`templates/index.html`, `static/js/main.js`)
+  - **'결과 내 검색' 버튼 및 고속 필터링 기능 신설**:
+    - 상단 결과창 검색바의 `[검색]` 버튼 옆에 **`[결과 내 검색]`** 버튼(`btnSearchWithinResults`) 추가 (`templates/index.html`, `static/css/style.css`)
+    - 1차 검색된 지문/문장 원본 데이터 캐시(`rawPassagesData`, `rawSentencesData`)를 기준으로, 입력 키워드가 포함된 문항(본문, 발문, 식별자, 해설, 유형, 태그, 복합 하위 항목)만 지연 없이 0ms 즉각 필터링하는 `executeSearchWithinResults()` 함수 구현 (`static/js/main.js`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
