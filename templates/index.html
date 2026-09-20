@@ -68,6 +68,7 @@
             autocomplete="off"
             autofocus
           >
+          <button type="button" class="btn-clear-search-input" id="btnClearMainSearch" style="display: none;" title="검색어 지우기">&times;</button>
           <button type="button" class="search-submit-btn" id="btnSearch">검색</button>
         </div>
 
@@ -131,6 +132,12 @@
             <option value="1지문2문항">1지문2문항</option>
             <option value="1지문3문항">1지문3문항</option>
           </select>
+
+          <!-- 온전한 단어 검색 토글 버튼 (메인 홈) -->
+          <button type="button" class="btn-toggle-wholeword" id="btnHomeToggleWholeWord" aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
+            <span class="toggle-dot"></span>
+            <span class="toggle-text">단어 단위</span>
+          </button>
 
           <!-- 어법 범주 필터 (문장 검색 모드 전용, 지문 검색 시 숨김: 계층형 브레드크럼 네비게이션 방식) -->
           <div class="home-grammar-filters-group grammar-breadcrumb-filter-bar" id="homeGrammarFiltersGroup" style="display: none;">
@@ -199,10 +206,15 @@
               placeholder="검색어, 출처 또는 #태그를 입력하세요..." 
               autocomplete="off"
             >
+            <button type="button" class="btn-clear-search-input" id="btnClearResultsSearch" style="display: none;" title="검색어 지우기">&times;</button>
             <button type="button" class="btn btn-primary btn-sm" id="btnResultsSearch">검색</button>
             <button type="button" class="btn-toggle-within" id="btnToggleSearchWithin" aria-pressed="false" title="클릭하여 결과 내 재검색 모드를 켜거나 끕니다">
               <span class="toggle-dot"></span>
               <span class="toggle-text">결과 내 검색</span>
+            </button>
+            <button type="button" class="btn-toggle-wholeword" id="btnToggleWholeWord" aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
+              <span class="toggle-dot"></span>
+              <span class="toggle-text">단어 단위</span>
             </button>
           </div>
         </div>
@@ -607,14 +619,47 @@
           <label class="form-label">AI 엔진 (Provider)</label>
           <select class="form-control" id="aiProviderSelect">
             <option value="gemini">Google Gemini (가장 빠름 & 넉넉한 무료 티어 - 권장)</option>
+            <option value="openrouter">OpenRouter (DeepSeek / Claude / GPT / Llama 등 통합 API)</option>
             <option value="openai">OpenAI ChatGPT (gpt-4o-mini / gpt-4o)</option>
             <option value="claude">Anthropic Claude (claude-3-5-haiku / claude-3-5-sonnet)</option>
           </select>
         </div>
 
+        <!-- OpenRouter 전용 Top 5 모델 드랍다운 선택 영역 -->
+        <div class="form-group openrouter-group-box" id="openrouterModelGroup" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin-bottom: 0; font-weight: 700; color: #1e293b;">
+              🏆 OpenRouter Top 5 추천 모델 선택
+            </label>
+            <button type="button" class="btn-refresh-models" id="btnRefreshOpenRouterModels" title="OpenRouter에서 최신 모델 정보 다시 불러오기">
+              🔄 실시간 정보 갱신
+            </button>
+          </div>
+          <select class="form-control" id="openrouterModelSelect">
+            <option value="">Top 5 모델 정보를 불러오는 중...</option>
+          </select>
+          
+          <!-- 선택된 모델의 상세 정보 카드 (가격, 컨텍스트, 특징) -->
+          <div class="openrouter-model-info-card" id="openrouterModelInfoCard" style="display: none;">
+            <div class="info-card-header">
+              <span class="info-model-badge" id="infoModelBadge">🥇 1위</span>
+              <span class="info-model-name" id="infoModelName">DeepSeek V3</span>
+              <span class="info-model-tag" id="infoModelTag">초저비용 고성능</span>
+            </div>
+            <div class="info-card-specs">
+              <span class="spec-item">입력: <strong id="infoModelPromptPrice">$0.32/1M</strong></span>
+              <span class="spec-divider">•</span>
+              <span class="spec-item">출력: <strong id="infoModelCompletionPrice">$0.89/1M</strong></span>
+              <span class="spec-divider">•</span>
+              <span class="spec-item">컨텍스트: <strong id="infoModelContext">160k</strong></span>
+            </div>
+            <p class="info-card-desc" id="infoModelDesc"></p>
+          </div>
+        </div>
+
         <div class="form-group">
           <label class="form-label">모델명 (비워두면 권장 기본 모델 자동 적용)</label>
-          <input type="text" class="form-control" id="aiModelInput" placeholder="예: gemini-1.5-flash / gpt-4o-mini / claude-3-5-haiku-20241022">
+          <input type="text" class="form-control" id="aiModelInput" placeholder="예: gemini-1.5-flash / openai/gpt-4o-mini / gpt-4o-mini / claude-3-5-haiku-20241022">
           <small class="form-help" id="aiModelHelp" style="display: block; margin-top: 4px; font-size: 0.78rem; color: #64748b;">
             💡 기본 권장: gemini-1.5-flash (하루 수천 문장 무료 분석 가능)
           </small>
@@ -623,7 +668,7 @@
         <div class="form-group">
           <label class="form-label">API Key</label>
           <div style="display: flex; gap: 6px; align-items: center;">
-            <input type="password" class="form-control" id="aiApiKeyInput" placeholder="API Key를 입력하세요 (AIzaSy... / sk-...)">
+            <input type="password" class="form-control" id="aiApiKeyInput" placeholder="API Key를 입력하세요 (AIzaSy... / sk-or-v1-... / sk-...)">
             <button type="button" class="btn btn-secondary btn-sm" id="btnToggleKeyVis" style="padding: 0.45rem 0.65rem;">👁️</button>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 0.8rem;">

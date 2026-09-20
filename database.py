@@ -8,17 +8,29 @@
 import sqlite3
 import os
 import json
+import re
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gichul.db")
 
 
+def _regexp_func(expr: Optional[str], item: Optional[str]) -> bool:
+    """SQLite REGEXP 커스텀 함수 (대소문자 무시 단어 경계/정규식 매칭)"""
+    if expr is None or item is None:
+        return False
+    try:
+        return bool(re.search(expr, item, re.IGNORECASE))
+    except Exception:
+        return False
+
+
 def get_connection() -> sqlite3.Connection:
-    """SQLite 데이터베이스 연결 반환 (ROW 딕셔너리 팩토리 적용)"""
+    """SQLite 데이터베이스 연결 반환 (ROW 딕셔너리 팩토리 및 REGEXP 함수 등록)"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.create_function("REGEXP", 2, _regexp_func)
     return conn
 
 
@@ -315,9 +327,10 @@ def search_passages(
     exam_type: str = "",
     question_type: str = "",
     tag: str = "",
+    whole_word: bool = False,
     limit: int = 50
 ) -> List[Dict[str, Any]]:
-    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분)"""
+    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분 - 온전한 단어 검색 지원)"""
     query = """
         SELECT p.*, e.grade, e.year, e.month, e.exam_type
         FROM passages p
@@ -327,16 +340,30 @@ def search_passages(
     params = []
 
     if keyword:
-        kw = f"%{keyword.strip()}%"
-        query += """
-            AND (
-                p.id LIKE ? OR
-                p.passage_text LIKE ? OR
-                p.question_title LIKE ? OR
-                p.explanation_text LIKE ?
-            )
-        """
-        params.extend([kw, kw, kw, kw])
+        k_strip = keyword.strip()
+        if whole_word:
+            # 온전한 단어 검색: 앞뒤로 단어 문자(\w, 영문/숫자/한글)가 없는 독립 단어 일치
+            pattern = r"(?<!\w)" + re.escape(k_strip).replace(r"\ ", r"\s+") + r"(?!\w)"
+            query += """
+                AND (
+                    p.id REGEXP ? OR
+                    p.passage_text REGEXP ? OR
+                    p.question_title REGEXP ? OR
+                    p.explanation_text REGEXP ?
+                )
+            """
+            params.extend([pattern, pattern, pattern, pattern])
+        else:
+            kw = f"%{k_strip}%"
+            query += """
+                AND (
+                    p.id LIKE ? OR
+                    p.passage_text LIKE ? OR
+                    p.question_title LIKE ? OR
+                    p.explanation_text LIKE ?
+                )
+            """
+            params.extend([kw, kw, kw, kw])
 
     if grade:
         query += " AND e.grade = ?"
@@ -545,9 +572,10 @@ def search_sentences(
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
+    whole_word: bool = False,
     limit: int = 5000
 ) -> List[Dict[str, Any]]:
-    """문장 검색 (1행 테이블 뷰용)"""
+    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
     query = """
         SELECT s.*, p.q_num, e.grade, e.year, e.month, e.exam_type
         FROM sentences s
@@ -565,9 +593,16 @@ def search_sentences(
         params.append(clean_pid)
 
     if keyword:
-        kw = f"%{keyword.strip()}%"
-        query += " AND (s.sentence_text LIKE ? OR s.id LIKE ?)"
-        params.extend([kw, kw])
+        k_strip = keyword.strip()
+        if whole_word:
+            # 온전한 단어 검색: 앞뒤로 단어 문자(\w, 영문/숫자/한글)가 없는 독립 단어 일치
+            pattern = r"(?<!\w)" + re.escape(k_strip).replace(r"\ ", r"\s+") + r"(?!\w)"
+            query += " AND (s.sentence_text REGEXP ? OR s.id REGEXP ?)"
+            params.extend([pattern, pattern])
+        else:
+            kw = f"%{k_strip}%"
+            query += " AND (s.sentence_text LIKE ? OR s.id LIKE ?)"
+            params.extend([kw, kw])
 
     if grade:
         query += " AND e.grade = ?"

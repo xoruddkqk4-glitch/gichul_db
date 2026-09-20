@@ -396,3 +396,30 @@
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - `http://127.0.0.1:8000` 로컬 HTTP 서버 200 OK 응답 및 변경된 브레드크럼 HTML 마크업 정상 전달 확인
+
+### [2026-09-20 19:00] 업데이트 이력 (Commit ID: b48006b)
+- **수정 내용**:
+  - **검색창 입력값 초기화 `×` 버튼 신설 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - 메인 홈 검색창(`mainSearchInput`) 및 결과창 상단 검색창(`resultsSearchInput`)에 검색어 입력 시 우측에 원형 `×` 버튼(`.btn-clear-search-input`)이 즉시 노출되도록 구현
+    - `×` 버튼 클릭 시 검색창이 `""`로 초기화되고 포커스가 유지되며, 결과창에서는 검색 필터가 즉시 해제되어 전체 결과 목록이 다시 렌더링되도록 연동
+    - 통계 배지 클릭 시 및 홈/결과창 전환 시에도 초기화 버튼 가시성(`updateClearButtons`) 자동 동기화
+  - **온전한 단어 검색(Whole Word Search) 모드 구현 (`database.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **SQLite REGEXP 연동**: SQLite 커스텀 정규식 함수 `conn.create_function("REGEXP", 2, _regexp_func)` 등록 및 단어 경계(`(?<!\w)...(?!\w)`) 기반 검색 쿼리 구축
+    - `it` 검색 시 `situation`, `with` 등 부분 일치 단어를 정밀 배제하고 독립된 단어 `it`만 선별 검색 (영문뿐 아니라 한글 단어 경계 및 구 단위 표현 `valuable because` 지원)
+    - 홈 필터 바 및 결과창 상단 검색 바에 `[• 단어 단위]` 토글 버튼 신설 및 양방향 활성화 상태 동기화
+    - 결과 내 검색(`executeSearchWithinResults`) 및 지문/문장 본문의 형광펜 하이라이트(`highlightTextKeyword`)까지 단어 단위 일치 연동
+  - **OpenRouter Multi-LLM API 연동 및 Top 5 모델 드랍다운 선택 시스템 구축 (`grammar_analyzer.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **OpenRouter REST API 연동**: `https://openrouter.ai/api/v1/chat/completions` 엔드포인트 직접 호출 클라이언트 구축 (HTTP-Referer, X-Title, JSON 포맷팅 지원)
+    - **Top 5 모델 실시간 조회 엔드포인트 (`GET /api/openrouter/top-models`)**: OpenRouter 공식 API(`https://openrouter.ai/api/v1/models`)에서 실시간 토큰 단가 및 컨텍스트 정보를 동적 추출하고 30분 캐싱 지원
+    - **추천 Top 5 라인업**:
+      - 🥇 인기 1위: `deepseek/deepseek-chat` (DeepSeek V3 — $0.32/1M, $0.89/1M, 160k ctx / 압도적 가성비)
+      - 🥈 가성비 1위: `openai/gpt-4o-mini` (OpenAI GPT-4o-mini — $0.15/1M, $0.60/1M, 125k ctx / 초고속 & 저비용)
+      - 🥉 어법정밀 1위: `anthropic/claude-sonnet-4.5` (Anthropic Claude Sonnet 4.5 — $3.00/1M, $15.00/1M, 976k ctx / 최고급 문해력)
+      - 4위 플래그십: `openai/gpt-4o` (OpenAI GPT-4o — $2.50/1M, $10.00/1M, 125k ctx / 표준 플래그십)
+      - 5위 오픈소스: `meta-llama/llama-3.3-70b-instruct` (Meta Llama 3.3 70B — $0.10/1M, $0.32/1M, 128k ctx / 고성능 오픈소스)
+    - **AI 설정 모달 UI 구축**: Provider로 OpenRouter 선택 시 `[🏆 OpenRouter Top 5 추천 모델 선택]` 드랍다운 및 실시간 모델 정보 카드(순위, 명칭, 단가, 컨텍스트, 상세 설명) 자동 노출, `✏️ 직접 입력 (커스텀 모델명)` 선택 및 `[🔄 실시간 정보 갱신]` 기능 완비
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+  - 온전한 단어 검색 API 검증: `it` 검색 시 일반 256건 / 단어 단위 81건으로 부분 일치 제외 정상 확인
+  - `GET /api/openrouter/top-models` 로컬 엔드포인트 200 OK 및 실시간 Top 5 모델 정보 반환 확인

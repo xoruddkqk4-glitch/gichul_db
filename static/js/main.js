@@ -38,7 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabModePassage = document.getElementById("tabModePassage");
   const tabModeSentence = document.getElementById("tabModeSentence");
   const mainSearchInput = document.getElementById("mainSearchInput");
+  const btnClearMainSearch = document.getElementById("btnClearMainSearch");
   const btnSearch = document.getElementById("btnSearch");
+  const btnHomeToggleWholeWord = document.getElementById("btnHomeToggleWholeWord");
 
   // 홈 필터
   const filterGrade = document.getElementById("filterGrade");
@@ -52,9 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultsView = document.getElementById("resultsView");
   const btnBackToSearch = document.getElementById("btnBackToSearch");
   const resultsSearchInput = document.getElementById("resultsSearchInput");
+  const btnClearResultsSearch = document.getElementById("btnClearResultsSearch");
   const btnResultsSearch = document.getElementById("btnResultsSearch");
   const btnToggleSearchWithin = document.getElementById("btnToggleSearchWithin") || document.getElementById("btnSearchWithinResults");
   let isSearchWithinActive = false;
+  const btnToggleWholeWord = document.getElementById("btnToggleWholeWord");
+  let isWholeWordActive = false;
   const resultsTabModePassage = document.getElementById("resultsTabModePassage");
   const resultsTabModeSentence = document.getElementById("resultsTabModeSentence");
 
@@ -138,6 +143,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCloseAiSettingsModal = document.getElementById("btnCloseAiSettingsModal");
   const btnCancelAiSettings = document.getElementById("btnCancelAiSettings");
   const aiProviderSelect = document.getElementById("aiProviderSelect");
+  const openrouterModelGroup = document.getElementById("openrouterModelGroup");
+  const openrouterModelSelect = document.getElementById("openrouterModelSelect");
+  const btnRefreshOpenRouterModels = document.getElementById("btnRefreshOpenRouterModels");
+  const openrouterModelInfoCard = document.getElementById("openrouterModelInfoCard");
+  const infoModelBadge = document.getElementById("infoModelBadge");
+  const infoModelName = document.getElementById("infoModelName");
+  const infoModelTag = document.getElementById("infoModelTag");
+  const infoModelPromptPrice = document.getElementById("infoModelPromptPrice");
+  const infoModelCompletionPrice = document.getElementById("infoModelCompletionPrice");
+  const infoModelContext = document.getElementById("infoModelContext");
+  const infoModelDesc = document.getElementById("infoModelDesc");
+  let openrouterTopModelsData = [];
   const aiModelInput = document.getElementById("aiModelInput");
   const aiModelHelp = document.getElementById("aiModelHelp");
   const aiApiKeyInput = document.getElementById("aiApiKeyInput");
@@ -213,6 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     window.scrollTo({ top: 0, behavior: "smooth" });
     mainSearchInput.focus();
+    if (typeof updateClearButtons === "function") updateClearButtons();
   }
 
   /** 결과 화면으로 전환 */
@@ -221,6 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
     resultsView.style.display = "flex";
     window.scrollTo({ top: 0, behavior: "smooth" });
     updateGrammarFiltersVisibility();
+    if (typeof updateClearButtons === "function") updateClearButtons();
   }
 
   // 홈으로 이동 버튼 이벤트 연결
@@ -323,6 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
 
       setMode("passage");
+      updateClearButtons();
       executeSearch("all_passages");
     });
   }
@@ -339,6 +359,17 @@ document.addEventListener("DOMContentLoaded", () => {
     return { keyword: q, tag: tag };
   }
 
+  /** 키워드 일치 여부 검사 (부분 일치 또는 온전한 단어 일치 지원) */
+  function checkTextMatch(text, kw, isWholeWord = false) {
+    if (!text || !kw) return false;
+    if (!isWholeWord) {
+      return text.toLowerCase().includes(kw.toLowerCase());
+    }
+    const escapedKw = kw.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    const regex = new RegExp(`(?<=^|[^a-zA-Z0-9가-힣_])(${escapedKw})(?=[^a-zA-Z0-9가-힣_]|$)`, "i");
+    return regex.test(text);
+  }
+
   /** 텍스트 내에서 검색 표현을 찾아 파스텔톤 빨간색 형광펜으로 감싸기 */
   function highlightTextKeyword(text, rawQuery, highlightClass = "sentence-highlight") {
     if (!text) return "";
@@ -348,9 +379,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const { keyword } = parseSearchQuery(rawQuery);
     if (!keyword || !keyword.trim()) return cleanText;
 
-    // HTML 이스케이프된 키워드로 정규식 특수문자 이스케이프
-    const escapedKw = escapeHtml(keyword.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(${escapedKw})`, "gi");
+    // HTML 이스케이프된 키워드로 정규식 특수문자 이스케이프 (공백은 \s+ 처리)
+    const escapedKw = escapeHtml(keyword.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    const pattern = isWholeWordActive
+      ? `(?<=^|[^a-zA-Z0-9가-힣_])(${escapedKw})(?=[^a-zA-Z0-9가-힣_]|$)`
+      : `(${escapedKw})`;
+    const regex = new RegExp(pattern, "gi");
 
     return cleanText.replace(regex, `<mark class="${highlightClass}">$1</mark>`);
   }
@@ -435,6 +469,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const params = new URLSearchParams();
     if (keyword) params.append("keyword", keyword);
+    if (isWholeWordActive) params.append("whole_word", "true");
     if (grade) params.append("grade", grade);
     if (year) params.append("year", year);
     if (month) params.append("month", month);
@@ -526,19 +561,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // 2. 키워드 조건 필터링
         let kwMatch = true;
-        if (kw) {
-          const inBody = (p.passage_text || "").toLowerCase().includes(kw);
-          const inTitle = (p.question_title || "").toLowerCase().includes(kw);
+        if (kwRaw) {
+          const inBody = checkTextMatch(p.passage_text, kwRaw, isWholeWordActive);
+          const inTitle = checkTextMatch(p.question_title, kwRaw, isWholeWordActive);
           const inId = (p.display_id || p.id || "").toLowerCase().includes(kw);
-          const inExp = (p.explanation_text || "").toLowerCase().includes(kw);
+          const inExp = checkTextMatch(p.explanation_text, kwRaw, isWholeWordActive);
           const inType = (p.question_type || "").toLowerCase().includes(kw);
           const inTags = (p.tags || []).some(t => t.toLowerCase().includes(kw));
           
           let inSub = false;
           if (p.isGroup && p.subItems) {
             inSub = p.subItems.some(si => 
-              (si.passage_text || "").toLowerCase().includes(kw) ||
-              (si.question_title || "").toLowerCase().includes(kw)
+              checkTextMatch(si.passage_text, kwRaw, isWholeWordActive) ||
+              checkTextMatch(si.question_title, kwRaw, isWholeWordActive)
             );
           }
 
@@ -576,9 +611,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         let kwMatch = true;
-        if (kw) {
-          const inEng = (s.sentence_text || "").toLowerCase().includes(kw);
-          const inKor = (s.korean_translation || "").toLowerCase().includes(kw);
+        if (kwRaw) {
+          const inEng = checkTextMatch(s.sentence_text, kwRaw, isWholeWordActive);
+          const inKor = checkTextMatch(s.korean_translation, kwRaw, isWholeWordActive);
           const inId = (s.sentence_id || s.id || "").toLowerCase().includes(kw);
           kwMatch = inEng || inKor || inId;
         }
@@ -611,7 +646,82 @@ document.addEventListener("DOMContentLoaded", () => {
       resultsTotalCount.textContent = filtered.length;
       renderSentenceView(sentencesData);
     }
+
+    updateClearButtons();
   }
+
+  /** 검색창 초기화 x 버튼 가시성 업데이트 */
+  function updateClearButtons() {
+    if (btnClearMainSearch && mainSearchInput) {
+      btnClearMainSearch.style.display = mainSearchInput.value.trim().length > 0 ? "inline-flex" : "none";
+    }
+    if (btnClearResultsSearch && resultsSearchInput) {
+      btnClearResultsSearch.style.display = resultsSearchInput.value.trim().length > 0 ? "inline-flex" : "none";
+    }
+  }
+
+  // 검색창 입력 시 x 버튼 동적 표시/숨김
+  if (mainSearchInput) {
+    mainSearchInput.addEventListener("input", updateClearButtons);
+  }
+  if (resultsSearchInput) {
+    resultsSearchInput.addEventListener("input", updateClearButtons);
+  }
+
+  // 홈 검색창 x 버튼 클릭: 입력값 초기화
+  if (btnClearMainSearch) {
+    btnClearMainSearch.addEventListener("click", () => {
+      if (mainSearchInput) {
+        mainSearchInput.value = "";
+        mainSearchInput.focus();
+      }
+      updateClearButtons();
+    });
+  }
+
+  // 결과창 검색창 x 버튼 클릭: 입력값 초기화 및 결과창 초기화(전체 결과 재검색/표시)
+  if (btnClearResultsSearch) {
+    btnClearResultsSearch.addEventListener("click", () => {
+      if (resultsSearchInput) {
+        resultsSearchInput.value = "";
+        resultsSearchInput.focus();
+      }
+      if (mainSearchInput) {
+        mainSearchInput.value = "";
+      }
+      updateClearButtons();
+      handleResultsSearch();
+    });
+  }
+
+  /** 온전한 단어 검색 토글 상태 동기화 및 제어 */
+  function setWholeWordState(active) {
+    isWholeWordActive = !!active;
+    [btnHomeToggleWholeWord, btnToggleWholeWord].forEach(btn => {
+      if (btn) {
+        btn.classList.toggle("active", isWholeWordActive);
+        btn.setAttribute("aria-pressed", String(isWholeWordActive));
+      }
+    });
+  }
+
+  // 단어 단위 검색 토글 버튼 이벤트 연결
+  [btnHomeToggleWholeWord, btnToggleWholeWord].forEach(btn => {
+    if (btn) {
+      btn.addEventListener("click", () => {
+        setWholeWordState(!isWholeWordActive);
+        if (isWholeWordActive) {
+          showToast("단어 단위 검색이 켜졌습니다. (독립 단어만 정확히 일치)", "info");
+        } else {
+          showToast("단어 단위 검색이 꺼졌습니다. (부분 일치 검색)", "info");
+        }
+        // 결과창 화면이 표시되어 있으면 현재 조건으로 즉시 재검색 실행
+        if (resultsView && resultsView.style.display !== "none") {
+          handleResultsSearch();
+        }
+      });
+    }
+  });
 
   // 홈 검색 트리거
   btnSearch.addEventListener("click", () => executeSearch("home"));
@@ -2903,6 +3013,12 @@ document.addEventListener("DOMContentLoaded", () => {
       link: "https://aistudio.google.com/app/apikey",
       linkText: "Google AI Studio 무료 키 발급 ↗",
     },
+    openrouter: {
+      model: "deepseek/deepseek-chat",
+      help: "💡 기본 권장: deepseek/deepseek-chat (OpenRouter 이용량 1위! DeepSeek, Claude, GPT, Llama 등 수백 개 모델 지원)",
+      link: "https://openrouter.ai/keys",
+      linkText: "OpenRouter API Keys 발급 ↗",
+    },
     openai: {
       model: "gpt-4o-mini",
       help: "💡 기본 권장: gpt-4o-mini (모의고사 1회당 약 5~10원의 초저비용)",
@@ -2916,6 +3032,92 @@ document.addEventListener("DOMContentLoaded", () => {
       linkText: "Anthropic Console 키 발급 ↗",
     },
   };
+
+  /** OpenRouter 선택 모델 상세 정보 카드 렌더링 */
+  function renderOpenRouterModelCard(model) {
+    if (!openrouterModelInfoCard) return;
+    if (!model) {
+      openrouterModelInfoCard.style.display = "none";
+      return;
+    }
+    openrouterModelInfoCard.style.display = "flex";
+    if (infoModelBadge) infoModelBadge.textContent = model.badge || "추천";
+    if (infoModelName) infoModelName.textContent = model.name || model.id;
+    if (infoModelTag) infoModelTag.textContent = model.tag || "";
+    if (infoModelPromptPrice) infoModelPromptPrice.textContent = model.prompt_price || "-";
+    if (infoModelCompletionPrice) infoModelCompletionPrice.textContent = model.completion_price || "-";
+    if (infoModelContext) infoModelContext.textContent = model.context_length || "-";
+    if (infoModelDesc) infoModelDesc.textContent = model.description || "";
+  }
+
+  /** OpenRouter Top 5 모델 드랍다운 옵션 생성 및 현재 입력값과 동기화 */
+  function renderOpenRouterModelSelectOptions() {
+    if (!openrouterModelSelect) return;
+    openrouterModelSelect.innerHTML = "";
+
+    const curModel = (aiModelInput ? aiModelInput.value.trim() : "") || "deepseek/deepseek-chat";
+    let matched = false;
+
+    openrouterTopModelsData.forEach((m) => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = `${m.badge} ${m.name} [${m.tag} | ${m.prompt_price}]`;
+      if (m.id === curModel) {
+        opt.selected = true;
+        matched = true;
+        renderOpenRouterModelCard(m);
+      }
+      openrouterModelSelect.appendChild(opt);
+    });
+
+    // 직접 입력 옵션
+    const customOpt = document.createElement("option");
+    customOpt.value = "custom";
+    customOpt.textContent = "✏️ 직접 입력 (커스텀 모델명 지정)";
+    if (!matched && curModel) {
+      customOpt.selected = true;
+      renderOpenRouterModelCard(null);
+    }
+    openrouterModelSelect.appendChild(customOpt);
+
+    // 기본 미선택 시 첫번째 1위 모델 기본 선택
+    if (!matched && !curModel && openrouterTopModelsData.length > 0) {
+      openrouterModelSelect.selectedIndex = 0;
+      const firstM = openrouterTopModelsData[0];
+      if (aiModelInput) aiModelInput.value = firstM.id;
+      renderOpenRouterModelCard(firstM);
+    }
+  }
+
+  /** OpenRouter Top 5 모델 목록 서버 조회 */
+  async function loadOpenRouterTopModels(force = false) {
+    if (!openrouterModelSelect) return;
+    if (btnRefreshOpenRouterModels) {
+      btnRefreshOpenRouterModels.disabled = true;
+      btnRefreshOpenRouterModels.textContent = "⏳ 갱신 중...";
+    }
+    try {
+      const res = await fetch(`/api/openrouter/top-models${force ? "?force_refresh=true" : ""}`);
+      const data = await res.json();
+      if (res.ok && data.models && data.models.length > 0) {
+        openrouterTopModelsData = data.models;
+        renderOpenRouterModelSelectOptions();
+        if (force) {
+          showToast("OpenRouter 최신 Top 5 모델 정보가 갱신되었습니다.", "success");
+        }
+      }
+    } catch (err) {
+      console.error("OpenRouter 모델 목록 로드 실패:", err);
+      if (force) {
+        showToast("OpenRouter 모델 정보를 불러오지 못했습니다.", "warning");
+      }
+    } finally {
+      if (btnRefreshOpenRouterModels) {
+        btnRefreshOpenRouterModels.disabled = false;
+        btnRefreshOpenRouterModels.textContent = "🔄 실시간 정보 갱신";
+      }
+    }
+  }
 
   async function openAiSettingsModal() {
     if (!aiSettingsModal) return;
@@ -2957,13 +3159,74 @@ document.addEventListener("DOMContentLoaded", () => {
       apiKeyGuideLink.href = info.link;
       apiKeyGuideLink.textContent = info.linkText;
     }
+
+    // OpenRouter 선택 시 Top 5 드랍다운 영역 노출 및 로드
+    if (openrouterModelGroup) {
+      if (prov === "openrouter") {
+        openrouterModelGroup.style.display = "block";
+        if (openrouterTopModelsData.length === 0) {
+          loadOpenRouterTopModels(false);
+        } else {
+          renderOpenRouterModelSelectOptions();
+        }
+      } else {
+        openrouterModelGroup.style.display = "none";
+      }
+    }
+
     if (aiModelInput) {
       aiModelInput.placeholder = `예: ${info.model}`;
       // 사용자가 직접 엔진(Provider)을 변경했으면 해당 엔진의 기본 권장 모델명으로 자동 갱신!
       if (isUserChange) {
         aiModelInput.value = info.model;
+        if (prov === "openrouter" && openrouterTopModelsData.length > 0) {
+          renderOpenRouterModelSelectOptions();
+        }
       }
     }
+  }
+
+  // OpenRouter 모델 드랍다운 변경 시 모델 입력창 및 카드 자동 갱신
+  if (openrouterModelSelect) {
+    openrouterModelSelect.addEventListener("change", () => {
+      const selectedVal = openrouterModelSelect.value;
+      if (selectedVal === "custom") {
+        renderOpenRouterModelCard(null);
+        if (aiModelInput) {
+          aiModelInput.focus();
+        }
+      } else {
+        const found = openrouterTopModelsData.find((m) => m.id === selectedVal);
+        if (found) {
+          if (aiModelInput) aiModelInput.value = found.id;
+          renderOpenRouterModelCard(found);
+        }
+      }
+    });
+  }
+
+  // OpenRouter 모델 정보 실시간 새로고침 버튼
+  if (btnRefreshOpenRouterModels) {
+    btnRefreshOpenRouterModels.addEventListener("click", () => {
+      loadOpenRouterTopModels(true);
+    });
+  }
+
+  // 모델명 텍스트 직접 입력 시 Top 5 드랍다운과 양방향 연동
+  if (aiModelInput) {
+    aiModelInput.addEventListener("input", () => {
+      if (aiProviderSelect && aiProviderSelect.value === "openrouter" && openrouterModelSelect) {
+        const val = aiModelInput.value.trim();
+        const found = openrouterTopModelsData.find((m) => m.id === val);
+        if (found) {
+          openrouterModelSelect.value = found.id;
+          renderOpenRouterModelCard(found);
+        } else {
+          openrouterModelSelect.value = "custom";
+          renderOpenRouterModelCard(null);
+        }
+      }
+    });
   }
 
   if (btnOpenAiSettingsModal) {

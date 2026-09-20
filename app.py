@@ -103,9 +103,10 @@ async def api_search_passages(
     exam_type: str = "",
     question_type: str = "",
     tag: str = "",
+    whole_word: bool = False,
     limit: int = 1000
 ):
-    """지문 검색 API (2x2 화면용)"""
+    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 지원)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -121,6 +122,7 @@ async def api_search_passages(
         exam_type=exam_type,
         question_type=question_type,
         tag=tag,
+        whole_word=whole_word,
         limit=limit
     )
     return {"count": len(results), "items": results}
@@ -138,9 +140,10 @@ async def api_search_sentences(
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
+    whole_word: bool = False,
     limit: int = 5000
 ):
-    """문장 검색 API (1행 테이블 뷰용)"""
+    """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
     # 검색어 내 #태그 자동 파싱
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -159,6 +162,7 @@ async def api_search_sentences(
         is_starred=is_starred,
         grammar_cat_id=grammar_cat_id,
         grammar_pos=grammar_pos,
+        whole_word=whole_word,
         limit=limit
     )
     return {"count": len(results), "items": results}
@@ -263,6 +267,13 @@ async def api_get_ai_settings():
         "has_key": bool(api_key),
         "masked_key": masked_key
     }
+
+
+@app.get("/api/openrouter/top-models")
+async def api_get_openrouter_top_models(force_refresh: bool = False):
+    """OpenRouter Top 5 추천 모델 정보 실시간 조회 및 반환"""
+    models = grammar_analyzer.get_openrouter_top_models(force_refresh=force_refresh)
+    return {"success": True, "models": models}
 
 
 @app.post("/api/settings/ai")

@@ -446,7 +446,7 @@ body {
 
 .results-search-bar {
   flex: 1;
-  max-width: 580px;
+  max-width: 680px;
   min-width: 280px;
   display: flex;
   align-items: center;
@@ -464,8 +464,44 @@ body {
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
 }
 
+/* 검색창 초기화 x 버튼 */
+.btn-clear-search-input {
+  background: #e2e8f0;
+  color: #64748b;
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  margin: 0 6px 0 2px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  padding: 0;
+  user-select: none;
+}
+
+.btn-clear-search-input:hover {
+  background: #cbd5e1;
+  color: #0f172a;
+  transform: scale(1.08);
+}
+
+.google-search-box .btn-clear-search-input {
+  width: 26px;
+  height: 26px;
+  font-size: 18px;
+  margin-right: 12px;
+}
+
 .btn-within-search,
-.btn-toggle-within {
+.btn-toggle-within,
+.btn-toggle-wholeword {
   font-size: 0.78rem;
   padding: 0.32rem 0.75rem;
   border-radius: var(--radius-full);
@@ -483,7 +519,8 @@ body {
   user-select: none;
 }
 
-.btn-toggle-within .toggle-dot {
+.btn-toggle-within .toggle-dot,
+.btn-toggle-wholeword .toggle-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -492,14 +529,16 @@ body {
 }
 
 .btn-within-search:hover,
-.btn-toggle-within:hover {
+.btn-toggle-within:hover,
+.btn-toggle-wholeword:hover {
   background-color: #f8fafc;
   border-color: #94a3b8;
   color: #334155;
 }
 
 /* 토글 활성화 (ON) 상태 */
-.btn-toggle-within.active {
+.btn-toggle-within.active,
+.btn-toggle-wholeword.active {
   background-color: #eff6ff;
   color: #2563eb;
   border-color: #3b82f6;
@@ -507,10 +546,27 @@ body {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2), 0 2px 4px rgba(37, 99, 235, 0.12);
 }
 
-.btn-toggle-within.active .toggle-dot {
+.btn-toggle-within.active .toggle-dot,
+.btn-toggle-wholeword.active .toggle-dot {
   background-color: #2563eb;
   box-shadow: 0 0 6px rgba(37, 99, 235, 0.8);
   transform: scale(1.15);
+}
+
+/* 홈 화면 필터 바 안의 온전한 단어 검색 버튼 */
+.filter-bar .btn-toggle-wholeword {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+}
+
+.filter-bar .btn-toggle-wholeword:hover {
+  border-color: var(--primary);
+}
+
+.filter-bar .btn-toggle-wholeword.active {
+  border-color: #3b82f6;
 }
 
 .results-mode-tabs {
@@ -1476,6 +1532,107 @@ mark.passage-highlight {
 .file-dropzone:hover {
   border-color: var(--primary);
   background-color: var(--primary-light);
+}
+
+/* OpenRouter Top 5 추천 모델 선택 영역 및 정보 카드 */
+.openrouter-group-box {
+  background: linear-gradient(135deg, #f0fdf4 0%, #f8fafc 100%);
+  border: 1.5px solid #bbf7d0;
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.08);
+}
+
+.btn-refresh-models {
+  background: #ffffff;
+  border: 1px solid #86efac;
+  color: #15803d;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.18s ease;
+}
+
+.btn-refresh-models:hover {
+  background: #dcfce7;
+  border-color: #22c55e;
+  transform: translateY(-1px);
+}
+
+.btn-refresh-models:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.openrouter-model-info-card {
+  margin-top: 0.65rem;
+  background: #ffffff;
+  border: 1px solid #dcfce7;
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.info-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.info-model-badge {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.info-model-name {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.88rem;
+}
+
+.info-model-tag {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-full);
+}
+
+.info-card-specs {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.info-card-specs strong {
+  color: #0f172a;
+}
+
+.info-card-specs .spec-divider {
+  color: #cbd5e1;
+}
+
+.info-card-desc {
+  font-size: 0.76rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
 }
 
 .modal-footer {
