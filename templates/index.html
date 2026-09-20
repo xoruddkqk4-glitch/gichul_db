@@ -22,7 +22,7 @@
           📊 지문: <span id="statPassages">0</span>개 | 문장: <span id="statSentences">0</span>개
         </div>
         <button type="button" class="btn btn-primary btn-sm btn-header-flow" id="btnHeaderFlow" style="display: none;">
-          📝 전체 문장
+          📝 해당 지문의 전체 문장
         </button>
       </div>
       <button class="btn btn-secondary btn-sm" id="btnSeedSample" title="대표 기출 샘플 3지문 즉시 주입">
@@ -652,9 +652,22 @@
           </div>
         </div>
 
-        <!-- 품사/대분류 탭 바 -->
-        <div class="grammar-pos-tabs" id="grammarPosTabs">
-          <button type="button" class="grammar-pos-tab active" data-pos="ALL">전체 보기 (243)</button>
+        <!-- 어법 계층 브레드크럼 네비게이터 (단계별 드릴다운 탐색) -->
+        <div class="grammar-breadcrumb-bar" id="grammarBreadcrumbBar">
+          <div class="breadcrumb-left">
+            <span class="breadcrumb-icon" id="grammarBreadcrumbHome" title="처음(품사 선택)으로 복귀">📍</span>
+            <div class="breadcrumb-trail" id="grammarBreadcrumbTrail">
+              <!-- JS 동적 생성: [품사] > [2단계 분류] (N개) -->
+            </div>
+          </div>
+          <div class="breadcrumb-right">
+            <button type="button" class="btn-tree-change-exam btn-grammar-change-step" id="btnGrammarChangeStep" style="display: none;">
+              🔄 다른 분류 선택
+            </button>
+            <button type="button" class="btn-grammar-toggle-view" id="btnGrammarToggleView" title="단계별 탐색 / 전체 목록 보기 전환">
+              🌐 전체 보기
+            </button>
+          </div>
         </div>
 
         <!-- 현재 선택된 어법 미리보기 배지 바 -->

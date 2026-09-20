@@ -545,7 +545,7 @@ def search_sentences(
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
-    limit: int = 100
+    limit: int = 5000
 ) -> List[Dict[str, Any]]:
     """문장 검색 (1행 테이블 뷰용)"""
     query = """
@@ -602,20 +602,53 @@ def search_sentences(
         """
         params.append(f"%{tag.strip()}%")
 
-    query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC, s.order_index ASC LIMIT ?"
-    params.append(limit)
+    if limit and limit > 0:
+        query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC, s.order_index ASC LIMIT ?"
+        params.append(limit)
+    else:
+        query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC, s.order_index ASC"
 
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, params)
         rows = cursor.fetchall()
+        if not rows:
+            return []
+
+        sentence_ids = [r["id"] for r in rows]
+
+        # 1. 일괄 태그 조회 (N+1 쿼리 최적화)
+        from collections import defaultdict
+        tags_by_sent = defaultdict(list)
+        chunk_size = 900
+        for i in range(0, len(sentence_ids), chunk_size):
+            chunk = sentence_ids[i:i + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor.execute(f"SELECT sentence_id, tag_name FROM sentence_tags WHERE sentence_id IN ({placeholders})", chunk)
+            for tr in cursor.fetchall():
+                tags_by_sent[tr["sentence_id"]].append(tr["tag_name"])
+
+        # 2. 일괄 어법 범주 조회 (N+1 쿼리 최적화)
+        annos_by_sent = defaultdict(list)
+        for i in range(0, len(sentence_ids), chunk_size):
+            chunk = sentence_ids[i:i + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor.execute(f"""
+                SELECT id, sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation
+                FROM sentence_grammar_annotations
+                WHERE sentence_id IN ({placeholders})
+                ORDER BY id ASC
+            """, chunk)
+            for ar in cursor.fetchall():
+                annos_by_sent[ar["sentence_id"]].append(dict(ar))
+
         results = []
         for idx, r in enumerate(rows, 1):
             s_dict = dict(r)
             s_dict["row_num"] = idx
             s_dict["is_starred"] = 1 if r["is_starred"] == 1 else 0
-            s_dict["tags"] = get_sentence_tags(r["id"])
-            s_dict["grammar_annotations"] = get_sentence_grammar_annotations(r["id"])
+            s_dict["tags"] = tags_by_sent.get(r["id"], [])
+            s_dict["grammar_annotations"] = annos_by_sent.get(r["id"], [])
             results.append(s_dict)
         return results
 

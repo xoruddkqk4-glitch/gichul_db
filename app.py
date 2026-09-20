@@ -9,7 +9,7 @@
 import os
 import re
 import shutil
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -103,7 +103,7 @@ async def api_search_passages(
     exam_type: str = "",
     question_type: str = "",
     tag: str = "",
-    limit: int = 50
+    limit: int = 1000
 ):
     """지문 검색 API (2x2 화면용)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
@@ -138,7 +138,7 @@ async def api_search_sentences(
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
-    limit: int = 100
+    limit: int = 5000
 ):
     """문장 검색 API (1행 테이블 뷰용)"""
     # 검색어 내 #태그 자동 파싱

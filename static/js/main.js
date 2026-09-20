@@ -168,8 +168,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (state === "passage") {
       statsBadge.style.display = "none";
       btnHeaderFlow.style.display = "inline-flex";
-      btnHeaderFlow.textContent = "📝 전체 문장";
-      btnHeaderFlow.title = "현재 지문의 전체 문장 결과창 보기";
+      btnHeaderFlow.textContent = "📝 해당 지문의 전체 문장";
+      btnHeaderFlow.title = "해당 지문의 전체 문장 결과창 보기";
       btnHeaderFlow.classList.remove("mode-back");
     } else if (state === "sentence") {
       statsBadge.style.display = "none";
@@ -447,7 +447,7 @@ document.addEventListener("DOMContentLoaded", () => {
       params.append("is_starred", "true");
     }
 
-    params.append("limit", "500");
+    params.append("limit", "5000");
 
     try {
       if (currentMode === "passage") {
@@ -2016,10 +2016,21 @@ document.addEventListener("DOMContentLoaded", () => {
   const inputGrammarSearch = document.getElementById("inputGrammarSearch");
   const btnClearGrammarSearch = document.getElementById("btnClearGrammarSearch");
   const grammarSelectedCount = document.getElementById("grammarSelectedCount");
-  const grammarPosTabs = document.getElementById("grammarPosTabs");
   const grammarPreviewBadges = document.getElementById("grammarPreviewBadges");
   const grammarGridContainer = document.getElementById("grammarGridContainer");
   const grammarModalSentenceInfo = document.getElementById("grammarModalSentenceInfo");
+  const grammarBreadcrumbBar = document.getElementById("grammarBreadcrumbBar");
+  const grammarBreadcrumbTrail = document.getElementById("grammarBreadcrumbTrail");
+  const grammarBreadcrumbHome = document.getElementById("grammarBreadcrumbHome");
+  const btnGrammarChangeStep = document.getElementById("btnGrammarChangeStep");
+  const btnGrammarToggleView = document.getElementById("btnGrammarToggleView");
+
+  // 어법 모달 네비게이션 상태 (단계별 드릴다운 탐색: 1단계 품사 -> 2단계 세부 분류 -> 3단계 세부 항목)
+  let grammarNavState = {
+    pos: null,     // string | null (e.g. '접속사')
+    subPos: null,  // string | null (e.g. '관계사' or 'ALL')
+    mode: "step",  // 'step' | 'all'
+  };
 
   function closeGrammarCategoryModal() {
     if (grammarCategoryModal) {
@@ -2074,85 +2085,382 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (inputGrammarSearch) inputGrammarSearch.value = "";
     if (btnClearGrammarSearch) btnClearGrammarSearch.style.display = "none";
-    currentGrammarPosFilter = "ALL";
     grammarSearchTerm = "";
+    grammarNavState = { pos: null, subPos: null, mode: "step" };
 
-    renderGrammarModalTabs();
-    renderGrammarModalGrid();
+    renderGrammarModalView();
     updateGrammarModalPreview();
 
     grammarCategoryModal.style.display = "flex";
   }
 
-  function renderGrammarModalTabs() {
-    if (!grammarPosTabs) return;
-    const posList = ["ALL", "명사", "대명사", "문장", "주어", "동사", "형용사/부사", "전치사", "접속사", "특수구문"];
-    
-    grammarPosTabs.innerHTML = posList.map((pos) => {
-      let count = grammarCategoriesList.length;
-      if (pos !== "ALL") {
-        count = grammarCategoriesList.filter(item => item.pos === pos).length;
-      }
-      const label = pos === "ALL" ? `전체 (${count})` : `${pos} (${count})`;
-      const isActive = currentGrammarPosFilter === pos ? "active" : "";
-      return `<button type="button" class="grammar-pos-tab ${isActive}" data-pos="${escapeHtml(pos)}">${escapeHtml(label)}</button>`;
-    }).join("");
+  /** 어법 모달 브레드크럼 바 렌더링 (지문 선택기 스타일) */
+  function renderGrammarBreadcrumb() {
+    if (!grammarBreadcrumbTrail) return;
 
-    grammarPosTabs.querySelectorAll(".grammar-pos-tab").forEach(tab => {
-      tab.addEventListener("click", () => {
-        grammarPosTabs.querySelectorAll(".grammar-pos-tab").forEach(t => t.classList.remove("active"));
-        tab.classList.add("active");
-        currentGrammarPosFilter = tab.dataset.pos;
-        filterGrammarModalItems();
+    const isSearching = !!(grammarSearchTerm && grammarSearchTerm.trim());
+
+    if (isSearching) {
+      const q = grammarSearchTerm.trim().toLowerCase();
+      const matchCount = grammarCategoriesList.filter(it => {
+        const leaf = (it.leaf || "").toLowerCase();
+        const path = (it.full_path || "").toLowerCase();
+        return leaf.includes(q) || path.includes(q);
+      }).length;
+
+      grammarBreadcrumbTrail.innerHTML = `
+        <span class="breadcrumb-item active">🔍 "${escapeHtml(grammarSearchTerm.trim())}" 검색 결과</span>
+        <span class="breadcrumb-count-badge">(${matchCount}건)</span>
+      `;
+      if (btnGrammarChangeStep) {
+        btnGrammarChangeStep.style.display = "inline-flex";
+        btnGrammarChangeStep.innerHTML = "❌ 검색 지우기";
+      }
+      if (btnGrammarToggleView) {
+        btnGrammarToggleView.style.display = "none";
+      }
+      return;
+    }
+
+    if (btnGrammarToggleView) {
+      btnGrammarToggleView.style.display = "inline-flex";
+      btnGrammarToggleView.innerHTML = grammarNavState.mode === "all" ? "📂 단계별 탐색" : "🌐 전체 보기";
+    }
+
+    if (grammarNavState.mode === "all") {
+      grammarBreadcrumbTrail.innerHTML = `
+        <span class="breadcrumb-item active">전체 어법 범주 한눈에 보기</span>
+        <span class="breadcrumb-count-badge">(${grammarCategoriesList.length}개)</span>
+      `;
+      if (btnGrammarChangeStep) btnGrammarChangeStep.style.display = "none";
+      return;
+    }
+
+    // 단계별 모드 (Step Mode)
+    if (grammarNavState.pos && grammarNavState.subPos) {
+      // Step 3: 세부 항목 선택
+      const itemsCount = grammarNavState.subPos === "ALL"
+        ? grammarCategoriesList.filter(it => it.pos === grammarNavState.pos).length
+        : grammarCategoriesList.filter(it => it.pos === grammarNavState.pos && ((it.path && it.path.length > 1 ? it.path[1] : "기본 분류") === grammarNavState.subPos)).length;
+
+      const subLabel = grammarNavState.subPos === "ALL" ? "전체 펼쳐보기" : grammarNavState.subPos;
+
+      grammarBreadcrumbTrail.innerHTML = `
+        <span class="breadcrumb-item" data-step="pos" title="품사 변경">${escapeHtml(grammarNavState.pos)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-item active" data-step="subpos" title="세부 분류 변경">${escapeHtml(subLabel)}</span>
+        <span class="breadcrumb-count-badge">(${itemsCount}개)</span>
+      `;
+
+      if (btnGrammarChangeStep) {
+        btnGrammarChangeStep.style.display = "inline-flex";
+        btnGrammarChangeStep.innerHTML = "🔄 다른 분류 선택";
+      }
+    } else if (grammarNavState.pos) {
+      // Step 2: 2단계 분류 선택
+      const posCount = grammarCategoriesList.filter(it => it.pos === grammarNavState.pos).length;
+
+      grammarBreadcrumbTrail.innerHTML = `
+        <span class="breadcrumb-item" data-step="pos" title="품사 변경">${escapeHtml(grammarNavState.pos)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-hint">세부 분류를 선택하세요</span>
+        <span class="breadcrumb-count-badge">(${posCount}개)</span>
+      `;
+
+      if (btnGrammarChangeStep) {
+        btnGrammarChangeStep.style.display = "inline-flex";
+        btnGrammarChangeStep.innerHTML = "🔄 다른 품사 선택";
+      }
+    } else {
+      // Step 1: 품사 선택
+      grammarBreadcrumbTrail.innerHTML = `
+        <span class="breadcrumb-hint">탐색할 어법 품사를 선택하세요</span>
+        <span class="breadcrumb-count-badge">(총 ${grammarCategoriesList.length}개)</span>
+      `;
+
+      if (btnGrammarChangeStep) {
+        btnGrammarChangeStep.style.display = "none";
+      }
+    }
+
+    // 브레드크럼 항목 클릭 시 상위 단계로 즉시 복귀
+    grammarBreadcrumbTrail.querySelectorAll(".breadcrumb-item").forEach(item => {
+      item.addEventListener("click", () => {
+        const step = item.dataset.step;
+        if (step === "pos") {
+          grammarNavState.subPos = null;
+          renderGrammarModalView();
+        }
       });
     });
   }
 
-  function renderGrammarModalGrid() {
+  /** 어법 모달 메인 뷰 렌더러 */
+  function renderGrammarModalView() {
+    renderGrammarBreadcrumb();
     if (!grammarGridContainer) return;
 
-    const posGroups = {};
+    // A. 검색 모드
+    if (grammarSearchTerm && grammarSearchTerm.trim()) {
+      renderGrammarSearchView(grammarSearchTerm.trim().toLowerCase());
+      return;
+    }
+
+    // B. 전체 보기 모드
+    if (grammarNavState.mode === "all") {
+      renderGrammarAllView();
+      return;
+    }
+
+    // C. 단계별 드릴다운 모드
+    if (!grammarNavState.pos) {
+      renderGrammarStepPos();
+    } else if (!grammarNavState.subPos) {
+      renderGrammarStepSub(grammarNavState.pos);
+    } else {
+      renderGrammarStepItems(grammarNavState.pos, grammarNavState.subPos);
+    }
+  }
+
+  /** Step 1: 품사 선택 카드 그리드 (9개 대분류) */
+  function renderGrammarStepPos() {
     const posOrder = ["명사", "대명사", "문장", "주어", "동사", "형용사/부사", "전치사", "접속사", "특수구문"];
-    posOrder.forEach(p => { posGroups[p] = []; });
+    const posGroups = {};
+    posOrder.forEach(p => { posGroups[p] = { items: [], subs: [] }; });
 
     grammarCategoriesList.forEach(item => {
       const pos = item.pos || "기타";
-      if (!posGroups[pos]) posGroups[pos] = [];
-      posGroups[pos].push(item);
+      if (!posGroups[pos]) posGroups[pos] = { items: [], subs: [] };
+      posGroups[pos].items.push(item);
+      const sub = (item.path && item.path.length > 1) ? item.path[1] : "기본 분류";
+      if (!posGroups[pos].subs.includes(sub)) {
+        posGroups[pos].subs.push(sub);
+      }
+    });
+
+    let html = '<div class="grammar-step-pos-grid">';
+    posOrder.forEach(pos => {
+      const group = posGroups[pos];
+      if (!group || group.items.length === 0) return;
+
+      const totalCount = group.items.length;
+      const subList = group.subs;
+      const previewText = subList.slice(0, 4).join(" · ") + (subList.length > 4 ? ` 외 ${subList.length - 4}개` : "");
+      const selectedCount = group.items.filter(it => selectedGrammarCategoryIds.has(it.id)).length;
+
+      html += `
+        <div class="grammar-step-pos-card" data-pos="${escapeHtml(pos)}">
+          <div class="grammar-step-pos-header">
+            <span class="grammar-step-pos-title">📌 ${escapeHtml(pos)}</span>
+            <span class="grammar-step-pos-badge">${totalCount}개 어법</span>
+          </div>
+          <div class="grammar-step-pos-preview">${escapeHtml(previewText)}</div>
+          ${selectedCount > 0 ? `<div class="grammar-step-pos-selected">✔ ${selectedCount}개 선택됨</div>` : ""}
+        </div>
+      `;
+    });
+    html += '</div>';
+
+    grammarGridContainer.innerHTML = html;
+
+    grammarGridContainer.querySelectorAll(".grammar-step-pos-card").forEach(card => {
+      card.addEventListener("click", () => {
+        grammarNavState.pos = card.dataset.pos;
+        grammarNavState.subPos = null;
+        renderGrammarModalView();
+      });
+    });
+  }
+
+  /** Step 2: 2단계 세부 분류 선택 카드 그리드 */
+  function renderGrammarStepSub(pos) {
+    const posItems = grammarCategoriesList.filter(it => it.pos === pos);
+    const subMap = {};
+
+    posItems.forEach(it => {
+      const sub = (it.path && it.path.length > 1) ? it.path[1] : "기본 분류";
+      if (!subMap[sub]) subMap[sub] = [];
+      subMap[sub].push(it);
+    });
+
+    let html = '<div class="grammar-step-sub-grid">';
+    for (const [subName, items] of Object.entries(subMap)) {
+      const leaves = items.map(i => i.leaf).filter(Boolean);
+      const previewText = leaves.slice(0, 4).join(" · ") + (leaves.length > 4 ? ` 외 ${leaves.length - 4}개` : "");
+      const selectedCount = items.filter(it => selectedGrammarCategoryIds.has(it.id)).length;
+
+      html += `
+        <div class="grammar-step-sub-card" data-subpos="${escapeHtml(subName)}">
+          <div class="grammar-step-sub-header">
+            <span class="grammar-step-sub-title">📂 ${escapeHtml(subName)}</span>
+            <span class="grammar-step-sub-badge">${items.length}개</span>
+          </div>
+          <div class="grammar-step-sub-preview">${escapeHtml(previewText)}</div>
+          ${selectedCount > 0 ? `<div class="grammar-step-pos-selected">✔ ${selectedCount}개 선택됨</div>` : ""}
+        </div>
+      `;
+    }
+
+    // 하단 전체 펼쳐보기 버튼
+    html += `
+      <button type="button" class="grammar-step-sub-all-btn" id="btnGrammarSubAll">
+        📋 <strong>${escapeHtml(pos)}</strong> 전체 (${posItems.length}개 어법) 한 번에 펼쳐보기
+      </button>
+    </div>`;
+
+    grammarGridContainer.innerHTML = html;
+
+    grammarGridContainer.querySelectorAll(".grammar-step-sub-card").forEach(card => {
+      card.addEventListener("click", () => {
+        grammarNavState.subPos = card.dataset.subpos;
+        renderGrammarModalView();
+      });
+    });
+
+    const btnSubAll = grammarGridContainer.querySelector("#btnGrammarSubAll");
+    if (btnSubAll) {
+      btnSubAll.addEventListener("click", () => {
+        grammarNavState.subPos = "ALL";
+        renderGrammarModalView();
+      });
+    }
+  }
+
+  /** Step 3: 세부 어법 다중 선택 타일 목록 */
+  function renderGrammarStepItems(pos, subPos) {
+    let items = [];
+    if (subPos === "ALL") {
+      items = grammarCategoriesList.filter(it => it.pos === pos);
+    } else {
+      items = grammarCategoriesList.filter(it => it.pos === pos && ((it.path && it.path.length > 1 ? it.path[1] : "기본 분류") === subPos));
+    }
+
+    if (!items || items.length === 0) {
+      grammarGridContainer.innerHTML = `
+        <div class="grammar-empty-state">
+          <span class="empty-icon">📭</span>
+          <p class="empty-title">등록된 어법 항목이 없습니다.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const tilesHtml = items.map(it => renderGrammarTile(it)).join("");
+    grammarGridContainer.innerHTML = `<div class="grammar-subgroup-items">${tilesHtml}</div>`;
+    bindGrammarTileEvents(grammarGridContainer);
+  }
+
+  /** 개별 어법 타일 HTML 렌더러 (브레드크럼 배지 스타일 적용) */
+  function renderGrammarTile(it) {
+    const isChecked = selectedGrammarCategoryIds.has(it.id);
+    const pathPills = (it.path || []).map(p => `<span class="grammar-path-pill">${escapeHtml(p)}</span>`).join('<span class="grammar-path-sep">&gt;</span>');
+
+    return `
+      <label class="grammar-item-tile ${isChecked ? "checked" : ""}" 
+             data-id="${it.id}" 
+             data-pos="${escapeHtml(it.pos || "")}" 
+             data-leaf="${escapeHtml(it.leaf || "")}" 
+             data-path="${escapeHtml(it.full_path || "")}">
+        <input type="checkbox" class="grammar-item-checkbox" value="${it.id}" ${isChecked ? "checked" : ""}>
+        <div class="grammar-tile-info">
+          <span class="grammar-tile-leaf">${escapeHtml(it.leaf || "")}</span>
+          <div class="grammar-tile-path-breadcrumb">${pathPills}</div>
+        </div>
+      </label>
+    `;
+  }
+
+  /** 검색 결과 뷰 */
+  function renderGrammarSearchView(query) {
+    const matches = grammarCategoriesList.filter(it => {
+      const leaf = (it.leaf || "").toLowerCase();
+      const path = (it.full_path || "").toLowerCase();
+      return leaf.includes(query) || path.includes(query);
+    });
+
+    if (matches.length === 0) {
+      grammarGridContainer.innerHTML = `
+        <div class="grammar-empty-state">
+          <span class="empty-icon">🔍</span>
+          <p class="empty-title">검색된 어법 범주가 없습니다.</p>
+          <p class="empty-desc">검색어 "<strong>${escapeHtml(grammarSearchTerm.trim())}</strong>"에 일치하는 어법을 찾을 수 없습니다.<br>오타를 확인하시거나 상단의 <strong>[❌ 검색 지우기]</strong>를 눌러 단계별로 탐색해보세요.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const tilesHtml = matches.map(it => renderGrammarTile(it)).join("");
+    grammarGridContainer.innerHTML = `<div class="grammar-subgroup-items">${tilesHtml}</div>`;
+    bindGrammarTileEvents(grammarGridContainer);
+  }
+
+  /** 전체 보기 모드: 9개 대분류 품사별 서브그룹 카드 전체 표시 */
+  function renderGrammarAllView() {
+    const posGroups = {};
+    const posOrder = ["명사", "대명사", "문장", "주어", "동사", "형용사/부사", "전치사", "접속사", "특수구문"];
+    posOrder.forEach(p => { posGroups[p] = {}; });
+
+    grammarCategoriesList.forEach(item => {
+      const pos = item.pos || "기타";
+      if (!posGroups[pos]) posGroups[pos] = {};
+      const subPos = (item.path && item.path.length > 1) ? item.path[1] : "기본 분류";
+      if (!posGroups[pos][subPos]) posGroups[pos][subPos] = [];
+      posGroups[pos][subPos].push(item);
     });
 
     let html = "";
-    for (const [pos, items] of Object.entries(posGroups)) {
-      if (!items || items.length === 0) continue;
+    for (const [pos, subGroups] of Object.entries(posGroups)) {
+      const subEntries = Object.entries(subGroups);
+      if (subEntries.length === 0) continue;
+
+      let totalPosCount = 0;
+      subEntries.forEach(([_, items]) => { totalPosCount += items.length; });
+      if (totalPosCount === 0) continue;
+
+      let subgroupsHtml = "";
+      for (const [subName, items] of subEntries) {
+        if (!items || items.length === 0) continue;
+        const tilesHtml = items.map(it => renderGrammarTile(it)).join("");
+
+        subgroupsHtml += `
+          <div class="grammar-subgroup" data-subpos="${escapeHtml(subName)}">
+            <div class="grammar-subgroup-header">
+              <span class="subgroup-title">
+                <span class="subgroup-bullet">📂</span>
+                <span class="subgroup-name">${escapeHtml(subName)}</span>
+              </span>
+              <span class="subgroup-count">${items.length}개</span>
+            </div>
+            <div class="grammar-subgroup-items">
+              ${tilesHtml}
+            </div>
+          </div>
+        `;
+      }
+
       html += `
         <div class="grammar-group-card" data-pos="${escapeHtml(pos)}">
           <div class="grammar-group-header">
             <span style="display: flex; align-items: center; gap: 6px;">
               <span>📌 ${escapeHtml(pos)}</span>
             </span>
-            <span class="grammar-group-badge">총 ${items.length}개</span>
+            <span class="grammar-group-badge">총 ${totalPosCount}개</span>
           </div>
-          <div class="grammar-group-items">
-            ${items.map(it => {
-              const isChecked = selectedGrammarCategoryIds.has(it.id);
-              return `
-                <label class="grammar-item-tile ${isChecked ? "checked" : ""}" data-id="${it.id}" data-pos="${escapeHtml(it.pos)}" data-leaf="${escapeHtml(it.leaf)}" data-path="${escapeHtml(it.full_path)}">
-                  <input type="checkbox" class="grammar-item-checkbox" value="${it.id}" ${isChecked ? "checked" : ""}>
-                  <div class="grammar-tile-info">
-                    <span class="grammar-tile-leaf">${escapeHtml(it.leaf)}</span>
-                    <span class="grammar-tile-path">${escapeHtml(it.full_path)}</span>
-                  </div>
-                </label>
-              `;
-            }).join("")}
+          <div class="grammar-subgroups-container">
+            ${subgroupsHtml}
           </div>
         </div>
       `;
     }
 
     grammarGridContainer.innerHTML = html;
+    bindGrammarTileEvents(grammarGridContainer);
+  }
 
-    grammarGridContainer.querySelectorAll(".grammar-item-tile").forEach(tile => {
+  /** 타일 체크박스 이벤트 바인딩 */
+  function bindGrammarTileEvents(container) {
+    if (!container) return;
+    container.querySelectorAll(".grammar-item-tile").forEach(tile => {
       const cb = tile.querySelector(".grammar-item-checkbox");
       const id = Number(tile.dataset.id);
 
@@ -2167,34 +2475,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         updateGrammarModalPreview();
       });
-    });
-  }
-
-  function filterGrammarModalItems() {
-    if (!grammarGridContainer) return;
-    const cards = grammarGridContainer.querySelectorAll(".grammar-group-card");
-    const query = grammarSearchTerm.toLowerCase().trim();
-
-    cards.forEach(card => {
-      const cardPos = card.dataset.pos;
-      const posMatch = currentGrammarPosFilter === "ALL" || currentGrammarPosFilter === cardPos;
-
-      let visibleInCard = 0;
-      const tiles = card.querySelectorAll(".grammar-item-tile");
-      tiles.forEach(tile => {
-        const leaf = (tile.dataset.leaf || "").toLowerCase();
-        const path = (tile.dataset.path || "").toLowerCase();
-        const searchMatch = !query || leaf.includes(query) || path.includes(query);
-
-        if (posMatch && searchMatch) {
-          tile.style.display = "flex";
-          visibleInCard++;
-        } else {
-          tile.style.display = "none";
-        }
-      });
-
-      card.style.display = (posMatch && visibleInCard > 0) ? "block" : "none";
     });
   }
 
@@ -2225,14 +2505,63 @@ document.addEventListener("DOMContentLoaded", () => {
         e.stopPropagation();
         const id = Number(btn.dataset.id);
         selectedGrammarCategoryIds.delete(id);
-        const tile = grammarGridContainer.querySelector(`.grammar-item-tile[data-id="${id}"]`);
-        if (tile) {
-          tile.classList.remove("checked");
-          const cb = tile.querySelector(".grammar-item-checkbox");
-          if (cb) cb.checked = false;
+        if (grammarGridContainer) {
+          const tile = grammarGridContainer.querySelector(`.grammar-item-tile[data-id="${id}"]`);
+          if (tile) {
+            tile.classList.remove("checked");
+            const cb = tile.querySelector(".grammar-item-checkbox");
+            if (cb) cb.checked = false;
+          }
         }
         updateGrammarModalPreview();
+        // Step 1이나 Step 2 카드의 선택 뱃지 갱신을 위해 뷰 리렌더링
+        if (!grammarNavState.subPos) {
+          renderGrammarModalView();
+        }
       });
+    });
+  }
+
+  // 상단 브레드크럼 홈 아이콘 클릭 -> 1단계로 복귀
+  if (grammarBreadcrumbHome) {
+    grammarBreadcrumbHome.addEventListener("click", () => {
+      if (inputGrammarSearch) inputGrammarSearch.value = "";
+      grammarSearchTerm = "";
+      if (btnClearGrammarSearch) btnClearGrammarSearch.style.display = "none";
+      grammarNavState = { pos: null, subPos: null, mode: "step" };
+      renderGrammarModalView();
+    });
+  }
+
+  // 단계 변경 / 검색 지우기 버튼
+  if (btnGrammarChangeStep) {
+    btnGrammarChangeStep.addEventListener("click", () => {
+      if (grammarSearchTerm) {
+        if (inputGrammarSearch) inputGrammarSearch.value = "";
+        grammarSearchTerm = "";
+        if (btnClearGrammarSearch) btnClearGrammarSearch.style.display = "none";
+        renderGrammarModalView();
+        return;
+      }
+      if (grammarNavState.subPos) {
+        grammarNavState.subPos = null;
+      } else if (grammarNavState.pos) {
+        grammarNavState.pos = null;
+      }
+      renderGrammarModalView();
+    });
+  }
+
+  // 전체 보기 <-> 단계별 탐색 전환 버튼
+  if (btnGrammarToggleView) {
+    btnGrammarToggleView.addEventListener("click", () => {
+      if (grammarSearchTerm) {
+        if (inputGrammarSearch) inputGrammarSearch.value = "";
+        grammarSearchTerm = "";
+        if (btnClearGrammarSearch) btnClearGrammarSearch.style.display = "none";
+      }
+      grammarNavState.mode = grammarNavState.mode === "all" ? "step" : "all";
+      renderGrammarModalView();
     });
   }
 
@@ -2242,7 +2571,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (btnClearGrammarSearch) {
         btnClearGrammarSearch.style.display = grammarSearchTerm ? "block" : "none";
       }
-      filterGrammarModalItems();
+      renderGrammarModalView();
     });
   }
 
@@ -2251,20 +2580,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (inputGrammarSearch) inputGrammarSearch.value = "";
       grammarSearchTerm = "";
       btnClearGrammarSearch.style.display = "none";
-      filterGrammarModalItems();
+      renderGrammarModalView();
     });
   }
 
   if (btnResetGrammarSelection) {
     btnResetGrammarSelection.addEventListener("click", () => {
       selectedGrammarCategoryIds.clear();
-      if (grammarGridContainer) {
-        grammarGridContainer.querySelectorAll(".grammar-item-tile").forEach(t => {
-          t.classList.remove("checked");
-          const cb = t.querySelector(".grammar-item-checkbox");
-          if (cb) cb.checked = false;
-        });
-      }
+      renderGrammarModalView();
       updateGrammarModalPreview();
     });
   }
