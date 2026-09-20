@@ -73,35 +73,129 @@ SYSTEM_PROMPT = """당신은 대한민국 대학수학능력시험 및 전국연
 """
 
 
-def get_ai_config() -> Tuple[str, str, str]:
-    """저장된 AI 설정 (provider, api_key, model) 조회"""
-    provider = database.get_setting("ai_provider", "gemini").lower()
-    api_key = database.get_setting("ai_api_key", "")
-    model = database.get_setting("ai_model", "")
+SUPPORTED_PROVIDERS = ["gemini", "openai", "claude", "openrouter"]
 
-    # 환경변수 폴백 지원
+PROVIDER_NAMES = {
+    "gemini": "Google Gemini",
+    "openai": "OpenAI ChatGPT",
+    "claude": "Anthropic Claude",
+    "openrouter": "OpenRouter"
+}
+
+PROVIDER_DEFAULT_MODELS = {
+    "gemini": "gemini-1.5-flash",
+    "openai": "gpt-4o-mini",
+    "claude": "claude-3-5-haiku-20241022",
+    "openrouter": "deepseek/deepseek-chat"
+}
+
+PROVIDER_ENV_VARS = {
+    "gemini": "GEMINI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "claude": "ANTHROPIC_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY"
+}
+
+
+def get_provider_config(provider: str) -> Tuple[str, str]:
+    """특정 Provider의 (api_key, model) 조회 (DB 설정 -> 레거시 설정 -> 환경변수 -> 기본값 폴백)"""
+    p = provider.lower()
+    # 1. 개별 키 설정 조회
+    api_key = database.get_setting(f"ai_key_{p}", "")
+    model = database.get_setting(f"ai_model_{p}", "")
+
+    # 2. 레거시 단일 설정 폴백 (기존에 단일로 저장해둔 경우)
+    legacy_p = database.get_setting("ai_provider", "gemini").lower()
+    if not api_key and legacy_p == p:
+        api_key = database.get_setting("ai_api_key", "")
+    if not model and legacy_p == p:
+        model = database.get_setting("ai_model", "")
+
+    # 3. 환경변수 폴백
     if not api_key:
-        if provider == "gemini":
-            api_key = os.getenv("GEMINI_API_KEY", "")
-        elif provider == "openrouter":
-            api_key = os.getenv("OPENROUTER_API_KEY", "")
-        elif provider == "openai":
-            api_key = os.getenv("OPENAI_API_KEY", "")
-        elif provider == "claude":
-            api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        env_var = PROVIDER_ENV_VARS.get(p)
+        if env_var:
+            api_key = os.getenv(env_var, "")
 
-    # 기본 모델 폴백
+    # 4. 기본 모델 폴백
     if not model:
-        if provider == "gemini":
-            model = "gemini-1.5-flash"
-        elif provider == "openrouter":
-            model = "openai/gpt-4o-mini"
-        elif provider == "openai":
-            model = "gpt-4o-mini"
-        elif provider == "claude":
-            model = "claude-3-5-haiku-20241022"
+        model = PROVIDER_DEFAULT_MODELS.get(p, "gemini-1.5-flash")
 
-    return provider, api_key, model
+    return api_key, model
+
+
+def get_active_providers() -> List[str]:
+    """현재 활성화된(체크된) AI Provider 목록 반환"""
+    raw = database.get_setting("ai_active_providers", "")
+    if raw:
+        try:
+            arr = json.loads(raw)
+            if isinstance(arr, list) and len(arr) > 0:
+                # 지원하는 provider만 필터링
+                valid = [str(x).lower() for x in arr if str(x).lower() in SUPPORTED_PROVIDERS]
+                if valid:
+                    return valid
+        except Exception:
+            pass
+
+    # 레거시 폴백: ai_provider에 설정된 단일 값
+    legacy_p = database.get_setting("ai_provider", "gemini").lower()
+    if legacy_p in SUPPORTED_PROVIDERS:
+        return [legacy_p]
+    return ["gemini"]
+
+
+def get_all_ai_configs() -> Dict[str, Any]:
+    """모든 지원 모델의 설정 현황 및 활성화 목록 종합 조회"""
+    active_providers = get_active_providers()
+    providers_info = {}
+
+    for p in SUPPORTED_PROVIDERS:
+        api_key, model = get_provider_config(p)
+        masked_key = ""
+        if api_key:
+            if len(api_key) > 8:
+                masked_key = api_key[:4] + "•" * (len(api_key) - 8) + api_key[-4:]
+            else:
+                masked_key = "••••••••"
+
+        providers_info[p] = {
+            "name": PROVIDER_NAMES.get(p, p),
+            "is_active": p in active_providers,
+            "has_key": bool(api_key),
+            "masked_key": masked_key,
+            "model": model,
+            "default_model": PROVIDER_DEFAULT_MODELS.get(p, "")
+        }
+
+    return {
+        "active_providers": active_providers,
+        "mode": "ensemble" if len(active_providers) > 1 else "single",
+        "providers": providers_info
+    }
+
+
+def get_active_ai_configs() -> List[Dict[str, str]]:
+    """현재 활성화되어 실제 분석에 사용될 Provider 설정 목록 반환"""
+    active_names = get_active_providers()
+    configs = []
+    for p in active_names:
+        key, model = get_provider_config(p)
+        configs.append({
+            "provider": p,
+            "name": PROVIDER_NAMES.get(p, p),
+            "api_key": key,
+            "model": model
+        })
+    return configs
+
+
+def get_ai_config() -> Tuple[str, str, str]:
+    """(하위 호환용) 첫 번째 활성 AI 설정 (provider, api_key, model) 반환"""
+    active = get_active_providers()
+    primary = active[0] if active else "gemini"
+    api_key, model = get_provider_config(primary)
+    return primary, api_key, model
 
 
 def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool, str]:
@@ -112,7 +206,8 @@ def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool,
 
     try:
         results = _call_llm(test_sentence, provider, api_key, model)
-        return True, f"연결 성공! {provider.upper()} ({model or '기본 모델'}) 연결이 정상 확인되었습니다."
+        prov_name = PROVIDER_NAMES.get(provider, provider.upper())
+        return True, f"연결 성공! {prov_name} ({model or PROVIDER_DEFAULT_MODELS.get(provider, '기본 모델')}) 연결이 정상 확인되었습니다."
     except Exception as e:
         return False, f"연결 실패: {str(e)}"
 
@@ -311,16 +406,110 @@ def analyze_sentence(
     api_key: Optional[str] = None,
     model: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """단일 문장 어법 분석 수행"""
-    cfg_p, cfg_k, cfg_m = get_ai_config()
-    p = provider or cfg_p
-    k = api_key or cfg_k
-    m = model or cfg_m
+    """
+    문장 어법 분석 수행
+    - provider 지정 시: 해당 단일 모델 단독 호출
+    - provider 미지정 시: 활성화된 모든 모델 병렬 호출 후 '엄격 교집합(Strict Intersection, 전원 일치)' 판정
+    """
+    import concurrent.futures
 
-    if not k:
-        raise ValueError("AI API Key가 설정되지 않았습니다. 상단 [🔑 AI 설정]에서 키를 등록해 주세요.")
+    # 1. 특정 Provider 명시 호출 (테스트 또는 단일 지정 시)
+    if provider:
+        p = provider.lower()
+        k = api_key or get_provider_config(p)[0]
+        m = model or get_provider_config(p)[1]
+        if not k:
+            raise ValueError(f"{PROVIDER_NAMES.get(p, p.upper())} API Key가 설정되지 않았습니다.")
+        return _call_llm(sentence_text, p, k, m)
 
-    return _call_llm(sentence_text, p, k, m)
+    # 2. 복수 활성 모델 설정 조회
+    active_configs = get_active_ai_configs()
+    valid_configs = [c for c in active_configs if c["api_key"]]
+
+    if not valid_configs:
+        raise ValueError("활성화된 AI 모델 중 유효한 API Key가 설정된 모델이 없습니다. 상단 [🔑 AI 설정]에서 키를 등록해 주세요.")
+
+    # 3. 단일 모델 활성화 시: 기존과 동일하게 단독 호출
+    if len(valid_configs) == 1:
+        c = valid_configs[0]
+        return _call_llm(sentence_text, c["provider"], c["api_key"], c["model"])
+
+    # 4. 2개 이상 모델 활성화 시: ThreadPoolExecutor로 병렬 비동기 호출 & 엄격 교집합(전원 일치) 산출
+    results_by_provider: Dict[str, List[Dict[str, Any]]] = {}
+    errors: List[str] = []
+
+    def _worker(cfg):
+        try:
+            annos = _call_llm(sentence_text, cfg["provider"], cfg["api_key"], cfg["model"])
+            return cfg["provider"], annos, None
+        except Exception as ex:
+            return cfg["provider"], [], str(ex)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(valid_configs)) as executor:
+        future_map = {executor.submit(_worker, c): c for c in valid_configs}
+        for future in concurrent.futures.as_completed(future_map):
+            prov, annos, err = future.result()
+            if err:
+                prov_label = PROVIDER_NAMES.get(prov, prov.upper())
+                errors.append(f"{prov_label}: {err}")
+            else:
+                results_by_provider[prov] = annos
+
+    if errors:
+        # 엄격 교집합 판정을 위해서는 모든 활성 모델이 정상 응답해야 하므로 실패 모델 안내
+        raise ValueError(f"멀티 LLM 분석 중 오류 발생: {'; '.join(errors)}")
+
+    # 각 모델별 검출된 category_id 집합화
+    provider_cat_ids: Dict[str, set] = {}
+    for prov, annos in results_by_provider.items():
+        provider_cat_ids[prov] = {a["category_id"] for a in annos if a.get("category_id")}
+
+    # 엄격 교집합(Strict Intersection): 모든 모델이 공통으로 채택한 범주만 추출
+    common_cat_ids = set.intersection(*provider_cat_ids.values()) if provider_cat_ids else set()
+
+    if not common_cat_ids:
+        # 모델 간 일치하는 어법 범주가 하나도 없는 경우 빈 배열 반환 (화면에서 '해당사항 없음'으로 처리)
+        return []
+
+    # 모델명 표시 문자열 구성
+    prov_names_list = [PROVIDER_NAMES.get(c["provider"], c["provider"]) for c in valid_configs]
+    consensus_tag = f"[교차 검증: {', '.join(prov_names_list)} 전원 일치 ({len(valid_configs)}/{len(valid_configs)})]"
+
+    consensus_annos: List[Dict[str, Any]] = []
+    for cid in sorted(common_cat_ids):
+        cat_meta = _CATEGORY_ID_MAP.get(cid, {})
+
+        # 각 모델이 제출한 해설 및 타겟 어구 취합
+        matching_annos = []
+        for prov, annos in results_by_provider.items():
+            for a in annos:
+                if a.get("category_id") == cid:
+                    matching_annos.append(a)
+                    break
+
+        target_exp = ""
+        for a in matching_annos:
+            if a.get("target_expression"):
+                target_exp = a.get("target_expression")
+                break
+
+        # 가장 상세한 해설 선정
+        best_exp = ""
+        if matching_annos:
+            best_exp = max((a.get("explanation", "") for a in matching_annos), key=len)
+
+        explanation_with_consensus = f"{consensus_tag} {best_exp}".strip()
+
+        consensus_annos.append({
+            "category_id": cid,
+            "pos": cat_meta.get("pos", ""),
+            "full_path": cat_meta.get("full_path", ""),
+            "leaf_name": cat_meta.get("leaf", ""),
+            "target_expression": target_exp,
+            "explanation": explanation_with_consensus
+        })
+
+    return consensus_annos
 
 
 # OpenRouter Top 5 모델 기본 메타데이터 (네트워크 장애 대비 폴백용 & 초기값)

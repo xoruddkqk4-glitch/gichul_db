@@ -48,11 +48,19 @@ class SeedDataRequest(BaseModel):
     pass
 
 
+class SingleProviderTestRequest(BaseModel):
+    provider: str
+    api_key: Optional[str] = ""
+    model: Optional[str] = ""
+
+
 class AISettingsRequest(BaseModel):
-    provider: str = "gemini"
-    api_key: str = ""
+    provider: Optional[str] = None
+    api_key: Optional[str] = ""
     model: Optional[str] = ""
     test_now: Optional[bool] = False
+    active_providers: Optional[List[str]] = None
+    providers: Optional[Dict[str, Dict[str, str]]] = None
 
 
 class BatchAnalyzeRequest(BaseModel):
@@ -253,21 +261,15 @@ async def api_delete_sentence_tag(sentence_id: str, tag_name: str):
 # --- AI 어법 분석 및 설정 API ---
 @app.get("/api/settings/ai")
 async def api_get_ai_settings():
-    """현재 저장된 AI Provider 및 마스킹된 API 키 상태 반환"""
-    provider, api_key, model = grammar_analyzer.get_ai_config()
-    masked_key = ""
-    if api_key:
-        if len(api_key) > 8:
-            masked_key = api_key[:4] + "•" * (len(api_key) - 8) + api_key[-4:]
-        else:
-            masked_key = "••••••••"
-
-    return {
-        "provider": provider,
-        "model": model,
-        "has_key": bool(api_key),
-        "masked_key": masked_key
-    }
+    """현재 저장된 모든 AI Provider의 설정 및 활성화 현황 종합 반환"""
+    cfg = grammar_analyzer.get_all_ai_configs()
+    # 레거시 하위 호환 필드 결합
+    legacy_p, legacy_k, legacy_m = grammar_analyzer.get_ai_config()
+    cfg["provider"] = legacy_p
+    cfg["model"] = legacy_m
+    cfg["has_key"] = bool(legacy_k)
+    cfg["masked_key"] = cfg["providers"].get(legacy_p, {}).get("masked_key", "")
+    return cfg
 
 
 @app.get("/api/openrouter/top-models")
@@ -277,35 +279,80 @@ async def api_get_openrouter_top_models(force_refresh: bool = False):
     return {"success": True, "models": models}
 
 
-@app.post("/api/settings/ai")
-async def api_save_ai_settings(req: AISettingsRequest):
-    """AI 설정 저장 및 연결 테스트"""
+@app.post("/api/settings/ai/test")
+async def api_test_single_ai_provider(req: SingleProviderTestRequest):
+    """특정 AI Provider 개별 연결 핑 테스트"""
     p = req.provider.strip().lower()
-    k = req.api_key.strip()
+    k = req.api_key.strip() if req.api_key else ""
     m = req.model.strip() if req.model else ""
 
-    # 빈 키가 넘어왔는데 기존 키가 있다면 유지
     if not k:
-        _, existing_k, _ = grammar_analyzer.get_ai_config()
+        existing_k, existing_m = grammar_analyzer.get_provider_config(p)
         k = existing_k
+        if not m:
+            m = existing_m
 
-    db.set_setting("ai_provider", p)
-    if k:
-        db.set_setting("ai_api_key", k)
-    if m:
-        db.set_setting("ai_model", m)
+    if not k:
+        prov_label = grammar_analyzer.PROVIDER_NAMES.get(p, p)
+        return JSONResponse(status_code=400, content={"success": False, "message": f"{prov_label} API Key를 입력해 주세요."})
 
+    ok, msg = grammar_analyzer.test_connection(p, k, m)
+    if not ok:
+        return JSONResponse(status_code=400, content={"success": False, "message": msg})
+    return {"success": True, "provider": p, "message": msg}
+
+
+@app.post("/api/settings/ai")
+async def api_save_ai_settings(req: AISettingsRequest):
+    """AI 설정 일괄/단일 저장 및 연결 테스트"""
+    import json
+
+    # 1. 활성 Provider 목록 저장 (복수 선택 지원)
+    if req.active_providers is not None:
+        valid_actives = [p for p in req.active_providers if p in grammar_analyzer.SUPPORTED_PROVIDERS]
+        if not valid_actives:
+            valid_actives = ["gemini"]
+        db.set_setting("ai_active_providers", json.dumps(valid_actives))
+        db.set_setting("ai_provider", valid_actives[0])
+
+    # 2. 프로바이더별 개별 키 및 모델 설정 저장
+    if req.providers:
+        for p, p_data in req.providers.items():
+            p_clean = p.lower()
+            if p_clean in grammar_analyzer.SUPPORTED_PROVIDERS:
+                k = (p_data.get("api_key") or "").strip()
+                m = (p_data.get("model") or "").strip()
+                if k:
+                    db.set_setting(f"ai_key_{p_clean}", k)
+                if m:
+                    db.set_setting(f"ai_model_{p_clean}", m)
+
+    # 3. 레거시 단일 필드 호환 처리
+    if req.provider:
+        p = req.provider.strip().lower()
+        k = (req.api_key or "").strip()
+        m = (req.model or "").strip()
+        db.set_setting("ai_provider", p)
+        if k:
+            db.set_setting(f"ai_key_{p}", k)
+            db.set_setting("ai_api_key", k)
+        if m:
+            db.set_setting(f"ai_model_{p}", m)
+            db.set_setting("ai_model", m)
+
+    # 4. test_now인 경우 첫 번째 활성 프로바이더 연결 테스트
     test_msg = ""
-    test_ok = True
-    if req.test_now and k:
-        test_ok, test_msg = grammar_analyzer.test_connection(p, k, m)
-        if not test_ok:
-            return JSONResponse(status_code=400, content={"success": False, "message": test_msg})
+    if req.test_now:
+        active = grammar_analyzer.get_active_providers()
+        target_p = active[0] if active else "gemini"
+        tk, tm = grammar_analyzer.get_provider_config(target_p)
+        if tk:
+            ok, test_msg = grammar_analyzer.test_connection(target_p, tk, tm)
+            if not ok:
+                return JSONResponse(status_code=400, content={"success": False, "message": test_msg})
 
     return {
         "success": True,
-        "provider": p,
-        "model": m,
         "message": test_msg or "AI 설정이 성공적으로 저장되었습니다."
     }
 
@@ -414,10 +461,11 @@ async def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGramm
 
 @app.post("/api/sentences/batch-analyze-grammar")
 async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
-    """다중 문장 배치 AI 어법 분석"""
-    provider, api_key, model = grammar_analyzer.get_ai_config()
-    if not api_key:
-        raise HTTPException(status_code=400, detail="AI API Key가 설정되지 않았습니다. 상단 [🔑 AI 설정]에서 먼저 등록해 주세요.")
+    """다중 문장 배치 AI 어법 분석 (선택된 활성 모델 엄격 교집합 적용)"""
+    active_configs = grammar_analyzer.get_active_ai_configs()
+    valid_configs = [c for c in active_configs if c["api_key"]]
+    if not valid_configs:
+        raise HTTPException(status_code=400, detail="활성화된 AI 모델 중 유효한 API Key가 등록된 모델이 없습니다. 상단 [🔑 AI 설정]에서 먼저 등록해 주세요.")
 
     if req.sentence_ids:
         target_ids = set(req.sentence_ids)
@@ -441,7 +489,7 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
     results = []
     for s in sentences:
         try:
-            annos = grammar_analyzer.analyze_sentence(s["sentence_text"], provider, api_key, model)
+            annos = grammar_analyzer.analyze_sentence(s["sentence_text"])
             db.save_grammar_annotations(s["id"], annos)
             results.append({
                 "sentence_id": s["id"],
@@ -470,8 +518,8 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
 def background_auto_analyze_exam_grammar(exam_id: str):
     """업로드 완료 후 백그라운드에서 해당 시험지의 문장 자동 어법 분석"""
     try:
-        provider, api_key, model = grammar_analyzer.get_ai_config()
-        if not api_key:
+        active_configs = grammar_analyzer.get_active_ai_configs()
+        if not any(c["api_key"] for c in active_configs):
             return
 
         sentences = db.search_sentences(passage_id="", limit=1000)
@@ -481,7 +529,7 @@ def background_auto_analyze_exam_grammar(exam_id: str):
             try:
                 if s.get("grammar_analyzed") or s.get("grammar_annotations"):
                     continue
-                annos = grammar_analyzer.analyze_sentence(s["sentence_text"], provider, api_key, model)
+                annos = grammar_analyzer.analyze_sentence(s["sentence_text"])
                 db.save_grammar_annotations(s["id"], annos)
             except Exception as ex:
                 print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")

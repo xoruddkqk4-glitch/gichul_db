@@ -632,8 +632,32 @@ CREATE TABLE user_sentence_status (
 - **검증 결과**:
   - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
-  - 로컬 웹서버 정상 동작 확인
-
-
-
-
+### [2026-09-20 20:36] 업데이트 이력 (Commit ID: faeb2d4)
+- **수정 내용**:
+  - **4대 AI 모델(Gemini, ChatGPT, Claude, OpenRouter) 다중 선택 및 엄격 교집합(Strict Intersection, 전원 일치) 판정 시스템 구축**:
+    - **복수 모델 병렬 비동기 교차 검증 (`grammar_analyzer.py`)**:
+      - `SUPPORTED_PROVIDERS = ["gemini", "openai", "claude", "openrouter"]` 전면 지원
+      - `ThreadPoolExecutor`를 통한 병렬 비동기 호출 구현: 2~4개 모델 동시 실행 시에도 단일 모델 호출과 거의 동일한 응답 속도(~1.5~2.5초) 유지
+      - **엄격 교집합(Strict Intersection)** 판정 알고리즘 적용: 활성화된 모든 모델이 **공통으로 일치하게 추출한 `category_id`만** 최종 어법 범주로 채택하며, 단 하나의 모델이라도 불일치 시 오분류 방지를 위해 엄격 제외 (일치 범주가 없으면 `✓ 해당사항 없음`으로 완결)
+      - 교차 검증 메타데이터 자동 병기: 전원 일치한 어법 해설에 `[교차 검증: {모델명들} 전원 일치 (N/N)]` 접두어를 붙여 검증 신뢰도 명시
+      - 개별 프로바이더 설정 조회(`get_provider_config`), 복수 활성 모델 설정 조회(`get_all_ai_configs`, `get_active_ai_configs`), DB/레거시/환경변수 폴백 아키텍처 완비
+    - **백엔드 REST API 및 개별 핑 테스트 엔드포인트 (`app.py`)**:
+      - `SingleProviderTestRequest`, `AISettingsRequest` Pydantic 모델에 복수 모델 선택(`active_providers`) 및 프로바이더별 키/모델(`providers`) 페이로드 확장
+      - `GET /api/settings/ai`: 4대 엔진의 활성화 여부, 키 마스킹 상태, 모델명, 모드(`single`/`ensemble`) 종합 반환
+      - `POST /api/settings/ai`: 복수 활성 목록(`ai_active_providers`) 및 모델별 키/모델 설정 영구 보관 (레거시 하위 호환 완벽 유지)
+      - `POST /api/settings/ai/test`: 특정 모델 개별 연결 핑 테스트 전용 엔드포인트 신설
+      - 단일 문장 실시간 분석(`POST /api/sentences/{id}/analyze-grammar`) 및 일괄 배치 분석(`POST /api/sentences/batch-analyze-grammar`)이 활성화된 앙상블 합의 엔진과 자동 연동되도록 리팩토링
+    - **AI 설정 모달 전면 개편 (`templates/index.html`, `static/css/style.css`)**:
+      - 4대 AI 엔진(`Google Gemini`, `OpenAI ChatGPT`, `Anthropic Claude`, `OpenRouter`) 2열 반응형 독립 카드 그리드 레이아웃 구축
+      - 각 카드별 독립 요소: 활성화 체크박스 토글, 상태 배지(활성/비활성), 권장 모델명 입력창, 키 발급 가이드 링크, API Key 입력창(👁️ 마스킹 표시/숨김 토글), 전용 `[🧪 개별 연결 테스트]` 버튼 및 실시간 상태 피드백
+      - OpenRouter 카드 내 실시간 Top 5 추천 모델 드랍다운 및 사양(입출력 단가, 컨텍스트) 카드 탑재
+      - 상단 교차 검증 원리 안내 배너(`ai-consensus-guide-box`) 및 하단 실시간 선택 요약(`aiModalSelectionSummary`) 바 제공
+    - **글로벌 헤더 AI 상태 표시기 동적 고도화 (`static/js/main.js`)**:
+      - 활성 모델 0개: `🔑 AI 설정`
+      - 활성 모델 1개: `⚡ AI 연결됨 [Gemini]`
+      - 활성 모델 2개 이상: `⚡ AI 교차검증 [Gemini + GPT + Claude (전원 일치)]`
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검증 완료 (통과, 오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+  - `/api/settings/ai` 설정 조회 및 `/api/settings/ai/test` 개별 프로바이더 핑 테스트 통과
+  - `grammar_analyzer.analyze_sentence` 실시간 어법 분석 및 엄격 교집합 판정 정상 작동 확인

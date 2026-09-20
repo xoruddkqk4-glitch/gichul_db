@@ -3088,3 +3088,233 @@ mark.passage-highlight {
   font-weight: 600;
 }
 
+/* ==========================================================================
+   Multi-LLM 앙상블 및 엄격 교집합 설정 모달 스타일
+   ========================================================================== */
+.ai-settings-modal-content {
+  width: 95%;
+  max-width: 840px;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+}
+
+.ai-ensemble-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.ai-consensus-guide-box {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 0.75rem 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.consensus-guide-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: #065f46;
+  margin-bottom: 0.25rem;
+}
+
+.consensus-guide-desc {
+  font-size: 0.77rem;
+  color: #047857;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* 4대 AI 엔진 카드 2열 그리드 */
+.ai-providers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .ai-providers-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-provider-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.ai-provider-card.active {
+  border-color: #3b82f6;
+  background: #fbfcfe;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.12);
+}
+
+.provider-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 0.65rem;
+}
+
+.provider-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.provider-checkbox {
+  width: 17px;
+  height: 17px;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.provider-name {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.provider-status-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.provider-status-badge.active {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #86efac;
+}
+
+.provider-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex: 1;
+}
+
+.provider-card-desc {
+  font-size: 0.74rem;
+  color: #64748b;
+  line-height: 1.35;
+  margin: 0 0 0.2rem 0;
+}
+
+.provider-field-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 3px;
+  display: block;
+}
+
+.provider-model-input {
+  font-size: 0.8rem !important;
+  padding: 0.38rem 0.65rem !important;
+}
+
+.provider-key-link {
+  font-size: 0.72rem;
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 700;
+}
+.provider-key-link:hover {
+  text-decoration: underline;
+}
+
+.provider-key-input-wrapper {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.provider-key-input {
+  font-size: 0.78rem !important;
+  padding: 0.38rem 0.65rem !important;
+  flex: 1;
+}
+
+.btn-toggle-key-vis {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.provider-key-status {
+  display: block;
+  font-size: 0.7rem;
+  color: #64748b;
+  margin-top: 3px;
+  font-weight: 600;
+}
+
+.provider-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 0.4rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.btn-test-provider {
+  font-size: 0.74rem !important;
+  padding: 0.28rem 0.6rem !important;
+  white-space: nowrap;
+}
+
+.provider-test-result {
+  font-size: 0.7rem;
+  font-weight: 600;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-test-result.success {
+  color: #059669;
+}
+.provider-test-result.error {
+  color: #dc2626;
+}
+
+.ai-active-badge {
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+

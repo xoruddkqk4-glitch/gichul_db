@@ -3484,59 +3484,60 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =========================================================================
-  // 13. AI 설정 모달 (Multi-LLM: Gemini / ChatGPT / Claude)
+  // 13. AI 설정 모달 (Multi-LLM: Gemini / ChatGPT / Claude / OpenRouter)
   // =========================================================================
 
-  const providerDefaults = {
-    gemini: {
-      model: "gemini-1.5-flash",
-      help: "💡 기본 권장: gemini-1.5-flash (하루 수천 문장 무료 분석 지원)",
-      link: "https://aistudio.google.com/app/apikey",
-      linkText: "Google AI Studio 무료 키 발급 ↗",
-    },
-    openrouter: {
-      model: "deepseek/deepseek-chat",
-      help: "💡 기본 권장: deepseek/deepseek-chat (OpenRouter 이용량 1위! DeepSeek, Claude, GPT, Llama 등 수백 개 모델 지원)",
-      link: "https://openrouter.ai/keys",
-      linkText: "OpenRouter API Keys 발급 ↗",
-    },
-    openai: {
-      model: "gpt-4o-mini",
-      help: "💡 기본 권장: gpt-4o-mini (모의고사 1회당 약 5~10원의 초저비용)",
-      link: "https://platform.openai.com/api-keys",
-      linkText: "OpenAI API Keys 발급 ↗",
-    },
-    claude: {
-      model: "claude-3-5-haiku-20241022",
-      help: "💡 기본 권장: claude-3-5-haiku (어법 및 한국어 해설 생성 최적)",
-      link: "https://console.anthropic.com/settings/keys",
-      linkText: "Anthropic Console 키 발급 ↗",
-    },
+  const ALL_PROVIDERS = ["gemini", "openai", "claude", "openrouter"];
+
+  const providerDisplayNames = {
+    gemini: "Google Gemini",
+    openai: "OpenAI ChatGPT",
+    claude: "Anthropic Claude",
+    openrouter: "OpenRouter",
   };
+
+  const providerShortNames = {
+    gemini: "Gemini",
+    openai: "GPT",
+    claude: "Claude",
+    openrouter: "OpenRouter",
+  };
+
+  function capitalize(str) {
+    if (!str) return "";
+    return str.charAt(0).toUpperCase() + str.slice(1);
+  }
 
   /** OpenRouter 선택 모델 상세 정보 카드 렌더링 */
   function renderOpenRouterModelCard(model) {
-    if (!openrouterModelInfoCard) return;
+    const card = document.getElementById("openrouterModelInfoCard");
+    if (!card) return;
     if (!model) {
-      openrouterModelInfoCard.style.display = "none";
+      card.style.display = "none";
       return;
     }
-    openrouterModelInfoCard.style.display = "flex";
-    if (infoModelBadge) infoModelBadge.textContent = model.badge || "추천";
-    if (infoModelName) infoModelName.textContent = model.name || model.id;
-    if (infoModelTag) infoModelTag.textContent = model.tag || "";
-    if (infoModelPromptPrice) infoModelPromptPrice.textContent = model.prompt_price || "-";
-    if (infoModelCompletionPrice) infoModelCompletionPrice.textContent = model.completion_price || "-";
-    if (infoModelContext) infoModelContext.textContent = model.context_length || "-";
-    if (infoModelDesc) infoModelDesc.textContent = model.description || "";
+    card.style.display = "flex";
+    const badge = document.getElementById("infoModelBadge");
+    const name = document.getElementById("infoModelName");
+    const tag = document.getElementById("infoModelTag");
+    const promptPrice = document.getElementById("infoModelPromptPrice");
+    const compPrice = document.getElementById("infoModelCompletionPrice");
+
+    if (badge) badge.textContent = model.badge || "추천";
+    if (name) name.textContent = model.name || model.id;
+    if (tag) tag.textContent = model.tag || "";
+    if (promptPrice) promptPrice.textContent = model.prompt_price || "-";
+    if (compPrice) compPrice.textContent = model.completion_price || "-";
   }
 
   /** OpenRouter Top 5 모델 드랍다운 옵션 생성 및 현재 입력값과 동기화 */
   function renderOpenRouterModelSelectOptions() {
-    if (!openrouterModelSelect) return;
-    openrouterModelSelect.innerHTML = "";
+    const select = document.getElementById("openrouterModelSelect");
+    const input = document.getElementById("modelInputOpenrouter");
+    if (!select) return;
+    select.innerHTML = "";
 
-    const curModel = (aiModelInput ? aiModelInput.value.trim() : "") || "deepseek/deepseek-chat";
+    const curModel = (input ? input.value.trim() : "") || "deepseek/deepseek-chat";
     let matched = false;
 
     openrouterTopModelsData.forEach((m) => {
@@ -3548,10 +3549,9 @@ document.addEventListener("DOMContentLoaded", () => {
         matched = true;
         renderOpenRouterModelCard(m);
       }
-      openrouterModelSelect.appendChild(opt);
+      select.appendChild(opt);
     });
 
-    // 직접 입력 옵션
     const customOpt = document.createElement("option");
     customOpt.value = "custom";
     customOpt.textContent = "✏️ 직접 입력 (커스텀 모델명 지정)";
@@ -3559,23 +3559,22 @@ document.addEventListener("DOMContentLoaded", () => {
       customOpt.selected = true;
       renderOpenRouterModelCard(null);
     }
-    openrouterModelSelect.appendChild(customOpt);
+    select.appendChild(customOpt);
 
-    // 기본 미선택 시 첫번째 1위 모델 기본 선택
     if (!matched && !curModel && openrouterTopModelsData.length > 0) {
-      openrouterModelSelect.selectedIndex = 0;
+      select.selectedIndex = 0;
       const firstM = openrouterTopModelsData[0];
-      if (aiModelInput) aiModelInput.value = firstM.id;
+      if (input) input.value = firstM.id;
       renderOpenRouterModelCard(firstM);
     }
   }
 
   /** OpenRouter Top 5 모델 목록 서버 조회 */
   async function loadOpenRouterTopModels(force = false) {
-    if (!openrouterModelSelect) return;
-    if (btnRefreshOpenRouterModels) {
-      btnRefreshOpenRouterModels.disabled = true;
-      btnRefreshOpenRouterModels.textContent = "⏳ 갱신 중...";
+    const btn = document.getElementById("btnRefreshOpenRouterModels");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ 갱신 중...";
     }
     try {
       const res = await fetch(`/api/openrouter/top-models${force ? "?force_refresh=true" : ""}`);
@@ -3593,34 +3592,46 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("OpenRouter 모델 정보를 불러오지 못했습니다.", "warning");
       }
     } finally {
-      if (btnRefreshOpenRouterModels) {
-        btnRefreshOpenRouterModels.disabled = false;
-        btnRefreshOpenRouterModels.textContent = "🔄 실시간 정보 갱신";
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "🔄 갱신";
       }
     }
   }
 
-  // AI 설정 상태 헤더 버튼 반영 (API 연결 작동 시 시각적 강조 디자인)
+  // AI 설정 상태 헤더 버튼 반영 (단일 모델 vs 복수 모델 교차 검증 디자인)
   function updateAiHeaderButton(data) {
     if (!btnOpenAiSettingsModal) return;
-    if (data && data.has_key) {
-      btnOpenAiSettingsModal.classList.add("api-active");
-      const provName =
-        data.provider === "gemini"
-          ? "Gemini"
-          : data.provider === "openrouter"
-          ? "OpenRouter"
-          : data.provider === "openai"
-          ? "GPT"
-          : data.provider === "anthropic"
-          ? "Claude"
-          : data.provider || "AI";
-      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 연결됨 <span class="ai-active-badge">${escapeHtml(provName)}</span>`;
-      btnOpenAiSettingsModal.title = `AI 어법 분석기 활성화됨 (${provName}: ${data.model || "기본 모델"}) - 클릭하여 설정 변경`;
-    } else {
+    if (!data) {
       btnOpenAiSettingsModal.classList.remove("api-active");
       btnOpenAiSettingsModal.innerHTML = `🔑 AI 설정`;
-      btnOpenAiSettingsModal.title = "AI 어법 분석기 설정 (Gemini/OpenRouter/ChatGPT/Claude)";
+      return;
+    }
+
+    const activeList = data.active_providers || (data.provider ? [data.provider] : []);
+    const providers = data.providers || {};
+    // 활성 모델 중 키가 등록된 모델들 필터링
+    const activeWithKeys = activeList.filter((p) => {
+      if (providers[p] && providers[p].has_key) return true;
+      if (p === data.provider && data.has_key) return true;
+      return false;
+    });
+
+    if (activeWithKeys.length === 0) {
+      btnOpenAiSettingsModal.classList.remove("api-active");
+      btnOpenAiSettingsModal.innerHTML = `🔑 AI 설정`;
+      btnOpenAiSettingsModal.title = "AI 어법 분석기 설정 (Gemini/ChatGPT/Claude/OpenRouter)";
+    } else if (activeWithKeys.length === 1) {
+      const p = activeWithKeys[0];
+      const name = providerShortNames[p] || p;
+      btnOpenAiSettingsModal.classList.add("api-active");
+      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 연결됨 <span class="ai-active-badge">${escapeHtml(name)}</span>`;
+      btnOpenAiSettingsModal.title = `AI 어법 분석기 활성화됨 (${name}: 단독 실행) - 클릭하여 설정 변경`;
+    } else {
+      const names = activeWithKeys.map((p) => providerShortNames[p] || p).join(" + ");
+      btnOpenAiSettingsModal.classList.add("api-active");
+      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 교차검증 <span class="ai-active-badge">${escapeHtml(names)} (전원 일치)</span>`;
+      btnOpenAiSettingsModal.title = `AI 복수 모델 교차 검증 활성화됨 (${names}: 엄격 교집합) - 클릭하여 설정 변경`;
     }
   }
 
@@ -3638,27 +3649,89 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  /** 모달 하단 선택 현황 요약 텍스트 갱신 */
+  function updateAiModalSelectionSummary() {
+    const summary = document.getElementById("aiModalSelectionSummary");
+    const badge = document.getElementById("aiEnsembleModeBadge");
+    if (!summary) return;
+
+    const checkedBoxes = Array.from(document.querySelectorAll(".provider-checkbox:checked"));
+    const count = checkedBoxes.length;
+
+    if (count === 0) {
+      summary.innerHTML = `<span style="color: #dc2626;">⚠️ 선택된 모델이 없습니다. 최소 1개 이상 선택해 주세요.</span>`;
+      if (badge) badge.textContent = "비활성";
+    } else if (count === 1) {
+      const p = checkedBoxes[0].dataset.provider;
+      const name = providerDisplayNames[p] || p;
+      summary.innerHTML = `선택된 모델: <strong>${escapeHtml(name)}</strong> (단독 분석 모드)`;
+      if (badge) badge.textContent = "단독 실행 모드";
+    } else {
+      const names = checkedBoxes.map((cb) => providerShortNames[cb.dataset.provider] || cb.dataset.provider).join(", ");
+      summary.innerHTML = `선택된 모델: <strong>${escapeHtml(names)}</strong> (${count}개 모델 엄격 교집합 / 전원 일치)`;
+      if (badge) badge.textContent = `🛡️ 엄격 교집합 (${count}개 전원 일치)`;
+    }
+  }
+
   async function openAiSettingsModal() {
     if (!aiSettingsModal) return;
-    aiSettingsStatus.style.display = "none";
+    const statusDiv = document.getElementById("aiSettingsStatus");
+    if (statusDiv) statusDiv.style.display = "none";
+
     try {
       const res = await fetch("/api/settings/ai");
       if (res.ok) {
         const data = await res.json();
         updateAiHeaderButton(data);
-        const prov = data.provider || "gemini";
-        if (aiProviderSelect) aiProviderSelect.value = prov;
-        const info = providerDefaults[prov] || providerDefaults.gemini;
-        if (aiModelInput) {
-          aiModelInput.value = data.model || info.model;
+
+        const activeSet = new Set(data.active_providers || (data.provider ? [data.provider] : ["gemini"]));
+        const providers = data.providers || {};
+
+        ALL_PROVIDERS.forEach((p) => {
+          const pCap = capitalize(p);
+          const pData = providers[p] || {};
+          const cb = document.getElementById(`cbProvider${pCap}`);
+          const card = document.getElementById(`cardProvider${pCap}`);
+          const badge = document.getElementById(`badgeProvider${pCap}`);
+          const modelInput = document.getElementById(`modelInput${pCap}`);
+          const keyStatus = document.getElementById(`keyStatus${pCap}`);
+          const keyInput = document.getElementById(`keyInput${pCap}`);
+          const testRes = document.getElementById(`testResult${pCap}`);
+
+          const isActive = activeSet.has(p);
+          if (cb) cb.checked = isActive;
+          if (card) card.classList.toggle("active", isActive);
+          if (badge) {
+            badge.textContent = isActive ? "활성" : "비활성";
+            badge.classList.toggle("active", isActive);
+          }
+          if (modelInput && pData.model) {
+            modelInput.value = pData.model;
+          }
+          if (keyInput) keyInput.value = "";
+          if (keyStatus) {
+            if (pData.has_key) {
+              keyStatus.textContent = `현재 키: ${pData.masked_key} (등록됨)`;
+              keyStatus.style.color = "#059669";
+            } else {
+              keyStatus.textContent = "현재 키: 미등록";
+              keyStatus.style.color = "#64748b";
+            }
+          }
+          if (testRes) {
+            testRes.textContent = "";
+            testRes.className = "provider-test-result";
+          }
+        });
+
+        // OpenRouter Top 5 모델 동기화
+        if (openrouterTopModelsData.length === 0) {
+          loadOpenRouterTopModels(false);
+        } else {
+          renderOpenRouterModelSelectOptions();
         }
-        if (currentKeyBadge) {
-          currentKeyBadge.textContent = data.has_key
-            ? `현재 키: ${data.masked_key} (${data.provider})`
-            : "현재 키: 미설정";
-          currentKeyBadge.style.color = data.has_key ? "var(--success)" : "#64748b";
-        }
-        updateAiProviderHelp(false);
+
+        updateAiModalSelectionSummary();
       }
     } catch (e) {
       console.error(e);
@@ -3668,86 +3741,142 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function closeAiSettingsModal() {
     if (aiSettingsModal) aiSettingsModal.style.display = "none";
-    if (aiApiKeyInput) aiApiKeyInput.value = "";
+    ALL_PROVIDERS.forEach((p) => {
+      const keyInput = document.getElementById(`keyInput${capitalize(p)}`);
+      if (keyInput) keyInput.value = "";
+    });
   }
 
-  function updateAiProviderHelp(isUserChange = false) {
-    const prov = aiProviderSelect ? aiProviderSelect.value : "gemini";
-    const info = providerDefaults[prov] || providerDefaults.gemini;
-    if (aiModelHelp) aiModelHelp.textContent = info.help;
-    if (apiKeyGuideLink) {
-      apiKeyGuideLink.href = info.link;
-      apiKeyGuideLink.textContent = info.linkText;
-    }
-
-    // OpenRouter 선택 시 Top 5 드랍다운 영역 노출 및 로드
-    if (openrouterModelGroup) {
-      if (prov === "openrouter") {
-        openrouterModelGroup.style.display = "block";
-        if (openrouterTopModelsData.length === 0) {
-          loadOpenRouterTopModels(false);
-        } else {
-          renderOpenRouterModelSelectOptions();
-        }
-      } else {
-        openrouterModelGroup.style.display = "none";
-      }
-    }
-
-    if (aiModelInput) {
-      aiModelInput.placeholder = `예: ${info.model}`;
-      // 사용자가 직접 엔진(Provider)을 변경했으면 해당 엔진의 기본 권장 모델명으로 자동 갱신!
-      if (isUserChange) {
-        aiModelInput.value = info.model;
-        if (prov === "openrouter" && openrouterTopModelsData.length > 0) {
-          renderOpenRouterModelSelectOptions();
-        }
-      }
-    }
-  }
-
-  // OpenRouter 모델 드랍다운 변경 시 모델 입력창 및 카드 자동 갱신
-  if (openrouterModelSelect) {
-    openrouterModelSelect.addEventListener("change", () => {
-      const selectedVal = openrouterModelSelect.value;
+  // OpenRouter 드랍다운 선택 이벤트 바인딩
+  const openrouterSelectEl = document.getElementById("openrouterModelSelect");
+  if (openrouterSelectEl) {
+    openrouterSelectEl.addEventListener("change", () => {
+      const selectedVal = openrouterSelectEl.value;
+      const input = document.getElementById("modelInputOpenrouter");
       if (selectedVal === "custom") {
         renderOpenRouterModelCard(null);
-        if (aiModelInput) {
-          aiModelInput.focus();
-        }
+        if (input) input.focus();
       } else {
         const found = openrouterTopModelsData.find((m) => m.id === selectedVal);
         if (found) {
-          if (aiModelInput) aiModelInput.value = found.id;
+          if (input) input.value = found.id;
           renderOpenRouterModelCard(found);
         }
       }
     });
   }
 
-  // OpenRouter 모델 정보 실시간 새로고침 버튼
-  if (btnRefreshOpenRouterModels) {
-    btnRefreshOpenRouterModels.addEventListener("click", () => {
+  const btnRefreshOpenRouter = document.getElementById("btnRefreshOpenRouterModels");
+  if (btnRefreshOpenRouter) {
+    btnRefreshOpenRouter.addEventListener("click", () => {
       loadOpenRouterTopModels(true);
     });
   }
 
-  // 모델명 텍스트 직접 입력 시 Top 5 드랍다운과 양방향 연동
-  if (aiModelInput) {
-    aiModelInput.addEventListener("input", () => {
-      if (aiProviderSelect && aiProviderSelect.value === "openrouter" && openrouterModelSelect) {
-        const val = aiModelInput.value.trim();
-        const found = openrouterTopModelsData.find((m) => m.id === val);
-        if (found) {
-          openrouterModelSelect.value = found.id;
-          renderOpenRouterModelCard(found);
-        } else {
-          openrouterModelSelect.value = "custom";
-          renderOpenRouterModelCard(null);
-        }
+  const openrouterInputEl = document.getElementById("modelInputOpenrouter");
+  if (openrouterInputEl) {
+    openrouterInputEl.addEventListener("input", () => {
+      const select = document.getElementById("openrouterModelSelect");
+      if (!select) return;
+      const val = openrouterInputEl.value.trim();
+      const found = openrouterTopModelsData.find((m) => m.id === val);
+      if (found) {
+        select.value = found.id;
+        renderOpenRouterModelCard(found);
+      } else {
+        select.value = "custom";
+        renderOpenRouterModelCard(null);
       }
     });
   }
+
+  // 체크박스 클릭 시 카드 스타일 및 요약 업데이트
+  document.querySelectorAll(".provider-checkbox").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const p = cb.dataset.provider;
+      const pCap = capitalize(p);
+      const card = document.getElementById(`cardProvider${pCap}`);
+      const badge = document.getElementById(`badgeProvider${pCap}`);
+      if (card) card.classList.toggle("active", cb.checked);
+      if (badge) {
+        badge.textContent = cb.checked ? "활성" : "비활성";
+        badge.classList.toggle("active", cb.checked);
+      }
+      updateAiModalSelectionSummary();
+    });
+  });
+
+  // 키 표시/숨김 토글 버튼 바인딩
+  document.querySelectorAll(".btn-toggle-key-vis").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      if (input) {
+        const isPwd = input.type === "password";
+        input.type = isPwd ? "text" : "password";
+        btn.textContent = isPwd ? "🙈" : "👁️";
+      }
+    });
+  });
+
+  // 개별 프로바이더 연결 테스트 버튼 바인딩
+  document.querySelectorAll(".btn-test-provider").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const p = btn.dataset.provider;
+      const pCap = capitalize(p);
+      const keyInput = document.getElementById(`keyInput${pCap}`);
+      const modelInput = document.getElementById(`modelInput${pCap}`);
+      const testRes = document.getElementById(`testResult${pCap}`);
+      const apiKey = keyInput ? keyInput.value.trim() : "";
+      const model = modelInput ? modelInput.value.trim() : "";
+
+      btn.disabled = true;
+      btn.textContent = "⏳ 테스트 중...";
+      if (testRes) {
+        testRes.textContent = "연결 확인 중...";
+        testRes.className = "provider-test-result";
+      }
+
+      try {
+        const res = await fetch("/api/settings/ai/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: p,
+            api_key: apiKey,
+            model: model,
+          }),
+        });
+        const resData = await res.json();
+        if (res.ok && resData.success) {
+          if (testRes) {
+            testRes.textContent = "✔ 연결 정상";
+            testRes.className = "provider-test-result success";
+          }
+          showToast(`${providerDisplayNames[p]} 연결 성공!`, "success");
+          const keyStatus = document.getElementById(`keyStatus${pCap}`);
+          if (keyStatus && apiKey) {
+            keyStatus.textContent = "현재 키: 새로 입력됨 (저장 필요)";
+            keyStatus.style.color = "#2563eb";
+          }
+        } else {
+          if (testRes) {
+            testRes.textContent = `❌ ${resData.message || "연결 실패"}`;
+            testRes.className = "provider-test-result error";
+          }
+          showToast(`${providerDisplayNames[p]} 연결 실패: ${resData.message}`, "error");
+        }
+      } catch (err) {
+        if (testRes) {
+          testRes.textContent = "❌ 통신 오류";
+          testRes.className = "provider-test-result error";
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "🧪 개별 연결 테스트";
+      }
+    });
+  });
 
   if (btnOpenAiSettingsModal) {
     btnOpenAiSettingsModal.addEventListener("click", openAiSettingsModal);
@@ -3758,67 +3887,57 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnCancelAiSettings) {
     btnCancelAiSettings.addEventListener("click", closeAiSettingsModal);
   }
-  if (aiProviderSelect) {
-    aiProviderSelect.addEventListener("change", () => {
-      updateAiProviderHelp(true);
-    });
-  }
 
-  if (btnToggleKeyVis && aiApiKeyInput) {
-    btnToggleKeyVis.addEventListener("click", () => {
-      const isPwd = aiApiKeyInput.type === "password";
-      aiApiKeyInput.type = isPwd ? "text" : "password";
-      btnToggleKeyVis.textContent = isPwd ? "🙈" : "👁️";
-    });
-  }
-
+  // 전체 AI 설정 저장 버튼 바인딩
   if (btnSaveAiSettings) {
     btnSaveAiSettings.addEventListener("click", async () => {
-      const provider = aiProviderSelect.value;
-      const apiKey = aiApiKeyInput.value.trim();
-      const model = aiModelInput.value.trim();
+      const checkedBoxes = Array.from(document.querySelectorAll(".provider-checkbox:checked"));
+      const checkedProviders = checkedBoxes.map((cb) => cb.dataset.provider);
+
+      if (checkedProviders.length === 0) {
+        showToast("최소 1개 이상의 AI 모델을 선택해 주세요.", "warning");
+        return;
+      }
+
+      const providersPayload = {};
+      ALL_PROVIDERS.forEach((p) => {
+        const pCap = capitalize(p);
+        const keyInput = document.getElementById(`keyInput${pCap}`);
+        const modelInput = document.getElementById(`modelInput${pCap}`);
+        providersPayload[p] = {
+          api_key: keyInput ? keyInput.value.trim() : "",
+          model: modelInput ? modelInput.value.trim() : "",
+        };
+      });
 
       btnSaveAiSettings.disabled = true;
-      btnSaveAiSettings.textContent = "⏳ 연결 테스트 중...";
-      aiSettingsStatus.style.display = "block";
-      aiSettingsStatus.style.background = "#eff6ff";
-      aiSettingsStatus.style.color = "#1d4ed8";
-      aiSettingsStatus.textContent = "AI 연결 핑 테스트를 수행하고 있습니다...";
+      btnSaveAiSettings.textContent = "⏳ 저장 중...";
 
       try {
         const res = await fetch("/api/settings/ai", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            provider: provider,
-            api_key: apiKey,
-            model: model,
-            test_now: true,
+            active_providers: checkedProviders,
+            providers: providersPayload,
           }),
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          aiSettingsStatus.style.background = "#ecfdf5";
-          aiSettingsStatus.style.color = "#047857";
-          aiSettingsStatus.textContent = `✔ ${data.message}`;
-          showToast("AI 설정이 저장되었습니다.", "success");
-          refreshAiStatusIndicator();
+          showToast("AI 모델 설정이 성공적으로 저장되었습니다.", "success");
+          await refreshAiStatusIndicator();
           setTimeout(() => {
             closeAiSettingsModal();
-          }, 1200);
+          }, 600);
         } else {
-          aiSettingsStatus.style.background = "#fef2f2";
-          aiSettingsStatus.style.color = "#b91c1c";
-          aiSettingsStatus.textContent = `❌ ${data.detail || data.message || "연결 테스트 실패"}`;
+          showToast(data.message || "설정 저장 실패", "error");
         }
       } catch (err) {
         console.error(err);
-        aiSettingsStatus.style.background = "#fef2f2";
-        aiSettingsStatus.style.color = "#b91c1c";
-        aiSettingsStatus.textContent = "서버 통신 오류가 발생했습니다.";
+        showToast("설정 저장 중 통신 오류가 발생했습니다.", "error");
       } finally {
         btnSaveAiSettings.disabled = false;
-        btnSaveAiSettings.textContent = "🧪 연결 테스트 및 저장";
+        btnSaveAiSettings.textContent = "✔ 전체 설정 저장";
       }
     });
   }
