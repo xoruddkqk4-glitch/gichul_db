@@ -1570,7 +1570,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 문장 텍스트 형광펜 하이라이트는 상단 정의된 highlightSentenceKeyword(highlightTextKeyword 기반)를 활용
 
-  function renderGrammarBadges(annos) {
+  function renderGrammarBadges(annos, sentenceId) {
     if (!annos || annos.length === 0) {
       return '<span class="empty-grammar-text">미분석</span>';
     }
@@ -1581,7 +1581,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const titleText = `${a.full_path || ""}\n${
           a.target_expression ? `[해당 어구] ${a.target_expression}\n` : ""
         }${a.explanation ? `[해설] ${a.explanation}` : ""}`.trim();
-        return `<span class="grammar-tag-badge ${badgeClass}" title="${escapeHtml(titleText)}">🏷️ ${escapeHtml(a.leaf_name || a.pos)}</span>`;
+        const identifier = a.id || a.category_id || 0;
+        const removeBtn = sentenceId
+          ? `<button type="button" class="grammar-remove-btn" data-sent-id="${escapeHtml(sentenceId)}" data-id="${escapeHtml(String(identifier))}" title="어법 범주 삭제">&times;</button>`
+          : "";
+        return `<span class="grammar-tag-badge ${badgeClass}" title="${escapeHtml(titleText)}">🏷️ ${escapeHtml(a.leaf_name || a.pos || "")}${removeBtn}</span>`;
       })
       .join(" ");
   }
@@ -1637,8 +1641,16 @@ document.addEventListener("DOMContentLoaded", () => {
         </td>
         <td class="col-grammar">
           <div class="sentence-grammar-tags" id="grammar-tags-${cssSafeId(s.id)}">
-            ${renderGrammarBadges(s.grammar_annotations)}
+            ${renderGrammarBadges(s.grammar_annotations, s.id)}
           </div>
+          <button 
+            type="button" 
+            class="btn-open-grammar-modal btn-grammar-manage-${cssSafeId(s.id)}" 
+            data-sent-id="${escapeHtml(s.id)}"
+            title="어법 범주 전체 개요 창에서 중복 선택"
+          >
+            ⚙️ 어법 범주 선택 (${(s.grammar_annotations || []).length})
+          </button>
         </td>
         <td class="col-tags">
           <div class="tags-container-${cssSafeId(s.id)}" style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem;">
@@ -1649,10 +1661,9 @@ document.addEventListener("DOMContentLoaded", () => {
             <button class="btn btn-secondary btn-sm btn-add-tag-${cssSafeId(s.id)}" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;">추가</button>
           </div>
         </td>
-        <td class="col-remarks">${escapeHtml(s.exam_type || "")} ${s.word_count ? `(${s.word_count}단어)` : ""}</td>
         <td class="col-action">
           <div class="action-btn-group">
-            <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}">
+            <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}" title="문장 복사">
               📋 복사
             </button>
             <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
@@ -1661,6 +1672,60 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </td>
       `;
+
+      // 어법 셀 갱신 및 삭제 이벤트 바인딩
+      const updateGrammarCell = () => {
+        const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
+        if (container) {
+          container.innerHTML = renderGrammarBadges(s.grammar_annotations, s.id);
+          bindGrammarRemoveBtns();
+        }
+        const countBtn = tr.querySelector(`.btn-grammar-manage-${cssSafeId(s.id)}`);
+        if (countBtn) {
+          countBtn.textContent = `⚙️ 어법 범주 선택 (${(s.grammar_annotations || []).length})`;
+        }
+      };
+
+      const bindGrammarRemoveBtns = () => {
+        const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
+        if (!container) return;
+        container.querySelectorAll(".grammar-remove-btn").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const identifier = btn.dataset.id;
+            if (!identifier) return;
+            try {
+              const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/grammar-annotations/${encodeURIComponent(identifier)}`, {
+                method: "DELETE"
+              });
+              const data = await res.json();
+              if (res.ok && data.success) {
+                s.grammar_annotations = data.annotations || [];
+                updateGrammarCell();
+                showToast("어법 범주가 삭제되었습니다.", "info");
+              } else {
+                showToast(data.detail || "어법 범주 삭제 실패", "error");
+              }
+            } catch (err) {
+              console.error("Delete grammar error:", err);
+              showToast("어법 범주 삭제 중 오류가 발생했습니다.", "error");
+            }
+          });
+        });
+      };
+
+      bindGrammarRemoveBtns();
+
+      // 어법 범주 전체 개요 모달 열기 이벤트
+      const openGrammarBtn = tr.querySelector(`.btn-grammar-manage-${cssSafeId(s.id)}`);
+      if (openGrammarBtn) {
+        openGrammarBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openGrammarModalForSentence(s, () => {
+            updateGrammarCell();
+          });
+        });
+      }
 
       // 별표 토글 이벤트
       const starBtn = tr.querySelector(".btn-star");
@@ -1702,10 +1767,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await res.json();
             if (res.ok && data.success) {
               s.grammar_annotations = data.annotations || [];
-              const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
-              if (container) {
-                container.innerHTML = renderGrammarBadges(s.grammar_annotations);
-              }
+              updateGrammarCell();
               showToast(`${s.grammar_annotations.length}개의 어법 포인트가 분석되었습니다.`, "success");
             } else {
               showToast(data.detail || data.message || "어법 분석 실패 (상단 AI 설정을 확인하세요)", "error");
@@ -1936,6 +1998,40 @@ document.addEventListener("DOMContentLoaded", () => {
   // 12. 어법 범주표 로드 및 캐스케이딩 드롭다운 연동
   // =========================================================================
 
+  // =========================================================================
+  // 12-1. 어법 범주 전체 개요 및 다중 선택 모달 제어
+  // =========================================================================
+
+  let activeGrammarModalSentence = null;
+  let activeGrammarModalCallback = null;
+  const selectedGrammarCategoryIds = new Set();
+  let currentGrammarPosFilter = "ALL";
+  let grammarSearchTerm = "";
+
+  const grammarCategoryModal = document.getElementById("grammarCategoryModal");
+  const btnCloseGrammarModal = document.getElementById("btnCloseGrammarModal");
+  const btnCancelGrammarModal = document.getElementById("btnCancelGrammarModal");
+  const btnApplyGrammarSelection = document.getElementById("btnApplyGrammarSelection");
+  const btnResetGrammarSelection = document.getElementById("btnResetGrammarSelection");
+  const inputGrammarSearch = document.getElementById("inputGrammarSearch");
+  const btnClearGrammarSearch = document.getElementById("btnClearGrammarSearch");
+  const grammarSelectedCount = document.getElementById("grammarSelectedCount");
+  const grammarPosTabs = document.getElementById("grammarPosTabs");
+  const grammarPreviewBadges = document.getElementById("grammarPreviewBadges");
+  const grammarGridContainer = document.getElementById("grammarGridContainer");
+  const grammarModalSentenceInfo = document.getElementById("grammarModalSentenceInfo");
+
+  function closeGrammarCategoryModal() {
+    if (grammarCategoryModal) {
+      grammarCategoryModal.style.display = "none";
+    }
+    activeGrammarModalSentence = null;
+    activeGrammarModalCallback = null;
+  }
+
+  if (btnCloseGrammarModal) btnCloseGrammarModal.addEventListener("click", closeGrammarCategoryModal);
+  if (btnCancelGrammarModal) btnCancelGrammarModal.addEventListener("click", closeGrammarCategoryModal);
+
   async function loadGrammarCategories() {
     try {
       const res = await fetch("/static/data/grammar_categories.json");
@@ -1948,6 +2044,277 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
   loadGrammarCategories();
+
+  function openGrammarModalForSentence(sentence, onUpdateCallback) {
+    if (!sentence || !grammarCategoryModal) return;
+
+    activeGrammarModalSentence = sentence;
+    activeGrammarModalCallback = onUpdateCallback;
+
+    selectedGrammarCategoryIds.clear();
+    const existing = sentence.grammar_annotations || [];
+    existing.forEach((a) => {
+      if (a.category_id && a.category_id !== 0) {
+        selectedGrammarCategoryIds.add(Number(a.category_id));
+      } else if (a.id) {
+        selectedGrammarCategoryIds.add(Number(a.id));
+      } else if (a.leaf_name) {
+        const found = grammarCategoriesList.find(c => c.leaf === a.leaf_name);
+        if (found) selectedGrammarCategoryIds.add(found.id);
+      }
+    });
+
+    if (grammarModalSentenceInfo) {
+      const sentSnippet = (sentence.sentence_text || "").slice(0, 100);
+      grammarModalSentenceInfo.innerHTML = `
+        <span style="font-weight: 700; color: var(--primary);">${escapeHtml(sentence.id)}</span>:
+        "${escapeHtml(sentSnippet)}${(sentence.sentence_text || "").length > 100 ? "..." : ""}"
+      `;
+    }
+
+    if (inputGrammarSearch) inputGrammarSearch.value = "";
+    if (btnClearGrammarSearch) btnClearGrammarSearch.style.display = "none";
+    currentGrammarPosFilter = "ALL";
+    grammarSearchTerm = "";
+
+    renderGrammarModalTabs();
+    renderGrammarModalGrid();
+    updateGrammarModalPreview();
+
+    grammarCategoryModal.style.display = "flex";
+  }
+
+  function renderGrammarModalTabs() {
+    if (!grammarPosTabs) return;
+    const posList = ["ALL", "명사", "대명사", "문장", "주어", "동사", "형용사/부사", "전치사", "접속사", "특수구문"];
+    
+    grammarPosTabs.innerHTML = posList.map((pos) => {
+      let count = grammarCategoriesList.length;
+      if (pos !== "ALL") {
+        count = grammarCategoriesList.filter(item => item.pos === pos).length;
+      }
+      const label = pos === "ALL" ? `전체 (${count})` : `${pos} (${count})`;
+      const isActive = currentGrammarPosFilter === pos ? "active" : "";
+      return `<button type="button" class="grammar-pos-tab ${isActive}" data-pos="${escapeHtml(pos)}">${escapeHtml(label)}</button>`;
+    }).join("");
+
+    grammarPosTabs.querySelectorAll(".grammar-pos-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        grammarPosTabs.querySelectorAll(".grammar-pos-tab").forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        currentGrammarPosFilter = tab.dataset.pos;
+        filterGrammarModalItems();
+      });
+    });
+  }
+
+  function renderGrammarModalGrid() {
+    if (!grammarGridContainer) return;
+
+    const posGroups = {};
+    const posOrder = ["명사", "대명사", "문장", "주어", "동사", "형용사/부사", "전치사", "접속사", "특수구문"];
+    posOrder.forEach(p => { posGroups[p] = []; });
+
+    grammarCategoriesList.forEach(item => {
+      const pos = item.pos || "기타";
+      if (!posGroups[pos]) posGroups[pos] = [];
+      posGroups[pos].push(item);
+    });
+
+    let html = "";
+    for (const [pos, items] of Object.entries(posGroups)) {
+      if (!items || items.length === 0) continue;
+      html += `
+        <div class="grammar-group-card" data-pos="${escapeHtml(pos)}">
+          <div class="grammar-group-header">
+            <span style="display: flex; align-items: center; gap: 6px;">
+              <span>📌 ${escapeHtml(pos)}</span>
+            </span>
+            <span class="grammar-group-badge">총 ${items.length}개</span>
+          </div>
+          <div class="grammar-group-items">
+            ${items.map(it => {
+              const isChecked = selectedGrammarCategoryIds.has(it.id);
+              return `
+                <label class="grammar-item-tile ${isChecked ? "checked" : ""}" data-id="${it.id}" data-pos="${escapeHtml(it.pos)}" data-leaf="${escapeHtml(it.leaf)}" data-path="${escapeHtml(it.full_path)}">
+                  <input type="checkbox" class="grammar-item-checkbox" value="${it.id}" ${isChecked ? "checked" : ""}>
+                  <div class="grammar-tile-info">
+                    <span class="grammar-tile-leaf">${escapeHtml(it.leaf)}</span>
+                    <span class="grammar-tile-path">${escapeHtml(it.full_path)}</span>
+                  </div>
+                </label>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    grammarGridContainer.innerHTML = html;
+
+    grammarGridContainer.querySelectorAll(".grammar-item-tile").forEach(tile => {
+      const cb = tile.querySelector(".grammar-item-checkbox");
+      const id = Number(tile.dataset.id);
+
+      cb.addEventListener("change", (e) => {
+        e.stopPropagation();
+        if (cb.checked) {
+          selectedGrammarCategoryIds.add(id);
+          tile.classList.add("checked");
+        } else {
+          selectedGrammarCategoryIds.delete(id);
+          tile.classList.remove("checked");
+        }
+        updateGrammarModalPreview();
+      });
+    });
+  }
+
+  function filterGrammarModalItems() {
+    if (!grammarGridContainer) return;
+    const cards = grammarGridContainer.querySelectorAll(".grammar-group-card");
+    const query = grammarSearchTerm.toLowerCase().trim();
+
+    cards.forEach(card => {
+      const cardPos = card.dataset.pos;
+      const posMatch = currentGrammarPosFilter === "ALL" || currentGrammarPosFilter === cardPos;
+
+      let visibleInCard = 0;
+      const tiles = card.querySelectorAll(".grammar-item-tile");
+      tiles.forEach(tile => {
+        const leaf = (tile.dataset.leaf || "").toLowerCase();
+        const path = (tile.dataset.path || "").toLowerCase();
+        const searchMatch = !query || leaf.includes(query) || path.includes(query);
+
+        if (posMatch && searchMatch) {
+          tile.style.display = "flex";
+          visibleInCard++;
+        } else {
+          tile.style.display = "none";
+        }
+      });
+
+      card.style.display = (posMatch && visibleInCard > 0) ? "block" : "none";
+    });
+  }
+
+  function updateGrammarModalPreview() {
+    if (grammarSelectedCount) {
+      grammarSelectedCount.textContent = selectedGrammarCategoryIds.size;
+    }
+    if (!grammarPreviewBadges) return;
+
+    if (selectedGrammarCategoryIds.size === 0) {
+      grammarPreviewBadges.innerHTML = '<span class="text-muted" style="font-size: 0.78rem;">선택된 어법이 없습니다. 아래 항목을 체크하세요.</span>';
+      return;
+    }
+
+    const selectedList = Array.from(selectedGrammarCategoryIds).map(id => {
+      return grammarCategoriesList.find(c => c.id === id);
+    }).filter(Boolean);
+
+    grammarPreviewBadges.innerHTML = selectedList.map(item => `
+      <span class="preview-chip">
+        🏷️ ${escapeHtml(item.leaf)} (${escapeHtml(item.pos)})
+        <button type="button" class="preview-chip-remove" data-id="${item.id}" title="선택 해제">&times;</button>
+      </span>
+    `).join("");
+
+    grammarPreviewBadges.querySelectorAll(".preview-chip-remove").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.id);
+        selectedGrammarCategoryIds.delete(id);
+        const tile = grammarGridContainer.querySelector(`.grammar-item-tile[data-id="${id}"]`);
+        if (tile) {
+          tile.classList.remove("checked");
+          const cb = tile.querySelector(".grammar-item-checkbox");
+          if (cb) cb.checked = false;
+        }
+        updateGrammarModalPreview();
+      });
+    });
+  }
+
+  if (inputGrammarSearch) {
+    inputGrammarSearch.addEventListener("input", () => {
+      grammarSearchTerm = inputGrammarSearch.value;
+      if (btnClearGrammarSearch) {
+        btnClearGrammarSearch.style.display = grammarSearchTerm ? "block" : "none";
+      }
+      filterGrammarModalItems();
+    });
+  }
+
+  if (btnClearGrammarSearch) {
+    btnClearGrammarSearch.addEventListener("click", () => {
+      if (inputGrammarSearch) inputGrammarSearch.value = "";
+      grammarSearchTerm = "";
+      btnClearGrammarSearch.style.display = "none";
+      filterGrammarModalItems();
+    });
+  }
+
+  if (btnResetGrammarSelection) {
+    btnResetGrammarSelection.addEventListener("click", () => {
+      selectedGrammarCategoryIds.clear();
+      if (grammarGridContainer) {
+        grammarGridContainer.querySelectorAll(".grammar-item-tile").forEach(t => {
+          t.classList.remove("checked");
+          const cb = t.querySelector(".grammar-item-checkbox");
+          if (cb) cb.checked = false;
+        });
+      }
+      updateGrammarModalPreview();
+    });
+  }
+
+  if (btnApplyGrammarSelection) {
+    btnApplyGrammarSelection.addEventListener("click", async () => {
+      if (!activeGrammarModalSentence) return;
+      btnApplyGrammarSelection.disabled = true;
+      btnApplyGrammarSelection.textContent = "⏳ 저장 중...";
+
+      const selectedItems = Array.from(selectedGrammarCategoryIds).map(id => {
+        const found = grammarCategoriesList.find(c => c.id === id);
+        if (found) {
+          return {
+            category_id: found.id,
+            pos: found.pos,
+            full_path: found.full_path,
+            leaf_name: found.leaf,
+            explanation: `수동 등록 (${found.full_path})`
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      try {
+        const res = await fetch(`/api/sentences/${encodeURIComponent(activeGrammarModalSentence.id)}/grammar-annotations/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ annotations: selectedItems })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          activeGrammarModalSentence.grammar_annotations = data.annotations || [];
+          if (typeof activeGrammarModalCallback === "function") {
+            activeGrammarModalCallback();
+          }
+          showToast(`어법 범주 ${selectedItems.length}개가 저장되었습니다.`, "success");
+          closeGrammarCategoryModal();
+        } else {
+          showToast(data.detail || "어법 범주 일괄 저장 실패", "error");
+        }
+      } catch (err) {
+        console.error("Batch grammar save error:", err);
+        showToast("어법 범주 저장 중 오류가 발생했습니다.", "error");
+      } finally {
+        btnApplyGrammarSelection.disabled = false;
+        btnApplyGrammarSelection.textContent = "✔ 선택 완료 및 적용";
+      }
+    });
+  }
 
   function updateSubGrammarCategories(pos, targetSelect) {
     if (!targetSelect) return;

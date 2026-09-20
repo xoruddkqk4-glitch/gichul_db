@@ -456,14 +456,13 @@
           <table class="sentence-table">
             <thead>
               <tr>
-                <th class="col-star" style="width: 44px; text-align: center;">⭐</th>
+                <th class="col-star">⭐</th>
                 <th class="col-num">순번</th>
                 <th class="col-source">출처 ([학년-연도-월-번-문장])</th>
                 <th class="col-sentence">해당 문장</th>
-                <th class="col-grammar" style="width: 220px; min-width: 180px;">어법 범주</th>
+                <th class="col-grammar">어법 범주</th>
                 <th class="col-tags">태그 정보</th>
-                <th class="col-remarks">비고</th>
-                <th class="col-action" style="width: 175px; min-width: 175px; text-align: center; white-space: nowrap;">복사 및 분석</th>
+                <th class="col-action">복사 및 분석</th>
               </tr>
             </thead>
             <tbody id="sentenceTableBody">
@@ -613,6 +612,71 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="btnCancelAiSettings">닫기</button>
         <button type="button" class="btn btn-primary" id="btnSaveAiSettings">🧪 연결 테스트 및 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       어법 범주 전체 개요 및 다중 선택 모달창
+       ==================================================================== -->
+  <div class="modal-backdrop" id="grammarCategoryModal" style="display: none;">
+    <div class="modal-content modal-grammar-content">
+      <div class="modal-header">
+        <div style="flex: 1; padding-right: 1rem;">
+          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <span>📚 어법 범주 전체 개요 및 다중 선택</span>
+          </h3>
+          <p class="modal-subtitle" id="grammarModalSentenceInfo" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; word-break: break-all;">
+            문장 정보를 불러오는 중...
+          </p>
+        </div>
+        <button type="button" class="modal-close" id="btnCloseGrammarModal">&times;</button>
+      </div>
+
+      <div class="modal-body grammar-modal-body">
+        <!-- 상단 검색창 & 선택 현황 -->
+        <div class="grammar-modal-search-bar">
+          <div class="grammar-search-wrapper">
+            <span class="grammar-search-icon">🔍</span>
+            <input 
+              type="text" 
+              class="grammar-search-input" 
+              id="inputGrammarSearch" 
+              placeholder="어법 명칭 또는 경로 실시간 검색 (예: 수동태, 관계사, to부정사, 가정법...)"
+              autocomplete="off"
+            >
+            <button type="button" class="btn-clear-search" id="btnClearGrammarSearch" style="display: none;">&times;</button>
+          </div>
+          <div class="grammar-quick-stats">
+            선택된 어법: <strong id="grammarSelectedCount" style="color: var(--primary); font-size: 1rem;">0</strong>개
+          </div>
+        </div>
+
+        <!-- 품사/대분류 탭 바 -->
+        <div class="grammar-pos-tabs" id="grammarPosTabs">
+          <button type="button" class="grammar-pos-tab active" data-pos="ALL">전체 보기 (243)</button>
+        </div>
+
+        <!-- 현재 선택된 어법 미리보기 배지 바 -->
+        <div class="grammar-selected-preview" id="grammarSelectedPreview">
+          <span class="preview-label">선택 항목:</span>
+          <div class="preview-badges" id="grammarPreviewBadges">
+            <span class="text-muted" style="font-size: 0.78rem;">선택된 어법이 없습니다. 아래 항목을 체크하세요.</span>
+          </div>
+        </div>
+
+        <!-- 메인 어법 개요 카드 그리드 -->
+        <div class="grammar-grid-container" id="grammarGridContainer">
+          <!-- JS로 카테고리별 카드 동적 렌더링 -->
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnResetGrammarSelection">선택 전체 해제</button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelGrammarModal">취소</button>
+          <button type="button" class="btn btn-primary" id="btnApplyGrammarSelection">✔ 선택 완료 및 적용</button>
+        </div>
       </div>
     </div>
   </div>

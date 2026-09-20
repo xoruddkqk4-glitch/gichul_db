@@ -392,11 +392,13 @@ def toggle_sentence_star(sentence_id: str) -> int:
 
 
 def save_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]):
-    """문장에 어법 범주 분석 결과(복수 어법) 저장"""
+    """문장의 어법 범주 분석 결과 저장 (기존 AI 분석 결과 교체, 수동 등록 어법 보존)"""
     clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND (explanation IS NULL OR explanation NOT LIKE '수동 등록%')", (clean_id,))
         for anno in annotations:
             try:
                 cursor.execute("""
@@ -417,17 +419,98 @@ def save_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]
         conn.commit()
 
 
-def get_sentence_grammar_annotations(sentence_id: str) -> List[Dict[str, Any]]:
-    """특정 문장의 어법 범주 분석 목록 조회"""
+def add_sentence_grammar_annotation(sentence_id: str, annotation: Dict[str, Any]) -> bool:
+    """문장에 어법 범주 단일 수동 추가"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    cat_id = annotation.get("category_id", 0)
+    pos = annotation.get("pos", "")
+    full_path = annotation.get("full_path", "")
+    leaf_name = annotation.get("leaf_name", "") or annotation.get("leaf", "")
+    target_expression = annotation.get("target_expression", "")
+    explanation = annotation.get("explanation", "수동 등록")
+
+    # category_id가 0일 경우 leaf_name 기반 고유 가상 ID 생성
+    if not cat_id or cat_id == 0:
+        cat_id = 10000 + (abs(hash(leaf_name)) % 90000)
+
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT category_id, pos, full_path, leaf_name, target_expression, explanation
+            INSERT OR REPLACE INTO sentence_grammar_annotations 
+            (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (clean_id, cat_id, pos, full_path, leaf_name, target_expression, explanation))
+        conn.commit()
+        return True
+
+
+def delete_sentence_grammar_annotation(sentence_id: str, identifier: int) -> bool:
+    """문장에서 특정 어법 범주 삭제 (category_id 또는 annotation row id 기준)"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM sentence_grammar_annotations 
+            WHERE sentence_id = ? AND (category_id = ? OR id = ?)
+        """, (clean_id, identifier, identifier))
+        conn.commit()
+        return True
+
+
+def get_sentence_grammar_annotations(sentence_id: str) -> List[Dict[str, Any]]:
+    """특정 문장의 어법 범주 분석 목록 조회"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, category_id, pos, full_path, leaf_name, target_expression, explanation
             FROM sentence_grammar_annotations
             WHERE sentence_id = ?
             ORDER BY id ASC
-        """, (sentence_id.strip(),))
+        """, (clean_id,))
         return [dict(r) for r in cursor.fetchall()]
+
+
+def set_sentence_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """문장의 어법 범주 목록을 일괄 설정 (기존 항목 교체)"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        for anno in annotations:
+            cat_id = anno.get("category_id", 0)
+            leaf_name = anno.get("leaf_name", "") or anno.get("leaf", "")
+            if not cat_id or cat_id == 0:
+                cat_id = 10000 + (abs(hash(leaf_name)) % 90000)
+            try:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO sentence_grammar_annotations 
+                    (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    clean_id,
+                    cat_id,
+                    anno.get("pos", ""),
+                    anno.get("full_path", ""),
+                    leaf_name,
+                    anno.get("target_expression", ""),
+                    anno.get("explanation", "수동 등록")
+                ))
+            except Exception:
+                pass
+        conn.commit()
+
+    return get_sentence_grammar_annotations(clean_id)
+
 
 
 def get_setting(key: str, default: str = "") -> str:

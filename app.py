@@ -61,6 +61,20 @@ class BatchAnalyzeRequest(BaseModel):
     limit: Optional[int] = 50
 
 
+class AddGrammarAnnotationRequest(BaseModel):
+    category_id: Optional[int] = 0
+    pos: Optional[str] = ""
+    full_path: Optional[str] = ""
+    leaf_name: str
+    target_expression: Optional[str] = ""
+    explanation: Optional[str] = "수동 등록"
+
+
+class BatchSetGrammarAnnotationsRequest(BaseModel):
+    annotations: List[Dict[str, Any]] = []
+
+
+
 # --- 웹 페이지 루트 ---
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
@@ -323,6 +337,66 @@ async def api_analyze_sentence_grammar(sentence_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 어법 분석 실패: {str(e)}")
+
+
+@app.post("/api/sentences/{sentence_id}/grammar-annotations")
+async def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotationRequest):
+    """문장에 수동으로 어법 범주 추가"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    try:
+        data = req.dict()
+        db.add_sentence_grammar_annotation(clean_id, data)
+        updated = db.get_sentence_grammar_annotations(clean_id)
+        return {
+            "success": True,
+            "sentence_id": clean_id,
+            "annotations": updated,
+            "count": len(updated)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"어법 범주 추가 실패: {str(e)}")
+
+
+@app.delete("/api/sentences/{sentence_id}/grammar-annotations/{identifier}")
+async def api_delete_grammar_annotation(sentence_id: str, identifier: int):
+    """문장의 특정 어법 범주 삭제"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    try:
+        db.delete_sentence_grammar_annotation(clean_id, identifier)
+        updated = db.get_sentence_grammar_annotations(clean_id)
+        return {
+            "success": True,
+            "sentence_id": clean_id,
+            "annotations": updated,
+            "count": len(updated)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"어법 범주 삭제 실패: {str(e)}")
+
+
+@app.post("/api/sentences/{sentence_id}/grammar-annotations/batch")
+async def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGrammarAnnotationsRequest):
+    """문장의 어법 범주 목록을 모달 선택값으로 일괄 저장"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    try:
+        updated = db.set_sentence_grammar_annotations(clean_id, req.annotations)
+        return {
+            "success": True,
+            "sentence_id": clean_id,
+            "annotations": updated,
+            "count": len(updated)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"어법 범주 일괄 설정 실패: {str(e)}")
 
 
 @app.post("/api/sentences/batch-analyze-grammar")

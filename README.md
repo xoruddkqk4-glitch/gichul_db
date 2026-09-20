@@ -328,5 +328,26 @@
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
 
+### [2026-09-20 17:50] 업데이트 이력 (Commit ID: f1000c6)
+- **수정 내용**:
+  - **문장 테이블 비고란 열 삭제**:
+    - 테이블 헤더 및 데이터 행에서 불필요한 비고란 열(`col-remarks`)을 완전 제거하여 테이블 구조 슬림화 (`templates/index.html`, `static/js/main.js`, `static/css/style.css`)
+  - **복사 및 분석 버튼 2x1 배열 전환**:
+    - 인라인 작업 버튼 그룹(`action-btn-group`)을 기존 1x2(가로)에서 2x1(세로: 상단 [📋 복사] / 하단 [🤖 분석]) 구조로 개편하여 버튼 열 너비를 175px에서 80px로 50% 이상 절감 (`static/css/style.css`, `static/js/main.js`)
+  - **열 간격 최적화 & 해당 문장 열 대폭 확장**:
+    - 별표(`col-star`, 36px), 순번(`col-num`, 42px), 복사 및 분석(`col-action`, 80px)으로 압축
+    - 출처 열(`col-source`)에 너비 185px, 폰트 0.70rem, 자간 -0.35px 및 `white-space: nowrap !important;`를 적용하여 긴 출처 텍스트(`[고3-2026년-07월-18번-1번째 문장]`)도 줄바꿈 없이 1행으로 정렬 (`static/css/style.css`)
+    - 비고란 삭제 및 타 열 축소로 확보된 공간을 모두 흡수하여 `해당 문장` 열(`col-sentence`)을 `min-width: 480px` 및 `width: auto`로 대폭 확장하여 영어 문장 가독성 극대화 (`static/css/style.css`)
+  - **어법 범주 전체 개요 및 다중 선택 모달 시스템 구축**:
+    - 기존 인라인 단일 입력창 및 `<datalist>` 팝업 방식을 폐기하고, 문장별 `[⚙️ 어법 범주 선택 (N)]` 버튼 배치 (`templates/index.html`, `static/js/main.js`)
+    - 243개 전체 어법 분류체계를 지원하는 `어법 범주 전체 개요 및 다중 선택 모달`(`grammarCategoryModal`) 신설 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)
+    - 9대 품사 카드 그룹별 체크박스 다중/중복 선택, 기존 어법 자동 체크 동기화, 품사별 탭 필터링 및 실시간 검색, 선택 미리보기 배지 칩 바 구현
+    - 백엔드 `POST /api/sentences/{id}/grammar-annotations/batch` API 신설 및 DB 일괄 갱신(`set_sentence_grammar_annotations`), 단일 추가/삭제 API 구현 (`app.py`, `database.py`)
+    - AI 분석 실행 시 수동 등록된 어법 범주 보존 처리 반영 (`database.py`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
+
+
 
 
