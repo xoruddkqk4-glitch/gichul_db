@@ -268,14 +268,34 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  /** 검색어 문자열에서 #태그 자동 추출 (예: "#빈칸", "climate #빈칸") */
+  function parseSearchQuery(rawQuery) {
+    let q = (rawQuery || "").trim();
+    let tag = "";
+    const tagMatch = q.match(/#([^\s#]+)/);
+    if (tagMatch) {
+      tag = tagMatch[1];
+      q = q.replace(/#[^\s#]+/g, "").trim();
+    }
+    return { keyword: q, tag: tag };
+  }
+
   // =========================================================================
   // 5. 검색 실행 함수
   // =========================================================================
 
+  /** 통합 검색 실행 */
   async function executeSearch(source = "home") {
-    let keyword, grade, year, month, examType, questionType, tag;
+    let keyword = "";
+    let grade = "";
+    let year = "";
+    let month = "";
+    let examType = "";
+    let questionType = "";
+    let tag = "";
 
-    if (source === "all_passages") {
+    if (source === "all" || source === "all_passages") {
+      // 전체 보기 (조건 없음)
       keyword = "";
       grade = "";
       year = "";
@@ -284,32 +304,34 @@ document.addEventListener("DOMContentLoaded", () => {
       questionType = "";
       tag = "";
     } else if (source === "home") {
-      keyword = mainSearchInput.value.trim();
+      const parsed = parseSearchQuery(mainSearchInput.value);
+      keyword = parsed.keyword;
+      tag = parsed.tag;
       grade = filterGrade.value;
       year = filterYear.value;
       month = filterMonth.value;
       examType = filterExamType ? filterExamType.value : "";
       questionType = filterQuestionType ? filterQuestionType.value : "";
-      tag = filterTag ? filterTag.value.trim() : "";
 
       // 결과창 바에 동기화
-      if (resultsSearchInput) resultsSearchInput.value = keyword;
+      if (resultsSearchInput) resultsSearchInput.value = mainSearchInput.value.trim();
       if (resultsFilterGrade) resultsFilterGrade.value = grade;
       if (resultsFilterYear) resultsFilterYear.value = year;
       if (resultsFilterMonth) resultsFilterMonth.value = month;
       if (resultsFilterExamType) resultsFilterExamType.value = examType;
       if (resultsFilterQuestionType) resultsFilterQuestionType.value = questionType;
     } else {
-      keyword = resultsSearchInput.value.trim();
+      const parsed = parseSearchQuery(resultsSearchInput.value);
+      keyword = parsed.keyword;
+      tag = parsed.tag;
       grade = resultsFilterGrade.value;
       year = resultsFilterYear.value;
       month = resultsFilterMonth.value;
       examType = resultsFilterExamType.value;
       questionType = resultsFilterQuestionType.value;
-      tag = filterTag ? filterTag.value.trim() : "";
 
       // 홈 바에 역동기화
-      mainSearchInput.value = keyword;
+      mainSearchInput.value = resultsSearchInput.value.trim();
       filterGrade.value = grade;
       filterYear.value = year;
       filterMonth.value = month;
@@ -360,12 +382,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  /** 현재 로드된 결과 목록 내에서 키워드로 즉시 필터링(결과 내 검색) */
+  /** 현재 로드된 결과 목록 내에서 키워드 또는 #태그로 즉시 필터링(결과 내 검색) */
   function executeSearchWithinResults() {
-    const kw = resultsSearchInput ? resultsSearchInput.value.trim().toLowerCase() : "";
+    const rawVal = resultsSearchInput ? resultsSearchInput.value.trim() : "";
 
-    if (!kw) {
-      // 키워드가 비어있으면 원본 목록 전체 복원
+    if (!rawVal) {
+      // 검색어가 비어있으면 원본 목록 전체 복원
       if (currentMode === "passage") {
         passagesData = [...rawPassagesData];
         resultsTotalCount.textContent = passagesData.length;
@@ -379,6 +401,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const { keyword: kwRaw, tag: tagRaw } = parseSearchQuery(rawVal);
+    const kw = kwRaw.toLowerCase();
+    const tagLower = tagRaw.toLowerCase();
+
     if (currentMode === "passage") {
       if (!rawPassagesData || rawPassagesData.length === 0) {
         showToast("필터링할 지문 검색 결과가 없습니다.", "warning");
@@ -386,26 +412,40 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const filtered = rawPassagesData.filter(p => {
-        const inBody = (p.passage_text || "").toLowerCase().includes(kw);
-        const inTitle = (p.question_title || "").toLowerCase().includes(kw);
-        const inId = (p.display_id || p.id || "").toLowerCase().includes(kw);
-        const inExp = (p.explanation_text || "").toLowerCase().includes(kw);
-        const inType = (p.question_type || "").toLowerCase().includes(kw);
-        const inTags = (p.tags || []).some(t => t.toLowerCase().includes(kw));
-        
-        let inSub = false;
-        if (p.isGroup && p.subItems) {
-          inSub = p.subItems.some(si => 
-            (si.passage_text || "").toLowerCase().includes(kw) ||
-            (si.question_title || "").toLowerCase().includes(kw)
-          );
+        // 1. #태그 조건 필터링
+        let tagMatch = true;
+        if (tagLower) {
+          const inTags = (p.tags || []).some(t => t.toLowerCase().includes(tagLower));
+          const inType = (p.question_type || "").toLowerCase().includes(tagLower);
+          tagMatch = inTags || inType;
         }
 
-        return inBody || inTitle || inId || inExp || inType || inTags || inSub;
+        // 2. 키워드 조건 필터링
+        let kwMatch = true;
+        if (kw) {
+          const inBody = (p.passage_text || "").toLowerCase().includes(kw);
+          const inTitle = (p.question_title || "").toLowerCase().includes(kw);
+          const inId = (p.display_id || p.id || "").toLowerCase().includes(kw);
+          const inExp = (p.explanation_text || "").toLowerCase().includes(kw);
+          const inType = (p.question_type || "").toLowerCase().includes(kw);
+          const inTags = (p.tags || []).some(t => t.toLowerCase().includes(kw));
+          
+          let inSub = false;
+          if (p.isGroup && p.subItems) {
+            inSub = p.subItems.some(si => 
+              (si.passage_text || "").toLowerCase().includes(kw) ||
+              (si.question_title || "").toLowerCase().includes(kw)
+            );
+          }
+
+          kwMatch = inBody || inTitle || inId || inExp || inType || inTags || inSub;
+        }
+
+        return tagMatch && kwMatch;
       });
 
       if (filtered.length === 0) {
-        showToast(`결과 목록 내에서 '${kw}' 키워드를 포함하는 문항이 없습니다.`, "warning");
+        showToast(`결과 목록 내에서 '${rawVal}' 조건에 일치하는 문항이 없습니다.`, "warning");
       } else {
         showToast(`결과 내 검색: ${filtered.length}개 문항이 필터링되었습니다.`, "success");
       }
@@ -420,14 +460,26 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const filtered = rawSentencesData.filter(s => {
-        const inEng = (s.sentence_text || "").toLowerCase().includes(kw);
-        const inKor = (s.korean_translation || "").toLowerCase().includes(kw);
-        const inId = (s.sentence_id || "").toLowerCase().includes(kw);
-        return inEng || inKor || inId;
+        let tagMatch = true;
+        if (tagLower) {
+          const inTags = (s.tags || []).some(t => t.toLowerCase().includes(tagLower));
+          const inPid = (s.passage_id || "").toLowerCase().includes(tagLower);
+          tagMatch = inTags || inPid;
+        }
+
+        let kwMatch = true;
+        if (kw) {
+          const inEng = (s.sentence_text || "").toLowerCase().includes(kw);
+          const inKor = (s.korean_translation || "").toLowerCase().includes(kw);
+          const inId = (s.sentence_id || s.id || "").toLowerCase().includes(kw);
+          kwMatch = inEng || inKor || inId;
+        }
+
+        return tagMatch && kwMatch;
       });
 
       if (filtered.length === 0) {
-        showToast(`결과 목록 내에서 '${kw}' 키워드를 포함하는 문장이 없습니다.`, "warning");
+        showToast(`결과 목록 내에서 '${rawVal}' 조건에 일치하는 문장이 없습니다.`, "warning");
       } else {
         showToast(`결과 내 검색: ${filtered.length}개 문장이 필터링되었습니다.`, "success");
       }

@@ -190,3 +190,20 @@
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
   - 2026년 6월 평가원 28개 전 문항 정답 DB 업데이트 및 형광펜 주석 이미지 28개 생성 확인
 
+### [2026-09-20 14:41] 업데이트 이력 (Commit ID: 36d1f01)
+- **수정 내용**:
+  - **정답 선지 기하학적 앵커 매칭 알고리즘(`extract_choice_words_geometrically`) 구축**:
+    - 43번 등 2열 조판 문항에서 PDF 내부 단어 스트림 순서 왜곡으로 인해 정답 선지(⑤번)뿐 아니라 다른 선지(①, ③번)까지 형광펜이 칠해지던 문제 원인 규명 및 해결 (`pdf_parser.py`)
+    - 화면상 실제 X/Y 좌표 및 행/열 바운딩 박스를 기준으로 동일 행/열 단어만 정밀 필터링하여 오직 정답 선지 1개만 정확하게 형광펜 주석 처리 (`pdf_parser.py`)
+    - 2026년 6월 평가원 및 7월 교육청 전체 문항 고화질 크롭 이미지 재생성 완료 (`static/captures/`)
+  - **검색창 내 `#태그` 자동 검색 인터페이스 전면 개편**:
+    - 별도로 존재하던 `filterTag` 입력창을 UI에서 완전히 제거하여 검색 인터페이스를 직관적이고 미니멀하게 개선 (`templates/index.html`)
+    - 첫 검색창과 결과창 검색창 모두에서 `#태그명`(예: `#빈칸`, `#어법`) 입력 시 자동으로 `tag` 파라미터로 파싱(`parseSearchQuery`)하여 태그 검색 수행 (`static/js/main.js`)
+    - 결과 내 검색(`executeSearchWithinResults`)에서도 `#태그` 입력 시 현재 로드된 문항의 `tags` 및 문제 유형을 즉시 필터링 (`static/js/main.js`)
+    - 백엔드(`/api/search/passages`, `/api/search/sentences`) 및 DB 검색 쿼리에서 `tag_name LIKE ?` 퍼지 매칭 지원 (`app.py`, `database.py`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
+  - 43번 영역 형광펜 주석 개수가 3개에서 정답 5번 선지 1개(`Rect(440.9, 768.1, 555.7, 788.3)`)로 정상화 확인
+
+

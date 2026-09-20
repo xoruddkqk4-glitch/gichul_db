@@ -321,9 +321,9 @@ def search_passages(
 
     if tag:
         query += """
-            AND p.id IN (SELECT passage_id FROM passage_tags WHERE tag_name = ?)
+            AND p.id IN (SELECT passage_id FROM passage_tags WHERE tag_name LIKE ?)
         """
-        params.append(tag)
+        params.append(f"%{tag.strip()}%")
 
     query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC LIMIT ?"
     params.append(limit)
@@ -387,9 +387,9 @@ def search_sentences(
 
     if tag:
         query += """
-            AND s.id IN (SELECT sentence_id FROM sentence_tags WHERE tag_name = ?)
+            AND s.id IN (SELECT sentence_id FROM sentence_tags WHERE tag_name LIKE ?)
         """
-        params.append(tag)
+        params.append(f"%{tag.strip()}%")
 
     query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC, s.order_index ASC LIMIT ?"
     params.append(limit)

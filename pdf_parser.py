@@ -17,6 +17,129 @@ CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
+REVERSE_CIRCLED_MAP = {"①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5}
+
+
+def extract_choice_words_geometrically(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str) -> List[tuple]:
+    """
+    정답 선지 기호(①~⑤)를 기하학적으로 탐색하고,
+    동일 행/열에 속하는 해당 정답 선지 텍스트 단어들만 엄격하게 필터링하여 반환
+    (PDF 스트림 순서 왜곡으로 인한 다른 보기(①, ③ 등)의 오염 하이라이트 원천 방지)
+    """
+    if not ans_val:
+        return []
+    ans_num = REVERSE_CIRCLED_MAP.get(str(ans_val).strip(), None)
+    if not ans_num:
+        return []
+
+    words = page.get_text("words", clip=clip_rect)
+    if not words:
+        return []
+
+    # 1. 보기 기호 앵커 탐색
+    anchors = []
+    for w in words:
+        w_text = w[4]
+        for sym, num in REVERSE_CIRCLED_MAP.items():
+            if sym in ("①", "②", "③", "④", "⑤") and sym in w_text:
+                anchors.append({
+                    "num": num,
+                    "sym": sym,
+                    "x0": w[0], "y0": w[1], "x1": w[2], "y1": w[3],
+                    "cx": (w[0] + w[2]) / 2,
+                    "cy": (w[1] + w[3]) / 2,
+                    "word": w
+                })
+
+    target_anchor = next((a for a in anchors if a["num"] == ans_num), None)
+    if not target_anchor:
+        return []
+
+    # 2. 동일 행(Y ±7pt)에 위치한 다른 앵커 중 우측 앵커 탐색 (수평 경계 제한)
+    same_line_anchors = [
+        a for a in anchors 
+        if a["num"] != ans_num and abs(a["cy"] - target_anchor["cy"]) < 7
+    ]
+    right_limit_x = clip_rect.x1 + 10
+    for sa in same_line_anchors:
+        if sa["x0"] > target_anchor["x0"]:
+            right_limit_x = min(right_limit_x, sa["x0"] - 3)
+
+    # 3. 하단 경계 탐색 (다음 선지 시작 Y)
+    below_anchors = [
+        a for a in anchors 
+        if a["y0"] > target_anchor["y1"] - 2 and (
+            abs(a["x0"] - target_anchor["x0"]) < 45 or len(same_line_anchors) == 0
+        )
+    ]
+    bottom_limit_y = clip_rect.y1
+    if below_anchors:
+        bottom_limit_y = min(a["y0"] for a in below_anchors) - 2
+
+    # 4. 정밀 기하학적 단어 필터링
+    matched = []
+    for w in words:
+        w_text = w[4]
+        # 다른 선지 기호는 무조건 제외
+        if any(sym in w_text for sym in ("①", "②", "③", "④", "⑤")) and w is not target_anchor["word"]:
+            continue
+        if w_text.startswith("*"):
+            continue
+
+        w_cx = (w[0] + w[2]) / 2
+        w_cy = (w[1] + w[3]) / 2
+
+        # A. 동일 행에 있는 텍스트
+        if abs(w_cy - target_anchor["cy"]) < 7:
+            if w[0] >= target_anchor["x0"] - 2 and w_cx < right_limit_x:
+                matched.append(w)
+        # B. 여러 줄로 이어지는 다행 선지 텍스트
+        elif target_anchor["y1"] - 2 < w_cy < bottom_limit_y:
+            if len(same_line_anchors) > 0:
+                if target_anchor["x0"] - 10 <= w[0] and w_cx < right_limit_x:
+                    matched.append(w)
+            else:
+                if w[0] >= clip_rect.x0 - 5:
+                    matched.append(w)
+
+    return matched
+
+
+def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str) -> List[fitz.Annot]:
+    """정답 선지 기하학적 추출 및 형광펜 노란색 주석 추가"""
+    choice_words = extract_choice_words_geometrically(page, clip_rect, ans_val)
+    if not choice_words:
+        return []
+
+    # 줄(line) 단위로 묶기 (y 좌표 5pt 이내)
+    lines_grouped = []
+    curr_line = []
+    for w in choice_words:
+        if not curr_line:
+            curr_line.append(w)
+        else:
+            if abs(w[1] - curr_line[0][1]) < 5:
+                curr_line.append(w)
+            else:
+                lines_grouped.append(curr_line)
+                curr_line = [w]
+    if curr_line:
+        lines_grouped.append(curr_line)
+
+    annots = []
+    for l in lines_grouped:
+        lx0 = min(w[0] for w in l) - 3
+        ly0 = min(w[1] for w in l) - 2
+        lx1 = max(w[2] for w in l) + 3
+        ly1 = max(w[3] for w in l) + 2
+        hl_rect = fitz.Rect(lx0, ly0, lx1, ly1)
+        annot = page.add_highlight_annot(hl_rect)
+        annot.set_colors(stroke=(1.0, 0.95, 0.1))  # 선명한 형광 노란색
+        annot.update()
+        annots.append(annot)
+
+    return annots
+
 
 
 def detect_listening_range(full_text: str) -> Tuple[int, int]:
@@ -267,48 +390,8 @@ def save_extracted_question(
             # 정답 선지 형광펜 하이라이트 주석 적용
             added_annots = []
             if answer_symbol:
-                target_sym = CIRCLED_MAP.get(str(answer_symbol).strip(), str(answer_symbol).strip())
                 try:
-                    words = page.get_text("words", clip=crop_rect)
-                    choice_words = []
-                    collecting = False
-                    for w in words:
-                        w_text = w[4]
-                        if target_sym in w_text:
-                            collecting = True
-                            choice_words.append(w)
-                            continue
-                        if collecting:
-                            if any(sym in w_text for sym in ("①", "②", "③", "④", "⑤")) or w_text.startswith("*"):
-                                collecting = False
-                                break
-                            choice_words.append(w)
-
-                    # 줄(line) 단위로 묶기 (y 좌표 5pt 이내)
-                    lines_grouped = []
-                    curr_line = []
-                    for w in choice_words:
-                        if not curr_line:
-                            curr_line.append(w)
-                        else:
-                            if abs(w[1] - curr_line[0][1]) < 5:
-                                curr_line.append(w)
-                            else:
-                                lines_grouped.append(curr_line)
-                                curr_line = [w]
-                    if curr_line:
-                        lines_grouped.append(curr_line)
-
-                    for l in lines_grouped:
-                        lx0 = min(w[0] for w in l) - 3
-                        ly0 = min(w[1] for w in l) - 2
-                        lx1 = max(w[2] for w in l) + 3
-                        ly1 = max(w[3] for w in l) + 2
-                        hl_rect = fitz.Rect(lx0, ly0, lx1, ly1)
-                        annot = page.add_highlight_annot(hl_rect)
-                        annot.set_colors(stroke=(1.0, 0.95, 0.1))  # 선명한 형광 노란색
-                        annot.update()
-                        added_annots.append(annot)
+                    added_annots = highlight_answer_choice(page, crop_rect, answer_symbol)
                 except Exception as e:
                     print(f"[{q_num}번 정답 선지 하이라이트 경고] {e}")
 
@@ -412,51 +495,15 @@ def crop_and_merge_43_45(
 
     # 정답 선지 형광펜 하이라이트 주석 적용
     annots = []
-    def add_hl(clip_rect, ans_val):
-        if not ans_val:
-            return
-        ans_str = CIRCLED_MAP.get(str(ans_val).strip(), str(ans_val).strip())
-        try:
-            words = page.get_text("words", clip=clip_rect)
-            choice_words = []
-            collecting = False
-            for w in words:
-                if ans_str in w[4]:
-                    collecting = True
-                    choice_words.append(w)
-                    continue
-                if collecting:
-                    if any(sym in w[4] for sym in ("①", "②", "③", "④", "⑤")) or w[4].startswith("*"):
-                        break
-                    choice_words.append(w)
-            lines_grouped = []
-            curr = []
-            for w in choice_words:
-                if not curr:
-                    curr.append(w)
-                else:
-                    if abs(w[1] - curr[0][1]) < 5:
-                        curr.append(w)
-                    else:
-                        lines_grouped.append(curr)
-                        curr = [w]
-            if curr:
-                lines_grouped.append(curr)
-            for l in lines_grouped:
-                lx0 = min(w[0] for w in l) - 3
-                ly0 = min(w[1] for w in l) - 2
-                lx1 = max(w[2] for w in l) + 3
-                ly1 = max(w[3] for w in l) + 2
-                a = page.add_highlight_annot(fitz.Rect(lx0, ly0, lx1, ly1))
-                a.set_colors(stroke=(1.0, 0.95, 0.1))
-                a.update()
-                annots.append(a)
-        except Exception as e:
-            print(f"[43~45 정답 하이라이트 경고] {e}")
-
-    add_hl(rect_43, answers_dict.get(43, ""))
-    add_hl(rect_44, answers_dict.get(44, ""))
-    add_hl(rect_45, answers_dict.get(45, ""))
+    # 정답 선지 형광펜 하이라이트 주석 적용 (엄격한 기하학적 매칭 적용)
+    annots = []
+    for r_clip, q_idx in [(rect_43, 43), (rect_44, 44), (rect_45, 45)]:
+        ans_val = answers_dict.get(q_idx, "")
+        if ans_val:
+            try:
+                annots.extend(highlight_answer_choice(page, r_clip, ans_val))
+            except Exception as e:
+                print(f"[{q_idx}번 정답 하이라이트 경고] {e}")
 
     # 고화질(200 DPI) 렌더링
     parts = []

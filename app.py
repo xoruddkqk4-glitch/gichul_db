@@ -78,6 +78,13 @@ async def api_search_passages(
     limit: int = 50
 ):
     """지문 검색 API (2x2 화면용)"""
+    # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
+    if keyword and "#" in keyword:
+        found_tags = re.findall(r"#([^\s#]+)", keyword)
+        if found_tags and not tag:
+            tag = found_tags[0]
+            keyword = re.sub(r"#[^\s#]+", "", keyword).strip()
+
     results = db.search_passages(
         keyword=keyword,
         grade=grade,
@@ -103,6 +110,13 @@ async def api_search_sentences(
     limit: int = 100
 ):
     """문장 검색 API (1행 테이블 뷰용)"""
+    # 검색어 내 #태그 자동 파싱
+    if keyword and "#" in keyword:
+        found_tags = re.findall(r"#([^\s#]+)", keyword)
+        if found_tags and not tag:
+            tag = found_tags[0]
+            keyword = re.sub(r"#[^\s#]+", "", keyword).strip()
+
     results = db.search_sentences(
         keyword=keyword,
         passage_id=passage_id,
