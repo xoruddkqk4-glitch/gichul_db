@@ -481,9 +481,12 @@
               ※ [텍스트 복사] 버튼 클릭 시 워드/한글/엑셀로 즉시 붙여넣기(Ctrl+V) 가능합니다.
             </span>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <button type="button" class="btn btn-warning btn-sm" id="btnBatchAnalyzeStarred" title="별표(⭐) 표시된 중요 문장들을 일괄로 AI 어법 분석합니다">
               ⭐ 중요 문장 일괄 어법 분석
+            </button>
+            <button type="button" class="btn btn-primary btn-sm btn-batch-all" id="btnBatchAnalyzeAll" title="현재 검색/표시된 모든 문장들을 일괄로 AI 어법 분석합니다">
+              🤖 모든 문장 일괄 어법 분석
             </button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnSentenceBackToPassage" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 700;">
               🔙 지문 결과창으로 돌아가기

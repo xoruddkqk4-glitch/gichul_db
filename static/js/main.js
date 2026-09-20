@@ -134,6 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnResetResultsGrammarFilter = document.getElementById("btnResetResultsGrammarFilter");
   const btnResultsToggleStarred = document.getElementById("btnResultsToggleStarred");
   const btnBatchAnalyzeStarred = document.getElementById("btnBatchAnalyzeStarred");
+  const btnBatchAnalyzeAll = document.getElementById("btnBatchAnalyzeAll");
   let isStarredFilterActive = false;
   let grammarCategoriesList = [];
 
@@ -1718,14 +1719,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 문장 텍스트 형광펜 하이라이트는 상단 정의된 highlightSentenceKeyword(highlightTextKeyword 기반)를 활용
 
+  function getGrammarBadgeClass(pos) {
+    if (!pos) return "";
+    const p = String(pos).trim();
+    if (p === "동사") return "badge-verb";
+    if (p === "접속사") return "badge-conj";
+    if (p === "명사" || p === "주어") return "badge-noun";
+    if (p === "대명사") return "badge-pronoun";
+    if (p.includes("형용사") || p.includes("부사")) return "badge-adj-adv";
+    if (p === "전치사") return "badge-prep";
+    if (p === "특수구문") return "badge-special";
+    if (p === "문장") return "badge-sentence";
+    return "";
+  }
+
   function renderGrammarBadges(annos, sentenceId) {
     if (!annos || annos.length === 0) {
       return '<span class="empty-grammar-text">미분석</span>';
     }
     return annos
       .map((a) => {
-        const badgeClass =
-          a.pos === "특수구문" ? "badge-special" : a.pos === "동사" ? "badge-verb" : "";
+        const badgeClass = getGrammarBadgeClass(a.pos);
         const titleText = `${a.full_path || ""}\n${
           a.target_expression ? `[해당 어구] ${a.target_expression}\n` : ""
         }${a.explanation ? `[해설] ${a.explanation}` : ""}`.trim();
@@ -2963,7 +2977,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 중요 문장 일괄 AI 분석
+  // 중요 문장 일괄 AI 분석 (이미 분석된 문장 제외)
   if (btnBatchAnalyzeStarred) {
     btnBatchAnalyzeStarred.addEventListener("click", async () => {
       const starredSentences = sentencesData.filter((s) => s.is_starred === 1 || s.is_starred === true);
@@ -2971,33 +2985,137 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast("별표(⭐) 표시된 중요 문장이 없습니다. 먼저 문장에 별표를 추가해 주세요.", "warning");
         return;
       }
-      if (!confirm(`현재 별표(⭐) 표시된 ${starredSentences.length}개 중요 문장을 일괄 AI 어법 분석하시겠습니까?`)) {
+
+      // 이미 어법 분석이 완료된 중요 문장 제외
+      const targetStarred = starredSentences.filter(
+        (s) => !s.grammar_annotations || s.grammar_annotations.length === 0
+      );
+
+      if (targetStarred.length === 0) {
+        showToast(`별표 표시된 중요 문장(${starredSentences.length}개)은 이미 모두 어법 분석이 완료되어 있습니다! 👍`, "info");
         return;
       }
+
+      const totalCount = targetStarred.length;
+      const alreadyCount = starredSentences.length - totalCount;
+      const confirmMsg = alreadyCount > 0
+        ? `별표(⭐) 중요 문장 ${starredSentences.length}개 중 이미 분석된 ${alreadyCount}개를 제외하고,\n미분석 문장 ${totalCount}개를 일괄 AI 어법 분석하시겠습니까?`
+        : `현재 별표(⭐) 표시된 ${totalCount}개 중요 문장을 일괄 AI 어법 분석하시겠습니까?`;
+
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+
       btnBatchAnalyzeStarred.disabled = true;
-      btnBatchAnalyzeStarred.textContent = "⏳ 일괄 분석 중...";
+      const originalHtml = btnBatchAnalyzeStarred.innerHTML;
+      btnBatchAnalyzeStarred.innerHTML = `⏳ 일괄 분석 중 (0/${totalCount})...`;
       try {
-        const res = await fetch("/api/sentences/batch-analyze-grammar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sentence_ids: starredSentences.map((s) => s.id),
-            starred_only: true,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          showToast(`성공적으로 ${data.total_processed}개 문장의 어법 분석을 완료했습니다!`, "success");
+        const chunkSize = 20;
+        let successTotal = 0;
+        for (let i = 0; i < totalCount; i += chunkSize) {
+          const chunk = targetStarred.slice(i, i + chunkSize);
+          const currentProgress = Math.min(i + chunkSize, totalCount);
+          btnBatchAnalyzeStarred.innerHTML = `⏳ 분석 중 (${currentProgress}/${totalCount})...`;
+          const res = await fetch("/api/sentences/batch-analyze-grammar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sentence_ids: chunk.map((s) => s.id),
+              starred_only: true,
+              skip_already_analyzed: true,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            successTotal += (data.total_processed || chunk.length);
+          } else {
+            showToast(data.detail || data.message || "일괄 분석 중 오류 발생", "error");
+            break;
+          }
+        }
+        if (successTotal > 0) {
+          showToast(`성공적으로 중요 문장 ${successTotal}개의 어법 분석을 완료했습니다!`, "success");
           executeSearch("results");
-        } else {
-          showToast(data.detail || data.message || "일괄 분석 실패", "error");
         }
       } catch (err) {
         console.error(err);
         showToast("일괄 분석 통신 오류가 발생했습니다.", "error");
       } finally {
         btnBatchAnalyzeStarred.disabled = false;
-        btnBatchAnalyzeStarred.textContent = "⭐ 중요 문장 일괄 어법 분석";
+        btnBatchAnalyzeStarred.innerHTML = originalHtml;
+      }
+    });
+  }
+
+  // 모든 문장 일괄 AI 분석 (이미 분석된 문장 제외)
+  if (btnBatchAnalyzeAll) {
+    btnBatchAnalyzeAll.addEventListener("click", async () => {
+      if (!sentencesData || sentencesData.length === 0) {
+        showToast("분석할 문장이 없습니다. 먼저 문장을 검색해 주세요.", "warning");
+        return;
+      }
+
+      // 이미 어법 분석이 완료된 문장 제외 (API 토큰 절약 및 중복 분석 방지)
+      const targetSentences = sentencesData.filter(
+        (s) => !s.grammar_annotations || s.grammar_annotations.length === 0
+      );
+
+      if (targetSentences.length === 0) {
+        showToast(`현재 결과창의 모든 문장(${sentencesData.length}개)은 이미 어법 분석이 완료되어 있습니다! 👍`, "info");
+        return;
+      }
+
+      const totalTargetCount = targetSentences.length;
+      const alreadyCount = sentencesData.length - totalTargetCount;
+      const confirmMsg = alreadyCount > 0
+        ? `전체 ${sentencesData.length}개 문장 중 이미 분석된 ${alreadyCount}개를 제외하고,\n미분석 문장 ${totalTargetCount}개를 일괄 AI 어법 분석하시겠습니까?`
+        : `현재 결과창의 미분석 ${totalTargetCount}개 문장을 일괄 AI 어법 분석하시겠습니까?\n(문장 수가 많은 경우 순차 분석되며 시간이 다소 걸릴 수 있습니다.)`;
+
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+
+      btnBatchAnalyzeAll.disabled = true;
+      const originalHtml = btnBatchAnalyzeAll.innerHTML;
+      btnBatchAnalyzeAll.innerHTML = `⏳ 일괄 분석 중 (0/${totalTargetCount})...`;
+
+      try {
+        const chunkSize = 20; // 브라우저 타임아웃 방지 및 안전한 분할 처리 (20문장 단위)
+        let successTotal = 0;
+
+        for (let i = 0; i < totalTargetCount; i += chunkSize) {
+          const chunk = targetSentences.slice(i, i + chunkSize);
+          const currentProgress = Math.min(i + chunkSize, totalTargetCount);
+          btnBatchAnalyzeAll.innerHTML = `⏳ 분석 중 (${currentProgress}/${totalTargetCount})...`;
+
+          const res = await fetch("/api/sentences/batch-analyze-grammar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sentence_ids: chunk.map((s) => s.id),
+              starred_only: false,
+              skip_already_analyzed: true,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            successTotal += (data.total_processed || chunk.length);
+          } else {
+            showToast(data.detail || data.message || "문장 일괄 분석 중 오류 발생", "error");
+            break;
+          }
+        }
+
+        if (successTotal > 0) {
+          showToast(`성공적으로 미분석 문장 ${successTotal}개의 어법 분석을 완료했습니다!`, "success");
+          executeSearch("results");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("일괄 분석 통신 오류가 발생했습니다.", "error");
+      } finally {
+        btnBatchAnalyzeAll.disabled = false;
+        btnBatchAnalyzeAll.innerHTML = originalHtml;
       }
     });
   }
@@ -3119,6 +3237,44 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // AI 설정 상태 헤더 버튼 반영 (API 연결 작동 시 시각적 강조 디자인)
+  function updateAiHeaderButton(data) {
+    if (!btnOpenAiSettingsModal) return;
+    if (data && data.has_key) {
+      btnOpenAiSettingsModal.classList.add("api-active");
+      const provName =
+        data.provider === "gemini"
+          ? "Gemini"
+          : data.provider === "openrouter"
+          ? "OpenRouter"
+          : data.provider === "openai"
+          ? "GPT"
+          : data.provider === "anthropic"
+          ? "Claude"
+          : data.provider || "AI";
+      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 연결됨 <span class="ai-active-badge">${escapeHtml(provName)}</span>`;
+      btnOpenAiSettingsModal.title = `AI 어법 분석기 활성화됨 (${provName}: ${data.model || "기본 모델"}) - 클릭하여 설정 변경`;
+    } else {
+      btnOpenAiSettingsModal.classList.remove("api-active");
+      btnOpenAiSettingsModal.innerHTML = `🔑 AI 설정`;
+      btnOpenAiSettingsModal.title = "AI 어법 분석기 설정 (Gemini/OpenRouter/ChatGPT/Claude)";
+    }
+  }
+
+  async function refreshAiStatusIndicator() {
+    if (!btnOpenAiSettingsModal) return;
+    try {
+      const res = await fetch("/api/settings/ai");
+      if (res.ok) {
+        const data = await res.json();
+        updateAiHeaderButton(data);
+        return data;
+      }
+    } catch (e) {
+      console.warn("AI 설정 상태 조회 실패:", e);
+    }
+  }
+
   async function openAiSettingsModal() {
     if (!aiSettingsModal) return;
     aiSettingsStatus.style.display = "none";
@@ -3126,6 +3282,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/settings/ai");
       if (res.ok) {
         const data = await res.json();
+        updateAiHeaderButton(data);
         const prov = data.provider || "gemini";
         if (aiProviderSelect) aiProviderSelect.value = prov;
         const info = providerDefaults[prov] || providerDefaults.gemini;
@@ -3282,6 +3439,7 @@ document.addEventListener("DOMContentLoaded", () => {
           aiSettingsStatus.style.color = "#047857";
           aiSettingsStatus.textContent = `✔ ${data.message}`;
           showToast("AI 설정이 저장되었습니다.", "success");
+          refreshAiStatusIndicator();
           setTimeout(() => {
             closeAiSettingsModal();
           }, 1200);
@@ -3317,7 +3475,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return id.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
 
-  // 초기 상태: 지문 검색 모드이므로 어법 필터 숨김
+  // 초기 상태: 지문 검색 모드이므로 어법 필터 숨김 및 AI 연결 상태 확인
   updateGrammarFiltersVisibility();
+  refreshAiStatusIndicator();
 });
 

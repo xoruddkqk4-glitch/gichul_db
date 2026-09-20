@@ -58,6 +58,7 @@ class AISettingsRequest(BaseModel):
 class BatchAnalyzeRequest(BaseModel):
     sentence_ids: Optional[List[str]] = None
     starred_only: Optional[bool] = False
+    skip_already_analyzed: Optional[bool] = True
     limit: Optional[int] = 50
 
 
@@ -417,10 +418,24 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="AI API Key가 설정되지 않았습니다. 상단 [🔑 AI 설정]에서 먼저 등록해 주세요.")
 
-    sentences = db.search_sentences(is_starred=True if req.starred_only else None, limit=req.limit or 50)
-    
     if req.sentence_ids:
-        sentences = [s for s in sentences if s["id"] in req.sentence_ids]
+        target_ids = set(req.sentence_ids)
+        all_sentences = db.search_sentences(limit=5000)
+        sentences = [s for s in all_sentences if s["id"] in target_ids]
+    else:
+        limit_val = req.limit or 5000
+        sentences = db.search_sentences(is_starred=True if req.starred_only else None, limit=limit_val)
+
+    # 이미 어법 분석이 완료된 문장 필터링 (토큰 절약 및 중복 분석 방지)
+    if req.skip_already_analyzed:
+        sentences = [s for s in sentences if not s.get("grammar_annotations")]
+
+    if not sentences:
+        return {
+            "total_processed": 0,
+            "results": [],
+            "message": "선택된 문장들이 이미 모두 어법 분석 완료 상태입니다."
+        }
 
     results = []
     for s in sentences:

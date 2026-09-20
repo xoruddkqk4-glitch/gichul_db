@@ -423,3 +423,31 @@
   - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - 온전한 단어 검색 API 검증: `it` 검색 시 일반 256건 / 단어 단위 81건으로 부분 일치 제외 정상 확인
   - `GET /api/openrouter/top-models` 로컬 엔드포인트 200 OK 및 실시간 Top 5 모델 정보 반환 확인
+
+### [2026-09-20 19:18] 업데이트 이력 (Commit ID: e065a2b)
+- **수정 내용**:
+  - **AI 연결 작동 상태 실시간 시각화 디자인 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - 상단 헤더의 `[🔑 AI 설정]` 버튼에 API 키 등록 및 연결 작동 상태를 한눈에 파악할 수 있는 고대비 비주얼 디자인 적용
+    - 연결 작동 시 선명한 에메랄드 그라디언트 배경(`linear-gradient(135deg, #059669, #10b981)`), 펄스 글로우 애니메이션 닷(`🟢`, `@keyframes aiPulseDot`), 그리고 현재 연결된 공급자 배지(`[Gemini]`, `[OpenRouter]`, `[GPT]`, `[Claude]`) 동적 렌더링
+    - 페이지 최초 로드 시, 모달 오픈 시, 그리고 API 키 설정 저장 시 즉각 상태를 확인하여 헤더 버튼 디자인을 실시간 자동 갱신
+  - **수능·모의고사 8대 품사별 어법 태그 배지 색상 시스템 체계화 (`static/css/style.css`, `static/js/main.js`)**:
+    - 기존 '현재완료시제'(동사)와 '관계부사'(접속사)의 색상 차이 원인 분석 및 답변 제공
+    - 대분류 품사(POS)에 따라 모든 어법 범주가 직관적이고 조화로운 파스텔 톤으로 구분되도록 체계적인 배지 클래스 시스템 구축:
+      - `동사`: 부드러운 로즈/레드 (`.badge-verb`, `#fdf2f8` / `#be185d`)
+      - `접속사 / 관계사`: 밝은 스카이블루 (`.badge-conj`, `#eff6ff` / `#1d4ed8`)
+      - `명사 / 주어`: 싱그러운 에메랄드 그린 (`.badge-noun`, `#ecfdf5` / `#047857`)
+      - `대명사`: 청록/틸 (`.badge-pronoun`, `#f0fdfa` / `#0f766e`)
+      - `형용사 / 부사`: 따뜻한 앰버/오렌지 (`.badge-adj-adv`, `#fffbeb` / `#b45309`)
+      - `전치사`: 차분한 인디고 (`.badge-prep`, `#eef2ff` / `#4338ca`)
+      - `특수구문`: 신비로운 바이올렛/보라 (`.badge-special`, `#f5f3ff` / `#6d28d9`)
+      - `문장 구조`: 중립 슬레이트 그레이 (`.badge-sentence`, `#f1f5f9` / `#334155`)
+  - **'모든 문장 일괄 어법 분석' 버튼 신설 및 미분석 문장 선별 분석 최적화 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`, `app.py`)**:
+    - 문장 결과창 상단에 `[⭐ 중요 문장 일괄 어법 분석]`과 나란히 `[🤖 모든 문장 일괄 어법 분석]` 버튼(`.btn-batch-all`) 신설
+    - **중복 분석 및 토큰 낭비 방지**: 이미 어법 분석이 완료된 문장은 자동으로 건너뛰고, 아직 분석되지 않은 '미분석 문장'들만 선별하여 처리하도록 구현
+    - **투명한 안내 & 진행률 표시**: 확인 창에서 전체 문장 수, 이미 분석된 문장 수, 실제 분석 대상 문장 수를 투명하게 안내하고, 20문장 단위 자동 청크 분할 전송(`⏳ 분석 중 (20/539)...`)으로 브라우저 타임아웃 방지
+    - **백엔드 이중 안전장치**: `POST /api/sentences/batch-analyze-grammar` 엔드포인트에 `skip_already_analyzed: true` 파라미터 및 서버단 필터링 로직 구현, 대량의 문장 ID 요청 시에도 DB 전체 문장 범위를 안전하게 커버하도록 쿼리 개선
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+  - `GET /api/settings/ai` 엔드포인트 정상 응답 및 OpenRouter 활성 상태 확인 (통과)
+
