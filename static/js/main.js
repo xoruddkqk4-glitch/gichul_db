@@ -401,6 +401,9 @@ document.addEventListener("DOMContentLoaded", () => {
           const ans41 = p.answer_text || "-";
           const ans42 = p42.answer_text || "-";
           const ansLabel = `41.${ans41} / 42.${ans42}`;
+          const combinedAns41_42 = `[정답] 41. ${ans41}   42. ${ans42}`;
+          const baseExp41_42 = (p.explanation_text || p42.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText41_42 = `${combinedAns41_42}\n\n${baseExp41_42.trim()}`;
 
           result.push({
             ...p,
@@ -413,7 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
             question_type: "1지문2문항",
             answer_text: ansLabel,
             pdf_crop_images: [p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean),
-            explanation_text: p.explanation_text || p42.explanation_text
+            explanation_text: expText41_42
           });
           continue;
         }
@@ -433,6 +436,9 @@ document.addEventListener("DOMContentLoaded", () => {
           const ans44 = p44.answer_text || "-";
           const ans45 = p45.answer_text || "-";
           const ansLabel = `43.${ans43} / 44.${ans44} / 45.${ans45}`;
+          const combinedAns43_45 = `[정답] 43. ${ans43}   44. ${ans44}   45. ${ans45}`;
+          const baseExp43_45 = (p.explanation_text || p44.explanation_text || p45.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText43_45 = `${combinedAns43_45}\n\n${baseExp43_45.trim()}`;
 
           result.push({
             ...p,
@@ -444,8 +450,8 @@ document.addEventListener("DOMContentLoaded", () => {
             subItems: [p, p44, p45],
             question_type: "1지문3문항",
             answer_text: ansLabel,
-            pdf_crop_images: [p.pdf_crop_image, p44.pdf_crop_image, p45.pdf_crop_image].filter(Boolean),
-            explanation_text: p.explanation_text || p44.explanation_text || p45.explanation_text
+            pdf_crop_images: [p.pdf_crop_image].filter(Boolean),
+            explanation_text: expText43_45
           });
           continue;
         }
@@ -463,6 +469,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     return result;
+  }
+
+  /** 42번, 44번, 45번 등 복합 지문 하위 문항에서 지문 본문 반복을 제외하고 발문+선지만 추출 */
+  function extractQuestionChoicesOnly(text, questionTitle) {
+    if (!text) return questionTitle || "";
+    const cIdx = text.indexOf("①");
+    if (cIdx !== -1) {
+      const choices = text.substring(cIdx).trim();
+      return `${questionTitle || ""}\n\n${choices}`.trim();
+    }
+    return questionTitle || text;
   }
 
   function renderPassageView(items) {
@@ -602,9 +619,16 @@ document.addEventListener("DOMContentLoaded", () => {
       `;
     }
 
-    // [좌측 하단]: TXT 지문 본문
+    // [좌측 하단]: TXT 지문 본문 (41번/43번에만 지문 전체 포함, 42번/44번/45번은 발문+선지만 표시)
     if (p.isGroup && p.subItems && p.subItems.length > 1) {
-      panelPassageText.textContent = p.subItems.map(si => si.passage_text || si.question_title).join("\n\n----------------------------------------\n\n");
+      const parts = p.subItems.map((si, sIdx) => {
+        if (sIdx === 0) {
+          return si.passage_text || si.question_title || "";
+        } else {
+          return extractQuestionChoicesOnly(si.passage_text, si.question_title);
+        }
+      });
+      panelPassageText.textContent = parts.filter(Boolean).join("\n\n----------------------------------------\n\n");
     } else {
       panelPassageText.textContent = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
     }

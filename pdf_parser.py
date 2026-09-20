@@ -11,6 +11,7 @@ import os
 import re
 from typing import List, Dict, Tuple, Optional
 import pymupdf as fitz
+from PIL import Image
 
 CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "captures")
 os.makedirs(CAPTURES_DIR, exist_ok=True)
@@ -182,6 +183,13 @@ def extract_pdf_columns_and_questions(
                     "text": list(group_text_lines)
                 }
 
+    # 1지문 3문항 (43~45번) 전용 고화질 크롭 & 세로 이어붙이기 수행
+    merged_43_45_url = crop_and_merge_43_45(doc, grade, year, month, answers_dict)
+    if merged_43_45_url:
+        for q_target in (43, 44, 45):
+            if q_target in questions_data:
+                questions_data[q_target]["pdf_crop_image"] = merged_43_45_url
+
     doc.close()
     return questions_data
 
@@ -326,3 +334,168 @@ def save_extracted_question(
         "passage_text": full_passage_text,
         "pdf_crop_image": web_img_url
     }
+
+
+def crop_and_merge_43_45(
+    doc: fitz.Document,
+    grade: str,
+    year: int,
+    month: int,
+    answers_dict: dict = None
+) -> Optional[str]:
+    """
+    1지문 3문항(43~45번) 전용 고화질 크롭 & 세로 이어붙이기:
+    - 지문 (좌측 칼럼 [43~45] + (A) 영역 & 우측 칼럼 (B)~(D) 영역)
+    - 43번 문항 (정답 선지 형광펜 하이라이트)
+    - 44번 문항 (정답 선지 형광펜 하이라이트)
+    - 45번 문항 (정답 선지 형광펜 하이라이트)
+    각 영역을 고화질로 따로 캡처하여 위에서 아래로 세로로 이어붙인 단일 이미지 생성
+    """
+    answers_dict = answers_dict or {}
+
+    # 43~45번이 위치한 마지막 페이지 탐색
+    target_page = None
+    for p_idx in range(len(doc) - 1, -1, -1):
+        p = doc[p_idx]
+        if p.search_for("[43~45]") or p.search_for("43~45") or p.search_for("(A)"):
+            target_page = p
+            break
+
+    if not target_page:
+        return None
+
+    page = target_page
+    width, height = page.rect.width, page.rect.height
+    mid_x = width / 2.0
+
+    # 1. 좌측 칼럼 [43~45] 및 (A) 영역 Bounding Box
+    r_grp = page.search_for("[43~45]") or page.search_for("43~45")
+    y_start_left = 880
+    if r_grp:
+        y_start_left = max(160, r_grp[0].y0 - 8)
+    rect_a = fitz.Rect(75, y_start_left, mid_x - 5, height - 60)
+
+    # 2. 우측 칼럼 (B), (C), (D) 지문 영역 및 43, 44, 45번 문항 영역
+    r_bcd = page.search_for("(B)")
+    r_43 = page.search_for("43.")
+    r_44 = page.search_for("44.")
+    r_45 = page.search_for("45.")
+
+    y_start_right = 165
+    if r_bcd:
+        r_bcd_right = [r for r in r_bcd if r.x0 > mid_x]
+        if r_bcd_right:
+            y_start_right = max(160, r_bcd_right[0].y0 - 8)
+
+    y_43_start = 728
+    if r_43:
+        r_43_right = [r for r in r_43 if r.x0 > mid_x]
+        if r_43_right:
+            y_43_start = r_43_right[0].y0 - 6
+
+    y_44_start = 833
+    if r_44:
+        r_44_right = [r for r in r_44 if r.x0 > mid_x]
+        if r_44_right:
+            y_44_start = r_44_right[0].y0 - 6
+
+    y_45_start = 888
+    if r_45:
+        r_45_right = [r for r in r_45 if r.x0 > mid_x]
+        if r_45_right:
+            y_45_start = r_45_right[0].y0 - 6
+
+    rect_bcd = fitz.Rect(mid_x + 5, y_start_right, width - 35, y_43_start)
+    rect_43 = fitz.Rect(mid_x + 5, y_43_start, width - 35, y_44_start)
+    rect_44 = fitz.Rect(mid_x + 5, y_44_start, width - 35, y_45_start)
+    rect_45 = fitz.Rect(mid_x + 5, y_45_start, width - 35, height - 60)
+
+    # 정답 선지 형광펜 하이라이트 주석 적용
+    annots = []
+    def add_hl(clip_rect, ans_val):
+        if not ans_val:
+            return
+        ans_str = CIRCLED_MAP.get(str(ans_val).strip(), str(ans_val).strip())
+        try:
+            words = page.get_text("words", clip=clip_rect)
+            choice_words = []
+            collecting = False
+            for w in words:
+                if ans_str in w[4]:
+                    collecting = True
+                    choice_words.append(w)
+                    continue
+                if collecting:
+                    if any(sym in w[4] for sym in ("①", "②", "③", "④", "⑤")) or w[4].startswith("*"):
+                        break
+                    choice_words.append(w)
+            lines_grouped = []
+            curr = []
+            for w in choice_words:
+                if not curr:
+                    curr.append(w)
+                else:
+                    if abs(w[1] - curr[0][1]) < 5:
+                        curr.append(w)
+                    else:
+                        lines_grouped.append(curr)
+                        curr = [w]
+            if curr:
+                lines_grouped.append(curr)
+            for l in lines_grouped:
+                lx0 = min(w[0] for w in l) - 3
+                ly0 = min(w[1] for w in l) - 2
+                lx1 = max(w[2] for w in l) + 3
+                ly1 = max(w[3] for w in l) + 2
+                a = page.add_highlight_annot(fitz.Rect(lx0, ly0, lx1, ly1))
+                a.set_colors(stroke=(1.0, 0.95, 0.1))
+                a.update()
+                annots.append(a)
+        except Exception as e:
+            print(f"[43~45 정답 하이라이트 경고] {e}")
+
+    add_hl(rect_43, answers_dict.get(43, ""))
+    add_hl(rect_44, answers_dict.get(44, ""))
+    add_hl(rect_45, answers_dict.get(45, ""))
+
+    # 고화질(200 DPI) 렌더링
+    parts = []
+    for r in [rect_a, rect_bcd, rect_43, rect_44, rect_45]:
+        pix = page.get_pixmap(clip=r, dpi=200)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        parts.append(img)
+
+    # 1. 지문 세로 결합 (A + BCD)
+    pw = max(parts[0].width, parts[1].width)
+    ph = parts[0].height + parts[1].height + 16
+    img_passage = Image.new("RGB", (pw, ph), (255, 255, 255))
+    img_passage.paste(parts[0], ((pw - parts[0].width) // 2, 0))
+    img_passage.paste(parts[1], ((pw - parts[1].width) // 2, parts[0].height + 16))
+
+    # 2. 전체 세로 결합: [지문, 43번, 44번, 45번]
+    final_items = [img_passage, parts[2], parts[3], parts[4]]
+    max_w = max(im.width for im in final_items)
+    total_h = sum(im.height for im in final_items) + 20 * (len(final_items) - 1)
+    final_img = Image.new("RGB", (max_w, total_h), (255, 255, 255))
+    curr_y = 0
+    for im in final_items:
+        final_img.paste(im, ((max_w - im.width) // 2, curr_y))
+        curr_y += im.height + 20
+
+    img_filename = f"{grade}_{year}_{month:02d}_43.png"
+    img_filepath = os.path.join(CAPTURES_DIR, img_filename)
+    final_img.save(img_filepath)
+
+    # 44번, 45번 문항 파일도 일관성을 위해 동일한 통합 이미지로 저장
+    for q_n in (44, 45):
+        q_file = os.path.join(CAPTURES_DIR, f"{grade}_{year}_{month:02d}_{q_n:02d}.png")
+        final_img.save(q_file)
+
+    for a in annots:
+        try:
+            page.delete_annot(a)
+        except Exception:
+            pass
+
+    return f"/static/captures/{img_filename}"
+

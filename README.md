@@ -147,3 +147,12 @@
 - **검증 결과**:
   - `node --check static/js/main.js` 자바스크립트 구문 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
+### [2026-09-20 14:02] 업데이트 이력 (Commit ID: 02a710e)
+- **수정 내용**:
+  - **복합 지문(41~42번, 43~45번) TXT 지문 본문 중복 반복 배제**: 상단 복합 탭 선택 시 첫 문항(41번, 43번)에만 전체 영문 지문 본문 + 문제 + 선지를 표시하고, 후속 문항(42번, 44번, 45번)은 지문 본문을 다시 중복하지 않고 `발문 + 선지`만 추출(`extractQuestionChoicesOnly`)하여 깔끔하게 구분 표시하도록 개선 (`static/js/main.js`)
+  - **1지문 3문항(43~45번) 영역별 분할 캡처 및 세로 이어붙이기 파이프라인 구축**: 수능/모의고사 장문 2단의 칼럼 간 분할 구조를 완벽 인식하는 `crop_and_merge_43_45()` 모듈을 구축하여, 좌측 칼럼 `[43~45] + (A)`와 우측 칼럼 `(B)~(D)`, 43번/44번/45번 문항을 각각 따로 캡처(각 정답 선지에 형광펜 하이라이트 적용)한 뒤 세로로 매끄럽게 이어붙인 고화질 단일 크롭 이미지 생성 및 뷰어 연동 (`pdf_parser.py`, `static/captures/`)
+  - **복합 문항 HWP 정답 및 해설 패널 모든 문항 정답 표기**: 복합 문항 선택 시 해설 패널 상단에 첫 문항 정답만 단독 노출되던 문제를 수정하여, 해당 복합 지문에 속한 모든 문항의 정답(`[정답] 43. ③   44. ⑤   45. ⑤`, `[정답] 41. ③   42. ⑤`)이 해설지 최상단에 명확하게 표기되도록 개선 (`static/js/main.js`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
+  - 43~45번 결합 크롭 이미지(`고3_2026_07_43.png`, 1058x3429px) 생성 및 데이터베이스 연동 확인
