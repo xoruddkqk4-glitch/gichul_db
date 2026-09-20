@@ -106,39 +106,71 @@ def extract_choice_words_geometrically(page: fitz.Page, clip_rect: fitz.Rect, an
 
 
 def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str) -> List[fitz.Annot]:
-    """정답 선지 기하학적 추출 및 형광펜 노란색 주석 추가"""
-    choice_words = extract_choice_words_geometrically(page, clip_rect, ans_val)
-    if not choice_words:
+    """
+    정답 선지 번호(①~⑤)를 탐색하고,
+    선지 텍스트는 제외한 채 오직 정답에 해당하는 번호 기호에만 파스텔톤 노란색 형광펜 주석 추가
+    """
+    if not ans_val:
+        return []
+    ans_num = REVERSE_CIRCLED_MAP.get(str(ans_val).strip(), None)
+    if not ans_num:
         return []
 
-    # 줄(line) 단위로 묶기 (y 좌표 5pt 이내)
-    lines_grouped = []
-    curr_line = []
-    for w in choice_words:
-        if not curr_line:
-            curr_line.append(w)
-        else:
-            if abs(w[1] - curr_line[0][1]) < 5:
-                curr_line.append(w)
+    sym = CIRCLED_MAP.get(str(ans_num), "")
+    if not sym:
+        return []
+
+    words = page.get_text("words", clip=clip_rect)
+    target_rect = None
+
+    if words:
+        anchors = []
+        for w in words:
+            w_text = w[4]
+            for s_sym, num in REVERSE_CIRCLED_MAP.items():
+                if s_sym in ("①", "②", "③", "④", "⑤") and s_sym in w_text:
+                    anchors.append({
+                        "num": num,
+                        "sym": s_sym,
+                        "x0": w[0], "y0": w[1], "x1": w[2], "y1": w[3],
+                        "word": w
+                    })
+
+        target_anchor = next((a for a in anchors if a["num"] == ans_num), None)
+        if target_anchor:
+            # 단어 내에 다른 문자가 붙어있을 수 있으므로 국소 영역에서 search_for로 정확한 기호 좌표 추출
+            local_rect = fitz.Rect(
+                target_anchor["x0"] - 4,
+                target_anchor["y0"] - 3,
+                target_anchor["x1"] + 4,
+                target_anchor["y1"] + 3
+            )
+            sym_rects = page.search_for(sym, clip=local_rect)
+            if sym_rects:
+                target_rect = sym_rects[0]
             else:
-                lines_grouped.append(curr_line)
-                curr_line = [w]
-    if curr_line:
-        lines_grouped.append(curr_line)
+                target_rect = fitz.Rect(
+                    target_anchor["x0"],
+                    target_anchor["y0"],
+                    min(target_anchor["x1"], target_anchor["x0"] + 12),
+                    target_anchor["y1"]
+                )
 
-    annots = []
-    for l in lines_grouped:
-        lx0 = min(w[0] for w in l) - 3
-        ly0 = min(w[1] for w in l) - 2
-        lx1 = max(w[2] for w in l) + 3
-        ly1 = max(w[3] for w in l) + 2
-        hl_rect = fitz.Rect(lx0, ly0, lx1, ly1)
-        annot = page.add_highlight_annot(hl_rect)
-        annot.set_colors(stroke=(1.0, 0.95, 0.1))  # 선명한 형광 노란색
-        annot.update()
-        annots.append(annot)
+    if not target_rect:
+        all_sym_rects = page.search_for(sym, clip=clip_rect)
+        if all_sym_rects:
+            target_rect = all_sym_rects[0]
 
-    return annots
+    if not target_rect:
+        return []
+
+    # 3. 파스텔톤 노란색 형광펜 하이라이트 주석 생성 (정답 번호 기호에만 2pt 패딩 부여)
+    hl_rect = fitz.Rect(target_rect.x0 - 2, target_rect.y0 - 2, target_rect.x1 + 2, target_rect.y1 + 2)
+    annot = page.add_highlight_annot(hl_rect)
+    annot.set_colors(stroke=(0.996, 0.941, 0.541))  # 부드러운 파스텔톤 형광 노란색 (#fef08a)
+    annot.update()
+
+    return [annot]
 
 
 
