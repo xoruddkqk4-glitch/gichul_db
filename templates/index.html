@@ -37,7 +37,7 @@
         🔑 AI 설정
       </button>
       <button class="btn btn-primary btn-sm" id="btnOpenUploadModal">
-        📁 시험지 업로드 (PDF+HWP)
+        📁 시험지 업로드 및 관리
       </button>
     </div>
   </header>
@@ -534,85 +534,350 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- ====================================================================
-       시험지 업로드 모달창 (PDF + HWP)
+       시험지 업로드 및 DB 관리 모달창 (스마트 일괄 업로드 / 단일 업로드 / 시험지 관리 및 삭제)
        ==================================================================== -->
   <div class="modal-backdrop" id="uploadModal">
-    <div class="modal-content">
+    <div class="modal-content upload-modal-content" style="max-width: 1080px; width: 96%;">
       <div class="modal-header">
-        <h3 class="modal-title">시험지 업로드 및 상호 검증</h3>
+        <div style="flex: 1;">
+          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <span>📚 시험지 업로드 및 데이터베이스 관리</span>
+          </h3>
+          <p class="modal-subtitle" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0;">
+            모의고사 세트를 일괄 업로드하거나, 기존 저장된 시험지 데이터를 선택하여 삭제·관리합니다.
+          </p>
+        </div>
         <button class="modal-close" id="btnCloseUploadModal">&times;</button>
       </div>
-      <form id="uploadForm">
-        <div class="modal-body">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">학년</label>
-              <select class="form-control" name="grade" id="modalGrade">
-                <option value="고3">고3</option>
-                <option value="고2">고2</option>
-                <option value="고1">고1</option>
-              </select>
+
+      <!-- 모달 상단 탭 네비게이션 -->
+      <div class="upload-tabs-bar">
+        <button type="button" class="upload-tab-btn active" id="tabBtnBatchUpload" data-tab="batch">
+          ⚡ 스마트 일괄 업로드 (복수 세트)
+        </button>
+        <button type="button" class="upload-tab-btn" id="tabBtnSingleUpload" data-tab="single">
+          📝 단일 세트 수동 업로드
+        </button>
+        <button type="button" class="upload-tab-btn" id="tabBtnManageExams" data-tab="manage">
+          🗄️ 등록된 시험지 관리 / 삭제
+        </button>
+      </div>
+
+      <!-- 탭 1: 스마트 일괄 업로드 (복수 세트) -->
+      <div class="upload-tab-pane active" id="paneBatchUpload">
+        <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+          <div class="batch-upload-dropzone" id="batchDropzone">
+            <div class="dropzone-icon">📁</div>
+            <div class="dropzone-title">복수 모의고사 파일들을 이곳에 드래그&드롭하세요</div>
+            <div class="dropzone-desc">
+              예시 파일명: <code>고3-[2026-06].pdf</code>, <code>고3-[2026-06].hwp</code>, <code>고3-[2026-06]-A.png</code> (정답표 이미지, 선택)<br>
+              <span style="color: var(--text-muted); font-size: 0.78rem;">
+                ※ 파일명에서 학년, 연도, 월을 자동 추출하며, <strong>3학년 6·9·11월은 평가원</strong>, 그 외는 <strong>교육청</strong>으로 자동 분류됩니다.
+              </span>
             </div>
-            <div class="form-group">
-              <label class="form-label">연도</label>
-              <input type="number" class="form-control" name="year" value="2026" min="1994" max="2030">
+            <label class="btn btn-secondary btn-sm dropzone-btn" style="cursor: pointer; margin-top: 0.75rem;">
+              📂 파일 선택하기 (PDF & HWP & 정답이미지 다중 선택)
+              <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg" multiple style="display: none;">
+            </label>
+          </div>
+
+          <!-- 감지된 세트 프리뷰 테이블 -->
+          <div class="batch-preview-container" id="batchPreviewContainer" style="display: none; margin-top: 1rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <strong style="font-size: 0.88rem; color: #1e293b;">
+                📋 감지된 시험지 세트 (<span id="batchSetsCount" style="color: var(--primary);">0</span>세트)
+              </strong>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnClearBatchFiles" style="padding: 2px 8px; font-size: 0.78rem;">
+                ✕ 목록 비우기
+              </button>
+            </div>
+            <div class="batch-sets-table-wrapper" style="max-height: 240px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+              <table class="batch-sets-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
+                <thead>
+                  <tr style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                    <th style="padding: 8px 12px; white-space: nowrap;">세트 식별자</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">학년</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">연도/월</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">출제기관</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">PDF 파일</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">HWP 파일</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">정답표 (-A)</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">상태</th>
+                  </tr>
+                </thead>
+                <tbody id="batchSetsTableBody">
+                  <!-- JS 동적 생성 -->
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">월</label>
-              <select class="form-control" name="month" id="modalMonth">
-                <option value="3">3월 (교육청)</option>
-                <option value="4">4월 (교육청)</option>
-                <option value="5">5월 (교육청)</option>
-                <option value="6">6월 (평가원)</option>
-                <option value="7" selected>7월 (교육청)</option>
-                <option value="9">9월 (평가원)</option>
-                <option value="10">10월 (교육청)</option>
-                <option value="11">11월 (수능)</option>
-              </select>
+          <!-- 일괄 업로드 진행 상태 박스 -->
+          <div class="batch-progress-box" id="batchProgressBox" style="display: none; margin-top: 1rem; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
+              <span id="batchProgressTitle" style="font-weight: 600; color: #1e293b;">일괄 처리 중...</span>
+              <span id="batchProgressCount" style="font-weight: 700; color: var(--primary);">0 / 0</span>
             </div>
-            <div class="form-group">
-              <label class="form-label">시험 구분</label>
-              <select class="form-control" name="exam_type" id="modalExamType">
-                <option value="교육청" selected>교육청</option>
-                <option value="평가원">평가원</option>
-              </select>
+            <div class="progress-bar-bg" style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
+              <div class="progress-bar-fill" id="batchProgressBarFill" style="height: 100%; width: 0%; background: var(--primary); transition: width 0.3s ease;"></div>
             </div>
-          </div>
-
-          <!-- 문항 번호 가변 입력 (하드코딩 배제) -->
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">독해 시작 번호 (기본: 18)</label>
-              <input type="number" class="form-control" name="reading_start" value="18" placeholder="자동 감지 또는 입력">
+            <div id="batchProgressSubtext" style="font-size: 0.76rem; color: var(--text-muted); margin-top: 6px;">
+              대기 중...
             </div>
-            <div class="form-group">
-              <label class="form-label">독해 끝 번호 (기본: 45)</label>
-              <input type="number" class="form-control" name="reading_end" value="45" placeholder="자동 감지 또는 입력">
-            </div>
-          </div>
-
-          <!-- 파일 선택 영역 (PDF + 통합 HWP 1개) -->
-          <div class="form-group">
-            <label class="form-label">1. PDF 시험지 원본 파일 (필수)</label>
-            <input type="file" class="form-control" name="pdf_file" accept=".pdf" required>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">2. HWP/HWPX 시험지 파일 (문제 + 정답 및 해설 통합본 1개, 필수)</label>
-            <input type="file" class="form-control" name="hwp_file" accept=".hwp,.hwpx" required>
-            <small style="color: var(--text-muted); font-size: 0.78rem;">
-              ※ 1개의 HWP 파일 안에 문제와 정답 및 해설이 모두 포함되어 있으면 자동으로 각각 감지하여 분리 저장합니다.
-            </small>
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" id="btnCancelUpload">취소</button>
-          <button type="submit" class="btn btn-primary" id="btnSubmitUpload">🚀 상호 검증 및 DB 저장</button>
+
+        <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
+          <button type="button" class="btn btn-secondary" id="btnCancelBatchModal">취소</button>
+          <button type="button" class="btn btn-primary" id="btnStartBatchUpload" disabled>
+            🚀 일괄 업로드 및 상호 검증 시작
+          </button>
         </div>
-      </form>
+      </div>
+
+      <!-- 탭 2: 단일 세트 수동 업로드 (기존 폼) -->
+      <div class="upload-tab-pane" id="paneSingleUpload" style="display: none;">
+        <form id="uploadForm">
+          <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">학년</label>
+                <select class="form-control" name="grade" id="modalGrade">
+                  <option value="고3">고3</option>
+                  <option value="고2">고2</option>
+                  <option value="고1">고1</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">연도</label>
+                <input type="number" class="form-control" name="year" id="modalYear" value="2026" min="1994" max="2030">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">월</label>
+                <select class="form-control" name="month" id="modalMonth">
+                  <option value="3">3월 (교육청)</option>
+                  <option value="4">4월 (교육청)</option>
+                  <option value="5">5월 (교육청)</option>
+                  <option value="6">6월 (평가원)</option>
+                  <option value="7" selected>7월 (교육청)</option>
+                  <option value="9">9월 (평가원)</option>
+                  <option value="10">10월 (교육청)</option>
+                  <option value="11">11월 (수능/평가원)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">시험 구분</label>
+                <select class="form-control" name="exam_type" id="modalExamType">
+                  <option value="교육청" selected>교육청</option>
+                  <option value="평가원">평가원</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 문항 번호 가변 입력 (하드코딩 배제) -->
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">독해 시작 번호 (기본: 18)</label>
+                <input type="number" class="form-control" name="reading_start" value="18" placeholder="자동 감지 또는 입력">
+              </div>
+              <div class="form-group">
+                <label class="form-label">독해 끝 번호 (기본: 45)</label>
+                <input type="number" class="form-control" name="reading_end" value="45" placeholder="자동 감지 또는 입력">
+              </div>
+            </div>
+
+            <!-- 파일 선택 영역 (PDF + 통합 HWP 1개) -->
+            <div class="form-group">
+              <label class="form-label">1. PDF 시험지 원본 파일 (필수)</label>
+              <input type="file" class="form-control" name="pdf_file" id="modalPdfFile" accept=".pdf" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">2. HWP/HWPX 시험지 파일 (문제 + 정답 및 해설 통합본 1개, 필수)</label>
+              <input type="file" class="form-control" name="hwp_file" id="modalHwpFile" accept=".hwp,.hwpx" required>
+              <small style="color: var(--text-muted); font-size: 0.78rem;">
+                ※ 1개의 HWP 파일 안에 문제와 정답 및 해설이 모두 포함되어 있으면 자동으로 각각 감지하여 분리 저장합니다.
+              </small>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">3. 정답표 캡처 이미지 파일 (선택, PNG/JPG)</label>
+              <input type="file" class="form-control" name="ans_file" id="modalAnsFile" accept=".png,.jpg,.jpeg">
+              <small style="color: var(--text-muted); font-size: 0.78rem;">
+                ※ HWP 내에 정답이 없거나 이미지로 삽입된 경우, 1~45번 정답표 이미지를 함께 첨부하면 Vision AI가 정답을 자동 추출합니다.
+              </small>
+            </div>
+          </div>
+          <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
+            <button type="button" class="btn btn-secondary" id="btnCancelUpload">취소</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitUpload">🚀 단일 세트 상호 검증 및 DB 저장</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- 탭 3: 등록된 시험지 관리 및 삭제 -->
+      <div class="upload-tab-pane" id="paneManageExams" style="display: none;">
+        <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnSelectAllExams">전체 선택</button>
+              <button type="button" class="btn btn-danger btn-sm" id="btnDeleteSelectedExams" disabled style="display: inline-flex; align-items: center; gap: 4px;">
+                🗑️ 선택 삭제 (<span id="selectedExamsCount">0</span>)
+              </button>
+            </div>
+            <div style="font-size: 0.82rem; color: var(--text-muted);">
+              총 등록 시험지: <strong id="manageExamsTotalCount" style="color: var(--primary);">0</strong>개
+            </div>
+          </div>
+
+          <div class="manage-exams-table-wrapper" style="max-height: 380px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+            <table class="manage-exams-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
+              <thead>
+                <tr style="background: #f8fafc; border-bottom: 1px solid var(--border);">
+                  <th style="width: 36px; padding: 10px 10px; text-align: center; white-space: nowrap;">
+                    <input type="checkbox" id="chkAllExams" style="cursor: pointer;">
+                  </th>
+                  <th style="padding: 10px 12px; white-space: nowrap;">시험지 식별자</th>
+                  <th style="padding: 10px 10px; white-space: nowrap;">학년/월</th>
+                  <th style="padding: 10px 10px; white-space: nowrap;">출제기관</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (-A 이미지)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap;">📊 코어 본문 / 메타데이터</th>
+                  <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">관리</th>
+                </tr>
+              </thead>
+              <tbody id="manageExamsTableBody">
+                <!-- JS 동적 생성 -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 단독 파일 업로드용 숨김 인풋 -->
+          <input type="file" id="examSingleFileInput" style="display: none;">
+
+          <div style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+            💡 <strong>3대 파일 직접 업로드 안내</strong>: 각 시험지의 <strong>[📄 문제지]</strong>, <strong>[📝 해설지]</strong>, <strong>[🖼️ 정답표]</strong> 버튼을 클릭하면 해당 파일만 단독으로 즉시 등록하거나 교체할 수 있습니다. 특히 <strong>정답표 이미지</strong>를 등록하시면 Vision AI가 1~45번 정답을 자동 추출하여 DB 지문 및 PDF 형광펜 하이라이트를 즉시 갱신합니다.
+          </div>
+        </div>
+
+        <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+          <button type="button" class="btn btn-secondary" id="btnCloseManageModal">닫기</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       선택적 데이터 삭제 옵션 모달창 (3대 영역 분리 삭제)
+       ==================================================================== -->
+  <div class="modal-backdrop" id="selectiveDeleteModal">
+    <div class="modal-content" style="max-width: 600px; width: 95%;">
+      <div class="modal-header" style="background: #fff1f2; border-bottom: 1px solid #fecdd3;">
+        <div>
+          <h3 class="modal-title" style="color: #9f1239; display: flex; align-items: center; gap: 8px;">
+            <span>🗑️ 선택적 데이터 삭제 옵션</span>
+          </h3>
+          <p class="modal-subtitle" style="color: #be123c; margin-top: 4px; font-size: 0.8rem; margin-bottom: 0;">
+            삭제할 데이터 영역(원본 파일 / 코어 본문 / 부가 메타데이터)을 선택해 주세요.
+          </p>
+        </div>
+        <button class="modal-close" id="btnCloseSelectiveDeleteModal">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem 1.5rem;">
+        <!-- 삭제 대상 정보 알림 상자 -->
+        <div id="selDelTargetBox" style="background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem;">
+          <div style="font-size: 0.8rem; color: var(--text-muted);">삭제 대상 시험지:</div>
+          <div id="selDelTargetText" style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 2px;">
+            [고3-2026년-07월]
+          </div>
+        </div>
+
+        <!-- 단축 프리셋 버튼 바 -->
+        <div style="margin-bottom: 1rem;">
+          <div style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">
+            ⚡ 빠른 선택 프리셋
+          </div>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetFullWipe" style="font-size: 0.78rem;">
+              💥 전체 완전 삭제 (기본값)
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetRawOnly" style="font-size: 0.78rem;">
+              📁 원본 파일만 삭제 (용량 절약)
+            </button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetMetaOnly" style="font-size: 0.78rem;">
+              🏷️ 메타데이터만 초기화 (어법 리셋)
+            </button>
+          </div>
+        </div>
+
+        <!-- 3대 영역 체크박스 카드 목록 -->
+        <div class="sel-del-options-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- 1. 원본 파일 삭제 -->
+          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+            <input type="checkbox" id="chkDelRawFiles" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
+                  📁 1. 원본 파일 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #059669;">(서버 용량 절약)</span>
+                </span>
+                <span class="badge-raw-size-preview" id="selDelRawSizeBadge" style="font-size: 0.74rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+              </div>
+              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+                <code>uploads/</code> 폴더에 저장된 원본 PDF 및 HWP 파일을 영구 삭제합니다. (이미 DB에 텍스트가 추출되어 있으므로 <strong>웹 검색·뷰어 기능은 100% 정상 작동</strong>합니다)
+              </p>
+            </div>
+          </label>
+
+          <!-- 2. 코어 본문 데이터 삭제 -->
+          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+            <input type="checkbox" id="chkDelCoreCorpus" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
+                  📄 2. 코어 본문 데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #dc2626;">(DB 지문·문장 삭제)</span>
+                </span>
+                <span id="selDelCoreBadge" style="font-size: 0.74rem; background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+              </div>
+              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+                DB의 시험지 마스터, 지문 텍스트, 분할 문장, 그리고 PDF 크롭 캡처 이미지를 영구 삭제합니다. (본문이 삭제되면 <strong>종속된 어법 메타데이터도 함께 삭제</strong>됩니다)
+              </p>
+            </div>
+          </label>
+
+          <!-- 3. 부가 메타데이터 삭제 -->
+          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
+            <input type="checkbox" id="chkDelMetadata" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
+                  🏷️ 3. 부가 메타데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #6366f1;">(어법 분석/태그 초기화)</span>
+                </span>
+                <span id="selDelMetaBadge" style="font-size: 0.74rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+              </div>
+              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+                지문 및 문장 본문은 그대로 보존하고, <strong>AI 어법 분석 결과와 사용자 태그만 초기화</strong>합니다. (새로운 AI 모델로 다시 분석하고 싶을 때 유용합니다)
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <div id="selDelWarningMsg" style="display: none; margin-top: 12px; font-size: 0.76rem; color: #dc2626; background: #fef2f2; padding: 8px 12px; border-radius: 6px; border: 1px solid #fecaca;">
+          ⚠️ 최소 1개 이상의 데이터 영역을 선택해야 삭제를 진행할 수 있습니다.
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+        <button type="button" class="btn btn-secondary" id="btnCancelSelectiveDelete">취소</button>
+        <button type="button" class="btn btn-danger" id="btnExecuteSelectiveDelete" style="display: inline-flex; align-items: center; gap: 6px;">
+          🗑️ 선택한 데이터 영역 삭제 실행
+        </button>
+      </div>
     </div>
   </div>
 

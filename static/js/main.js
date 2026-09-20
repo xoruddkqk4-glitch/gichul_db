@@ -1506,9 +1506,16 @@ document.addEventListener("DOMContentLoaded", () => {
     currentPassageId = p.id;
 
     // [좌측 상단]: PDF 문항 캡처 이미지 (단일 또는 그룹 이미지들)
-    const images = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
+    const rawImages = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
       ? p.pdf_crop_images
       : (p.pdf_crop_image ? [p.pdf_crop_image] : []);
+
+    // 브라우저 디스크 캐시로 인해 형광펜 하이라이트 반영 전 이미지가 노출되는 것을 방지하기 위해 캐시 버스팅 적용
+    const images = rawImages.map(url => {
+      if (!url) return "";
+      const sep = url.includes("?") ? "&" : "?";
+      return `${url}${sep}t=${Date.now()}`;
+    });
 
     if (images.length > 0) {
       if (images.length === 1) {
@@ -2461,18 +2468,355 @@ document.addEventListener("DOMContentLoaded", () => {
   // 10. 시험지 업로드 모달 제어 (월 자동 가이드 및 파이프라인 제출)
   // =========================================================================
 
+  // =========================================================================
+  // 10. 시험지 업로드 및 DB 관리 모달 제어 (3개 탭 & 스마트 일괄 업로드 & 시험지 관리)
+  // =========================================================================
+
+  const tabBtnBatchUpload = document.getElementById("tabBtnBatchUpload");
+  const tabBtnSingleUpload = document.getElementById("tabBtnSingleUpload");
+  const tabBtnManageExams = document.getElementById("tabBtnManageExams");
+
+  const paneBatchUpload = document.getElementById("paneBatchUpload");
+  const paneSingleUpload = document.getElementById("paneSingleUpload");
+  const paneManageExams = document.getElementById("paneManageExams");
+
+  const btnCancelBatchModal = document.getElementById("btnCancelBatchModal");
+  const btnCloseManageModal = document.getElementById("btnCloseManageModal");
+
+  // 10-1. 모달 탭 전환 로직
+  function switchUploadTab(tabName) {
+    [tabBtnBatchUpload, tabBtnSingleUpload, tabBtnManageExams].forEach(btn => {
+      if (btn) btn.classList.toggle("active", btn.dataset.tab === tabName);
+    });
+    if (paneBatchUpload) paneBatchUpload.style.display = (tabName === "batch") ? "block" : "none";
+    if (paneSingleUpload) paneSingleUpload.style.display = (tabName === "single") ? "block" : "none";
+    if (paneManageExams) paneManageExams.style.display = (tabName === "manage") ? "block" : "none";
+
+    if (tabName === "manage") {
+      loadExamsManagerList();
+    }
+  }
+
+  if (tabBtnBatchUpload) tabBtnBatchUpload.addEventListener("click", () => switchUploadTab("batch"));
+  if (tabBtnSingleUpload) tabBtnSingleUpload.addEventListener("click", () => switchUploadTab("single"));
+  if (tabBtnManageExams) tabBtnManageExams.addEventListener("click", () => switchUploadTab("manage"));
+
   btnOpenUploadModal.addEventListener("click", () => {
     uploadModal.classList.add("show");
+    switchUploadTab("batch");
   });
 
   const closeUploadModal = () => {
     uploadModal.classList.remove("show");
+    // 완료된 상태에서 닫히는 경우 배치 업로드 상태 정리
+    if (btnStartBatchUpload && btnStartBatchUpload.dataset.state === "finished") {
+      batchSetsMap = {};
+      if (batchFileInput) batchFileInput.value = "";
+      if (batchProgressBox) batchProgressBox.style.display = "none";
+      btnStartBatchUpload.dataset.state = "";
+      btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
+      btnStartBatchUpload.disabled = true;
+      btnStartBatchUpload.style.background = "";
+      btnStartBatchUpload.style.borderColor = "";
+      if (btnCancelBatchModal) {
+        btnCancelBatchModal.disabled = false;
+        btnCancelBatchModal.textContent = "취소";
+      }
+      renderBatchSetsTable();
+    }
   };
 
   btnCloseUploadModal.addEventListener("click", closeUploadModal);
   btnCancelUpload.addEventListener("click", closeUploadModal);
+  if (btnCancelBatchModal) btnCancelBatchModal.addEventListener("click", closeUploadModal);
+  if (btnCloseManageModal) btnCloseManageModal.addEventListener("click", closeUploadModal);
 
-  // 시험 구분 변경 시 월 기본값 지능적 안내
+  // 10-2. 스마트 파일명 메타데이터 파서 및 출제기관 판별 규칙 (정답표 -A 접미사 지원)
+  function parseExamMetadataFromFilename(filename) {
+    if (!filename) return null;
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
+    const is_ans = /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
+    const cleanName = nameWithoutExt.replace(/[\s\-_]?(A|ans|정답)$/i, "");
+
+    // 지원 패턴 예: 고3-[2026-07], 고3-[2026-7], 고3-2026-07, 고3_2026_07, 고3 2026년 7월 등
+    const match = cleanName.match(/(고[1-3]|[1-3]학년)[\s\-_]?\[?(\d{4})[년\s\-_]+(\d{1,2})월?\]?/i);
+    if (!match) return null;
+
+    const rawGrade = match[1];
+    const grade = rawGrade.includes("3") ? "고3" : (rawGrade.includes("2") ? "고2" : "고1");
+    const year = parseInt(match[2], 10);
+    const month = parseInt(match[3], 10);
+
+    // 출제기관 규칙: 3학년의 6월, 9월, 11월만 '평가원' 출제. 3학년의 나머지 월과 1,2학년은 무조건 '교육청'
+    const exam_type = (grade === "고3" && [6, 9, 11].includes(month)) ? "평가원" : "교육청";
+    const set_key = `${grade}-[${year}-${String(month).padStart(2, "0")}]`;
+
+    return { set_key, grade, year, month, exam_type, is_ans };
+  }
+
+  // 10-3. 스마트 일괄 업로드 (복수 세트) 드롭존 & 페어링 (PDF + HWP + 정답 이미지 3종)
+  let batchSetsMap = {}; // { set_key: { set_key, grade, year, month, exam_type, pdfFile, hwpFile, ansFile } }
+  const batchDropzone = document.getElementById("batchDropzone");
+  const batchFileInput = document.getElementById("batchFileInput");
+  const batchPreviewContainer = document.getElementById("batchPreviewContainer");
+  const batchSetsTableBody = document.getElementById("batchSetsTableBody");
+  const batchSetsCount = document.getElementById("batchSetsCount");
+  const btnClearBatchFiles = document.getElementById("btnClearBatchFiles");
+  const btnStartBatchUpload = document.getElementById("btnStartBatchUpload");
+  const batchProgressBox = document.getElementById("batchProgressBox");
+  const batchProgressTitle = document.getElementById("batchProgressTitle");
+  const batchProgressCount = document.getElementById("batchProgressCount");
+  const batchProgressBarFill = document.getElementById("batchProgressBarFill");
+  const batchProgressSubtext = document.getElementById("batchProgressSubtext");
+
+  function handleBatchFilesSelected(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const meta = parseExamMetadataFromFilename(file.name);
+      if (!meta) continue;
+
+      const key = meta.set_key;
+      if (!batchSetsMap[key]) {
+        batchSetsMap[key] = {
+          set_key: key,
+          grade: meta.grade,
+          year: meta.year,
+          month: meta.month,
+          exam_type: meta.exam_type,
+          pdfFile: null,
+          hwpFile: null,
+          ansFile: null,
+        };
+      }
+
+      const lowerName = file.name.toLowerCase();
+      if (lowerName.endsWith(".pdf")) {
+        batchSetsMap[key].pdfFile = file;
+      } else if (lowerName.endsWith(".hwp") || lowerName.endsWith(".hwpx")) {
+        batchSetsMap[key].hwpFile = file;
+      } else if (lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || meta.is_ans) {
+        batchSetsMap[key].ansFile = file;
+      }
+    }
+
+    renderBatchSetsTable();
+  }
+
+  function renderBatchSetsTable() {
+    if (!batchSetsTableBody) return;
+    batchSetsTableBody.innerHTML = "";
+    const sets = Object.values(batchSetsMap);
+
+    if (sets.length === 0) {
+      if (batchPreviewContainer) batchPreviewContainer.style.display = "none";
+      if (btnStartBatchUpload) btnStartBatchUpload.disabled = true;
+      return;
+    }
+
+    if (batchPreviewContainer) batchPreviewContainer.style.display = "block";
+    if (batchSetsCount) batchSetsCount.textContent = sets.length;
+
+    let readyCount = 0;
+
+    sets.forEach(set => {
+      const isReady = Boolean(set.pdfFile && set.hwpFile);
+      if (isReady) readyCount++;
+
+      const tr = document.createElement("tr");
+      tr.id = `batch-row-${set.set_key.replace(/[\[\]\-]/g, "_")}`;
+
+      const instClass = (set.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
+      const instIcon = (set.exam_type === "평가원") ? "🏛️" : "🏫";
+
+      const ansCellHtml = set.ansFile
+        ? `<span style="color: #0284c7; font-weight: 600;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
+        : `<span style="color: #94a3b8;">⚪ 미포함 (HWP 사용)</span>`;
+
+      const statusHtml = isReady
+        ? (set.ansFile
+            ? `<span class="badge-match-ready">✅ 준비 완료 (정답표 포함)</span>`
+            : `<span class="badge-match-ready">✅ 준비 완료</span>`)
+        : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
+
+      tr.innerHTML = `
+        <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(set.set_key)}</td>
+        <td style="padding: 8px 10px; white-space: nowrap;">${escapeHtml(set.grade)}</td>
+        <td style="padding: 8px 10px; white-space: nowrap;">${set.year}년 ${set.month}월</td>
+        <td style="padding: 8px 10px; white-space: nowrap;">
+          <span class="badge-inst ${instClass}">${instIcon} ${escapeHtml(set.exam_type)}</span>
+        </td>
+        <td style="padding: 8px 10px; white-space: nowrap;">
+          ${set.pdfFile 
+            ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.pdfFile.name)}</span>` 
+            : `<span style="color: #dc2626;">❌ 누락</span>`}
+        </td>
+        <td style="padding: 8px 10px; white-space: nowrap;">
+          ${set.hwpFile 
+            ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.hwpFile.name)}</span>` 
+            : `<span style="color: #dc2626;">❌ 누락</span>`}
+        </td>
+        <td style="padding: 8px 10px; white-space: nowrap;">
+          ${ansCellHtml}
+        </td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">
+          ${statusHtml}
+        </td>
+      `;
+      batchSetsTableBody.appendChild(tr);
+    });
+
+    if (btnStartBatchUpload) {
+      btnStartBatchUpload.disabled = (readyCount === 0);
+      btnStartBatchUpload.textContent = (readyCount > 0)
+        ? `🚀 ${readyCount}개 세트 일괄 업로드 및 상호 검증 시작`
+        : "🚀 일괄 업로드 및 상호 검증 시작";
+    }
+  }
+
+  // 드롭존 이벤트 바인딩
+  if (batchDropzone) {
+    ["dragenter", "dragover"].forEach(evt => {
+      batchDropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        batchDropzone.classList.add("dragover");
+      });
+    });
+
+    ["dragleave", "dragend"].forEach(evt => {
+      batchDropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        batchDropzone.classList.remove("dragover");
+      });
+    });
+
+    batchDropzone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      batchDropzone.classList.remove("dragover");
+      if (e.dataTransfer && e.dataTransfer.files) {
+        handleBatchFilesSelected(e.dataTransfer.files);
+      }
+    });
+  }
+
+  if (batchFileInput) {
+    batchFileInput.addEventListener("change", (e) => {
+      if (e.target.files) {
+        handleBatchFilesSelected(e.target.files);
+      }
+    });
+  }
+
+  if (btnClearBatchFiles) {
+    btnClearBatchFiles.addEventListener("click", () => {
+      batchSetsMap = {};
+      if (batchFileInput) batchFileInput.value = "";
+      renderBatchSetsTable();
+    });
+  }
+
+  // 일괄 업로드 순차 실행
+  if (btnStartBatchUpload) {
+    btnStartBatchUpload.addEventListener("click", async () => {
+      // 이미 처리가 완료된 상태에서 버튼을 누른 경우 -> 모달을 닫고 홈 검색 갱신
+      if (btnStartBatchUpload.dataset.state === "finished") {
+        closeUploadModal();
+        executeSearch("home");
+        return;
+      }
+
+      const sets = Object.values(batchSetsMap).filter(s => s.pdfFile && s.hwpFile);
+      if (sets.length === 0) return;
+
+      btnStartBatchUpload.disabled = true;
+      if (btnCancelBatchModal) btnCancelBatchModal.disabled = true;
+      if (batchProgressBox) batchProgressBox.style.display = "block";
+
+      let successCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < sets.length; i++) {
+        const set = sets[i];
+        const rowId = `batch-row-${set.set_key.replace(/[\[\]\-]/g, "_")}`;
+        const row = document.getElementById(rowId);
+        const statusCell = row ? row.querySelector(".batch-row-status") : null;
+
+        if (statusCell) {
+          statusCell.innerHTML = `<span style="color: var(--primary); font-weight: 600;">⏳ 처리 중...</span>`;
+        }
+
+        const pct = Math.round(((i + 1) / sets.length) * 100);
+        if (batchProgressBarFill) batchProgressBarFill.style.width = `${pct}%`;
+        if (batchProgressCount) batchProgressCount.textContent = `${i + 1} / ${sets.length}`;
+        if (batchProgressTitle) batchProgressTitle.textContent = `[${set.set_key}] 처리 중...`;
+        if (batchProgressSubtext) {
+          batchProgressSubtext.textContent = `PDF 2단 분할 파싱 및 HWP 교차 검증 진행 중 (${i + 1}/${sets.length})`;
+        }
+
+        const formData = new FormData();
+        formData.append("grade", set.grade);
+        formData.append("year", set.year);
+        formData.append("month", set.month);
+        formData.append("exam_type", set.exam_type);
+        formData.append("reading_start", 18);
+        formData.append("reading_end", 45);
+        formData.append("pdf_file", set.pdfFile);
+        formData.append("hwp_file", set.hwpFile);
+        if (set.ansFile) {
+          formData.append("ans_file", set.ansFile);
+        }
+
+        try {
+          const res = await fetch("/api/upload", { method: "POST", body: formData });
+          const resData = await res.json();
+          if (res.ok) {
+            successCount++;
+            if (statusCell) {
+              statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 완료 (${resData.passages_count || 28}문항)</span>`;
+            }
+          } else {
+            failCount++;
+            if (statusCell) {
+              statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          failCount++;
+          if (statusCell) {
+            statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 오류</span>`;
+          }
+        }
+      }
+
+      if (batchProgressTitle) batchProgressTitle.textContent = "🎉 일괄 처리 완료!";
+      if (batchProgressSubtext) {
+        batchProgressSubtext.textContent = `총 ${sets.length}개 세트 중 ${successCount}개 성공, ${failCount}개 실패`;
+      }
+      showToast(`총 ${successCount}개 모의고사 세트가 성공적으로 등록되었습니다!`, "success");
+
+      loadStats();
+      loadExamsManagerList();
+
+      if (btnCancelBatchModal) {
+        btnCancelBatchModal.disabled = false;
+        btnCancelBatchModal.textContent = "닫기";
+      }
+
+      // 처리 완료 상태로 변경 및 활성화 (클릭 시 모달 닫기 수행)
+      btnStartBatchUpload.disabled = false;
+      btnStartBatchUpload.dataset.state = "finished";
+      btnStartBatchUpload.textContent = "✔ 처리 완료 (닫기)";
+      btnStartBatchUpload.style.background = "#059669";
+      btnStartBatchUpload.style.borderColor = "#059669";
+    });
+  }
+
+  // 10-4. 단일 세트 수동 업로드 (기존 폼 유지)
   if (modalExamType && modalMonth) {
     modalExamType.addEventListener("change", () => {
       if (modalExamType.value === "교육청") {
@@ -2505,7 +2849,6 @@ document.addEventListener("DOMContentLoaded", () => {
         closeUploadModal();
         uploadForm.reset();
         loadStats();
-        // 업로드된 시험지로 자동 검색 실행
         mainSearchInput.value = data.exam_id || "";
         executeSearch("home");
       } else {
@@ -2516,9 +2859,465 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("서버 통신 중 오류가 발생했습니다.");
     } finally {
       submitBtn.disabled = false;
-      submitBtn.textContent = "🚀 상호 검증 및 DB 저장";
+      submitBtn.textContent = "🚀 단일 세트 상호 검증 및 DB 저장";
     }
   });
+
+  // 10-5. 등록된 시험지 관리 및 3대 데이터 영역 선택적 삭제 로직
+  const manageExamsTableBody = document.getElementById("manageExamsTableBody");
+  const manageExamsTotalCount = document.getElementById("manageExamsTotalCount");
+  const chkAllExams = document.getElementById("chkAllExams");
+  const btnSelectAllExams = document.getElementById("btnSelectAllExams");
+  const btnDeleteSelectedExams = document.getElementById("btnDeleteSelectedExams");
+  const selectedExamsCount = document.getElementById("selectedExamsCount");
+
+  // 선택적 삭제 모달 요소 캐싱
+  const selectiveDeleteModal = document.getElementById("selectiveDeleteModal");
+  const btnCloseSelectiveDeleteModal = document.getElementById("btnCloseSelectiveDeleteModal");
+  const btnCancelSelectiveDelete = document.getElementById("btnCancelSelectiveDelete");
+  const btnExecuteSelectiveDelete = document.getElementById("btnExecuteSelectiveDelete");
+  const selDelTargetText = document.getElementById("selDelTargetText");
+  const selDelRawSizeBadge = document.getElementById("selDelRawSizeBadge");
+  const selDelCoreBadge = document.getElementById("selDelCoreBadge");
+  const selDelMetaBadge = document.getElementById("selDelMetaBadge");
+  const chkDelRawFiles = document.getElementById("chkDelRawFiles");
+  const chkDelCoreCorpus = document.getElementById("chkDelCoreCorpus");
+  const chkDelMetadata = document.getElementById("chkDelMetadata");
+  const selDelWarningMsg = document.getElementById("selDelWarningMsg");
+  const btnPresetFullWipe = document.getElementById("btnPresetFullWipe");
+  const btnPresetRawOnly = document.getElementById("btnPresetRawOnly");
+  const btnPresetMetaOnly = document.getElementById("btnPresetMetaOnly");
+
+  let loadedExamsCache = [];
+  let pendingDeleteExamIds = [];
+
+  async function loadExamsManagerList() {
+    if (!manageExamsTableBody) return;
+    manageExamsTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">시험지 목록 및 3대 데이터 영역 통계를 불러오는 중...</td></tr>`;
+
+    try {
+      const res = await fetch("/api/exams");
+      const data = await res.json();
+      const items = data.items || [];
+      loadedExamsCache = items;
+
+      if (manageExamsTotalCount) manageExamsTotalCount.textContent = items.length;
+
+      if (items.length === 0) {
+        manageExamsTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">등록된 시험지가 없습니다.</td></tr>`;
+        updateExamsSelectionState();
+        return;
+      }
+
+      manageExamsTableBody.innerHTML = "";
+      items.forEach(exam => {
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid var(--border)";
+
+        const instClass = (exam.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
+        const instIcon = (exam.exam_type === "평가원") ? "🏛️" : "🏫";
+
+        const fStat = exam.file_status || {};
+        const pdfStat = fStat.pdf || {};
+        const hwpStat = fStat.hwp || {};
+        const ansStat = fStat.ans || {};
+
+        // 1. PDF 문제지 칩 버튼
+        let pdfBtnHtml = "";
+        if (pdfStat.exists) {
+          pdfBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="${escapeHtml(pdfStat.filename)} (클릭 시 파일 교체)">📄 등록됨</button>`;
+        } else {
+          pdfBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="클릭하여 PDF 문제지 단독 업로드">➕ PDF 등록</button>`;
+        }
+
+        // 2. HWP 해설지 칩 버튼
+        let hwpBtnHtml = "";
+        if (hwpStat.exists) {
+          hwpBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="${escapeHtml(hwpStat.filename)} (클릭 시 파일 교체)">📝 등록됨</button>`;
+        } else {
+          hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 등록</button>`;
+        }
+
+        // 3. 정답표 이미지 (-A) 칩 버튼
+        let ansBtnHtml = "";
+        const answeredCount = ansStat.answered_count || 0;
+        const totalCount = ansStat.total_count || exam.passage_count || 28;
+        if (ansStat.exists) {
+          ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 이미지로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
+        } else if (answeredCount > 0) {
+          ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표 이미지 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
+        } else {
+          ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
+        }
+
+        // 4. 코어 본문 / 메타데이터 요약 배지
+        const coreMetaHtml = `
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <span class="badge-tier badge-tier-core" style="font-size: 0.72rem; padding: 2px 6px;">📄 ${exam.passage_count}지문 / ${exam.sentence_count}문장</span>
+            <span class="badge-tier ${exam.grammar_count > 0 ? 'badge-tier-meta' : 'badge-tier-empty'}" style="font-size: 0.72rem; padding: 2px 6px;">🏷️ 어법 ${exam.grammar_count} / 태그 ${exam.tag_count}</span>
+          </div>
+        `;
+
+        tr.innerHTML = `
+          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">
+            <input type="checkbox" class="chk-exam-row" data-id="${escapeHtml(exam.id)}" style="cursor: pointer;">
+          </td>
+          <td style="padding: 10px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(exam.id)}</td>
+          <td style="padding: 10px 10px; white-space: nowrap;">${escapeHtml(exam.grade)} ${exam.month}월</td>
+          <td style="padding: 10px 10px; white-space: nowrap;">
+            <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(exam.exam_type)}</span>
+          </td>
+          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
+          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
+          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
+          <td style="padding: 10px 10px; white-space: nowrap;">${coreMetaHtml}</td>
+          <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">
+            <button type="button" class="btn-icon-delete btn-single-delete-exam" data-id="${escapeHtml(exam.id)}" title="해당 시험지 데이터 선택 삭제" style="white-space: nowrap;">
+              🗑️ 삭제
+            </button>
+          </td>
+        `;
+        manageExamsTableBody.appendChild(tr);
+      });
+
+      // 개별 체크박스 변경 리스너
+      manageExamsTableBody.querySelectorAll(".chk-exam-row").forEach(chk => {
+        chk.addEventListener("change", updateExamsSelectionState);
+      });
+
+      // 개별 삭제 버튼 리스너 -> 선택적 삭제 모달 오픈
+      manageExamsTableBody.querySelectorAll(".btn-single-delete-exam").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const examId = btn.dataset.id;
+          if (!examId) return;
+          openSelectiveDeleteModal([examId]);
+        });
+      });
+
+      // 파일 단독 등록/교체 칩 버튼 클릭 리스너 연결
+      manageExamsTableBody.querySelectorAll(".btn-upload-single-file").forEach(btn => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const targetExamId = btn.dataset.id;
+          const targetFileType = btn.dataset.type;
+          triggerSingleFileUpload(targetExamId, targetFileType, btn);
+        });
+      });
+
+      updateExamsSelectionState();
+
+    } catch (err) {
+      console.error(err);
+      manageExamsTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #dc2626;">시험지 목록을 불러오지 못했습니다.</td></tr>`;
+    }
+  }
+
+  // 단독 파일 업로드 트리거 및 처리 함수
+  const examSingleFileInput = document.getElementById("examSingleFileInput");
+  let activeSingleTargetExamId = null;
+  let activeSingleTargetType = null;
+  let activeSingleTargetBtn = null;
+
+  function triggerSingleFileUpload(examId, fileType, btnElement) {
+    if (!examSingleFileInput) return;
+    activeSingleTargetExamId = examId;
+    activeSingleTargetType = fileType;
+    activeSingleTargetBtn = btnElement;
+
+    if (fileType === "ans") {
+      examSingleFileInput.accept = ".png,.jpg,.jpeg";
+    } else if (fileType === "pdf") {
+      examSingleFileInput.accept = ".pdf";
+    } else if (fileType === "hwp") {
+      examSingleFileInput.accept = ".hwp,.hwpx";
+    }
+
+    examSingleFileInput.value = "";
+    examSingleFileInput.click();
+  }
+
+  if (examSingleFileInput) {
+    examSingleFileInput.addEventListener("change", async () => {
+      const file = examSingleFileInput.files[0];
+      if (!file || !activeSingleTargetExamId || !activeSingleTargetType) return;
+
+      const targetBtn = activeSingleTargetBtn;
+      const originalBtnHtml = targetBtn ? targetBtn.innerHTML : "";
+      if (targetBtn) {
+        targetBtn.disabled = true;
+        targetBtn.innerHTML = activeSingleTargetType === "ans"
+          ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> AI 분석 중...`
+          : `⏳ 업로드 중...`;
+      }
+
+      const formData = new FormData();
+      formData.append("file_type", activeSingleTargetType);
+      formData.append("file", file);
+
+      try {
+        const res = await fetch(`/api/exams/${encodeURIComponent(activeSingleTargetExamId)}/upload-file`, {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(`🎉 [${activeSingleTargetExamId}] ${data.message || '성공적으로 반영되었습니다.'}`);
+          await loadExamsManagerList();
+          executeSearch("home"); // 홈 화면 검색 결과도 최신 정답/하이라이트로 동기화
+        } else {
+          alert(`❌ 업로드 실패: ${data.detail || '오류가 발생했습니다.'}`);
+          if (targetBtn) {
+            targetBtn.disabled = false;
+            targetBtn.innerHTML = originalBtnHtml;
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        alert(`❌ 통신 오류가 발생했습니다: ${err.message}`);
+        if (targetBtn) {
+          targetBtn.disabled = false;
+          targetBtn.innerHTML = originalBtnHtml;
+        }
+      } finally {
+        examSingleFileInput.value = "";
+      }
+    });
+  }
+
+  function updateExamsSelectionState() {
+    const allCheckboxes = manageExamsTableBody ? manageExamsTableBody.querySelectorAll(".chk-exam-row") : [];
+    const checkedBoxes = Array.from(allCheckboxes).filter(c => c.checked);
+
+    if (selectedExamsCount) selectedExamsCount.textContent = checkedBoxes.length;
+    if (btnDeleteSelectedExams) btnDeleteSelectedExams.disabled = (checkedBoxes.length === 0);
+    if (chkAllExams) {
+      chkAllExams.checked = (allCheckboxes.length > 0 && checkedBoxes.length === allCheckboxes.length);
+      chkAllExams.indeterminate = (checkedBoxes.length > 0 && checkedBoxes.length < allCheckboxes.length);
+    }
+  }
+
+  if (chkAllExams) {
+    chkAllExams.addEventListener("change", () => {
+      const allCheckboxes = manageExamsTableBody ? manageExamsTableBody.querySelectorAll(".chk-exam-row") : [];
+      allCheckboxes.forEach(c => { c.checked = chkAllExams.checked; });
+      updateExamsSelectionState();
+    });
+  }
+
+  if (btnSelectAllExams) {
+    btnSelectAllExams.addEventListener("click", () => {
+      const allCheckboxes = manageExamsTableBody ? manageExamsTableBody.querySelectorAll(".chk-exam-row") : [];
+      const anyUnchecked = Array.from(allCheckboxes).some(c => !c.checked);
+      allCheckboxes.forEach(c => { c.checked = anyUnchecked; });
+      updateExamsSelectionState();
+    });
+  }
+
+  // 상단 일괄 삭제 버튼 -> 선택적 삭제 모달 오픈
+  if (btnDeleteSelectedExams) {
+    btnDeleteSelectedExams.addEventListener("click", () => {
+      const allCheckboxes = manageExamsTableBody ? manageExamsTableBody.querySelectorAll(".chk-exam-row") : [];
+      const selectedIds = Array.from(allCheckboxes).filter(c => c.checked).map(c => c.dataset.id);
+      if (selectedIds.length === 0) return;
+      openSelectiveDeleteModal(selectedIds);
+    });
+  }
+
+  // --- 선택적 데이터 삭제 모달 제어 함수들 ---
+  function openSelectiveDeleteModal(examIds) {
+    if (!selectiveDeleteModal || !examIds || examIds.length === 0) return;
+    pendingDeleteExamIds = examIds;
+
+    // 대상 시험지 객체들 추출
+    const targetExams = loadedExamsCache.filter(e => examIds.includes(e.id));
+
+    // 대상 요약 텍스트
+    if (selDelTargetText) {
+      if (examIds.length === 1) {
+        selDelTargetText.textContent = examIds[0];
+      } else {
+        selDelTargetText.textContent = `${examIds[0]} 외 ${examIds.length - 1}개 시험지 (총 ${examIds.length}개 일괄 선택)`;
+      }
+    }
+
+    // 대상들의 3대 영역 통계 집계
+    let totalRawMb = 0;
+    let totalRawCount = 0;
+    let totalPassages = 0;
+    let totalSentences = 0;
+    let totalGrammar = 0;
+
+    targetExams.forEach(ex => {
+      totalRawMb += (ex.raw_file_size_mb || 0);
+      totalRawCount += (ex.raw_file_count || 0);
+      totalPassages += (ex.passage_count || 0);
+      totalSentences += (ex.sentence_count || 0);
+      totalGrammar += (ex.grammar_count || 0);
+    });
+
+    if (selDelRawSizeBadge) {
+      selDelRawSizeBadge.textContent = (totalRawCount > 0)
+        ? `총 ${totalRawCount}개 파일 (${totalRawMb.toFixed(1)}MB)`
+        : "파일 없음";
+    }
+    if (selDelCoreBadge) {
+      selDelCoreBadge.textContent = `총 ${totalPassages}지문 / ${totalSentences}문장`;
+    }
+    if (selDelMetaBadge) {
+      selDelMetaBadge.textContent = `총 어법 ${totalGrammar}개 등록됨`;
+    }
+
+    // 기본값: 전체 완전 삭제 프리셋 적용
+    applySelectiveDeletePreset("full");
+
+    selectiveDeleteModal.classList.add("show");
+  }
+
+  function closeSelectiveDeleteModal() {
+    if (selectiveDeleteModal) selectiveDeleteModal.classList.remove("show");
+    pendingDeleteExamIds = [];
+  }
+
+  if (btnCloseSelectiveDeleteModal) {
+    btnCloseSelectiveDeleteModal.addEventListener("click", closeSelectiveDeleteModal);
+  }
+  if (btnCancelSelectiveDelete) {
+    btnCancelSelectiveDelete.addEventListener("click", closeSelectiveDeleteModal);
+  }
+
+  // 프리셋 적용 함수
+  function applySelectiveDeletePreset(preset) {
+    if (!chkDelRawFiles || !chkDelCoreCorpus || !chkDelMetadata) return;
+
+    if (preset === "full") {
+      // 1) 전체 완전 삭제
+      chkDelRawFiles.checked = true;
+      chkDelCoreCorpus.checked = true;
+      chkDelMetadata.checked = true;
+      chkDelMetadata.disabled = true; // 코어 삭제 시 메타도 종속 삭제
+    } else if (preset === "raw_only") {
+      // 2) 원본 파일만 삭제
+      chkDelRawFiles.checked = true;
+      chkDelCoreCorpus.checked = false;
+      chkDelMetadata.checked = false;
+      chkDelMetadata.disabled = false;
+    } else if (preset === "meta_only") {
+      // 3) 메타데이터만 초기화
+      chkDelRawFiles.checked = false;
+      chkDelCoreCorpus.checked = false;
+      chkDelMetadata.checked = true;
+      chkDelMetadata.disabled = false;
+    }
+
+    validateSelectiveDeleteOptions();
+  }
+
+  if (btnPresetFullWipe) {
+    btnPresetFullWipe.addEventListener("click", () => applySelectiveDeletePreset("full"));
+  }
+  if (btnPresetRawOnly) {
+    btnPresetRawOnly.addEventListener("click", () => applySelectiveDeletePreset("raw_only"));
+  }
+  if (btnPresetMetaOnly) {
+    btnPresetMetaOnly.addEventListener("click", () => applySelectiveDeletePreset("meta_only"));
+  }
+
+  // 코어 본문 체크 시 메타데이터 자동 체크 및 disabled 처리 (종속 관계)
+  if (chkDelCoreCorpus) {
+    chkDelCoreCorpus.addEventListener("change", () => {
+      if (chkDelCoreCorpus.checked) {
+        chkDelMetadata.checked = true;
+        chkDelMetadata.disabled = true;
+      } else {
+        chkDelMetadata.disabled = false;
+      }
+      validateSelectiveDeleteOptions();
+    });
+  }
+
+  if (chkDelRawFiles) {
+    chkDelRawFiles.addEventListener("change", validateSelectiveDeleteOptions);
+  }
+  if (chkDelMetadata) {
+    chkDelMetadata.addEventListener("change", validateSelectiveDeleteOptions);
+  }
+
+  function validateSelectiveDeleteOptions() {
+    const hasRaw = chkDelRawFiles && chkDelRawFiles.checked;
+    const hasCore = chkDelCoreCorpus && chkDelCoreCorpus.checked;
+    const hasMeta = chkDelMetadata && chkDelMetadata.checked;
+
+    const anySelected = hasRaw || hasCore || hasMeta;
+
+    if (selDelWarningMsg) {
+      selDelWarningMsg.style.display = anySelected ? "none" : "block";
+    }
+    if (btnExecuteSelectiveDelete) {
+      btnExecuteSelectiveDelete.disabled = !anySelected;
+    }
+  }
+
+  // 선택적 삭제 실행 버튼 바인딩
+  if (btnExecuteSelectiveDelete) {
+    btnExecuteSelectiveDelete.addEventListener("click", async () => {
+      if (!pendingDeleteExamIds || pendingDeleteExamIds.length === 0) return;
+
+      const deleteRaw = chkDelRawFiles.checked;
+      const deleteCore = chkDelCoreCorpus.checked;
+      const deleteMeta = chkDelMetadata.checked;
+
+      if (!deleteRaw && !deleteCore && !deleteMeta) {
+        alert("최소 1개 이상의 데이터 영역을 선택해 주세요.");
+        return;
+      }
+
+      const actions = [];
+      if (deleteRaw) actions.push("📁 원본 파일");
+      if (deleteCore) actions.push("📄 코어 본문 데이터(지문·문장)");
+      else if (deleteMeta) actions.push("🏷️ 부가 메타데이터(어법/태그)");
+
+      const msg = `선택한 ${pendingDeleteExamIds.length}개 시험지에서 [${actions.join(", ")}] 영역을 삭제하시겠습니까?`;
+      if (!confirm(msg)) return;
+
+      btnExecuteSelectiveDelete.disabled = true;
+      btnExecuteSelectiveDelete.textContent = "삭제 진행 중...";
+
+      try {
+        const res = await fetch("/api/exams/selective-delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            exam_ids: pendingDeleteExamIds,
+            delete_raw_files: deleteRaw,
+            delete_core_corpus: deleteCore,
+            delete_metadata: deleteMeta
+          })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          showToast(`선택한 ${data.processed_count || pendingDeleteExamIds.length}개 시험지의 지정된 데이터가 안전하게 처리되었습니다.`, "success");
+          closeSelectiveDeleteModal();
+          loadExamsManagerList();
+          loadStats();
+
+          // 코어 본문이 삭제되었고 현재 보고 있던 지문이 해당 시험지인 경우 홈으로 이동
+          if (deleteCore && currentPassageId) {
+            const affected = pendingDeleteExamIds.some(id => currentPassageId.includes(id.replace(/[\[\]]/g, "")));
+            if (affected) showHomeScreen();
+          }
+        } else {
+          alert(`삭제 실패: ${data.detail || "오류가 발생했습니다."}`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("데이터 삭제 통신 중 오류가 발생했습니다.");
+      } finally {
+        btnExecuteSelectiveDelete.disabled = false;
+        btnExecuteSelectiveDelete.textContent = "🗑️ 선택한 데이터 영역 삭제 실행";
+      }
+    });
+  }
 
   // =========================================================================
   // 11. 샘플 데이터 즉시 주입

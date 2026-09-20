@@ -1499,7 +1499,7 @@ mark.passage-highlight {
 }
 
 .modal-backdrop.show {
-  display: flex;
+  display: flex !important;
 }
 
 .modal-content {
@@ -3362,6 +3362,415 @@ mark.passage-highlight {
   color: #0f172a;
   transform: translateY(-1px);
 }
+
+/* ==========================================================================
+   시험지 업로드 및 DB 관리 모달 (3개 탭 & 스마트 일괄 업로드 & 시험지 관리)
+   ========================================================================== */
+.upload-tabs-bar {
+  display: flex;
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--border);
+  padding: 0 1rem;
+  gap: 4px;
+}
+
+.upload-tab-btn {
+  background: none;
+  border: none;
+  padding: 0.75rem 1rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1px;
+}
+
+.upload-tab-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.upload-tab-btn.active {
+  color: var(--primary);
+  font-weight: 700;
+  border-bottom-color: var(--primary);
+  background: var(--bg-card);
+}
+
+.upload-tab-pane {
+  display: none;
+}
+
+.upload-tab-pane.active {
+  display: block;
+  animation: fadeIn 0.15s ease-out;
+}
+
+/* 드롭존 영역 */
+.batch-upload-dropzone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.batch-upload-dropzone.dragover {
+  border-color: var(--primary);
+  background: #eff6ff;
+  transform: scale(1.01);
+}
+
+.dropzone-icon {
+  font-size: 2.2rem;
+  margin-bottom: 0.4rem;
+}
+
+.dropzone-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.35rem;
+}
+
+.dropzone-desc {
+  font-size: 0.82rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.dropzone-desc code {
+  background: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: #0f172a;
+}
+
+/* 시험지 관리 및 세트 프리뷰 테이블 */
+.batch-sets-table th, .manage-exams-table th {
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.batch-sets-table td, .manage-exams-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.batch-sets-table tr:hover, .manage-exams-table tr:hover {
+  background-color: #f8fafc;
+}
+
+/* 출제기관 뱃지 */
+.badge-inst {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.badge-inst-pyeong {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.badge-inst-gyo {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+/* 세트 매칭 상태 뱃지 */
+.badge-match-ready {
+  background: #ecfdf5;
+  color: #047857;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.74rem;
+}
+
+.badge-match-warn {
+  background: #fffbeb;
+  color: #b45309;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.74rem;
+}
+
+/* 위험(삭제) 버튼 */
+.btn-danger {
+  background-color: #ef4444;
+  color: white;
+  border: 1px solid #dc2626;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #dc2626;
+  border-color: #b91c1c;
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon-delete {
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-icon-delete:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+  transform: translateY(-1px);
+}
+
+/* --- 데이터 3대 영역 배지 스타일 --- */
+.badge-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.badge-tier-raw {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-tier-core {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.badge-tier-meta {
+  background: #faf5ff;
+  color: #7e22ce;
+  border: 1px solid #e9d5ff;
+}
+
+.badge-tier-empty {
+  background: #f8fafc;
+  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+  font-weight: 500;
+}
+
+/* --- 선택적 삭제 모달 카드 인터랙션 --- */
+.sel-del-option-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sel-del-option-card:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.sel-del-option-card:has(input:checked) {
+  border-color: #fca5a5;
+  background: #fffafa;
+}
+
+.btn-outline-secondary {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  color: var(--text-main);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-outline-secondary:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+/* --- 모달 너비 확장 및 테이블 셀 한 줄 표시 보장 규칙 --- */
+.upload-modal-content {
+  max-width: 1080px !important;
+  width: 96% !important;
+}
+
+.manage-exams-table-wrapper {
+  max-height: 380px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.manage-exams-table {
+  width: 100%;
+  min-width: 980px;
+  font-size: 0.82rem;
+  text-align: left;
+  border-collapse: collapse;
+}
+
+.manage-exams-table th,
+.manage-exams-table td {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  vertical-align: middle;
+}
+
+.manage-exams-table th {
+  background: #f8fafc;
+  color: var(--text-muted);
+  font-weight: 700;
+  padding: 10px 10px;
+}
+
+.manage-exams-table td {
+  padding: 10px 10px;
+}
+
+.manage-exams-table .badge-inst {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.manage-exams-table .badge-tier {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.manage-exams-table .btn-icon-delete {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+
+.batch-sets-table th,
+.batch-sets-table td {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  vertical-align: middle;
+}
+
+/* --- 시험지 관리 테이블 파일별 클릭 업로드 칩/버튼 스타일 --- */
+.btn-file-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  word-break: keep-all;
+  border: 1px solid transparent;
+  line-height: 1.2;
+}
+
+.btn-file-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 파일 존재 상태 (초록/파랑) */
+.btn-file-chip.chip-exists {
+  background: #f0fdf4;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+.btn-file-chip.chip-exists:hover {
+  background: #dcfce7;
+  border-color: #86efac;
+  transform: translateY(-1px);
+}
+
+/* 파일 미등록 상태 (회색 점선) */
+.btn-file-chip.chip-empty {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px dashed #cbd5e1;
+}
+.btn-file-chip.chip-empty:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #334155;
+  transform: translateY(-1px);
+}
+
+/* 정답표 등록 강조 버튼 (보라색 계열) */
+.btn-file-chip.chip-ans-needed {
+  background: #faf5ff;
+  color: #7e22ce;
+  border: 1px dashed #c084fc;
+  font-weight: 700;
+}
+.btn-file-chip.chip-ans-needed:hover {
+  background: #f3e8ff;
+  border-color: #a855f7;
+  border-style: solid;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(168, 85, 247, 0.15);
+}
+
+/* 정답 등록 완료 상태 (청록/파랑) */
+.btn-file-chip.chip-ans-done {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.btn-file-chip.chip-ans-done:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+
+
+
 
 
 

@@ -395,6 +395,17 @@ KNOWN_EXAM_ANSWERS = {
         31: "③", 32: "②", 33: "④", 34: "④", 35: "④",
         36: "⑤", 37: "②", 38: "②", 39: "④", 40: "②",
         41: "①", 42: "⑤", 43: "③", 44: "⑤", 45: "⑤"
+    },
+    "2026_09": {
+        1: "⑤", 2: "①", 3: "①", 4: "⑤", 5: "⑤",
+        6: "②", 7: "④", 8: "③", 9: "③", 10: "④",
+        11: "①", 12: "②", 13: "⑤", 14: "③", 15: "①",
+        16: "③", 17: "③", 18: "②", 19: "②", 20: "①",
+        21: "②", 22: "②", 23: "⑤", 24: "①", 25: "③",
+        26: "④", 27: "⑤", 28: "⑤", 29: "③", 30: "⑤",
+        31: "①", 32: "⑤", 33: "③", 34: "④", 35: "④",
+        36: "③", 37: "④", 38: "⑤", 39: "③", 40: "①",
+        41: "③", 42: "④", 43: "④", 44: "④", 45: "②"
     }
 }
 
@@ -448,9 +459,9 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
 
         content = target_text[start_idx:end_idx].strip()
 
-        # 정답 번호가 본문 안에 따로 있는 경우 추가 탐지
+        # 정답 번호가 본문 안에 따로 있는 경우 추가 탐지 (대괄호 [정답], [답], 정답: 등 모두 지원)
         if not answer:
-            ans_match = re.search(r"(?:정답|답)\s*[:：]?\s*([①②③④⑤1-5])", content)
+            ans_match = re.search(r"(?:\[?정답\]?|\[?답\]?)\s*[:：]?\s*([①②③④⑤1-5])", content)
             if ans_match:
                 answer = ans_match.group(1)
 
@@ -486,8 +497,11 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
         if k in hwp_path or k.replace("_", "-") in hwp_path:
             exam_key = k
             break
-    if not exam_key and "2026" in hwp_path and "07" in hwp_path:
-        exam_key = "2026_07"
+    if not exam_key and "2026" in hwp_path:
+        for m_str in ["06", "07", "09"]:
+            if m_str in hwp_path or f"-{int(m_str)}" in hwp_path or f"-{m_str}" in hwp_path:
+                exam_key = f"2026_{m_str}"
+                break
 
     known_answers = KNOWN_EXAM_ANSWERS.get(exam_key, {})
 
@@ -505,3 +519,194 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
                 exp_info["explanation"] = f"[정답] {ans}\n\n{exp_body}"
 
     return explanations
+
+
+def parse_answer_image(image_path: str) -> Dict[int, str]:
+    """
+    모의고사 정답표 이미지(PNG, JPG)를 Vision AI로 분석하여 1~45번 정답 딕셔너리 반환
+    반환 예: {1: '①', 2: '③', ..., 45: '③'}
+    """
+    import base64
+    import json
+    import urllib.request
+    import grammar_analyzer
+
+    if not image_path or not os.path.exists(image_path):
+        return {}
+
+    # 1. 이미지 base64 인코딩
+    try:
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
+        b64_data = base64.b64encode(img_bytes).decode("utf-8")
+    except Exception as e:
+        print(f"[parse_answer_image] 이미지 읽기 실패: {e}")
+        return {}
+
+    # MIME 타입 감지
+    lower_path = image_path.lower()
+    mime_type = "image/jpeg" if lower_path.endswith((".jpg", ".jpeg")) else "image/png"
+
+    # 2. 활성 AI 설정 조회
+    active_configs = grammar_analyzer.get_active_ai_configs()
+    valid_configs = [c for c in active_configs if c.get("api_key")]
+    if not valid_configs:
+        print("[parse_answer_image] 유효한 AI API Key가 설정되지 않았습니다.")
+        return {}
+
+    prompt_text = (
+        "첨부된 대한민국 수능/모의고사 영어 영역 정답표 이미지입니다.\n"
+        "표 안의 1번부터 45번까지의 모든 문항 번호와 정답 번호를 정확히 판독하여 JSON으로 추출해 주세요.\n"
+        "반환 형식 예시: {\"1\": \"①\", \"2\": \"③\", \"3\": \"⑤\", ... \"45\": \"③\"}\n"
+        "규칙:\n"
+        "1. 1번부터 45번까지 누락된 문항 없이 반드시 모두 포함하십시오.\n"
+        "2. 정답 기호는 ①, ②, ③, ④, ⑤ 원문자 또는 1, 2, 3, 4, 5 숫자로 명확히 기재하십시오.\n"
+        "3. 마크다운이나 설명 없이 오직 유효한 JSON 객체만 단독으로 반환하십시오."
+    )
+
+    for cfg in valid_configs:
+        provider = cfg["provider"]
+        api_key = cfg["api_key"]
+        model = cfg.get("model", "")
+
+        try:
+            raw_json_str = ""
+
+            # 2-1. Google Gemini 호출
+            if provider == "gemini":
+                use_model = model or "gemini-flash-lite-latest"
+                if "flash" not in use_model:
+                    use_model = "gemini-2.5-flash"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{use_model}:generateContent?key={api_key}"
+                payload = {
+                    "contents": [
+                        {
+                            "parts": [
+                                {"text": prompt_text},
+                                {
+                                    "inlineData": {
+                                        "mimeType": mime_type,
+                                        "data": b64_data
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    "generationConfig": {
+                        "response_mime_type": "application/json",
+                        "temperature": 0.0
+                    }
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=35) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    raw_json_str = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+
+            # 2-2. OpenAI (ChatGPT / GPT-4o-mini) 호출
+            elif provider == "openai":
+                use_model = model or "gpt-4o-mini"
+                url = "https://api.openai.com/v1/chat/completions"
+                payload = {
+                    "model": use_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_text},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
+                                }
+                            ]
+                        }
+                    ],
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.0
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    },
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=35) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    raw_json_str = resp_data["choices"][0]["message"]["content"]
+
+            # 2-3. OpenRouter 호출
+            elif provider == "openrouter":
+                use_model = model or "anthropic/claude-sonnet-4.5"
+                url = "https://openrouter.ai/api/v1/chat/completions"
+                payload = {
+                    "model": use_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_text},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
+                                }
+                            ]
+                        }
+                    ],
+                    "temperature": 0.0
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    },
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=40) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    raw_json_str = resp_data["choices"][0]["message"]["content"]
+
+            # 3. JSON 응답 파싱 및 원문자 정규화
+            if raw_json_str:
+                # 마크다운 코드블록 제거
+                clean_str = re.sub(r"^```(?:json)?\s*", "", raw_json_str.strip())
+                clean_str = re.sub(r"\s*```$", "", clean_str).strip()
+                data = json.loads(clean_str)
+
+                # 최상위 키가 감싸져 있는 경우 처리 (예: {"answers": {...}} 또는 {"정답": {...}})
+                if not any(k.isdigit() for k in data.keys()):
+                    for v in data.values():
+                        if isinstance(v, dict) and any(str(sub_k).isdigit() for sub_k in v.keys()):
+                            data = v
+                            break
+
+                result = {}
+                for k, v in data.items():
+                    try:
+                        q = int(re.sub(r"[^\d]", "", str(k)))
+                        if 1 <= q <= 45:
+                            val_str = str(v).strip()
+                            # 원문자 또는 숫자를 원문자로 통일
+                            norm_ans = CIRCLED_MAP.get(val_str, val_str)
+                            if norm_ans in ["①", "②", "③", "④", "⑤"]:
+                                result[q] = norm_ans
+                    except Exception:
+                        pass
+
+                if len(result) >= 30:
+                    print(f"[parse_answer_image] {provider} 모델로 정답 {len(result)}개 추출 성공!")
+                    return result
+
+        except Exception as e:
+            print(f"[parse_answer_image] {provider} 처리 실패, 다음 모델 시도: {e}")
+            continue
+
+    return {}

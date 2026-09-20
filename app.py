@@ -18,7 +18,7 @@ from pydantic import BaseModel
 import database as db
 import grammar_analyzer
 from pdf_parser import extract_pdf_columns_and_questions
-from hwp_parser import parse_hwp_questions, parse_hwp_explanations, KNOWN_EXAM_ANSWERS, CIRCLED_MAP
+from hwp_parser import parse_hwp_questions, parse_hwp_explanations, parse_answer_image, KNOWN_EXAM_ANSWERS, CIRCLED_MAP
 from validator import cross_validate_and_merge
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -647,10 +647,11 @@ async def api_upload_exam(
     reading_end: Optional[int] = Form(None),
     pdf_file: UploadFile = File(...),
     hwp_file: UploadFile = File(...),
-    exp_file: Optional[UploadFile] = File(None)
+    exp_file: Optional[UploadFile] = File(None),
+    ans_file: Optional[UploadFile] = File(None)
 ):
     """
-    동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP) 파일 업로드 및 상호 검증 파이프라인
+    동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP), 선택적 정답표 이미지(PNG/JPG) 파일 업로드 및 상호 검증 파이프라인
     """
     # 1. 업로드 파일 임시 저장
     pdf_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{pdf_file.filename}")
@@ -667,9 +668,21 @@ async def api_upload_exam(
         with open(exp_save_path, "wb") as buffer:
             shutil.copyfileobj(exp_file.file, buffer)
 
+    ans_save_path = None
+    if ans_file and ans_file.filename:
+        ans_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{ans_file.filename}")
+        with open(ans_save_path, "wb") as buffer:
+            shutil.copyfileobj(ans_file.file, buffer)
+
     try:
         # 2. 시험지 정보 DB 등록
         exam_id = f"[{grade}-{year}년-{month:02d}월]"
+        # 출제기관 자동 판별 규칙 적용 (3학년 6, 9, 11월: 평가원, 그 외 3학년 월 및 1, 2학년 전체: 교육청)
+        if grade in ("고3", "3학년") and month in (6, 9, 11):
+            exam_type = "평가원"
+        else:
+            exam_type = "교육청"
+
         db.save_exam({
             "id": exam_id,
             "grade": grade,
@@ -680,23 +693,32 @@ async def api_upload_exam(
             "reading_end_q": reading_end or 45
         })
 
-        # 3. PDF 문제지 파싱 및 캡처
-        pdf_questions = extract_pdf_columns_and_questions(
-            pdf_path=pdf_save_path,
-            grade=grade,
-            year=year,
-            month=month,
-            start_q=reading_start or 18,
-            end_q=reading_end or 45
-        )
+        # 3. 해설/정답 파싱
+        # (1) 정답표 이미지(-A.png)가 제공된 경우 Vision AI로 1~45번 정답 추출
+        image_answers = {}
+        if ans_save_path and os.path.exists(ans_save_path):
+            try:
+                image_answers = parse_answer_image(ans_save_path)
+            except Exception as e:
+                print(f"[Upload] 정답표 이미지 파싱 실패: {e}")
 
-        # 4. 해설 파일이 있는 경우 해설 파싱
+        # (2) HWP 해설 파싱 (별도 해설 파일 우선, 없거나 미흡할 경우 문제지 HWP 파일에서 추출)
         explanations = {}
-        if exp_save_path:
+        if exp_save_path and os.path.exists(exp_save_path):
             explanations = parse_hwp_explanations(exp_save_path)
 
-        # 정답표 결합 (HWP 해설지 우선, 미등록 시 기출 정답 백업 사전 참조)
+        if hwp_save_path and os.path.exists(hwp_save_path):
+            hwp_exps = parse_hwp_explanations(hwp_save_path)
+            if not explanations:
+                explanations = hwp_exps
+            else:
+                for q_num, exp_info in hwp_exps.items():
+                    if q_num not in explanations or not explanations[q_num].get("explanation"):
+                        explanations[q_num] = exp_info
+
+        # (3) 정답 딕셔너리 최종 결합: HWP 해설 -> 정답표 이미지(최우선) -> 기출 정답 사전
         answers_dict = {}
+        # HWP 정답 반영
         for q_num, exp_data in explanations.items():
             ans = exp_data.get("answer", "").strip()
             if ans in CIRCLED_MAP:
@@ -704,12 +726,40 @@ async def api_upload_exam(
             if ans:
                 answers_dict[q_num] = ans
 
-        exam_key = (grade, year, month)
-        if exam_key in KNOWN_EXAM_ANSWERS:
-            backup_answers = KNOWN_EXAM_ANSWERS[exam_key]
-            for q_num, ans in backup_answers.items():
-                if q_num not in answers_dict or not answers_dict[q_num]:
-                    answers_dict[q_num] = ans
+        # 정답표 이미지 분석 결과가 있으면 최우선 반영 및 해설에 [정답] 표기 주입
+        if image_answers:
+            for q_num, ans in image_answers.items():
+                answers_dict[q_num] = ans
+                if q_num in explanations:
+                    explanations[q_num]["answer"] = ans
+                    exp_body = explanations[q_num].get("explanation", "").strip()
+                    if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
+                        explanations[q_num]["explanation"] = f"[정답] {ans}\n\n{exp_body}"
+                else:
+                    explanations[q_num] = {"answer": ans, "explanation": f"[정답] {ans}"}
+
+        # 기출 정답 백업 사전 참조 보강
+        exam_keys = [(grade, year, month), f"{year}_{month:02d}", f"{year}_{month}"]
+        for ek in exam_keys:
+            if ek in KNOWN_EXAM_ANSWERS:
+                backup_answers = KNOWN_EXAM_ANSWERS[ek]
+                for q_num, ans in backup_answers.items():
+                    if q_num not in answers_dict or not answers_dict[q_num]:
+                        answers_dict[q_num] = ans
+                        if q_num in explanations and not explanations[q_num].get("answer"):
+                            explanations[q_num]["answer"] = ans
+                break
+
+        # 4. PDF 문제지 파싱 및 캡처 (정답 선지 형광펜 하이라이트 연동)
+        pdf_questions = extract_pdf_columns_and_questions(
+            pdf_path=pdf_save_path,
+            grade=grade,
+            year=year,
+            month=month,
+            start_q=reading_start or 18,
+            end_q=reading_end or 45,
+            answers_dict=answers_dict
+        )
 
         # 5. HWP 문제지 파싱 (독해 지문 문항)
         hwp_questions = parse_hwp_questions(
@@ -760,6 +810,211 @@ async def api_upload_exam(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"파싱 및 저장 중 오류 발생: {str(e)}")
+
+
+# --- 시험지 관리 및 삭제 API ---
+@app.get("/api/exams")
+async def api_get_exams():
+    """등록된 모든 시험지 목록 및 통계 반환"""
+    try:
+        exams = db.get_all_exams_with_stats()
+        return {"status": "success", "total": len(exams), "items": exams}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"시험지 목록 조회 실패: {str(e)}")
+
+
+@app.delete("/api/exams/{exam_id}")
+async def api_delete_exam(exam_id: str):
+    """지정된 시험지 및 관련 모든 데이터(지문, 문장, 어법, 태그, 캡처 이미지) 연쇄 삭제"""
+    try:
+        res = db.delete_exam(exam_id)
+        if not res.get("success"):
+            raise HTTPException(status_code=404, detail=res.get("message", "시험지를 찾을 수 없습니다."))
+        return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"시험지 삭제 중 오류 발생: {str(e)}")
+
+
+@app.post("/api/exams/{exam_id}/upload-file")
+async def api_upload_exam_single_file(
+    exam_id: str,
+    file_type: str = Form(...),  # "ans" | "pdf" | "hwp"
+    file: UploadFile = File(...)
+):
+    """
+    기존 등록된 특정 시험지에 대해 단독 파일(정답표 이미지, PDF, HWP)을 업로드 및 갱신하는 API
+    특히 정답표 이미지(ans) 업로드 시 Vision AI 정답 추출 + DB 갱신 + PDF 하이라이트 크롭 재생성 자동 수행
+    """
+    clean_id = exam_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    # 1. 시험지 정보 조회
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, grade, year, month, reading_start_q, reading_end_q FROM exams WHERE id = ?", (clean_id,))
+        exam = cursor.fetchone()
+
+    if not exam:
+        raise HTTPException(status_code=404, detail=f"시험지 '{clean_id}'를 찾을 수 없습니다.")
+
+    grade = exam["grade"]
+    year = exam["year"]
+    month = exam["month"]
+    reading_start = exam["reading_start_q"] or 18
+    reading_end = exam["reading_end_q"] or 45
+
+    # 2. 파일 저장
+    if file_type == "ans":
+        save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{file.filename}")
+    else:
+        save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{file.filename}")
+
+    with open(save_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # 3. 정답표 이미지(ans) 처리
+    if file_type == "ans":
+        try:
+            # (1) Vision AI 정답 분석
+            image_answers = parse_answer_image(save_path)
+            if not image_answers:
+                raise ValueError("정답표 이미지에서 정답을 추출하지 못했습니다.")
+
+            # (2) DB 지문 정답 및 해설 텍스트 갱신
+            answers_dict = {}
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT id, q_num, answer_text, explanation_text FROM passages WHERE exam_id = ?",
+                    (clean_id,)
+                )
+                passages = cursor.fetchall()
+
+                for p in passages:
+                    q_num = p["q_num"]
+                    old_ans = p["answer_text"]
+                    new_ans = image_answers.get(q_num) or old_ans
+                    if new_ans:
+                        answers_dict[q_num] = new_ans
+
+                    if q_num in image_answers:
+                        ans_val = image_answers[q_num]
+                        exp_body = p["explanation_text"] or ""
+                        if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
+                            new_exp = f"[정답] {ans_val}\n\n{exp_body}".strip()
+                        else:
+                            new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans_val}", exp_body)
+
+                        cursor.execute(
+                            "UPDATE passages SET answer_text = ?, explanation_text = ? WHERE id = ?",
+                            (ans_val, new_exp, p["id"])
+                        )
+                conn.commit()
+
+            # (3) 원본 PDF가 있으면 형광펜 하이라이트 크롭 이미지 재생성
+            raw_pattern = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_*.pdf")
+            pdf_candidates = glob.glob(raw_pattern)
+            pdf_highlighted = False
+            if pdf_candidates:
+                try:
+                    extract_pdf_columns_and_questions(
+                        pdf_path=pdf_candidates[0],
+                        grade=grade,
+                        year=year,
+                        month=month,
+                        start_q=reading_start,
+                        end_q=reading_end,
+                        answers_dict=answers_dict
+                    )
+                    pdf_highlighted = True
+                except Exception as crop_err:
+                    print(f"[SingleUpload] PDF 하이라이트 갱신 중 경고: {crop_err}")
+
+            return {
+                "status": "success",
+                "exam_id": clean_id,
+                "file_type": "ans",
+                "extracted_count": len(image_answers),
+                "pdf_highlighted": pdf_highlighted,
+                "message": f"정답표 이미지에서 {len(image_answers)}개 문항 정답을 성공적으로 추출하여 반영했습니다." + (" (PDF 정답 형광펜 갱신 완료)" if pdf_highlighted else "")
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"정답 이미지 파싱 중 오류: {str(e)}")
+
+    # 4. PDF 또는 HWP 파일 단독 교체 시
+    return {
+        "status": "success",
+        "exam_id": clean_id,
+        "file_type": file_type,
+        "message": f"{file_type.upper()} 파일이 성공적으로 업로드되었습니다."
+    }
+
+
+class BatchDeleteRequest(BaseModel):
+    exam_ids: List[str]
+
+
+class SelectiveDeleteRequest(BaseModel):
+    exam_ids: List[str]
+    delete_raw_files: bool = True
+    delete_core_corpus: bool = True
+    delete_metadata: bool = True
+
+
+@app.post("/api/exams/selective-delete")
+async def api_selective_delete_exams(req: SelectiveDeleteRequest):
+    """
+    모의고사 데이터를 3개 영역(원본 파일, 코어 본문, 메타데이터)으로 구분하여 선택적 삭제
+    """
+    try:
+        results = []
+        for eid in req.exam_ids:
+            r = db.selective_delete_exam(
+                exam_id=eid,
+                delete_raw=req.delete_raw_files,
+                delete_core=req.delete_core_corpus,
+                delete_metadata=req.delete_metadata
+            )
+            results.append(r)
+
+        success_count = sum(1 for r in results if r.get("success"))
+        freed_bytes = sum(r.get("freed_raw_bytes", 0) for r in results)
+        deleted_passages = sum(r.get("deleted_passages_count", 0) for r in results)
+        deleted_sentences = sum(r.get("deleted_sentences_count", 0) for r in results)
+        deleted_grammar = sum(r.get("deleted_grammar_count", 0) for r in results)
+
+        return {
+            "status": "success",
+            "processed_count": len(req.exam_ids),
+            "success_count": success_count,
+            "freed_raw_mb": round(freed_bytes / (1024 * 1024), 2),
+            "deleted_passages": deleted_passages,
+            "deleted_sentences": deleted_sentences,
+            "deleted_grammar": deleted_grammar,
+            "details": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"선택적 데이터 삭제 처리 중 오류 발생: {str(e)}")
+
+
+@app.post("/api/exams/batch-delete")
+async def api_batch_delete_exams(req: BatchDeleteRequest):
+    """복수 시험지 일괄 완전 삭제 (하위 호환)"""
+    try:
+        results = []
+        for eid in req.exam_ids:
+            r = db.delete_exam(eid)
+            results.append(r)
+        return {
+            "status": "success",
+            "deleted_count": sum(1 for r in results if r.get("success")),
+            "details": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"시험지 일괄 삭제 중 오류 발생: {str(e)}")
 
 
 # --- 데모/샘플 데이터 즉시 시드 API (사용자가 바로 화면을 테스트할 수 있도록 제공) ---

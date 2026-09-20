@@ -198,6 +198,265 @@ def save_exam(exam_data: dict) -> str:
         return exam_data["id"]
 
 
+def get_all_exams_with_stats() -> List[Dict[str, Any]]:
+    """등록된 모든 시험지 목록 및 3대 데이터 영역(원본 파일, 코어 본문, 메타데이터) 통계 조회"""
+    import glob
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    uploads_dir = os.path.join(base_dir, "uploads")
+    captures_dir = os.path.join(base_dir, "static", "captures")
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                e.id,
+                e.grade,
+                e.year,
+                e.month,
+                e.exam_type,
+                e.reading_start_q,
+                e.reading_end_q,
+                e.created_at,
+                COUNT(DISTINCT p.id) AS passage_count,
+                COUNT(DISTINCT s.id) AS sentence_count
+            FROM exams e
+            LEFT JOIN passages p ON e.id = p.exam_id
+            LEFT JOIN sentences s ON p.id = s.passage_id
+            GROUP BY e.id
+            ORDER BY e.year DESC, e.month DESC, e.grade ASC
+        """)
+        rows = cursor.fetchall()
+        exams = [dict(r) for r in rows]
+
+        # 각 시험지별 메타데이터(어법 분석, 태그) 및 디스크 파일(원본 파일, 캡처) 통계 보강
+        for ex in exams:
+            eid = ex["id"]
+            grade = ex["grade"]
+            year = ex["year"]
+            month = ex["month"]
+
+            # 1) 메타데이터 통계: 어법 분석 개수 & 태그 개수
+            cursor.execute("""
+                SELECT COUNT(DISTINCT a.id)
+                FROM sentence_grammar_annotations a
+                JOIN sentences s ON a.sentence_id = s.id
+                JOIN passages p ON s.passage_id = p.id
+                WHERE p.exam_id = ?
+            """, (eid,))
+            ex["grammar_count"] = cursor.fetchone()[0]
+
+            cursor.execute("""
+                SELECT 
+                    (SELECT COUNT(*) FROM passage_tags pt JOIN passages p ON pt.passage_id = p.id WHERE p.exam_id = ?) +
+                    (SELECT COUNT(*) FROM sentence_tags st JOIN sentences s ON st.sentence_id = s.id JOIN passages p ON s.passage_id = p.id WHERE p.exam_id = ?)
+            """, (eid, eid))
+            ex["tag_count"] = cursor.fetchone()[0]
+
+            # 2) 원본 파일(uploads/) 통계: 파일 개수 및 총 바이트 크기
+            raw_pattern = os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*")
+            raw_files = glob.glob(raw_pattern)
+            raw_size = sum(os.path.getsize(f) for f in raw_files if os.path.isfile(f))
+            ex["raw_file_count"] = len(raw_files)
+            ex["raw_file_size_bytes"] = raw_size
+            ex["raw_file_size_mb"] = round(raw_size / (1024 * 1024), 2)
+            raw_basenames = [os.path.basename(f) for f in raw_files]
+            ex["raw_files"] = raw_basenames
+
+            # 3대 파일(PDF, HWP, 정답표 이미지) 개별 유무 판별
+            pdf_file = next((f for f in raw_basenames if f.lower().endswith(".pdf")), None)
+            hwp_file = next((f for f in raw_basenames if f.lower().endswith((".hwp", ".hwpx")) and "_exp_" not in f), None)
+            ans_file = next((f for f in raw_basenames if "_ans_" in f or f.lower().endswith((".png", ".jpg", ".jpeg"))), None)
+
+            # 지문 정답 입력 현황 조회
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) AS total_passages,
+                    SUM(CASE WHEN answer_text IS NOT NULL AND TRIM(answer_text) != '' THEN 1 ELSE 0 END) AS answered_passages
+                FROM passages
+                WHERE exam_id = ?
+            """, (eid,))
+            ans_row = cursor.fetchone()
+            total_passages = ans_row["total_passages"] if ans_row else 0
+            answered_passages = ans_row["answered_passages"] if ans_row and ans_row["answered_passages"] else 0
+
+            ex["file_status"] = {
+                "pdf": {
+                    "exists": bool(pdf_file),
+                    "filename": pdf_file or ""
+                },
+                "hwp": {
+                    "exists": bool(hwp_file),
+                    "filename": hwp_file or ""
+                },
+                "ans": {
+                    "exists": bool(ans_file),
+                    "filename": ans_file or "",
+                    "answered_count": answered_passages,
+                    "total_count": total_passages
+                }
+            }
+
+            # 3) 크롭 캡처 이미지(static/captures/) 개수
+            cap_pattern = os.path.join(captures_dir, f"{grade}_{year}_{month:02d}_*.png")
+            ex["captures_count"] = len(glob.glob(cap_pattern))
+
+        return exams
+
+
+def selective_delete_exam(
+    exam_id: str,
+    delete_raw: bool = True,
+    delete_core: bool = True,
+    delete_metadata: bool = True
+) -> Dict[str, Any]:
+    """
+    모의고사 데이터를 3개 영역(원본 파일, 코어 본문, 메타데이터)으로 구분하여 선택적으로 삭제
+    - delete_raw: uploads/ 폴더의 원본 PDF/HWP 파일 삭제
+    - delete_core: gichul.db의 exams/passages/sentences 및 static/captures/ 크롭 이미지 삭제 (FK Cascade)
+    - delete_metadata: 코어 본문은 유지하고 어법 분석(annotations) 및 태그(tags)만 초기화
+    """
+    import glob
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    uploads_dir = os.path.join(base_dir, "uploads")
+    captures_dir = os.path.join(base_dir, "static", "captures")
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        # 1. 시험지 마스터 정보 조회
+        cursor.execute("SELECT id, grade, year, month FROM exams WHERE id = ?", (exam_id,))
+        exam = cursor.fetchone()
+        if not exam:
+            return {"success": False, "message": f"시험지 '{exam_id}'를 찾을 수 없습니다."}
+
+        grade = exam["grade"]
+        year = exam["year"]
+        month = exam["month"]
+
+        del_res = {
+            "success": True,
+            "exam_id": exam_id,
+            "deleted_raw_count": 0,
+            "freed_raw_bytes": 0,
+            "deleted_passages_count": 0,
+            "deleted_sentences_count": 0,
+            "deleted_captures_count": 0,
+            "deleted_grammar_count": 0,
+            "deleted_tags_count": 0,
+            "core_deleted": False,
+            "metadata_reset": False,
+            "raw_files_deleted": False,
+            "message": ""
+        }
+
+        # 2. 메타데이터만 단독 초기화하는 경우 (코어 본문은 삭제하지 않는 경우)
+        if delete_metadata and not delete_core:
+            # 어법 분석 삭제 전 카운트
+            cursor.execute("""
+                SELECT COUNT(DISTINCT a.id)
+                FROM sentence_grammar_annotations a
+                JOIN sentences s ON a.sentence_id = s.id
+                JOIN passages p ON s.passage_id = p.id
+                WHERE p.exam_id = ?
+            """, (exam_id,))
+            del_res["deleted_grammar_count"] = cursor.fetchone()[0]
+
+            # 태그 삭제 전 카운트
+            cursor.execute("""
+                SELECT 
+                    (SELECT COUNT(*) FROM passage_tags pt JOIN passages p ON pt.passage_id = p.id WHERE p.exam_id = ?) +
+                    (SELECT COUNT(*) FROM sentence_tags st JOIN sentences s ON st.sentence_id = s.id JOIN passages p ON s.passage_id = p.id WHERE p.exam_id = ?)
+            """, (exam_id, exam_id))
+            del_res["deleted_tags_count"] = cursor.fetchone()[0]
+
+            # 어법 분석 레코드 삭제
+            cursor.execute("""
+                DELETE FROM sentence_grammar_annotations
+                WHERE sentence_id IN (
+                    SELECT s.id FROM sentences s
+                    JOIN passages p ON s.passage_id = p.id
+                    WHERE p.exam_id = ?
+                )
+            """, (exam_id,))
+
+            # 문장의 어법 분석 완료 플래그 초기화
+            cursor.execute("""
+                UPDATE sentences
+                SET grammar_analyzed = 0
+                WHERE passage_id IN (
+                    SELECT id FROM passages WHERE exam_id = ?
+                )
+            """, (exam_id,))
+
+            # 태그 삭제
+            cursor.execute("""
+                DELETE FROM passage_tags
+                WHERE passage_id IN (SELECT id FROM passages WHERE exam_id = ?)
+            """, (exam_id,))
+            cursor.execute("""
+                DELETE FROM sentence_tags
+                WHERE sentence_id IN (
+                    SELECT s.id FROM sentences s
+                    JOIN passages p ON s.passage_id = p.id
+                    WHERE p.exam_id = ?
+                )
+            """, (exam_id,))
+            conn.commit()
+            del_res["metadata_reset"] = True
+
+        # 3. 코어 본문 데이터 삭제 (exams, passages, sentences, captures)
+        if delete_core:
+            cursor.execute("SELECT COUNT(*) FROM passages WHERE exam_id = ?", (exam_id,))
+            del_res["deleted_passages_count"] = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM sentences s JOIN passages p ON s.passage_id = p.id WHERE p.exam_id = ?", (exam_id,))
+            del_res["deleted_sentences_count"] = cursor.fetchone()[0]
+
+            # DB Cascade 삭제 (exams 삭제 시 하위 지문, 문장, 어법, 태그 자동 삭제)
+            cursor.execute("DELETE FROM exams WHERE id = ?", (exam_id,))
+            conn.commit()
+            del_res["core_deleted"] = True
+
+            # 디스크 크롭 이미지 정리
+            cap_pattern = os.path.join(captures_dir, f"{grade}_{year}_{month:02d}_*.png")
+            for f in glob.glob(cap_pattern):
+                try:
+                    os.remove(f)
+                    del_res["deleted_captures_count"] += 1
+                except Exception:
+                    pass
+
+        # 4. 원본 파일(uploads/) 삭제
+        if delete_raw:
+            raw_pattern = os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*")
+            for f in glob.glob(raw_pattern):
+                try:
+                    size = os.path.getsize(f)
+                    os.remove(f)
+                    del_res["deleted_raw_count"] += 1
+                    del_res["freed_raw_bytes"] += size
+                except Exception:
+                    pass
+            del_res["raw_files_deleted"] = True
+
+        # 메시지 조합
+        actions = []
+        if del_res["raw_files_deleted"]:
+            mb = round(del_res["freed_raw_bytes"] / (1024 * 1024), 2)
+            actions.append(f"원본 파일 {del_res['deleted_raw_count']}개({mb}MB) 삭제")
+        if del_res["core_deleted"]:
+            actions.append(f"코어 지문 {del_res['deleted_passages_count']}개·문장 {del_res['deleted_sentences_count']}개 및 캡처 {del_res['deleted_captures_count']}개 삭제")
+        elif del_res["metadata_reset"]:
+            actions.append(f"어법 메타데이터 {del_res['deleted_grammar_count']}개 및 태그 {del_res['deleted_tags_count']}개 초기화")
+
+        del_res["message"] = f"'{exam_id}': " + (", ".join(actions) if actions else "선택된 삭제 작업 없음")
+        return del_res
+
+
+def delete_exam(exam_id: str) -> Dict[str, Any]:
+    """하위 호환성을 위한 완전 삭제 함수 (3대 영역 모두 삭제)"""
+    return selective_delete_exam(exam_id, delete_raw=True, delete_core=True, delete_metadata=True)
+
+
 def save_passage(passage_data: dict) -> str:
     """지문 정보 저장"""
     if "question_type" not in passage_data:

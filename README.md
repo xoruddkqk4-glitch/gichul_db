@@ -753,3 +753,23 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/main.js` 자바스크립트 문법 검증 통과 (오류 0건)
   - Git 트래킹 및 원격 main 브랜치 동기화 완료
 
+### [2026-09-21 00:17] 업데이트 이력 (Commit ID: fb7e5c5)
+- **수정 내용**:
+  - **정답표 이미지(`-A.png` / `.jpg`) Vision AI 자동 파싱 및 3종 세트 일괄 업로드 파이프라인 구축 (`hwp_parser.py`, `app.py`, `templates/index.html`, `static/js/main.js`)**:
+    - **Vision AI 정답표 파서 (`parse_answer_image`)**: HWP 내에 텍스트가 없고 이미지 형태로 표가 삽입된 시험지의 정답 누락 문제를 해결하기 위해, Gemini / OpenAI / OpenRouter Vision 모델을 연동하여 10열 9행 또는 격자형 정답표 이미지에서 1~45번 정답을 원문자(`①~⑤`) 딕셔너리로 100% 자동 파싱하는 엔진 신설
+    - **HWP 정규식 보강**: `[정답] ⑤`, `[답] ⑤`, `정답 : ⑤` 등 대괄호와 콜론이 포함된 해설지 정답 텍스트도 유연하게 인식하도록 패턴 확장
+    - **백엔드 업로드 API 연동**: `POST /api/upload`에 선택적 `ans_file` 파라미터를 추가하고, 정답표 이미지에서 파싱된 정답을 최우선으로 지문 DB(`passages.answer_text`) 및 PDF 크롭 이미지의 정답 선지 노란색 형광펜 하이라이트에 자동 결합
+    - **프론트엔드 3종 세트 자동 페어링**: 일괄 업로드 드롭존에서 파일명 끝부분의 `-A`, `_A`, `_ans`, `정답` 접미사를 인식하여 문제지(PDF), 해설지(HWP), 정답표(PNG/JPG)를 하나의 세트로 자동 묶고 프리뷰 테이블에 `정답표 (-A)` 컬럼 표시
+  - **시험지 관리 모달 내 세트별 3대 파일 업로드 유무 테이블 분리 및 원클릭 단독 등록 기능 구현 (`database.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **3대 파일 업로드 현황 쿼리 (`database.py`)**: `get_all_exams_with_stats`에서 `uploads/` 폴더 내 원본 파일 유무와 DB `passages` 정답 입력 현황을 정밀 분석하여 각 시험지별 `file_status`(`pdf`, `hwp`, `ans`) 제공
+    - **단독 파일 업로드 API 신설 (`POST /api/exams/{exam_id}/upload-file`)**: 기존에 이미 등록된 시험지에 대해 PDF나 HWP를 다시 찾을 필요 없이 정답표 이미지만 단독 업로드 시, Vision AI 정답 추출 -> DB `passages.answer_text` 및 해설문 `[정답]` 갱신 -> 보관된 원본 PDF를 활용하여 정답 형광펜 크롭 이미지(`static/captures/...png`) 자동 재생성 및 교체 수행
+    - **시험지 관리 테이블 컬럼 개편**: `📄 문제지 (PDF)`, `📝 해설지 (HWP)`, `🖼️ 정답표 (-A 이미지)` 독립 컬럼으로 분리 및 인터랙티브 칩 버튼(`.btn-file-chip`)으로 렌더링 (`chip-exists`, `chip-empty`, `chip-ans-needed`, `chip-ans-done`)
+    - **클릭 단독 업로드 UX**: 비어 있거나 교체가 필요한 파일 버튼 클릭 시 즉시 파일 선택기가 열리고, 업로드 완료 시 시험지 관리 테이블 및 메인 홈 화면 검색 뷰어로 최신 데이터 실시간 동기화
+  - **고2 기출 모의고사 PDF 고화질 크롭 이미지 동기화 (`static/captures/`)**: 고2 2024~2026년도 모의고사 크롭 캡처 이미지 저장소 반영
+- **검증 결과**:
+  - `python -m py_compile app.py database.py hwp_parser.py validator.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - 실제 사용자 정답표 샘플 격자 이미지(`고3-[2026-07]-A.png`) 대상 Vision AI 45문항 100% 정답 추출 단위 테스트 통과
+  - 기존 등록된 30개 시험지 대상 `database.get_all_exams_with_stats()` 3대 파일 상태 산출 및 정답 통계 연동 검증 완료
+
+
