@@ -83,7 +83,7 @@ PROVIDER_NAMES = {
 }
 
 PROVIDER_DEFAULT_MODELS = {
-    "gemini": "gemini-1.5-flash",
+    "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o-mini",
     "claude": "claude-3-5-haiku-20241022",
     "openrouter": "deepseek/deepseek-chat"
@@ -95,6 +95,46 @@ PROVIDER_ENV_VARS = {
     "claude": "ANTHROPIC_API_KEY",
     "openrouter": "OPENROUTER_API_KEY"
 }
+
+
+def resolve_gemini_model(api_key: str, requested_model: str = "") -> str:
+    """Gemini 사용 가능한 최신 모델 자동 탐색 및 반환 (종료된 1.5-flash 자동 마이그레이션)"""
+    req_m = (requested_model or "").strip()
+    if req_m.startswith("models/"):
+        req_m = req_m[len("models/"):]
+
+    # 사용자가 명시한 모델이 있고 1.5-flash 계열이 아니면 그대로 사용
+    if req_m and req_m not in ("gemini-1.5-flash", "gemini-1.5-flash-latest"):
+        return req_m
+
+    # Google API의 ListModels를 호출하여 현재 API Key로 지원되는 모델 실시간 목록 확인
+    if api_key:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GichulDB/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                supported = []
+                for m in data.get("models", []):
+                    methods = m.get("supportedGenerationMethods", [])
+                    if "generateContent" in methods:
+                        name = m.get("name", "")
+                        clean_name = name[len("models/"):] if name.startswith("models/") else name
+                        supported.append(clean_name)
+
+                if supported:
+                    # 플래시 모델 우선 선별
+                    flash_models = [m for m in supported if "flash" in m.lower()]
+                    for pref in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash-8b"]:
+                        if pref in flash_models:
+                            return pref
+                    if flash_models:
+                        return flash_models[0]
+                    return supported[0]
+        except Exception as e:
+            print(f"[Gemini Model Auto-Discovery Warning] {e}")
+
+    return "gemini-2.5-flash"
 
 
 def get_provider_config(provider: str) -> Tuple[str, str]:
@@ -119,7 +159,9 @@ def get_provider_config(provider: str) -> Tuple[str, str]:
 
     # 4. 기본 모델 폴백
     if not model:
-        model = PROVIDER_DEFAULT_MODELS.get(p, "gemini-1.5-flash")
+        model = PROVIDER_DEFAULT_MODELS.get(p, "gemini-2.5-flash")
+    elif p == "gemini" and model in ("gemini-1.5-flash", "gemini-1.5-flash-latest"):
+        model = "gemini-2.5-flash"
 
     return api_key, model
 
@@ -205,9 +247,13 @@ def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool,
     test_sentence = "Not only did he arrive late, but he also forgot his homework."
 
     try:
-        results = _call_llm(test_sentence, provider, api_key, model)
+        resolved_model = model
+        if provider == "gemini":
+            resolved_model = resolve_gemini_model(api_key, model)
+        results = _call_llm(test_sentence, provider, api_key, resolved_model)
         prov_name = PROVIDER_NAMES.get(provider, provider.upper())
-        return True, f"연결 성공! {prov_name} ({model or PROVIDER_DEFAULT_MODELS.get(provider, '기본 모델')}) 연결이 정상 확인되었습니다."
+        used_model = resolved_model or PROVIDER_DEFAULT_MODELS.get(provider, "기본 모델")
+        return True, f"연결 성공! {prov_name} ({used_model}) 연결이 정상 확인되었습니다."
     except Exception as e:
         return False, f"연결 실패: {str(e)}"
 
@@ -231,7 +277,7 @@ def _call_llm(sentence: str, provider: str, api_key: str, model: str = "") -> Li
 
     try:
         if provider == "gemini":
-            target_model = model or "gemini-1.5-flash"
+            target_model = resolve_gemini_model(api_key, model)
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
             payload = {
                 "contents": [
@@ -252,12 +298,41 @@ def _call_llm(sentence: str, provider: str, api_key: str, model: str = "") -> Li
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                try:
-                    raw_json_str = resp_data["candidates"][0]["content"]["parts"][0]["text"]
-                except (KeyError, IndexError) as e:
-                    raise ValueError(f"Gemini 응답 구조 오류: {resp_data}")
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    try:
+                        raw_json_str = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+                    except (KeyError, IndexError) as e:
+                        raise ValueError(f"Gemini 응답 구조 오류: {resp_data}")
+            except urllib.error.HTTPError as gemini_he:
+                if gemini_he.code == 404:
+                    # 404 발생 시 지원 모델(gemini-2.0-flash, gemini-2.5-flash-lite, gemini-2.5-pro)로 1회 자동 폴백
+                    alt_candidates = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]
+                    fallback_success = False
+                    for alt_m in alt_candidates:
+                        if alt_m == target_model:
+                            continue
+                        try:
+                            alt_url = f"https://generativelanguage.googleapis.com/v1beta/models/{alt_m}:generateContent?key={api_key}"
+                            alt_req = urllib.request.Request(
+                                alt_url,
+                                data=json.dumps(payload).encode("utf-8"),
+                                headers={"Content-Type": "application/json"},
+                                method="POST"
+                            )
+                            with urllib.request.urlopen(alt_req, timeout=30) as alt_resp:
+                                alt_data = json.loads(alt_resp.read().decode("utf-8"))
+                                raw_json_str = alt_data["candidates"][0]["content"]["parts"][0]["text"]
+                                database.set_setting("ai_model_gemini", alt_m)
+                                fallback_success = True
+                                break
+                        except Exception:
+                            continue
+                    if not fallback_success:
+                        raise gemini_he
+                else:
+                    raise gemini_he
 
         elif provider == "openrouter":
             target_model = model or "openai/gpt-4o-mini"

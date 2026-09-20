@@ -296,10 +296,13 @@ async def api_test_single_ai_provider(req: SingleProviderTestRequest):
         prov_label = grammar_analyzer.PROVIDER_NAMES.get(p, p)
         return JSONResponse(status_code=400, content={"success": False, "message": f"{prov_label} API Key를 입력해 주세요."})
 
+    if p == "gemini":
+        m = grammar_analyzer.resolve_gemini_model(k, m)
+
     ok, msg = grammar_analyzer.test_connection(p, k, m)
     if not ok:
         return JSONResponse(status_code=400, content={"success": False, "message": msg})
-    return {"success": True, "provider": p, "message": msg}
+    return {"success": True, "provider": p, "model": m, "message": msg}
 
 
 @app.post("/api/settings/ai")

@@ -661,3 +661,22 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - `/api/settings/ai` 설정 조회 및 `/api/settings/ai/test` 개별 프로바이더 핑 테스트 통과
   - `grammar_analyzer.analyze_sentence` 실시간 어법 분석 및 엄격 교집합 판정 정상 작동 확인
+
+### [2026-09-20 20:45] 업데이트 이력 (Commit ID: 93ecd26)
+- **수정 내용**:
+  - **Google Gemini 서비스 종료 모델(1.5-flash) 404 오류 해결 및 최신 `gemini-2.5-flash` 자동 마이그레이션 (`grammar_analyzer.py`, `app.py`, `templates/index.html`, `static/js/main.js`)**:
+    - **원인 해결**: Google API에서 `gemini-1.5-flash` 모델이 공식 서비스 종료(Retired)되어 `404 Not Found` 오류가 발생하던 문제를 해결하기 위해 기본 표준 모델을 최신 주력 플래시 모델인 **`gemini-2.5-flash`**로 전면 전환
+    - **실시간 모델 자동 탐색 및 구버전 자동 마이그레이션 (`resolve_gemini_model`)**:
+      - `grammar_analyzer.py`에 `resolve_gemini_model` 함수 신설
+      - 구버전 `gemini-1.5-flash`가 입력되거나 비어있는 경우 자동으로 `gemini-2.5-flash`로 자동 업그레이드
+      - Google API `v1beta/models`의 `ListModels` 엔드포인트를 실시간 조회하여 사용자의 API 키가 즉시 호출 가능한 최신 플래시 모델을 자동 선별
+    - **404 스마트 폴백(Smart Fallback) 안전망 구축**:
+      - 특정 모델 호출 시 404 Not Found 오류가 발생하더라도 `gemini-2.0-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-pro` 등 가용 플래시 모델군으로 1회 자동 재시도하여 어법 분석 및 연결 테스트 중단 방지
+    - **UI 및 개별 연결 테스트 연동 강화**:
+      - `templates/index.html`: Gemini 카드 기본 입력값 및 플레이스홀더를 `gemini-2.5-flash`로 갱신
+      - `app.py`: `/api/settings/ai/test` 엔드포인트에서 감지된 활성 모델명을 프론트엔드로 반환
+      - `static/js/main.js`: `[🧪 개별 연결 테스트]` 통과 시 실제 정상 작동한 모델명(예: `gemini-2.5-flash`)을 입력창에 즉시 자동 동기화하고 `✔ 연결 정상 (gemini-2.5-flash)` 안내 배지 표출
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+  - `resolve_gemini_model` 단위 테스트 통과 (기본값 및 구버전 요청 시 `gemini-2.5-flash` 정상 반환 확인)

@@ -3705,8 +3705,12 @@ document.addEventListener("DOMContentLoaded", () => {
             badge.textContent = isActive ? "활성" : "비활성";
             badge.classList.toggle("active", isActive);
           }
-          if (modelInput && pData.model) {
-            modelInput.value = pData.model;
+          if (modelInput) {
+            if (p === "gemini" && (!pData.model || pData.model === "gemini-1.5-flash" || pData.model === "gemini-1.5-flash-latest")) {
+              modelInput.value = "gemini-2.5-flash";
+            } else if (pData.model) {
+              modelInput.value = pData.model;
+            }
           }
           if (keyInput) keyInput.value = "";
           if (keyStatus) {
@@ -3849,8 +3853,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         const resData = await res.json();
         if (res.ok && resData.success) {
+          if (resData.model && modelInput) {
+            modelInput.value = resData.model;
+          }
           if (testRes) {
-            testRes.textContent = "✔ 연결 정상";
+            testRes.textContent = `✔ 연결 정상 (${resData.model || "성공"})`;
             testRes.className = "provider-test-result success";
           }
           showToast(`${providerDisplayNames[p]} 연결 성공!`, "success");
