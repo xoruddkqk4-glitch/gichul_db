@@ -739,3 +739,17 @@ CREATE TABLE user_sentence_status (
   - `[고3-2026년-07월-33번-7번째 문장]` 정답 결합 및 멀티 LLM 다수결 합의 어법 분석(주어동사일치, 목적격 관계대명사) 정상 저장 검증 완료
   - `extract_pdf_columns_and_questions` 및 `parse_hwp_questions` 함수 시그니처 및 키워드 인자 수신 테스트 완료
 
+### [2026-09-20 22:27] 업데이트 이력 (Commit ID: <PENDING_COMMIT_ID>)
+- **수정 내용**:
+  - **신규 2026년 9월 모의고사(고3) 문항(37~45번) PDF 고화질 크롭 이미지 추가 및 전체 문항 동기화 (`static/captures/`)**:
+    - 독해 후반부 장문 및 순서·삽입 문항(37번~45번) 고화질 PDF 캡처 이미지(`고3_2026_09_37.png` ~ `고3_2026_09_45.png`) 구축 및 저장소 반영 완료
+    - 지문 뷰어 2x2 그리드 좌측 상단 원본 인쇄 이미지 정상 로드 및 고해상도 확대 지원
+  - **전체 정적 구문 및 파이프라인 무결성 재검증**:
+    - `python -m py_compile` 백엔드 전체 모듈(`app.py`, `database.py`, `grammar_analyzer.py`, `pdf_parser.py`, `hwp_parser.py`, `validator.py`, `run.py`, `sentence_tokenizer.py`) 구문 검증 통과 (오류 0건)
+    - `node -c static/js/main.js` 프론트엔드 자바스크립트 구문 검증 통과 (오류 0건)
+    - Git 저장소 및 원격 GitHub 브랜치 동기화 상태 완료
+- **검증 결과**:
+  - `python -m py_compile app.py database.py grammar_analyzer.py pdf_parser.py hwp_parser.py validator.py run.py sentence_tokenizer.py` 통과 (오류 0건)
+  - `node -c static/js/main.js` 자바스크립트 문법 검증 통과 (오류 0건)
+  - Git 트래킹 및 원격 main 브랜치 동기화 완료
+
