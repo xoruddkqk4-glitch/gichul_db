@@ -698,7 +698,7 @@ CREATE TABLE user_sentence_status (
   - `resolve_gemini_model` 단위 테스트 완료 (모든 구버전 요청 시 `gemini-3.6-flash` 정상 반환 확인)
   - `GET /api/settings/ai` 호출 시 `gemini-3.6-flash` 모델 정상 응답 확인
 
-### [2026-09-20 20:56] 업데이트 이력 (Commit ID: 42c5f60)
+### [2026-09-20 20:56] 업데이트 이력 (Commit ID: d1d8d18)
 - **수정 내용**:
   - **Google Gemini 503 트래픽 과부하(High Demand) 지수 백오프 자동 재시도 및 다중 모델 자동 페일오버(Failover) 시스템 구축 (`grammar_analyzer.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
     - **원인 해결**: 신규 권장 모델 `gemini-3.6-flash`로 트래픽이 집중됨에 따라 구글 서버에서 일시적 과부하로 인한 `HTTP 503 (This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.)` 오류가 발생하던 문제를 해결하기 위해 고가용성 복원력(Resilience) 아키텍처 구축
