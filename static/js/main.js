@@ -3706,8 +3706,9 @@ document.addEventListener("DOMContentLoaded", () => {
             badge.classList.toggle("active", isActive);
           }
           if (modelInput) {
-            if (p === "gemini" && (!pData.model || pData.model === "gemini-1.5-flash" || pData.model === "gemini-1.5-flash-latest")) {
-              modelInput.value = "gemini-2.5-flash";
+            const retired = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-2.0-flash", "gemini-2.5-flash"];
+            if (p === "gemini" && (!pData.model || retired.includes(pData.model))) {
+              modelInput.value = "gemini-3.6-flash";
             } else if (pData.model) {
               modelInput.value = pData.model;
             }

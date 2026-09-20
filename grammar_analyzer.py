@@ -83,7 +83,7 @@ PROVIDER_NAMES = {
 }
 
 PROVIDER_DEFAULT_MODELS = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3.6-flash",
     "openai": "gpt-4o-mini",
     "claude": "claude-3-5-haiku-20241022",
     "openrouter": "deepseek/deepseek-chat"
@@ -96,15 +96,20 @@ PROVIDER_ENV_VARS = {
     "openrouter": "OPENROUTER_API_KEY"
 }
 
+RETIRED_GEMINI_MODELS = {
+    "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro",
+    "gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-2.5-flash"
+}
+
 
 def resolve_gemini_model(api_key: str, requested_model: str = "") -> str:
-    """Gemini 사용 가능한 최신 모델 자동 탐색 및 반환 (종료된 1.5-flash 자동 마이그레이션)"""
+    """Gemini 사용 가능한 최신 모델 자동 탐색 및 반환 (종료된 1.5-flash/2.5-flash 자동 마이그레이션)"""
     req_m = (requested_model or "").strip()
     if req_m.startswith("models/"):
         req_m = req_m[len("models/"):]
 
-    # 사용자가 명시한 모델이 있고 1.5-flash 계열이 아니면 그대로 사용
-    if req_m and req_m not in ("gemini-1.5-flash", "gemini-1.5-flash-latest"):
+    # 사용자가 명시한 모델이 있고 서비스 종료 모델군에 속하지 않으면 그대로 사용
+    if req_m and req_m not in RETIRED_GEMINI_MODELS:
         return req_m
 
     # Google API의 ListModels를 호출하여 현재 API Key로 지원되는 모델 실시간 목록 확인
@@ -123,18 +128,18 @@ def resolve_gemini_model(api_key: str, requested_model: str = "") -> str:
                         supported.append(clean_name)
 
                 if supported:
-                    # 플래시 모델 우선 선별
-                    flash_models = [m for m in supported if "flash" in m.lower()]
-                    for pref in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-1.5-flash-8b"]:
-                        if pref in flash_models:
+                    # 최신 플래시 모델 우선 순위 선별
+                    for pref in ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3-flash", "gemini-2.5-flash-lite"]:
+                        if pref in supported:
                             return pref
+                    flash_models = [m for m in supported if "flash" in m.lower() and m not in RETIRED_GEMINI_MODELS]
                     if flash_models:
                         return flash_models[0]
                     return supported[0]
         except Exception as e:
             print(f"[Gemini Model Auto-Discovery Warning] {e}")
 
-    return "gemini-2.5-flash"
+    return "gemini-3.6-flash"
 
 
 def get_provider_config(provider: str) -> Tuple[str, str]:
@@ -159,9 +164,9 @@ def get_provider_config(provider: str) -> Tuple[str, str]:
 
     # 4. 기본 모델 폴백
     if not model:
-        model = PROVIDER_DEFAULT_MODELS.get(p, "gemini-2.5-flash")
-    elif p == "gemini" and model in ("gemini-1.5-flash", "gemini-1.5-flash-latest"):
-        model = "gemini-2.5-flash"
+        model = PROVIDER_DEFAULT_MODELS.get(p, "gemini-3.6-flash")
+    elif p == "gemini" and model in RETIRED_GEMINI_MODELS:
+        model = "gemini-3.6-flash"
 
     return api_key, model
 
@@ -307,8 +312,8 @@ def _call_llm(sentence: str, provider: str, api_key: str, model: str = "") -> Li
                         raise ValueError(f"Gemini 응답 구조 오류: {resp_data}")
             except urllib.error.HTTPError as gemini_he:
                 if gemini_he.code == 404:
-                    # 404 발생 시 지원 모델(gemini-2.0-flash, gemini-2.5-flash-lite, gemini-2.5-pro)로 1회 자동 폴백
-                    alt_candidates = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro"]
+                    # 404 발생 시 지원 모델(gemini-3.6-flash, gemini-3.7-flash, gemini-3.5-flash)로 1회 자동 폴백
+                    alt_candidates = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-3-flash", "gemini-2.5-flash-lite"]
                     fallback_success = False
                     for alt_m in alt_candidates:
                         if alt_m == target_model:

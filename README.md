@@ -680,3 +680,20 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - `resolve_gemini_model` 단위 테스트 통과 (기본값 및 구버전 요청 시 `gemini-2.5-flash` 정상 반환 확인)
+
+### [2026-09-20 20:48] 업데이트 이력 (Commit ID: e79aea8)
+- **수정 내용**:
+  - **Google Gemini 모델을 공식 최신 권장 모델인 `gemini-3.6-flash`로 전면 갱신 (`grammar_analyzer.py`, `templates/index.html`, `static/js/main.js`)**:
+    - **원인 해결**: Google API가 신규 사용자 대상 `gemini-2.5-flash` 제공을 중단하고 공식 최신 모델인 `gemini-3.6-flash` 사용을 안내(`404: This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash`)함에 따라, 기본 표준 모델을 **`gemini-3.6-flash`**로 즉시 갱신
+    - **종료 모델군(`RETIRED_GEMINI_MODELS`) 필터링 및 자동 승격**:
+      - `gemini-1.5-flash`, `gemini-2.0-flash`, `gemini-2.5-flash` 등 구버전/접근 제한 모델들을 `RETIRED_GEMINI_MODELS`로 등록
+      - 사용자가 이전 모델명을 가지고 있더라도 `resolve_gemini_model()`에서 최신 `gemini-3.6-flash`로 즉각 자동 마이그레이션 처리
+      - 404 발생 시 폴백 후보군도 `gemini-3.6-flash`, `gemini-3.7-flash`, `gemini-3.5-flash` 등 3.x Flash 시리즈로 전면 개편
+    - **모달 UI 및 클라이언트 스크립트 반영**:
+      - `templates/index.html`: Gemini 모델 입력 필드 기본값을 `gemini-3.6-flash`로 설정
+      - `static/js/main.js`: 이전 모델 감지 시 자동으로 `gemini-3.6-flash`로 폼 입력값 자동 대체
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+  - `resolve_gemini_model` 단위 테스트 완료 (모든 구버전 요청 시 `gemini-3.6-flash` 정상 반환 확인)
+  - `GET /api/settings/ai` 호출 시 `gemini-3.6-flash` 모델 정상 응답 확인
