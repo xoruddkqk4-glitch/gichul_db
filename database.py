@@ -255,6 +255,24 @@ def save_sentences(sentences: List[dict]):
         conn.commit()
 
 
+def update_sentence_text(sentence_id: str, new_text: str, word_count: Optional[int] = None) -> bool:
+    """단일 문장의 본문 텍스트 및 단어 수 수정 업데이트"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    if word_count is None:
+        words = re.findall(r"\b[\w'-]+\b", new_text)
+        word_count = len(words)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE sentences SET sentence_text = ?, word_count = ? WHERE id = ?",
+            (new_text.strip(), word_count, clean_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def add_passage_tag(passage_id: str, tag_name: str) -> bool:
     """지문 태그 추가"""
     tag_name = tag_name.strip()
@@ -420,6 +438,46 @@ def search_passages(
         return results
 
 
+def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:
+    """지문 ID로 단일 지문 정보 조회"""
+    if not passage_id:
+        return None
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM passages WHERE id = ?", (clean_id,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute("SELECT * FROM passages WHERE id = ?", (clean_id.strip("[]"),))
+            row = cursor.fetchone()
+        if row:
+            p_dict = dict(row)
+            p_dict["tags"] = get_passage_tags(p_dict["id"])
+            return p_dict
+        return None
+
+
+def get_sentence(sentence_id: str) -> Optional[Dict[str, Any]]:
+    """문장 ID로 단일 문장 정보 조회"""
+    if not sentence_id:
+        return None
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sentences WHERE id = ?", (clean_id,))
+        row = cursor.fetchone()
+        if not row:
+            cursor.execute("SELECT * FROM sentences WHERE id = ?", (clean_id.strip("[]"),))
+            row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+
+
 def toggle_sentence_star(sentence_id: str) -> int:
     """문장 별표(중요 문장) 플래그 토글 (0 -> 1, 1 -> 0) 후 새 상태 반환"""
     clean_id = sentence_id.strip()
@@ -504,6 +562,23 @@ def delete_sentence_grammar_annotation(sentence_id: str, identifier: int) -> boo
             DELETE FROM sentence_grammar_annotations 
             WHERE sentence_id = ? AND (category_id = ? OR id = ?)
         """, (clean_id, identifier, identifier))
+        cursor.execute("SELECT COUNT(*) as cnt FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        row = cursor.fetchone()
+        if row and row["cnt"] == 0:
+            cursor.execute("UPDATE sentences SET grammar_analyzed = 0 WHERE id = ?", (clean_id,))
+        conn.commit()
+        return True
+
+
+def reset_sentence_grammar(sentence_id: str) -> bool:
+    """문장의 어법 분석 결과 및 상태를 초기화(미분석 상태)로 복원하여 재분석 허용"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        cursor.execute("UPDATE sentences SET grammar_analyzed = 0 WHERE id = ?", (clean_id,))
         conn.commit()
         return True
 

@@ -142,6 +142,11 @@
             <option value="1지문3문항">1지문3문항</option>
           </select>
 
+          <!-- 홈 검색 조건 초기화 버튼 -->
+          <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeFilters" style="display: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
+            ↺ 검색 조건 초기화
+          </button>
+
           <!-- 어법 범주 필터 (문장 검색 모드 전용, 지문 검색 시 숨김: 계층형 브레드크럼 네비게이션 방식) -->
           <div class="home-grammar-filters-group grammar-breadcrumb-filter-bar" id="homeGrammarFiltersGroup" style="display: none;">
             <span class="breadcrumb-icon" title="어법 계층 필터">📍</span>
@@ -275,6 +280,11 @@
               <option value="1지문3문항">1지문3문항</option>
             </select>
 
+            <!-- 결과창 검색 조건 초기화 버튼 (지문/문장 공통 필터 초기화) -->
+            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters" style="display: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
+              ↺ 검색 조건 초기화
+            </button>
+
             <!-- 문장 검색 모드 전용 어법 필터 그룹 (지문 검색 시 display: none 숨김: 계층형 브레드크럼 방식) -->
             <div class="results-grammar-filters-group grammar-breadcrumb-filter-bar compact-breadcrumb-bar" id="resultsGrammarFiltersGroup" style="display: none;">
               <span class="breadcrumb-icon" title="어법 계층 필터">📍</span>
@@ -328,7 +338,10 @@
         <div class="empty-icon">🔍</div>
         <h3 class="empty-title">일치하는 검색 결과가 없습니다</h3>
         <p class="empty-desc">검색어나 필터 조건(학년, 연도, 월, 시험구분, 문제유형)을 변경하여 다시 시도해 보세요.</p>
-        <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBackToSearch">← 검색 화면으로 돌아가기</button>
+        <div class="empty-actions" style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btnEmptyResetFilters">↺ 검색 조건 초기화</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBackToSearch">← 검색 화면으로 돌아가기</button>
+        </div>
       </div>
 
       <!-- [지문 검색 결과 화면] : 상단 문항별 탭 + 2x2 그리드 레이아웃 -->
@@ -346,8 +359,8 @@
               <span id="passageTabCount" style="display: none;">0</span>
             </div>
             <div class="breadcrumb-right" id="breadcrumbRight">
-              <button type="button" class="btn-tree-reset-exam" id="btnTreeResetExam" style="display: none;" title="시험 선택 설정 초기화 (처음 학년 선택으로 복귀)">
-                ↺ 설정 초기화
+              <button type="button" class="btn-tree-reset-exam" id="btnTreeResetExam" style="display: none;" title="검색 조건 및 시험 선택 초기화">
+                ↺ 검색 조건 초기화
               </button>
               <button type="button" class="btn-tree-change-exam" id="btnTreeChangeExam" style="display: none;">
                 🔄 다른 시험 선택
@@ -612,7 +625,7 @@
         <div style="flex: 1;">
           <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
             <span>🤖 AI 어법 분석기 설정 (Multi-LLM 앙상블)</span>
-            <span class="ai-ensemble-badge" id="aiEnsembleModeBadge">🛡️ 엄격 교집합 모드</span>
+            <span class="ai-ensemble-badge" id="aiEnsembleModeBadge">🗳️ 다수결 합의 모드</span>
           </h3>
           <p class="modal-subtitle" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
             수능·모의고사 243개 어법 기준표(<code>grammar_categories.json</code>)에 따라 문장을 정밀 분석할 AI 모델을 복수 선택할 수 있습니다.
@@ -624,13 +637,23 @@
       <div class="modal-body ai-multi-modal-body" style="max-height: 70vh; overflow-y: auto; padding: 1.25rem;">
         <!-- 교차 검증 설명 안내 배너 -->
         <div class="ai-consensus-guide-box">
-          <div class="consensus-guide-header">
-            <span class="guide-icon">🛡️</span>
-            <strong>복수 모델 교차 검증 (엄격 교집합 / Strict Intersection) 원리</strong>
+          <div class="consensus-guide-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="guide-icon">🗳️</span>
+              <strong>복수 모델 교차 검증 (다수결 합의 / Majority Vote Consensus)</strong>
+            </div>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <label for="selectConsensusMode" style="font-size: 0.78rem; font-weight: 700; color: #1e293b; margin: 0;">합의 기준:</label>
+              <select id="selectConsensusMode" class="form-control" style="width: auto; font-size: 0.76rem; padding: 2px 8px; height: 28px; border-radius: 6px; border-color: #94a3b8; font-weight: 600;">
+                <option value="majority" selected>🗳️ 다수결 합의 (과반수 찬성: 2/3, 3/4) [기본/권장]</option>
+                <option value="at_least_2">🤝 2개 모델 이상 합의 (2/3, 2/4 허용)</option>
+                <option value="strict">🛡️ 엄격 전원 일치 (100% 만장일치)</option>
+              </select>
+            </div>
           </div>
-          <p class="consensus-guide-desc">
-            • <strong>2개 이상 모델 선택 시</strong>: 모든 선택된 모델이 <strong>공통으로 일치하게 채택한 어법 범주만</strong> 최종 판정 결과로 채택합니다. (단 1개 모델이라도 불일치 시 오분류 방지를 위해 제외)<br>
-            • <strong>1개 모델 선택 시</strong>: 해당 모델 단독 분석 모드로 동작합니다.
+          <p class="consensus-guide-desc" style="margin-top: 6px;">
+            • <strong>다수결 합의 모드</strong>: 활성화된 모델 중 <strong>과반수 이상이 공통 찬성한 어법 범주</strong>만 최종 결과로 채택합니다. (2개 중 2개, 3개 중 2개 이상, 4개 중 3개 이상)<br>
+            • <strong>1개 모델 선택 시</strong>: 해당 모델 단독 분석 모드로 자동 동작합니다.
           </p>
         </div>
 

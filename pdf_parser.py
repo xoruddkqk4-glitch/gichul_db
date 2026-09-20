@@ -197,7 +197,10 @@ def extract_pdf_columns_and_questions(
     month: int = 6,
     reading_start: Optional[int] = None,
     reading_end: Optional[int] = None,
-    answers_dict: Optional[Dict[int, str]] = None
+    start_q: Optional[int] = None,
+    end_q: Optional[int] = None,
+    answers_dict: Optional[Dict[int, str]] = None,
+    **kwargs
 ) -> Dict[int, Dict]:
     """
     PDF 시험지에서 2단(Two-Column) 레이아웃을 칼럼별로 독립 분석하여
@@ -210,8 +213,10 @@ def extract_pdf_columns_and_questions(
         all_page_text += page.get_text() + "\n"
 
     detected_start, detected_end = detect_listening_range(all_page_text)
-    start_q = reading_start if reading_start is not None else detected_start
-    end_q = reading_end if reading_end is not None else detected_end
+    actual_start = start_q if start_q is not None else (reading_start if reading_start is not None else detected_start)
+    actual_end = end_q if end_q is not None else (reading_end if reading_end is not None else detected_end)
+    start_q = actual_start
+    end_q = actual_end
 
     # 문항 번호 감지 정규식 (예: "18. 다음 글의", "36.", "37. ")
     q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?")

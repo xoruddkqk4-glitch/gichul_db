@@ -335,6 +335,13 @@ body {
   border-color: var(--primary);
 }
 
+.filter-select.active {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
 /* ==========================================================================
    화면 2: [결과창 전용 독립 화면]
    ========================================================================== */
@@ -1911,7 +1918,7 @@ mark.passage-highlight {
 .grammar-badge-none {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   color: #475569;
   background: #f1f5f9;
   border: 1px solid #cbd5e1;
@@ -1925,6 +1932,26 @@ mark.passage-highlight {
 .grammar-badge-none:hover {
   background: #e2e8f0;
   border-color: #94a3b8;
+}
+
+.grammar-none-remove-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 3px;
+  margin-left: 2px;
+  color: #94a3b8;
+  font-weight: bold;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+}
+
+.grammar-none-remove-btn:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  transform: scale(1.15);
 }
 
 /* 테이블 내 별표(⭐) 버튼 */

@@ -69,12 +69,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultsFilterMonth = document.getElementById("resultsFilterMonth");
   const resultsFilterExamType = document.getElementById("resultsFilterExamType");
   const resultsFilterQuestionType = document.getElementById("resultsFilterQuestionType");
+  const btnResetResultsFilters = document.getElementById("btnResetResultsFilters");
+  const btnResetHomeFilters = document.getElementById("btnResetHomeFilters");
   const resultsTotalCount = document.getElementById("resultsTotalCount");
 
   // 상태 컨테이너
   const loadingIndicator = document.getElementById("loadingIndicator");
   const emptyResultsBox = document.getElementById("emptyResultsBox");
   const btnEmptyBackToSearch = document.getElementById("btnEmptyBackToSearch");
+  const btnEmptyResetFilters = document.getElementById("btnEmptyResetFilters");
 
   // [지문 결과 화면] 요소
   const passageViewContainer = document.getElementById("passageViewContainer");
@@ -258,6 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
     mainSearchInput.focus();
     if (typeof updateClearButtons === "function") updateClearButtons();
+    if (typeof updateFilterResetButtonsUI === "function") updateFilterResetButtonsUI();
   }
 
   /** 상단 결과 내비게이션 바 높이를 동적으로 측정하여 CSS 변수(--results-nav-height)로 동기화 */
@@ -286,6 +290,11 @@ document.addEventListener("DOMContentLoaded", () => {
   btnBackToSearch.addEventListener("click", showHomeScreen);
   if (btnEmptyBackToSearch) {
     btnEmptyBackToSearch.addEventListener("click", showHomeScreen);
+  }
+  if (btnEmptyResetFilters) {
+    btnEmptyResetFilters.addEventListener("click", () => {
+      resetAllSearchFilters(true);
+    });
   }
 
   // =========================================================================
@@ -498,6 +507,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (typeof updateGrammarBreadcrumbFilterUI === "function") {
       updateGrammarBreadcrumbFilterUI();
     }
+    if (typeof updateFilterResetButtonsUI === "function") {
+      updateFilterResetButtonsUI();
+    }
 
     // 결과 화면으로 전환 및 로딩 표시
     showResultsScreen();
@@ -557,6 +569,9 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("검색 중 오류가 발생했습니다.", "error");
     } finally {
       loadingIndicator.style.display = "none";
+      if (typeof updateFilterResetButtonsUI === "function") {
+        updateFilterResetButtonsUI();
+      }
     }
   }
 
@@ -697,6 +712,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (btnClearResultsSearch && resultsSearchInput) {
       btnClearResultsSearch.style.display = resultsSearchInput.value.trim().length > 0 ? "inline-flex" : "none";
     }
+    if (typeof updateFilterResetButtonsUI === "function") {
+      updateFilterResetButtonsUI();
+    }
   }
 
   // 검색창 입력 시 x 버튼 동적 표시/숨김
@@ -808,11 +826,123 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // =========================================================================
+  // 검색 조건(필터/검색어) 초기화 및 동기화 관리
+  // =========================================================================
+
+  /** 현재 활성화된 검색 조건(검색어, 학년, 연도, 월, 시험구분, 문제유형, 어법, 별표, 결과내검색)이 있는지 확인 */
+  function hasActiveSearchFilters() {
+    const hasKeyword = !!((resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()));
+    const hasGrade = !!((resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value));
+    const hasYear = !!((resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value));
+    const hasMonth = !!((resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value));
+    const hasExamType = !!((resultsFilterExamType && resultsFilterExamType.value) || (filterExamType && filterExamType.value));
+    const hasQuestionType = !!((resultsFilterQuestionType && resultsFilterQuestionType.value) || (filterQuestionType && filterQuestionType.value));
+    const hasGrammarPos = !!((resultsFilterGrammarPos && resultsFilterGrammarPos.value) || (filterGrammarPos && filterGrammarPos.value));
+    const hasGrammarCat = !!((resultsFilterGrammarCategory && resultsFilterGrammarCategory.value) || (filterGrammarCategory && filterGrammarCategory.value));
+    return hasKeyword || hasGrade || hasYear || hasMonth || hasExamType || hasQuestionType || hasGrammarPos || hasGrammarCat || !!isStarredFilterActive || !!isSearchWithinActive;
+  }
+
+  /** 검색 조건 초기화 버튼 가시성 및 필터 드롭다운 active 스타일 업데이트 */
+  function updateFilterResetButtonsUI() {
+    const hasFilters = hasActiveSearchFilters();
+
+    // 드롭다운 필터 active 스타일 동기화
+    const pairs = [
+      [filterGrade, resultsFilterGrade],
+      [filterYear, resultsFilterYear],
+      [filterMonth, resultsFilterMonth],
+      [filterExamType, resultsFilterExamType],
+      [filterQuestionType, resultsFilterQuestionType],
+    ];
+    pairs.forEach(([homeEl, resEl]) => {
+      if (homeEl) homeEl.classList.toggle("active", !!homeEl.value);
+      if (resEl) resEl.classList.toggle("active", !!resEl.value);
+    });
+
+    // 결과창 검색 조건 초기화 버튼
+    if (btnResetResultsFilters) {
+      btnResetResultsFilters.style.display = hasFilters ? "inline-flex" : "none";
+    }
+
+    // 홈 화면 검색 조건 초기화 버튼
+    if (btnResetHomeFilters) {
+      btnResetHomeFilters.style.display = hasFilters ? "inline-flex" : "none";
+    }
+  }
+
+  /** 모든 검색 조건(검색어, 기본 필터, 어법 필터, 트리 네비게이션, 결과 내 검색)을 초기화 */
+  function resetAllSearchFilters(triggerSearch = true) {
+    // 1. 검색어 초기화
+    if (mainSearchInput) mainSearchInput.value = "";
+    if (resultsSearchInput) resultsSearchInput.value = "";
+    if (btnClearMainSearch) btnClearMainSearch.style.display = "none";
+    if (btnClearResultsSearch) btnClearResultsSearch.style.display = "none";
+
+    // 2. 기본 필터 드롭다운 초기화
+    if (filterGrade) filterGrade.value = "";
+    if (resultsFilterGrade) resultsFilterGrade.value = "";
+    if (filterYear) filterYear.value = "";
+    if (resultsFilterYear) resultsFilterYear.value = "";
+    if (filterMonth) filterMonth.value = "";
+    if (resultsFilterMonth) resultsFilterMonth.value = "";
+    if (filterExamType) filterExamType.value = "";
+    if (resultsFilterExamType) resultsFilterExamType.value = "";
+    if (filterQuestionType) filterQuestionType.value = "";
+    if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+    if (filterTag) filterTag.value = "";
+
+    // 3. 어법 필터 초기화
+    if (typeof resetAllGrammarFilters === "function") {
+      resetAllGrammarFilters(false);
+    }
+
+    // 4. 결과 내 검색 및 트리 상태 초기화
+    if (typeof setSearchWithinState === "function") {
+      setSearchWithinState(false);
+    }
+    treeNavState.grade = null;
+    treeNavState.year = null;
+    treeNavState.month = null;
+
+    // 5. 버튼 가시성 및 UI 갱신
+    updateFilterResetButtonsUI();
+
+    // 6. 검색 재실행 (결과 화면에서 전체 지문/문장 조회)
+    if (triggerSearch) {
+      executeSearch(currentMode === "passage" ? "all_passages" : "results");
+      showToast("검색 조건이 초기화되었습니다.", "info");
+    }
+  }
+
+  // 결과창 '↺ 검색 조건 초기화' 버튼 이벤트
+  if (btnResetResultsFilters) {
+    btnResetResultsFilters.addEventListener("click", () => {
+      resetAllSearchFilters(true);
+    });
+  }
+
+  // 홈 화면 '↺ 검색 조건 초기화' 버튼 이벤트
+  if (btnResetHomeFilters) {
+    btnResetHomeFilters.addEventListener("click", () => {
+      resetAllSearchFilters(false);
+      showToast("검색 조건이 초기화되었습니다.", "info");
+    });
+  }
+
+  // 홈 필터 드롭다운 변경 시 초기화 버튼 상태 업데이트
+  [filterGrade, filterYear, filterMonth, filterExamType, filterQuestionType].forEach((el) => {
+    if (el) {
+      el.addEventListener("change", updateFilterResetButtonsUI);
+    }
+  });
+
   // 결과창 필터 변경 시 자동 재검색 (필터 변경은 항상 DB 전체 기반으로 재검색)
   [resultsFilterGrade, resultsFilterYear, resultsFilterMonth, resultsFilterExamType, resultsFilterQuestionType].forEach((el) => {
     if (el) {
       el.addEventListener("change", () => {
         setSearchWithinState(false);
+        updateFilterResetButtonsUI();
         executeSearch("results");
       });
     }
@@ -1227,32 +1357,45 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     });
 
-    // "↺ 설정 초기화" 버튼: 시험 선택 상태(학년/년도/월)라면 언제든 무설정 상태(처음 학년 선택)로 복귀 가능
+    // "↺ 검색 조건 초기화" 버튼: 트리 선택 상태이거나 상단 검색/필터 조건이 있는 경우 표시
     if (btnTreeResetExam) {
       const hasTreeSelection = !!(treeNavState.grade || treeNavState.year || treeNavState.month);
-      if (totalExamsCount > 1 && hasTreeSelection) {
+      const hasActiveFilters = typeof hasActiveSearchFilters === "function" ? hasActiveSearchFilters() : false;
+      const shouldShow = hasTreeSelection || hasActiveFilters || totalExamsCount > 1;
+
+      if (shouldShow) {
         btnTreeResetExam.style.display = "inline-flex";
         btnTreeResetExam.onclick = () => {
-          treeNavState.grade = null;
-          treeNavState.year = null;
-          treeNavState.month = null;
-          updateTreeUI(tree, allItems, totalExamsCount);
-          showToast("시험 선택이 초기화되었습니다.", "info");
+          if (hasActiveFilters) {
+            // 상단 검색 조건(필터/검색어)이 설정된 경우: 전체 검색 조건 초기화 및 전체 지문 재조회
+            resetAllSearchFilters(true);
+          } else {
+            // 필터 없이 트리 탐색만 한 경우: 트리 선택 단계를 처음(학년 선택)으로 복귀
+            treeNavState.grade = null;
+            treeNavState.year = null;
+            treeNavState.month = null;
+            updateTreeUI(tree, allItems, totalExamsCount);
+            showToast("선택 단계가 초기화되었습니다.", "info");
+          }
         };
       } else {
         btnTreeResetExam.style.display = "none";
       }
     }
 
-    // 브레드크럼 홈 아이콘(📍) 클릭 시 처음 학년 선택으로 복귀
+    // 브레드크럼 홈 아이콘(📍) 클릭 시 처음 학년 선택으로 복귀 (필터가 있으면 필터도 함께 초기화)
     if (treeBreadcrumbHome) {
       treeBreadcrumbHome.style.cursor = "pointer";
       treeBreadcrumbHome.onclick = () => {
-        if (treeNavState.grade || treeNavState.year || treeNavState.month) {
+        const hasActiveFilters = typeof hasActiveSearchFilters === "function" ? hasActiveSearchFilters() : false;
+        if (hasActiveFilters) {
+          resetAllSearchFilters(true);
+        } else if (treeNavState.grade || treeNavState.year || treeNavState.month) {
           treeNavState.grade = null;
           treeNavState.year = null;
           treeNavState.month = null;
           updateTreeUI(tree, allItems, totalExamsCount);
+          showToast("선택 단계가 초기화되었습니다.", "info");
         }
       };
     }
@@ -1789,7 +1932,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (grammarAnalyzed === 1 || grammarAnalyzed === true) {
-      return '<span class="grammar-badge-none" title="AI 어법 분석이 완료되었으나 검출된 특이 어법 포인트가 없습니다.">✓ 해당사항 없음</span>';
+      const removeBtn = sentenceId
+        ? `<button type="button" class="grammar-none-remove-btn" data-sent-id="${escapeHtml(sentenceId)}" title="해당사항 없음 초기화 (다시 분석 가능)">&times;</button>`
+        : "";
+      return `<span class="grammar-badge-none" title="AI 어법 분석이 완료되었으나 검출된 특이 어법 포인트가 없습니다.">✓ 해당사항 없음${removeBtn}</span>`;
     }
 
     return '<span class="empty-grammar-text" title="아직 AI 어법 분석이 수행되지 않은 문장입니다.">미분석</span>';
@@ -2016,6 +2162,9 @@ document.addEventListener("DOMContentLoaded", () => {
               const data = await res.json();
               if (res.ok && data.success) {
                 s.grammar_annotations = data.annotations || [];
+                if (!s.grammar_annotations || s.grammar_annotations.length === 0) {
+                  s.grammar_analyzed = 0;
+                }
                 updateGrammarCell();
                 showToast("어법 범주가 삭제되었습니다.", "info");
               } else {
@@ -2024,6 +2173,31 @@ document.addEventListener("DOMContentLoaded", () => {
             } catch (err) {
               console.error("Delete grammar error:", err);
               showToast("어법 범주 삭제 중 오류가 발생했습니다.", "error");
+            }
+          });
+        });
+
+        // '✓ 해당사항 없음' 배지의 x 버튼 클릭 시 분석 상태 초기화
+        container.querySelectorAll(".grammar-none-remove-btn").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const sentId = btn.dataset.sentId || s.id;
+            try {
+              const res = await fetch(`/api/sentences/${encodeURIComponent(sentId)}/grammar`, {
+                method: "DELETE"
+              });
+              const data = await res.json();
+              if (res.ok && data.success) {
+                s.grammar_annotations = [];
+                s.grammar_analyzed = 0;
+                updateGrammarCell();
+                showToast("어법 분석이 초기화되었습니다. 다시 분석할 수 있습니다.", "info");
+              } else {
+                showToast(data.detail || "초기화 실패", "error");
+              }
+            } catch (err) {
+              console.error("Reset grammar error:", err);
+              showToast("어법 분석 초기화 중 오류가 발생했습니다.", "error");
             }
           });
         });
@@ -2107,6 +2281,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (res.ok && data.success) {
               s.grammar_annotations = data.annotations || [];
               s.grammar_analyzed = 1;
+              if (data.sentence_text && data.sentence_text !== s.sentence_text) {
+                s.sentence_text = data.sentence_text;
+                const sentenceDiv = tr.querySelector(".col-sentence > div");
+                if (sentenceDiv) {
+                  sentenceDiv.innerHTML = highlightSentenceKeyword(s.sentence_text, currentQuery);
+                }
+              }
               updateGrammarCell();
               if (s.grammar_annotations.length > 0) {
                 showToast(`${s.grammar_annotations.length}개의 어법 포인트가 분석되었습니다.`, "success");
@@ -3294,6 +3475,9 @@ document.addEventListener("DOMContentLoaded", () => {
             successCount++;
             sent.grammar_annotations = annos;
             sent.grammar_analyzed = 1;
+            if (item.sentence_text && item.sentence_text !== sent.sentence_text) {
+              sent.sentence_text = item.sentence_text;
+            }
           } else {
             errMsg = item.error || "분석 오류";
           }
@@ -3630,8 +3814,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       const names = activeWithKeys.map((p) => providerShortNames[p] || p).join(" + ");
       btnOpenAiSettingsModal.classList.add("api-active");
-      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 교차검증 <span class="ai-active-badge">${escapeHtml(names)} (전원 일치)</span>`;
-      btnOpenAiSettingsModal.title = `AI 복수 모델 교차 검증 활성화됨 (${names}: 엄격 교집합) - 클릭하여 설정 변경`;
+      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 다수결 합의 <span class="ai-active-badge">${escapeHtml(names)}</span>`;
+      btnOpenAiSettingsModal.title = `AI 복수 모델 다수결 합의 활성화됨 (${names}) - 클릭하여 설정 변경`;
     }
   }
 
@@ -3653,10 +3837,26 @@ document.addEventListener("DOMContentLoaded", () => {
   function updateAiModalSelectionSummary() {
     const summary = document.getElementById("aiModalSelectionSummary");
     const badge = document.getElementById("aiEnsembleModeBadge");
+    const modeSelect = document.getElementById("selectConsensusMode");
+    const mode = modeSelect ? modeSelect.value : "majority";
     if (!summary) return;
 
     const checkedBoxes = Array.from(document.querySelectorAll(".provider-checkbox:checked"));
     const count = checkedBoxes.length;
+
+    let modeDesc = "다수결 합의";
+    let badgeText = "🗳️ 다수결 합의 모드";
+    if (mode === "strict") {
+      modeDesc = "엄격 전원 일치";
+      badgeText = `🛡️ 엄격 전원 일치 (${count}/${count})`;
+    } else if (mode === "at_least_2") {
+      modeDesc = "2개 이상 모델 합의";
+      badgeText = `🤝 2개 모델 이상 합의`;
+    } else {
+      const needed = Math.max(2, Math.floor(count / 2) + 1);
+      modeDesc = `과반수(${needed}개 이상) 찬성 합의`;
+      badgeText = `🗳️ 다수결 합의 (${count}개 중 ${needed}개+ 찬성)`;
+    }
 
     if (count === 0) {
       summary.innerHTML = `<span style="color: #dc2626;">⚠️ 선택된 모델이 없습니다. 최소 1개 이상 선택해 주세요.</span>`;
@@ -3668,8 +3868,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (badge) badge.textContent = "단독 실행 모드";
     } else {
       const names = checkedBoxes.map((cb) => providerShortNames[cb.dataset.provider] || cb.dataset.provider).join(", ");
-      summary.innerHTML = `선택된 모델: <strong>${escapeHtml(names)}</strong> (${count}개 모델 엄격 교집합 / 전원 일치)`;
-      if (badge) badge.textContent = `🛡️ 엄격 교집합 (${count}개 전원 일치)`;
+      summary.innerHTML = `선택된 모델: <strong>${escapeHtml(names)}</strong> (${count}개 모델 ${modeDesc})`;
+      if (badge) badge.textContent = badgeText;
     }
   }
 
@@ -3728,6 +3928,12 @@ document.addEventListener("DOMContentLoaded", () => {
             testRes.className = "provider-test-result";
           }
         });
+
+        // 합의 방식 셀렉트 동기화
+        const selectConsensusMode = document.getElementById("selectConsensusMode");
+        if (selectConsensusMode && data.consensus_mode) {
+          selectConsensusMode.value = data.consensus_mode;
+        }
 
         // OpenRouter Top 5 모델 동기화
         if (openrouterTopModelsData.length === 0) {
@@ -3930,6 +4136,9 @@ document.addEventListener("DOMContentLoaded", () => {
         };
       });
 
+      const modeSelect = document.getElementById("selectConsensusMode");
+      const consensusMode = modeSelect ? modeSelect.value : "majority";
+
       btnSaveAiSettings.disabled = true;
       btnSaveAiSettings.textContent = "⏳ 저장 중...";
 
@@ -3939,6 +4148,7 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             active_providers: checkedProviders,
+            consensus_mode: consensusMode,
             providers: providersPayload,
           }),
         });
@@ -3960,6 +4170,12 @@ document.addEventListener("DOMContentLoaded", () => {
         btnSaveAiSettings.textContent = "✔ 전체 설정 저장";
       }
     });
+  }
+
+  // 합의 기준 변경 시 모달 요약 즉시 갱신
+  const selectConsensusModeEl = document.getElementById("selectConsensusMode");
+  if (selectConsensusModeEl) {
+    selectConsensusModeEl.addEventListener("change", updateAiModalSelectionSummary);
   }
 
   // 유틸 함수

@@ -716,3 +716,26 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py grammar_analyzer.py` 파이썬 구문 검증 통과 (오류 0건)
   - `grammar_analyzer.test_connection` 3요소 언팩 및 FastAPI `/api/settings/ai/test` 엔드포인트 응답 검증 완료
 
+### [2026-09-20 21:55] 업데이트 이력 (Commit ID: <PENDING_COMMIT_ID>)
+- **수정 내용**:
+  - **문장 분석 시 밑줄(빈칸) 정답 선지 자동 결합 및 온전한 문장 생성 (`grammar_analyzer.py`, `database.py`, `app.py`, `validator.py`, `static/js/main.js`)**:
+    - **빈칸 문제 정답 선지 결합**: 31~34번 빈칸 추론 문항 등 지문에 밑줄(`_______`)이 있는 경우 지문의 선택지(①~⑤) 및 정답 번호(`answer_text`)를 대조하여 밑줄 위치에 실제 정답 선지를 삽입한 **온전한 문장**으로 자동 완성
+    - **선지 기호 정제**: 문장 내 불필요한 번호 표기(①~⑤, (1)~(5), (a)~(e), leading `1. ` 등) 자동 제거
+    - **데이터베이스 영구 갱신**: `database.py`에 `update_sentence_text` 함수를 신설하여 정답이 결합된 온전한 문장 본문과 단어 수를 `sentences` 테이블에 영구 저장
+    - **기존 기출 DB 일괄 마이그레이션**: DB 내 기존 8개 빈칸 문장 전체를 정답이 반영된 완성형 문장으로 일괄 치환 및 재분석 완료 (예: `[고3-2026년-07월-33번-7번째 문장]` -> "At the same time, those expectations were themselves a product of the behavior that other individuals had chosen.")
+    - **UI 및 신규 업로드 파이프라인 연동**: 단일 문장 및 일괄 어법 분석 시 화면 테이블(`.col-sentence`)과 클립보드 복사 텍스트가 완성형 문장으로 자동 동기화되며, 신규 시험지 업로드(`validator.py`) 시에도 완성형 문장으로 자동 토큰화
+  - **멀티 LLM 다수결 합의(Majority Vote) 모드 및 단일 모델 장애 격리(Fault Tolerance) 구축 (`grammar_analyzer.py`, `static/js/main.js`, `templates/index.html`)**:
+    - 기존 '엄격 전원 일치(Strict Intersection)'에서 2개 이상 활성 모델 중 과반수(예: 2/3, 2/4 등)가 합의한 어법 범주를 채택하는 **다수결 합의** 모드로 전면 전환
+    - 특정 모델(Gemini 503 과부하, 429 제한 등) 장애 시 전체 프로세스가 중단되지 않고, 정상 응답한 생존 모델들 간의 다수결 합의를 도출하여 분석 안정성 확보
+  - **'해당사항 없음' 배지 삭제(x) 및 재분석 지원 (`templates/index.html`, `static/js/main.js`)**:
+    - 특이 어법 포인트가 없어 '해당사항 없음'으로 처리된 문장에도 `×` 삭제 버튼을 제공하여 어법 상태를 초기화하고 언제든지 재분석할 수 있도록 개선
+  - **지문 검색 결과 창 검색 조건 초기화 버튼 신설 (`templates/index.html`, `static/js/main.js`)**:
+    - 지문 결과 뷰 상단 네비게이션 액션 바에 `🔄 조건 초기화` 버튼을 추가하여 학년, 연도, 월, 문제유형 및 검색어 일괄 초기화 지원
+  - **시험지 업로드 파라미터 불일치 오류 해결 (`pdf_parser.py`, `hwp_parser.py`)**:
+    - `extract_pdf_columns_and_questions` 및 `parse_hwp_questions`에서 `start_q`, `end_q`, `reading_start`, `reading_end`, `answers_dict`, `**kwargs`를 모두 유연하게 처리하도록 파라미터 호환성 확장
+- **검증 결과**:
+  - `python -m py_compile app.py pdf_parser.py hwp_parser.py database.py validator.py grammar_analyzer.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `[고3-2026년-07월-33번-7번째 문장]` 정답 결합 및 멀티 LLM 다수결 합의 어법 분석(주어동사일치, 목적격 관계대명사) 정상 저장 검증 완료
+  - `extract_pdf_columns_and_questions` 및 `parse_hwp_questions` 함수 시그니처 및 키워드 인자 수신 테스트 완료
+

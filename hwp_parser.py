@@ -216,13 +216,22 @@ def parse_hwp_questions(
     year: int = 2024,
     month: int = 6,
     start_q: int = 18,
-    end_q: int = 45
+    end_q: int = 45,
+    reading_start: Optional[int] = None,
+    reading_end: Optional[int] = None,
+    answers_dict: Optional[Dict[int, str]] = None,
+    **kwargs
 ) -> Dict[int, Dict]:
     """
     HWP 시험지에서 독해 문항별 발문, 지문, 보기 추출
     단일 HWP 파일(문제+해설 포함)에서도 문제지 영역만 분리하여 파싱
     복합 지문([41~42], [43~45]) 공유 지문 정상 매핑
     """
+    if reading_start is not None:
+        start_q = reading_start
+    if reading_end is not None:
+        end_q = reading_end
+
     full_text = get_hwp_text(hwp_path)
     if not full_text:
         return {}

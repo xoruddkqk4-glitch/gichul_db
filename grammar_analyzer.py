@@ -7,6 +7,7 @@
 
 import os
 import json
+import re
 import urllib.request
 import urllib.error
 from typing import Dict, List, Any, Optional, Tuple
@@ -59,6 +60,10 @@ SYSTEM_PROMPT = """당신은 대한민국 대학수학능력시험 및 전국연
    - category_id: 기준표의 번호 (정수)
    - target_expression: 해당 문장 내에서 어법이 적용된 정확한 영어 단어/어구
    - explanation: 해당 어법에 대한 명쾌하고 친절한 1~2문장의 한국어 어법 해설
+
+5. [선지 번호 및 밑줄 처리 규칙]
+   - 문장 내 선지 번호(1~5, ①~⑤, (1)~(5), (a)~(e) 등)는 어법 분석 대상에서 완전히 제외하고 순수 문장 성분만 분석하십시오.
+   - 밑줄/빈칸에 정답 어구가 채워진 문장은 채워진 어구를 포함한 완성된 문장의 전체 통사 구조 및 문법 요소를 기준으로 분석하십시오.
 
 반드시 다음 JSON 형식으로만 응답하십시오:
 {
@@ -204,6 +209,19 @@ def get_active_providers() -> List[str]:
     return ["gemini"]
 
 
+def get_consensus_mode() -> str:
+    """합의 판정 방식 조회 (majority, at_least_2, strict) - 기본값: majority (다수결 합의)"""
+    return database.get_setting("ai_consensus_mode", "majority")
+
+
+def set_consensus_mode(mode: str):
+    """합의 판정 방식 저장"""
+    clean_mode = (mode or "").strip().lower()
+    if clean_mode not in ["majority", "at_least_2", "strict"]:
+        clean_mode = "majority"
+    database.set_setting("ai_consensus_mode", clean_mode)
+
+
 def get_all_ai_configs() -> Dict[str, Any]:
     """모든 지원 모델의 설정 현황 및 활성화 목록 종합 조회"""
     active_providers = get_active_providers()
@@ -230,6 +248,7 @@ def get_all_ai_configs() -> Dict[str, Any]:
     return {
         "active_providers": active_providers,
         "mode": "ensemble" if len(active_providers) > 1 else "single",
+        "consensus_mode": get_consensus_mode(),
         "providers": providers_info
     }
 
@@ -422,6 +441,138 @@ def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool,
         return False, f"연결 실패: {str(e)}", model
 
 
+def extract_answer_num(ans_text: str) -> Optional[int]:
+    """정답 문자열에서 1~5 정답 번호 추출 (e.g. '③' -> 3, '3' -> 3, '[정답] ④' -> 4)"""
+    if not ans_text:
+        return None
+    num_map = {
+        '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
+        '1': 1, '2': 2, '3': 3, '4': 4, '5': 5
+    }
+    for ch in ['①', '②', '③', '④', '⑤']:
+        if ch in ans_text:
+            return num_map[ch]
+    m = re.search(r'[1-5]', ans_text)
+    if m:
+        return int(m.group(0))
+    return None
+
+
+def extract_choices(passage_text: str, explanation_text: str = "") -> Dict[int, str]:
+    """지문 본문 또는 해설 텍스트에서 1~5번 선지 텍스트를 추출"""
+    choices: Dict[int, str] = {}
+    if not passage_text and not explanation_text:
+        return choices
+
+    # 1. passage_text에서 원문자(①~⑤) 패턴 추출
+    pattern_circle = re.compile(r'([①②③④⑤])\s*([^①②③④⑤\n\r\t]+)')
+    matches = list(pattern_circle.finditer(passage_text or ""))
+    num_map = {'①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5}
+
+    if len(matches) >= 3:
+        for m in matches:
+            idx = num_map.get(m.group(1))
+            val = m.group(2).strip()
+            val = re.sub(r'\[\d+점\]', '', val).strip()
+            if idx and val:
+                choices[idx] = val
+
+    # 2. 줄 단위 패턴: (1) 텍스트, 1. 텍스트 등
+    if len(choices) < 5 and passage_text:
+        line_pattern = re.compile(r'(?:^|\n)\s*(?:[①②③④⑤]|\([1-5]\)|[1-5]\.)\s*([^\n\r]+)')
+        alt_matches = list(line_pattern.finditer(passage_text))
+        if len(alt_matches) >= 4:
+            for i, m in enumerate(alt_matches[:5], 1):
+                choices[i] = m.group(1).strip()
+
+    # 3. 만약 passage_text에 없고 explanation_text에 선지가 있는 경우
+    if len(choices) < 5 and explanation_text:
+        matches_exp = list(pattern_circle.finditer(explanation_text))
+        if len(matches_exp) >= 3:
+            for m in matches_exp:
+                idx = num_map.get(m.group(1))
+                val = m.group(2).strip()
+                val = re.sub(r'\[\d+점\]', '', val).strip()
+                if idx and val and idx not in choices:
+                    choices[idx] = val
+
+    return choices
+
+
+def clean_choice_markers(text: str) -> str:
+    """
+    선지를 의미하는 번호 및 식별 기호(1, 2, 3, 4, 5, ①~⑤, (1)~(5), (a)~(e) 등) 제거
+    """
+    if not text:
+        return ""
+    # 1. 괄호 속 선지 번호/문자: ( ① ), ( ② ), (1), (2), (3), (4), (5), (a), (b), (c), (d), (e)
+    t = re.sub(r'\(\s*[①②③④⑤1-5a-eA-E]\s*\)', '', text)
+    # 2. 단독 원문자: ①, ②, ③, ④, ⑤
+    t = re.sub(r'[①②③④⑤]', '', t)
+    # 3. 문단 식별용 (A), (B), (C), (D) 문두 마커
+    t = re.sub(r'^\s*\([A-E]\)\s*', '', t)
+    # 4. 문두 번호 마커: ^1. , ^2) , ^[1] 등
+    t = re.sub(r'^\s*\[?[1-5]\]?[\.\)]\s*', '', t)
+    # 5. 중복 공백 정리
+    t = re.sub(r'[ \t]{2,}', ' ', t)
+    return t.strip()
+
+
+def prepare_sentence_for_analysis(
+    sentence_text: str,
+    passage_id: Optional[str] = None,
+    passage_text: str = "",
+    answer_text: str = "",
+    explanation_text: str = ""
+) -> str:
+    """
+    문장 분석(어법/문법 분석)을 위한 정밀 전처리:
+    1. 선지 식별 기호(1, 2, 3, 4, 5, ①~⑤, (1)~(5), (a)~(e) 등) 제거
+    2. 지문에 밑줄/빈칸(____)이 있는 경우 정답 선지 텍스트를 밑줄에 채워 완성된 문장으로 변환
+    """
+    if not sentence_text:
+        return ""
+
+    # passage_id가 없거나 passage 정보가 부족한 경우 자동 DB 보강
+    if not passage_text or not answer_text:
+        if not passage_id:
+            try:
+                with database.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT passage_id FROM sentences WHERE sentence_text = ? LIMIT 1", (sentence_text,))
+                    row = cur.fetchone()
+                    if row:
+                        passage_id = row["passage_id"]
+            except Exception:
+                pass
+
+        if passage_id:
+            try:
+                p_data = database.get_passage(passage_id)
+                if p_data:
+                    passage_text = passage_text or p_data.get("passage_text", "")
+                    answer_text = answer_text or p_data.get("answer_text", "")
+                    explanation_text = explanation_text or p_data.get("explanation_text", "")
+            except Exception:
+                pass
+
+    # 1차: 선지 기호 정리
+    cleaned = clean_choice_markers(sentence_text)
+
+    # 2차: 밑줄 / 빈칸 패턴 탐색 및 정답 선지 삽입
+    blank_pattern = re.compile(r'_{2,}|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>')
+    if blank_pattern.search(cleaned):
+        choices = extract_choices(passage_text, explanation_text)
+        ans_num = extract_answer_num(answer_text)
+        if ans_num and ans_num in choices:
+            correct_choice = clean_choice_markers(choices[ans_num])
+            if correct_choice:
+                cleaned = blank_pattern.sub(correct_choice, cleaned)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    return cleaned
+
+
 def _call_llm(
     sentence: str,
     provider: str,
@@ -600,14 +751,30 @@ def analyze_sentence(
     sentence_text: str,
     provider: Optional[str] = None,
     api_key: Optional[str] = None,
-    model: Optional[str] = None
+    model: Optional[str] = None,
+    passage_id: Optional[str] = None,
+    passage_text: str = "",
+    answer_text: str = "",
+    explanation_text: str = ""
 ) -> List[Dict[str, Any]]:
     """
     문장 어법 분석 수행
+    - 전처리: 선지 번호(1~5, ①~⑤ 등) 제외 및 지문 밑줄/빈칸에 정답 선지 자동 채움
     - provider 지정 시: 해당 단일 모델 단독 호출
-    - provider 미지정 시: 활성화된 모든 모델 병렬 호출 후 '엄격 교집합(Strict Intersection, 전원 일치)' 판정
+    - provider 미지정 시: 활성화된 모든 모델 병렬 호출 후 '다수결 합의(Majority Vote)' 판정
     """
     import concurrent.futures
+
+    # 문장 전처리: 선지 번호 제외 및 밑줄에 정답 선지 삽입
+    clean_text = prepare_sentence_for_analysis(
+        sentence_text,
+        passage_id=passage_id,
+        passage_text=passage_text,
+        answer_text=answer_text,
+        explanation_text=explanation_text
+    )
+    if not clean_text:
+        clean_text = sentence_text
 
     # 1. 특정 Provider 명시 호출 (테스트 또는 단일 지정 시)
     if provider:
@@ -616,7 +783,7 @@ def analyze_sentence(
         m = model or get_provider_config(p)[1]
         if not k:
             raise ValueError(f"{PROVIDER_NAMES.get(p, p.upper())} API Key가 설정되지 않았습니다.")
-        return _call_llm(sentence_text, p, k, m)
+        return _call_llm(clean_text, p, k, m)
 
     # 2. 복수 활성 모델 설정 조회
     active_configs = get_active_ai_configs()
@@ -628,15 +795,15 @@ def analyze_sentence(
     # 3. 단일 모델 활성화 시: 기존과 동일하게 단독 호출
     if len(valid_configs) == 1:
         c = valid_configs[0]
-        return _call_llm(sentence_text, c["provider"], c["api_key"], c["model"])
+        return _call_llm(clean_text, c["provider"], c["api_key"], c["model"])
 
-    # 4. 2개 이상 모델 활성화 시: ThreadPoolExecutor로 병렬 비동기 호출 & 엄격 교집합(전원 일치) 산출
+    # 4. 2개 이상 모델 활성화 시: ThreadPoolExecutor로 병렬 비동기 호출 & 다수결 합의(Majority Vote) 산출
     results_by_provider: Dict[str, List[Dict[str, Any]]] = {}
     errors: List[str] = []
 
     def _worker(cfg):
         try:
-            annos = _call_llm(sentence_text, cfg["provider"], cfg["api_key"], cfg["model"])
+            annos = _call_llm(clean_text, cfg["provider"], cfg["api_key"], cfg["model"])
             return cfg["provider"], annos, None
         except Exception as ex:
             return cfg["provider"], [], str(ex)
@@ -651,37 +818,68 @@ def analyze_sentence(
             else:
                 results_by_provider[prov] = annos
 
+    # 모든 활성화된 모델이 전원 실패한 경우에만 최종 예외 발생
+    if len(results_by_provider) == 0:
+        raise ValueError(f"활성화된 모든 AI 모델 호출 실패: {'; '.join(errors)}")
+
+    # 실패한 모델이 일부 있지만 1개 이상의 모델이 성공한 경우: 성공한 모델들로 무중단 분석 진행
+    failed_labels = []
     if errors:
-        # 엄격 교집합 판정을 위해서는 모든 활성 모델이 정상 응답해야 하므로 실패 모델 안내
-        raise ValueError(f"멀티 LLM 분석 중 오류 발생: {'; '.join(errors)}")
+        failed_labels = [prov_err.split(":")[0].strip() for prov_err in errors]
 
-    # 각 모델별 검출된 category_id 집합화
-    provider_cat_ids: Dict[str, set] = {}
+    # 살아남은 성공 모델 수 기준으로 모수(surviving_N) 동적 조정
+    surviving_N = len(results_by_provider)
+    consensus_mode = get_consensus_mode()
+
+    if surviving_N == 1:
+        min_votes = 1
+    elif consensus_mode == "strict":
+        min_votes = surviving_N
+    elif consensus_mode == "at_least_2":
+        min_votes = min(2, surviving_N)
+    else:  # "majority" (과반수 찬성)
+        min_votes = max(2, (surviving_N // 2) + 1)
+
+    # 각 category_id별 찬성한 모델 및 어노테이션 집계
+    cat_votes: Dict[int, List[str]] = {}
+    cat_annos: Dict[int, List[Dict[str, Any]]] = {}
+
     for prov, annos in results_by_provider.items():
-        provider_cat_ids[prov] = {a["category_id"] for a in annos if a.get("category_id")}
+        for a in annos:
+            cid = a.get("category_id")
+            if cid:
+                if cid not in cat_votes:
+                    cat_votes[cid] = []
+                    cat_annos[cid] = []
+                if prov not in cat_votes[cid]:
+                    cat_votes[cid].append(prov)
+                cat_annos[cid].append(a)
 
-    # 엄격 교집합(Strict Intersection): 모든 모델이 공통으로 채택한 범주만 추출
-    common_cat_ids = set.intersection(*provider_cat_ids.values()) if provider_cat_ids else set()
+    # 찬성 모델 수가 기준(min_votes) 이상인 범주만 채택
+    accepted_cat_ids = [cid for cid, voters in cat_votes.items() if len(voters) >= min_votes]
 
-    if not common_cat_ids:
-        # 모델 간 일치하는 어법 범주가 하나도 없는 경우 빈 배열 반환 (화면에서 '해당사항 없음'으로 처리)
+    if not accepted_cat_ids:
+        # 모델 간 합의 기준을 충족하는 어법 범주가 없는 경우 빈 배열 반환 (화면에서 '해당사항 없음'으로 처리)
         return []
 
-    # 모델명 표시 문자열 구성
-    prov_names_list = [PROVIDER_NAMES.get(c["provider"], c["provider"]) for c in valid_configs]
-    consensus_tag = f"[교차 검증: {', '.join(prov_names_list)} 전원 일치 ({len(valid_configs)}/{len(valid_configs)})]"
-
     consensus_annos: List[Dict[str, Any]] = []
-    for cid in sorted(common_cat_ids):
-        cat_meta = _CATEGORY_ID_MAP.get(cid, {})
+    fallback_note = f" ({', '.join(failed_labels)} 일시 실패로 제외)" if failed_labels else ""
 
-        # 각 모델이 제출한 해설 및 타겟 어구 취합
-        matching_annos = []
-        for prov, annos in results_by_provider.items():
-            for a in annos:
-                if a.get("category_id") == cid:
-                    matching_annos.append(a)
-                    break
+    for cid in sorted(accepted_cat_ids):
+        cat_meta = _CATEGORY_ID_MAP.get(cid, {})
+        voters = cat_votes[cid]
+        voter_labels = [PROVIDER_NAMES.get(p, p) for p in voters]
+        num_votes = len(voters)
+
+        # 다수결 합의 태그 구성 (전원 일치 vs 다수결 찬성 vs 단독 반영)
+        if surviving_N == 1:
+            consensus_tag = f"[단독 채택: {', '.join(voter_labels)}]{fallback_note}"
+        elif num_votes == surviving_N:
+            consensus_tag = f"[다수결 합의: {', '.join(voter_labels)} 전원 일치 ({num_votes}/{surviving_N})]{fallback_note}"
+        else:
+            consensus_tag = f"[다수결 합의: {', '.join(voter_labels)} 찬성 ({num_votes}/{surviving_N})]{fallback_note}"
+
+        matching_annos = cat_annos[cid]
 
         target_exp = ""
         for a in matching_annos:

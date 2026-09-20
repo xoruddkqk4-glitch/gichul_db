@@ -60,6 +60,7 @@ class AISettingsRequest(BaseModel):
     model: Optional[str] = ""
     test_now: Optional[bool] = False
     active_providers: Optional[List[str]] = None
+    consensus_mode: Optional[str] = None
     providers: Optional[Dict[str, Dict[str, str]]] = None
 
 
@@ -310,13 +311,16 @@ async def api_save_ai_settings(req: AISettingsRequest):
     """AI 설정 일괄/단일 저장 및 연결 테스트"""
     import json
 
-    # 1. 활성 Provider 목록 저장 (복수 선택 지원)
+    # 1. 활성 Provider 목록 및 합의 판정 방식 저장 (복수 선택 지원)
     if req.active_providers is not None:
         valid_actives = [p for p in req.active_providers if p in grammar_analyzer.SUPPORTED_PROVIDERS]
         if not valid_actives:
             valid_actives = ["gemini"]
         db.set_setting("ai_active_providers", json.dumps(valid_actives))
         db.set_setting("ai_provider", valid_actives[0])
+
+    if req.consensus_mode is not None:
+        grammar_analyzer.set_consensus_mode(req.consensus_mode)
 
     # 2. 프로바이더별 개별 키 및 모델 설정 저장
     if req.providers:
@@ -378,22 +382,44 @@ async def api_analyze_sentence_grammar(sentence_id: str):
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
-    sentences = db.search_sentences(keyword="", passage_id="", limit=1000)
-    target = None
-    for s in sentences:
-        if s["id"] == clean_id:
-            target = s
-            break
+    target = db.get_sentence(clean_id)
+    if not target:
+        sentences = db.search_sentences(keyword="", passage_id="", limit=2000)
+        for s in sentences:
+            if s["id"] == clean_id:
+                target = s
+                break
 
     if not target:
         raise HTTPException(status_code=404, detail="문장을 찾을 수 없습니다.")
 
+    passage = db.get_passage(target["passage_id"]) if target.get("passage_id") else None
+
+    # 밑줄 빈칸 문제의 경우 정답 선지를 반영하고 선지 기호를 정제하여 온전한 문장 생성
+    prep_text = grammar_analyzer.prepare_sentence_for_analysis(
+        target["sentence_text"],
+        passage_id=target.get("passage_id"),
+        passage_text=passage.get("passage_text", "") if passage else "",
+        answer_text=passage.get("answer_text", "") if passage else "",
+        explanation_text=passage.get("explanation_text", "") if passage else ""
+    )
+    if prep_text and prep_text != target["sentence_text"]:
+        db.update_sentence_text(clean_id, prep_text)
+        target["sentence_text"] = prep_text
+
     try:
-        annos = grammar_analyzer.analyze_sentence(target["sentence_text"])
+        annos = grammar_analyzer.analyze_sentence(
+            target["sentence_text"],
+            passage_id=target.get("passage_id"),
+            passage_text=passage.get("passage_text", "") if passage else "",
+            answer_text=passage.get("answer_text", "") if passage else "",
+            explanation_text=passage.get("explanation_text", "") if passage else ""
+        )
         db.save_grammar_annotations(clean_id, annos)
         return {
             "success": True,
             "sentence_id": clean_id,
+            "sentence_text": target["sentence_text"],
             "annotations": annos,
             "count": len(annos),
             "grammar_analyzed": 1
@@ -443,6 +469,25 @@ async def api_delete_grammar_annotation(sentence_id: str, identifier: int):
         raise HTTPException(status_code=500, detail=f"어법 범주 삭제 실패: {str(e)}")
 
 
+@app.delete("/api/sentences/{sentence_id}/grammar")
+async def api_reset_sentence_grammar(sentence_id: str):
+    """문장의 어법 분석 결과 및 상태를 초기화(미분석 상태로 복원)하여 재분석 허용"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    try:
+        db.reset_sentence_grammar(clean_id)
+        return {
+            "success": True,
+            "sentence_id": clean_id,
+            "grammar_analyzed": 0,
+            "annotations": []
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"어법 분석 초기화 실패: {str(e)}")
+
+
 @app.post("/api/sentences/{sentence_id}/grammar-annotations/batch")
 async def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGrammarAnnotationsRequest):
     """문장의 어법 범주 목록을 모달 선택값으로 일괄 저장"""
@@ -489,10 +534,35 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
             "message": "선택된 문장들이 이미 모두 어법 분석 완료 상태입니다."
         }
 
+    passages_cache = {}
     results = []
     for s in sentences:
+        pid = s.get("passage_id")
+        p_data = None
+        if pid:
+            if pid not in passages_cache:
+                passages_cache[pid] = db.get_passage(pid)
+            p_data = passages_cache[pid]
+
         try:
-            annos = grammar_analyzer.analyze_sentence(s["sentence_text"])
+            prep_text = grammar_analyzer.prepare_sentence_for_analysis(
+                s["sentence_text"],
+                passage_id=pid,
+                passage_text=p_data.get("passage_text", "") if p_data else "",
+                answer_text=p_data.get("answer_text", "") if p_data else "",
+                explanation_text=p_data.get("explanation_text", "") if p_data else ""
+            )
+            if prep_text and prep_text != s["sentence_text"]:
+                db.update_sentence_text(s["id"], prep_text)
+                s["sentence_text"] = prep_text
+
+            annos = grammar_analyzer.analyze_sentence(
+                s["sentence_text"],
+                passage_id=pid,
+                passage_text=p_data.get("passage_text", "") if p_data else "",
+                answer_text=p_data.get("answer_text", "") if p_data else "",
+                explanation_text=p_data.get("explanation_text", "") if p_data else ""
+            )
             db.save_grammar_annotations(s["id"], annos)
             results.append({
                 "sentence_id": s["id"],
@@ -528,11 +598,36 @@ def background_auto_analyze_exam_grammar(exam_id: str):
         sentences = db.search_sentences(passage_id="", limit=1000)
         prefix = exam_id.rstrip("]")
         target_sentences = [s for s in sentences if s["id"].startswith(prefix)]
+        passages_cache = {}
         for s in target_sentences:
             try:
                 if s.get("grammar_analyzed") or s.get("grammar_annotations"):
                     continue
-                annos = grammar_analyzer.analyze_sentence(s["sentence_text"])
+                pid = s.get("passage_id")
+                p_data = None
+                if pid:
+                    if pid not in passages_cache:
+                        passages_cache[pid] = db.get_passage(pid)
+                    p_data = passages_cache[pid]
+
+                prep_text = grammar_analyzer.prepare_sentence_for_analysis(
+                    s["sentence_text"],
+                    passage_id=pid,
+                    passage_text=p_data.get("passage_text", "") if p_data else "",
+                    answer_text=p_data.get("answer_text", "") if p_data else "",
+                    explanation_text=p_data.get("explanation_text", "") if p_data else ""
+                )
+                if prep_text and prep_text != s["sentence_text"]:
+                    db.update_sentence_text(s["id"], prep_text)
+                    s["sentence_text"] = prep_text
+
+                annos = grammar_analyzer.analyze_sentence(
+                    s["sentence_text"],
+                    passage_id=pid,
+                    passage_text=p_data.get("passage_text", "") if p_data else "",
+                    answer_text=p_data.get("answer_text", "") if p_data else "",
+                    explanation_text=p_data.get("explanation_text", "") if p_data else ""
+                )
                 db.save_grammar_annotations(s["id"], annos)
             except Exception as ex:
                 print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
