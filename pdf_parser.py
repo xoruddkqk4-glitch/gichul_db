@@ -112,7 +112,13 @@ def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str)
     """
     if not ans_val:
         return []
-    ans_num = REVERSE_CIRCLED_MAP.get(str(ans_val).strip(), None)
+    
+    # 정답 값 정규화 (원문자 및 1~5 정수 지원, '3' 또는 '③' 또는 '[정답] 3' 등 대응)
+    ans_str = str(ans_val).strip()
+    m = re.search(r"[①②③④⑤1-5]", ans_str)
+    if m:
+        ans_str = m.group(0)
+    ans_num = REVERSE_CIRCLED_MAP.get(ans_str, None)
     if not ans_num:
         return []
 
@@ -152,22 +158,35 @@ def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str)
                 target_rect = fitz.Rect(
                     target_anchor["x0"],
                     target_anchor["y0"],
-                    min(target_anchor["x1"], target_anchor["x0"] + 12),
+                    min(target_anchor["x1"], target_anchor["x0"] + 13),
                     target_anchor["y1"]
                 )
 
+    # 2. 앵커 단어 분할이 안 된 경우 clip_rect 내 직접 검색 (원문자 -> 대체 표기 순)
     if not target_rect:
         all_sym_rects = page.search_for(sym, clip=clip_rect)
         if all_sym_rects:
             target_rect = all_sym_rects[0]
+        else:
+            for alt in (f"({ans_num})", f"{ans_num}.", f"[{ans_num}]"):
+                alt_rects = page.search_for(alt, clip=clip_rect)
+                if alt_rects:
+                    target_rect = alt_rects[0]
+                    break
 
     if not target_rect:
         return []
 
-    # 3. 파스텔톤 노란색 형광펜 하이라이트 주석 생성 (정답 번호 기호에만 2pt 패딩 부여)
-    hl_rect = fitz.Rect(target_rect.x0 - 2, target_rect.y0 - 2, target_rect.x1 + 2, target_rect.y1 + 2)
+    # 3. 파스텔톤 노란색 형광펜 하이라이트 주석 생성 (기호 번호가 시각적으로 안정감 있게 덮이도록 적정 패딩 부여)
+    hl_rect = fitz.Rect(
+        target_rect.x0 - 2.5,
+        target_rect.y0 - 2.0,
+        target_rect.x1 + 2.5,
+        target_rect.y1 + 2.0
+    )
     annot = page.add_highlight_annot(hl_rect)
-    annot.set_colors(stroke=(0.996, 0.941, 0.541))  # 부드러운 파스텔톤 형광 노란색 (#fef08a)
+    # 산뜻하고 눈이 편안한 프리미엄 파스텔 노란색 (#FFE853 / RGB: 1.0, 0.91, 0.33)
+    annot.set_colors(stroke=(1.0, 0.91, 0.33))
     annot.update()
 
     return [annot]

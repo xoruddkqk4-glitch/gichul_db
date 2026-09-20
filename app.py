@@ -9,6 +9,7 @@
 import os
 import re
 import shutil
+import glob
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -895,13 +896,20 @@ async def api_upload_exam_single_file(
 
                 for p in passages:
                     q_num = p["q_num"]
-                    old_ans = p["answer_text"]
-                    new_ans = image_answers.get(q_num) or old_ans
+                    q_int = int(q_num) if str(q_num).isdigit() else q_num
+                    old_ans = p["answer_text"] or ""
+                    # int, str 키 모두 안전하게 조회
+                    target_ans = (
+                        image_answers.get(q_int)
+                        or image_answers.get(str(q_int))
+                        or image_answers.get(q_num)
+                    )
+                    new_ans = target_ans if target_ans else old_ans
                     if new_ans:
-                        answers_dict[q_num] = new_ans
+                        answers_dict[q_int] = new_ans
 
-                    if q_num in image_answers:
-                        ans_val = image_answers[q_num]
+                    if target_ans:
+                        ans_val = target_ans
                         exp_body = p["explanation_text"] or ""
                         if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
                             new_exp = f"[정답] {ans_val}\n\n{exp_body}".strip()
@@ -914,13 +922,26 @@ async def api_upload_exam_single_file(
                         )
                 conn.commit()
 
-            # (3) 원본 PDF가 있으면 형광펜 하이라이트 크롭 이미지 재생성
-            raw_pattern = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_*.pdf")
-            pdf_candidates = glob.glob(raw_pattern)
+            # (3) 원본 PDF가 있으면 정답 선지 파스텔톤 노란색 형광펜 하이라이트 크롭 이미지 재생성
+            pdf_candidates = []
+            # 다양한 패턴으로 저장된 원본 PDF 탐색
+            search_patterns = [
+                os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_*.pdf"),
+                os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month}_*.pdf"),
+                os.path.join(UPLOADS_DIR, f"*{year}*{month:02d}*.pdf"),
+                os.path.join(UPLOADS_DIR, f"*{year}*{month}*.pdf"),
+                os.path.join(UPLOADS_DIR, f"*{grade}*{year}*.pdf")
+            ]
+            for pat in search_patterns:
+                matched = glob.glob(pat)
+                if matched:
+                    pdf_candidates = matched
+                    break
+
             pdf_highlighted = False
             if pdf_candidates:
                 try:
-                    extract_pdf_columns_and_questions(
+                    crop_results = extract_pdf_columns_and_questions(
                         pdf_path=pdf_candidates[0],
                         grade=grade,
                         year=year,
@@ -929,8 +950,22 @@ async def api_upload_exam_single_file(
                         end_q=reading_end,
                         answers_dict=answers_dict
                     )
+                    # DB passages 테이블에 최신 크롭 이미지 경로 동기화
+                    with db.get_connection() as conn:
+                        cursor = conn.cursor()
+                        for q_n, q_data in crop_results.items():
+                            crop_url = q_data.get("pdf_crop_image", "")
+                            if crop_url:
+                                cursor.execute(
+                                    "UPDATE passages SET pdf_crop_image = ? WHERE exam_id = ? AND q_num = ?",
+                                    (crop_url, clean_id, q_n)
+                                )
+                        conn.commit()
                     pdf_highlighted = True
+                    print(f"[SingleUpload] {clean_id} PDF 정답 선지 형광펜 하이라이트 크롭 {len(crop_results)}개 생성 완료!")
                 except Exception as crop_err:
+                    import traceback
+                    traceback.print_exc()
                     print(f"[SingleUpload] PDF 하이라이트 갱신 중 경고: {crop_err}")
 
             return {
@@ -939,7 +974,7 @@ async def api_upload_exam_single_file(
                 "file_type": "ans",
                 "extracted_count": len(image_answers),
                 "pdf_highlighted": pdf_highlighted,
-                "message": f"정답표 이미지에서 {len(image_answers)}개 문항 정답을 성공적으로 추출하여 반영했습니다." + (" (PDF 정답 형광펜 갱신 완료)" if pdf_highlighted else "")
+                "message": f"정답표 이미지에서 {len(image_answers)}개 문항 정답을 성공적으로 추출하여 반영했습니다." + (" (PDF 정답 번호에 파스텔톤 노란색 형광펜 하이라이트 적용 완료)" if pdf_highlighted else "")
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"정답 이미지 파싱 중 오류: {str(e)}")

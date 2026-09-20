@@ -555,6 +555,9 @@
         <button type="button" class="upload-tab-btn active" id="tabBtnBatchUpload" data-tab="batch">
           ⚡ 스마트 일괄 업로드 (복수 세트)
         </button>
+        <button type="button" class="upload-tab-btn" id="tabBtnFilesStatus" data-tab="files">
+          📊 원본 파일 현황 & 개별 업로드
+        </button>
         <button type="button" class="upload-tab-btn" id="tabBtnSingleUpload" data-tab="single">
           📝 단일 세트 수동 업로드
         </button>
@@ -635,7 +638,69 @@
         </div>
       </div>
 
-      <!-- 탭 2: 단일 세트 수동 업로드 (기존 폼) -->
+      <!-- 탭 2: 원본 파일 현황 및 개별 업로드 (신규 전용 탭) -->
+      <div class="upload-tab-pane" id="paneFilesStatus" style="display: none;">
+        <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+          <!-- 상단 통계 카드 & 필터 바 -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 10px;">
+            <div class="files-summary-badges" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+              <span class="badge-files-stat" id="statBadgeTotalExams" style="background: #f1f5f9; color: #334155; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 0.8rem; border: 1px solid #cbd5e1;">
+                📚 등록 모의고사: <strong id="filesTotalExamsCount">0</strong>세트
+              </span>
+              <span class="badge-files-stat" id="statBadgePdf" style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #bbf7d0;">
+                📄 문제지(PDF): <strong id="filesTotalPdfCount">0</strong> / <span class="stat-total-ref">0</span>
+              </span>
+              <span class="badge-files-stat" id="statBadgeHwp" style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #bbf7d0;">
+                📝 해설지(HWP): <strong id="filesTotalHwpCount">0</strong> / <span class="stat-total-ref">0</span>
+              </span>
+              <span class="badge-files-stat" id="statBadgeAns" style="background: #faf5ff; color: #7e22ce; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #e9d5ff;">
+                🖼️ 정답표(이미지): <strong id="filesTotalAnsCount">0</strong> / <span class="stat-total-ref">0</span>
+              </span>
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <label style="font-size: 0.78rem; color: #be123c; font-weight: 700; display: flex; align-items: center; gap: 5px; cursor: pointer; background: #fff1f2; padding: 4px 10px; border-radius: 6px; border: 1px solid #fecdd3; user-select: none;">
+                <input type="checkbox" id="chkFilterMissingFiles" style="cursor: pointer; width: 14px; height: 14px;">
+                ⚠️ 미등록 파일 있는 세트만 보기
+              </label>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshFilesStatus" style="font-size: 0.78rem; padding: 4px 10px;">
+                🔄 새로고침
+              </button>
+            </div>
+          </div>
+
+          <!-- 파일 현황 테이블 -->
+          <div class="files-status-table-wrapper" style="max-height: 380px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+            <table class="files-status-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
+              <thead>
+                <tr style="background: #f8fafc; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2;">
+                  <th style="width: 42px; padding: 10px 8px; text-align: center; white-space: nowrap;">No.</th>
+                  <th style="padding: 10px 12px; white-space: nowrap;">시험지 식별자</th>
+                  <th style="padding: 10px 10px; white-space: nowrap;">학년/월</th>
+                  <th style="padding: 10px 10px; white-space: nowrap;">출제기관</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (-A 이미지)</th>
+                  <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">종합 상태</th>
+                </tr>
+              </thead>
+              <tbody id="filesStatusTableBody">
+                <!-- 동적 생성 -->
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+            💡 <strong>원클릭 파일 업로드 안내</strong>: 각 모의고사 행에서 등록되지 않은 파일의 <strong>[➕ 업로드]</strong> 버튼을 누르면 해당 파일만 단독으로 즉시 업로드됩니다. 특히 <strong>[➕ 정답표 등록]</strong> 버튼을 누르면 Vision AI가 1~45번 정답을 시각적으로 자동 추출하여 DB 지문 및 PDF 형광펜 하이라이트에 즉시 반영합니다.
+          </div>
+        </div>
+
+        <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+          <button type="button" class="btn btn-secondary" id="btnCloseFilesStatusModal">닫기</button>
+        </div>
+      </div>
+
+      <!-- 탭 3: 단일 세트 수동 업로드 (기존 폼) -->
       <div class="upload-tab-pane" id="paneSingleUpload" style="display: none;">
         <form id="uploadForm">
           <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">

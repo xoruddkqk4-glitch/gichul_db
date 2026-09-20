@@ -24,5 +24,20 @@ if __name__ == "__main__":
     # 브라우저 자동 오픈 스레드 실행
     threading.Thread(target=open_browser_later, daemon=True).start()
 
-    # Uvicorn 서버 구동
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    # Uvicorn 서버 구동 (Git 커밋 및 대용량 파일 변경 시 FileNotFoundError 방지 설정 적용)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    uvicorn.run(
+        "app:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        reload_dirs=[base_dir],
+        reload_excludes=[
+            ".git", ".git/*", ".git/**/*",
+            "uploads", "uploads/*",
+            "static", "static/*", "static/captures/*",
+            "scratch", "scratch/*",
+            ".gemini", ".gemini/*",
+            "*.png", "*.jpg", "*.jpeg", "*.hwp", "*.hwpx", "*.pdf"
+        ]
+    )

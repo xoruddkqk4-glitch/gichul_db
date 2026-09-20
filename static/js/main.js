@@ -2473,36 +2473,44 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
 
   const tabBtnBatchUpload = document.getElementById("tabBtnBatchUpload");
+  const tabBtnFilesStatus = document.getElementById("tabBtnFilesStatus");
   const tabBtnSingleUpload = document.getElementById("tabBtnSingleUpload");
   const tabBtnManageExams = document.getElementById("tabBtnManageExams");
 
   const paneBatchUpload = document.getElementById("paneBatchUpload");
+  const paneFilesStatus = document.getElementById("paneFilesStatus");
   const paneSingleUpload = document.getElementById("paneSingleUpload");
   const paneManageExams = document.getElementById("paneManageExams");
 
   const btnCancelBatchModal = document.getElementById("btnCancelBatchModal");
+  const btnCloseFilesStatusModal = document.getElementById("btnCloseFilesStatusModal");
   const btnCloseManageModal = document.getElementById("btnCloseManageModal");
 
   // 10-1. 모달 탭 전환 로직
   function switchUploadTab(tabName) {
-    [tabBtnBatchUpload, tabBtnSingleUpload, tabBtnManageExams].forEach(btn => {
+    [tabBtnBatchUpload, tabBtnFilesStatus, tabBtnSingleUpload, tabBtnManageExams].forEach(btn => {
       if (btn) btn.classList.toggle("active", btn.dataset.tab === tabName);
     });
     if (paneBatchUpload) paneBatchUpload.style.display = (tabName === "batch") ? "block" : "none";
+    if (paneFilesStatus) paneFilesStatus.style.display = (tabName === "files") ? "block" : "none";
     if (paneSingleUpload) paneSingleUpload.style.display = (tabName === "single") ? "block" : "none";
     if (paneManageExams) paneManageExams.style.display = (tabName === "manage") ? "block" : "none";
 
-    if (tabName === "manage") {
+    if (tabName === "files") {
+      loadFilesStatusList();
+    } else if (tabName === "manage") {
       loadExamsManagerList();
     }
   }
 
   if (tabBtnBatchUpload) tabBtnBatchUpload.addEventListener("click", () => switchUploadTab("batch"));
+  if (tabBtnFilesStatus) tabBtnFilesStatus.addEventListener("click", () => switchUploadTab("files"));
   if (tabBtnSingleUpload) tabBtnSingleUpload.addEventListener("click", () => switchUploadTab("single"));
   if (tabBtnManageExams) tabBtnManageExams.addEventListener("click", () => switchUploadTab("manage"));
 
   btnOpenUploadModal.addEventListener("click", () => {
     uploadModal.classList.add("show");
+    fetchRegisteredExamsSet();
     switchUploadTab("batch");
   });
 
@@ -2569,8 +2577,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const batchProgressBarFill = document.getElementById("batchProgressBarFill");
   const batchProgressSubtext = document.getElementById("batchProgressSubtext");
 
-  function handleBatchFilesSelected(fileList) {
+  async function handleBatchFilesSelected(fileList) {
     if (!fileList || fileList.length === 0) return;
+    await fetchRegisteredExamsSet();
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
@@ -2604,6 +2613,19 @@ document.addEventListener("DOMContentLoaded", () => {
     renderBatchSetsTable();
   }
 
+  let registeredExamsSet = new Set();
+
+  async function fetchRegisteredExamsSet() {
+    try {
+      const res = await fetch("/api/exams");
+      const data = await res.json();
+      const items = data.items || [];
+      registeredExamsSet = new Set(items.map(e => e.id));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   function renderBatchSetsTable() {
     if (!batchSetsTableBody) return;
     batchSetsTableBody.innerHTML = "";
@@ -2619,9 +2641,45 @@ document.addEventListener("DOMContentLoaded", () => {
     if (batchSetsCount) batchSetsCount.textContent = sets.length;
 
     let readyCount = 0;
+    let ansOnlyCount = 0;
+    let fullUploadCount = 0;
 
     sets.forEach(set => {
-      const isReady = Boolean(set.pdfFile && set.hwpFile);
+      const examId = `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월]`;
+      set.exam_id = examId;
+
+      const hasPdf = Boolean(set.pdfFile);
+      const hasHwp = Boolean(set.hwpFile);
+      const hasAns = Boolean(set.ansFile);
+      const isAlreadyRegistered = registeredExamsSet.has(examId);
+
+      let isReady = false;
+      let mode = ""; // "full" | "ans_only" | "incomplete"
+      let statusHtml = "";
+
+      if (hasPdf && hasHwp) {
+        isReady = true;
+        mode = "full";
+        fullUploadCount++;
+        statusHtml = hasAns
+          ? `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료 (정답표 포함)</span>`
+          : `<span class="badge-match-ready">✅ 준비 완료</span>`;
+      } else if (hasAns && isAlreadyRegistered) {
+        // PDF/HWP가 없더라도 이미 DB에 등록된 시험지라면 정답표 단독 갱신 모드로 준비 완료!
+        isReady = true;
+        mode = "ans_only";
+        ansOnlyCount++;
+        statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
+      } else {
+        isReady = false;
+        mode = "incomplete";
+        statusHtml = hasAns
+          ? `<span class="badge-match-warn" style="color: #dc2626; border-color: #fecaca; background: #fef2f2;">⚠️ 미등록 시험지 (PDF/HWP 필요)</span>`
+          : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
+      }
+
+      set.isReady = isReady;
+      set.mode = mode;
       if (isReady) readyCount++;
 
       const tr = document.createElement("tr");
@@ -2630,48 +2688,45 @@ document.addEventListener("DOMContentLoaded", () => {
       const instClass = (set.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
       const instIcon = (set.exam_type === "평가원") ? "🏛️" : "🏫";
 
-      const ansCellHtml = set.ansFile
-        ? `<span style="color: #0284c7; font-weight: 600;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
+      const pdfCellHtml = hasPdf 
+        ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.pdfFile.name)}</span>` 
+        : (isAlreadyRegistered ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+
+      const hwpCellHtml = hasHwp 
+        ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.hwpFile.name)}</span>` 
+        : (isAlreadyRegistered ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+
+      const ansCellHtml = hasAns
+        ? `<span style="color: #7e22ce; font-weight: 700;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
         : `<span style="color: #94a3b8;">⚪ 미포함 (HWP 사용)</span>`;
 
-      const statusHtml = isReady
-        ? (set.ansFile
-            ? `<span class="badge-match-ready">✅ 준비 완료 (정답표 포함)</span>`
-            : `<span class="badge-match-ready">✅ 준비 완료</span>`)
-        : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
-
       tr.innerHTML = `
-        <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(set.set_key)}</td>
+        <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">
+          ${escapeHtml(set.set_key)}
+          ${isAlreadyRegistered ? `<span style="font-size: 0.72rem; color: #0284c7; background: #e0f2fe; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">등록됨</span>` : ''}
+        </td>
         <td style="padding: 8px 10px; white-space: nowrap;">${escapeHtml(set.grade)}</td>
         <td style="padding: 8px 10px; white-space: nowrap;">${set.year}년 ${set.month}월</td>
         <td style="padding: 8px 10px; white-space: nowrap;">
           <span class="badge-inst ${instClass}">${instIcon} ${escapeHtml(set.exam_type)}</span>
         </td>
-        <td style="padding: 8px 10px; white-space: nowrap;">
-          ${set.pdfFile 
-            ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.pdfFile.name)}</span>` 
-            : `<span style="color: #dc2626;">❌ 누락</span>`}
-        </td>
-        <td style="padding: 8px 10px; white-space: nowrap;">
-          ${set.hwpFile 
-            ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.hwpFile.name)}</span>` 
-            : `<span style="color: #dc2626;">❌ 누락</span>`}
-        </td>
-        <td style="padding: 8px 10px; white-space: nowrap;">
-          ${ansCellHtml}
-        </td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">
-          ${statusHtml}
-        </td>
+        <td style="padding: 8px 10px; white-space: nowrap;">${pdfCellHtml}</td>
+        <td style="padding: 8px 10px; white-space: nowrap;">${hwpCellHtml}</td>
+        <td style="padding: 8px 10px; white-space: nowrap;">${ansCellHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">${statusHtml}</td>
       `;
       batchSetsTableBody.appendChild(tr);
     });
 
     if (btnStartBatchUpload) {
       btnStartBatchUpload.disabled = (readyCount === 0);
-      btnStartBatchUpload.textContent = (readyCount > 0)
-        ? `🚀 ${readyCount}개 세트 일괄 업로드 및 상호 검증 시작`
-        : "🚀 일괄 업로드 및 상호 검증 시작";
+      if (readyCount === 0) {
+        btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
+      } else if (ansOnlyCount > 0 && fullUploadCount === 0) {
+        btnStartBatchUpload.textContent = `🔄 정답표 ${ansOnlyCount}개 세트 일괄 분석 및 반영 시작`;
+      } else {
+        btnStartBatchUpload.textContent = `🚀 ${readyCount}개 세트 일괄 업로드/갱신 시작`;
+      }
     }
   }
 
@@ -2729,7 +2784,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const sets = Object.values(batchSetsMap).filter(s => s.pdfFile && s.hwpFile);
+      const sets = Object.values(batchSetsMap).filter(s => s.isReady);
       if (sets.length === 0) return;
 
       btnStartBatchUpload.disabled = true;
@@ -2754,34 +2809,61 @@ document.addEventListener("DOMContentLoaded", () => {
         if (batchProgressCount) batchProgressCount.textContent = `${i + 1} / ${sets.length}`;
         if (batchProgressTitle) batchProgressTitle.textContent = `[${set.set_key}] 처리 중...`;
         if (batchProgressSubtext) {
-          batchProgressSubtext.textContent = `PDF 2단 분할 파싱 및 HWP 교차 검증 진행 중 (${i + 1}/${sets.length})`;
-        }
-
-        const formData = new FormData();
-        formData.append("grade", set.grade);
-        formData.append("year", set.year);
-        formData.append("month", set.month);
-        formData.append("exam_type", set.exam_type);
-        formData.append("reading_start", 18);
-        formData.append("reading_end", 45);
-        formData.append("pdf_file", set.pdfFile);
-        formData.append("hwp_file", set.hwpFile);
-        if (set.ansFile) {
-          formData.append("ans_file", set.ansFile);
+          batchProgressSubtext.textContent = (set.mode === "ans_only")
+            ? `정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`
+            : `PDF 2단 분할 파싱 및 HWP 교차 검증 진행 중 (${i + 1}/${sets.length})`;
         }
 
         try {
-          const res = await fetch("/api/upload", { method: "POST", body: formData });
-          const resData = await res.json();
-          if (res.ok) {
-            successCount++;
-            if (statusCell) {
-              statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 완료 (${resData.passages_count || 28}문항)</span>`;
+          if (set.mode === "ans_only") {
+            // 기존 등록 시험지에 대한 정답표 단독 일괄 갱신
+            const formData = new FormData();
+            formData.append("file_type", "ans");
+            formData.append("file", set.ansFile);
+
+            const res = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+              method: "POST",
+              body: formData
+            });
+            const resData = await res.json();
+            if (res.ok) {
+              successCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답 갱신 (${resData.extracted_count || 45}문항)</span>`;
+              }
+            } else {
+              failCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+              }
             }
           } else {
-            failCount++;
-            if (statusCell) {
-              statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+            // 신규/전체 모의고사 세트 일괄 업로드 파이프라인
+            const formData = new FormData();
+            formData.append("grade", set.grade);
+            formData.append("year", set.year);
+            formData.append("month", set.month);
+            formData.append("exam_type", set.exam_type);
+            formData.append("reading_start", 18);
+            formData.append("reading_end", 45);
+            formData.append("pdf_file", set.pdfFile);
+            formData.append("hwp_file", set.hwpFile);
+            if (set.ansFile) {
+              formData.append("ans_file", set.ansFile);
+            }
+
+            const res = await fetch("/api/upload", { method: "POST", body: formData });
+            const resData = await res.json();
+            if (res.ok) {
+              successCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 완료 (${resData.passages_count || 28}문항)</span>`;
+              }
+            } else {
+              failCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+              }
             }
           }
         } catch (err) {
@@ -2797,10 +2879,22 @@ document.addEventListener("DOMContentLoaded", () => {
       if (batchProgressSubtext) {
         batchProgressSubtext.textContent = `총 ${sets.length}개 세트 중 ${successCount}개 성공, ${failCount}개 실패`;
       }
-      showToast(`총 ${successCount}개 모의고사 세트가 성공적으로 등록되었습니다!`, "success");
+      showToast(`총 ${successCount}개 세트 처리가 완료되었습니다!`, "success");
 
       loadStats();
-      loadExamsManagerList();
+      await fetchRegisteredExamsSet();
+      if (typeof loadFilesStatusList === 'function') await loadFilesStatusList();
+      if (typeof loadExamsManagerList === 'function') await loadExamsManagerList();
+      if (typeof executeSearch === 'function') executeSearch("home");
+
+      // 지문 뷰어에 띄워져 있는 이미지 캐시 버스팅
+      const activePanelImgs = document.querySelectorAll("#panelPdfImageContainer img");
+      activePanelImgs.forEach(img => {
+        if (img && img.src) {
+          const cleanSrc = img.src.split("?")[0];
+          img.src = `${cleanSrc}?t=${Date.now()}`;
+        }
+      });
 
       if (btnCancelBatchModal) {
         btnCancelBatchModal.disabled = false;
@@ -3063,7 +3157,17 @@ document.addEventListener("DOMContentLoaded", () => {
         if (res.ok) {
           alert(`🎉 [${activeSingleTargetExamId}] ${data.message || '성공적으로 반영되었습니다.'}`);
           await loadExamsManagerList();
-          executeSearch("home"); // 홈 화면 검색 결과도 최신 정답/하이라이트로 동기화
+          await loadFilesStatusList();
+          if (typeof executeSearch === 'function') executeSearch("home");
+
+          // 지문 뷰어에 띄워져 있는 이미지 캐시 버스팅
+          const activePanelImgs = document.querySelectorAll("#panelPdfImageContainer img");
+          activePanelImgs.forEach(img => {
+            if (img && img.src) {
+              const cleanSrc = img.src.split("?")[0];
+              img.src = `${cleanSrc}?t=${Date.now()}`;
+            }
+          });
         } else {
           alert(`❌ 업로드 실패: ${data.detail || '오류가 발생했습니다.'}`);
           if (targetBtn) {
@@ -3082,6 +3186,167 @@ document.addEventListener("DOMContentLoaded", () => {
         examSingleFileInput.value = "";
       }
     });
+  }
+
+  // =========================================================================
+  // 10-X. 원본 파일 현황 전용 탭 (PDF / HWP / PNG 업로드 유무 테이블 및 개별 업로드)
+  // =========================================================================
+
+  const filesTotalExamsCount = document.getElementById("filesTotalExamsCount");
+  const filesTotalPdfCount = document.getElementById("filesTotalPdfCount");
+  const filesTotalHwpCount = document.getElementById("filesTotalHwpCount");
+  const filesTotalAnsCount = document.getElementById("filesTotalAnsCount");
+  const chkFilterMissingFiles = document.getElementById("chkFilterMissingFiles");
+  const btnRefreshFilesStatus = document.getElementById("btnRefreshFilesStatus");
+  const filesStatusTableBody = document.getElementById("filesStatusTableBody");
+
+  let cachedFilesStatusItems = [];
+
+  async function loadFilesStatusList() {
+    if (!filesStatusTableBody) return;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
+
+    try {
+      const res = await fetch("/api/exams");
+      const data = await res.json();
+      cachedFilesStatusItems = data.items || [];
+      renderFilesStatusTable();
+    } catch (err) {
+      console.error(err);
+      filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
+    }
+  }
+
+  function renderFilesStatusTable() {
+    if (!filesStatusTableBody) return;
+    const items = cachedFilesStatusItems || [];
+    const totalCount = items.length;
+
+    // 통계 계산
+    const pdfCount = items.filter(e => e.file_status?.pdf?.exists).length;
+    const hwpCount = items.filter(e => e.file_status?.hwp?.exists).length;
+    const ansCount = items.filter(e => e.file_status?.ans?.exists || (e.file_status?.ans?.answered_count > 0)).length;
+
+    if (filesTotalExamsCount) filesTotalExamsCount.textContent = totalCount;
+    if (filesTotalPdfCount) filesTotalPdfCount.textContent = pdfCount;
+    if (filesTotalHwpCount) filesTotalHwpCount.textContent = hwpCount;
+    if (filesTotalAnsCount) filesTotalAnsCount.textContent = ansCount;
+
+    document.querySelectorAll(".stat-total-ref").forEach(el => {
+      el.textContent = totalCount;
+    });
+
+    if (items.length === 0) {
+      filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
+      return;
+    }
+
+    const filterMissing = chkFilterMissingFiles && chkFilterMissingFiles.checked;
+    const displayItems = filterMissing
+      ? items.filter(e => {
+          const fs = e.file_status || {};
+          const hasPdf = fs.pdf?.exists;
+          const hasHwp = fs.hwp?.exists;
+          const hasAns = fs.ans?.exists || (fs.ans?.answered_count > 0);
+          return !(hasPdf && hasHwp && hasAns);
+        })
+      : items;
+
+    if (displayItems.length === 0) {
+      filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 미등록 파일이 있는 세트가 없습니다! 모든 세트가 완비되었습니다.</td></tr>`;
+      return;
+    }
+
+    filesStatusTableBody.innerHTML = "";
+    displayItems.forEach((exam, index) => {
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid var(--border)";
+
+      const instClass = (exam.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
+      const instIcon = (exam.exam_type === "평가원") ? "🏛️" : "🏫";
+
+      const fStat = exam.file_status || {};
+      const pdfStat = fStat.pdf || {};
+      const hwpStat = fStat.hwp || {};
+      const ansStat = fStat.ans || {};
+
+      // 1. PDF 문제지 버튼
+      let pdfBtnHtml = "";
+      if (pdfStat.exists) {
+        pdfBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="${escapeHtml(pdfStat.filename)} (클릭 시 파일 교체)">📄 등록됨</button>`;
+      } else {
+        pdfBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="클릭하여 PDF 문제지 단독 업로드">➕ PDF 업로드</button>`;
+      }
+
+      // 2. HWP 해설지 버튼
+      let hwpBtnHtml = "";
+      if (hwpStat.exists) {
+        hwpBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="${escapeHtml(hwpStat.filename)} (클릭 시 파일 교체)">📝 등록됨</button>`;
+      } else {
+        hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 업로드</button>`;
+      }
+
+      // 3. 정답표 이미지 (-A) 버튼
+      let ansBtnHtml = "";
+      const answeredCount = ansStat.answered_count || 0;
+      const totalCount = ansStat.total_count || exam.passage_count || 28;
+      if (ansStat.exists) {
+        ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 정답표로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
+      } else if (answeredCount > 0) {
+        ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표 이미지 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
+      } else {
+        ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 업로드</button>`;
+      }
+
+      // 4. 종합 상태 배지
+      let overallStatusHtml = "";
+      const hasPdf = pdfStat.exists;
+      const hasHwp = hwpStat.exists;
+      const hasAns = ansStat.exists || (answeredCount > 0);
+
+      if (hasPdf && hasHwp && hasAns) {
+        overallStatusHtml = `<span style="font-size: 0.74rem; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟢 3종 완비</span>`;
+      } else if (hasPdf && hasHwp && !hasAns) {
+        overallStatusHtml = `<span style="font-size: 0.74rem; background: #faf5ff; color: #6b21a8; border: 1px solid #e9d5ff; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟣 정답표 필요</span>`;
+      } else {
+        overallStatusHtml = `<span style="font-size: 0.74rem; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🔴 파일 누락</span>`;
+      }
+
+      tr.innerHTML = `
+        <td style="padding: 10px 8px; text-align: center; color: var(--text-muted); font-weight: 600;">${index + 1}</td>
+        <td style="padding: 10px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(exam.id)}</td>
+        <td style="padding: 10px 10px; white-space: nowrap;">${escapeHtml(exam.grade)} ${exam.month}월</td>
+        <td style="padding: 10px 10px; white-space: nowrap;">
+          <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(exam.exam_type)}</span>
+        </td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
+        <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">${overallStatusHtml}</td>
+      `;
+      filesStatusTableBody.appendChild(tr);
+    });
+
+    // 칩 버튼 클릭 시 파일 선택 트리거
+    filesStatusTableBody.querySelectorAll(".btn-upload-single-file").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const targetExamId = btn.dataset.id;
+        const targetFileType = btn.dataset.type;
+        triggerSingleFileUpload(targetExamId, targetFileType, btn);
+      });
+    });
+  }
+
+  // 필터 토글 및 새로고침 이벤트 바인딩
+  if (chkFilterMissingFiles) {
+    chkFilterMissingFiles.addEventListener("change", renderFilesStatusTable);
+  }
+  if (btnRefreshFilesStatus) {
+    btnRefreshFilesStatus.addEventListener("click", () => loadFilesStatusList());
+  }
+  if (btnCloseFilesStatusModal) {
+    btnCloseFilesStatusModal.addEventListener("click", closeUploadModal);
   }
 
   function updateExamsSelectionState() {

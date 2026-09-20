@@ -199,14 +199,42 @@ def classify_question_type(title: str, q_num: int = 0) -> str:
 
 
 def split_questions_and_explanations(full_text: str) -> Tuple[str, str]:
-    """한 개의 HWP 문서 안에서 [문제지 영역]과 [정답 및 해설 영역] 분리"""
-    pattern = re.compile(
+    """
+    한 개의 HWP 문서 안에서 [문제지 영역]과 [정답 및 해설 영역] 분리
+    1. 명시적 정답/해설 헤더 탐색
+    2. [출제의도] 태그 시작 위치 탐색
+    3. 40~45번 문항 이후 1번으로 번호 리셋되는 지점 탐색
+    """
+    if not full_text:
+        return "", ""
+
+    # 1. 명시적 정답/해설 헤더 탐색
+    pattern1 = re.compile(
         r"(?:^|\n)\s*(?:\[|\b)?(?:정답\s*(?:및|과)?\s*해설|정답표|정답\s*및\s*풀이|해설\s*및\s*정답|해설편|정답편)(?:\s*\])?",
         re.IGNORECASE
     )
-    match = pattern.search(full_text)
-    if match:
-        return full_text[:match.start()], full_text[match.start():]
+    m1 = pattern1.search(full_text)
+    if m1:
+        return full_text[:m1.start()], full_text[m1.start():]
+
+    # 2. [출제의도] 또는 [해설] 태그 시작 위치 탐색 (예: 1. [출제의도] 또는 [출제의도])
+    pattern2 = re.compile(
+        r"(?:^|\n)\s*(?:0?1\s*[\.\s\t]\s*)?\[\s*(?:출제의도|해설)\s*\]",
+        re.IGNORECASE
+    )
+    m2 = pattern2.search(full_text)
+    if m2:
+        return full_text[:m2.start()], full_text[m2.start():]
+
+    # 3. 40~45번 문항이 나타난 이후에 다시 1번(01.)으로 번호가 리셋되는 지점 탐색
+    m_40s = list(re.finditer(r"(?:^|\n)\s*(?:4[0-5])\s*\.", full_text))
+    if m_40s:
+        last_40_end = m_40s[-1].end()
+        m_reset = re.search(r"(?:^|\n)\s*0?1\s*\.", full_text[last_40_end:])
+        if m_reset:
+            split_pos = last_40_end + m_reset.start()
+            return full_text[:split_pos], full_text[split_pos:]
+
     return full_text, full_text
 
 
@@ -277,8 +305,16 @@ def parse_hwp_questions(
 
         match = q_pattern.match(line_s)
         if match:
+            # [출제의도], [해설], [정답] 등 해설 블록 마커가 포함된 경우 문제지가 아니므로 건너뜀
+            if any(marker in line_s for marker in ("[출제의도]", "[해설]", "[정답]", "출제의도")):
+                continue
+
             q_num = int(match.group(1))
             if start_q <= q_num <= end_q:
+                # 이미 해당 문항이 정상적인 영어 지문(영문 100자 이상)으로 수집되어 있다면 중복 덮어쓰기 차단
+                if q_num in questions and len(re.findall(r'[a-zA-Z]', questions[q_num].get("passage_body", ""))) > 100:
+                    continue
+
                 # 그룹 지문 수집 중이었으면 캐시에 저장
                 if active_group_range[0] > 0 and group_passage_lines:
                     group_passages[active_group_range] = "\n".join(group_passage_lines).strip()
