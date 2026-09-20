@@ -213,6 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (emptyResultsBox) emptyResultsBox.style.display = "none";
     if (passageViewContainer) passageViewContainer.style.display = "none";
     if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
+    if (btnBackToSearch) btnBackToSearch.style.display = "none";
     
     // 헤더 상태를 통계 배지 모드로 복원
     setHeaderSlotState("home");
@@ -238,6 +239,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function showResultsScreen() {
     homeSearchView.style.display = "none";
     resultsView.style.display = "flex";
+    if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
     window.scrollTo({ top: 0, behavior: "smooth" });
     updateGrammarFiltersVisibility();
     if (typeof updateClearButtons === "function") updateClearButtons();

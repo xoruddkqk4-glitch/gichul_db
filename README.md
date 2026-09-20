@@ -451,3 +451,19 @@
   - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - `GET /api/settings/ai` 엔드포인트 정상 응답 및 OpenRouter 활성 상태 확인 (통과)
 
+### [2026-09-20 19:28] 업데이트 이력 (Commit ID: 680e6b3)
+- **수정 내용**:
+  - **'처음 화면으로 돌아가기' 버튼 상단 헤더 위치 이동 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - 결과창 검색 바 1행에 위치하던 `[← 처음 화면으로 돌아가기]` 버튼을 상단 메인 헤더의 `header-actions` 내, `header-action-slot` 바로 앞 위치로 이전 배치
+    - **동적 가시성 제어**: 홈 화면에서는 자동 숨김(`display: none`), 결과창 및 문장 분석창 진입 시 헤더 상단에 표시(`display: inline-flex`)되어 스크롤 여부와 무관하게 홈으로 즉시 복귀 가능
+    - **헤더 버튼 규격화**: 헤더의 타 작업 버튼들과 통일된 규격(`padding: 0.35rem 0.85rem`, `font-size: 0.82rem`, `border-radius: var(--radius-md)`)과 소프트 블루 호버 리프트 효과 적용
+    - 결과창 상단 바에서 불필요한 공백을 제거하여 결과 검색창 및 탭 영역 가독성 향상
+  - **메인 홈 '단어 단위' 검색 토글 버튼 중앙 검색창 내부 이전 (`templates/index.html`, `static/css/style.css`)**:
+    - 하단 필터 바에 위치하던 `[• 단어 단위]` 토글 버튼을 중앙 대형 구글 검색창(`.google-search-box`) 내부의 `[검색]` 버튼 바로 왼쪽으로 이동 배치
+    - 검색창 일체형 필 버튼 스타일(`.google-search-box .btn-home-search-wholeword`) 구축
+    - 활성화(ON) 시 블루 글로우 라이브 닷과 테두리 강조 피드백 제공 및 결과 화면 단어 단위 토글과 양방향 실시간 상태 동기화 유지
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+
+

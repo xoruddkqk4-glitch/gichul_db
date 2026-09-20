@@ -16,6 +16,11 @@
     </div>
 
     <div class="header-actions">
+      <!-- [← 처음 화면으로 돌아가기] 버튼 (결과창/문장창 진입 시 헤더 상단 노출) -->
+      <button type="button" class="btn btn-secondary btn-sm btn-back-search" id="btnBackToSearch" style="display: none;" title="메인 검색 화면으로 복귀">
+        <span class="back-arrow">←</span> 처음 화면으로 돌아가기
+      </button>
+
       <!-- 동적 헤더 전환 슬롯 (통계 배지 <-> 전체 문장 버튼 <-> 지문 결과창 복귀 버튼) -->
       <div class="header-action-slot" id="headerActionSlot">
         <div class="db-stats-badge clickable-stats-badge" id="statsBadge" title="클릭 시 전체 지문 결과 보기">
@@ -69,6 +74,10 @@
             autofocus
           >
           <button type="button" class="btn-clear-search-input" id="btnClearMainSearch" style="display: none;" title="검색어 지우기">&times;</button>
+          <button type="button" class="btn-toggle-wholeword btn-home-search-wholeword" id="btnHomeToggleWholeWord" aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
+            <span class="toggle-dot"></span>
+            <span class="toggle-text">단어 단위</span>
+          </button>
           <button type="button" class="search-submit-btn" id="btnSearch">검색</button>
         </div>
 
@@ -133,12 +142,6 @@
             <option value="1지문3문항">1지문3문항</option>
           </select>
 
-          <!-- 온전한 단어 검색 토글 버튼 (메인 홈) -->
-          <button type="button" class="btn-toggle-wholeword" id="btnHomeToggleWholeWord" aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
-            <span class="toggle-dot"></span>
-            <span class="toggle-text">단어 단위</span>
-          </button>
-
           <!-- 어법 범주 필터 (문장 검색 모드 전용, 지문 검색 시 숨김: 계층형 브레드크럼 네비게이션 방식) -->
           <div class="home-grammar-filters-group grammar-breadcrumb-filter-bar" id="homeGrammarFiltersGroup" style="display: none;">
             <span class="breadcrumb-icon" title="어법 계층 필터">📍</span>
@@ -188,12 +191,8 @@
       <!-- 상단 결과 내비게이션 & 빠른 검색/필터 바 -->
       <!-- 상단 결과 내비게이션 & 빠른 검색/필터 바 (2행 분리 구조) -->
       <div class="results-nav-bar">
-        <!-- 1행: [← 처음 화면으로 돌아가기] & 검색창 -->
+        <!-- 1행: 결과 검색창 및 검색 모드 탭 -->
         <div class="results-nav-top-row">
-          <button type="button" class="btn btn-secondary btn-back-search" id="btnBackToSearch" title="메인 검색 화면으로 복귀">
-            <span class="back-arrow">←</span> 처음 화면으로 돌아가기
-          </button>
-
           <div class="results-search-bar">
             <div class="results-mode-tabs">
               <button type="button" class="mini-mode-btn active" id="resultsTabModePassage" data-mode="passage">지문</button>

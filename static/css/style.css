@@ -424,24 +424,31 @@ body {
 
 .btn-back-search {
   font-weight: 700;
-  color: var(--primary);
-  background-color: var(--primary-light);
-  border: 1px solid var(--primary-border);
-  padding: 0.45rem 1rem;
+  color: #1d4ed8;
+  background-color: #eff6ff;
+  border: 1.5px solid #bfdbfe;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.82rem;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  transition: all 0.18s ease;
+  white-space: nowrap;
 }
 .btn-back-search:hover {
   background-color: #dbeafe;
-  color: var(--primary-hover);
+  border-color: #93c5fd;
+  color: #1e40af;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
 }
 
 .back-arrow {
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 800;
+  line-height: 1;
 }
 
 .results-search-bar {
@@ -553,20 +560,26 @@ body {
   transform: scale(1.15);
 }
 
-/* 홈 화면 필터 바 안의 온전한 단어 검색 버튼 */
-.filter-bar .btn-toggle-wholeword {
-  padding: 0.45rem 0.85rem;
-  font-size: 0.85rem;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
+/* 메인 홈 중앙 검색창 내부의 온전한 단어 검색 버튼 */
+.google-search-box .btn-home-search-wholeword {
+  margin-right: 0.5rem;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.82rem;
+  border-radius: var(--radius-full);
+  background-color: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  flex-shrink: 0;
 }
 
-.filter-bar .btn-toggle-wholeword:hover {
-  border-color: var(--primary);
+.google-search-box .btn-home-search-wholeword:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
-.filter-bar .btn-toggle-wholeword.active {
+.google-search-box .btn-home-search-wholeword.active {
+  background-color: #eff6ff;
   border-color: #3b82f6;
+  color: #2563eb;
 }
 
 .results-mode-tabs {
