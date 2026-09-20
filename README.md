@@ -293,3 +293,24 @@
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - 로컬 라이브 서버 API 단위 테스트 완료 (`GET /api/settings/ai`, `POST /api/sentences/1/star`, `GET /api/search/sentences?is_starred=true` 정상 응답)
 
+### [2026-09-20 17:10] 업데이트 이력 (Commit ID: 8c1672a)
+- **수정 내용**:
+  - **AI 모달 엔진(Provider) 변경 시 기본(Default) 모델명 자동 변경 연동**:
+    - `aiProviderSelect` 드롭다운 변경 시 모델명 입력창(`aiModelInput`)의 값이 해당 엔진의 기본 권장 모델(`gemini-1.5-flash`, `gpt-4o-mini`, `claude-3-5-haiku-20241022`)로 즉시 자동 갱신되도록 개선 (`static/js/main.js`)
+    - 모달 오픈 시 기저장된 모델명이 없을 때도 기본 권장 모델명 자동 세팅 및 도움말/발급링크 동적 연동
+  - **첫 화면 '지문 검색' 모드 시 어법 필터 자동 숨김**:
+    - 홈 화면의 `[지문 검색]` 탭 활성화 시 `[어법 대분류]`, `[세부 어법 전체]`, `[⭐ 중요 문장]` 필터 그룹을 완전히 숨기고(`display: none`), `[문장 검색]` 탭 선택 시에만 자연스럽게 노출되도록 제어 (`templates/index.html`, `static/js/main.js`)
+  - **문장 검색 결과 테이블 [복사] / [분석] 버튼 한 줄 표시 및 열 너비 확장**:
+    - 테이블 헤더 및 셀 `col-action`의 열 너비를 기존 110px에서 175px(`min-width: 175px`)로 확장 (`templates/index.html`, `static/css/style.css`)
+    - 버튼들을 `.action-btn-group`으로 감싸고 `white-space: nowrap !important; word-break: keep-all;` 스타일을 적용하여 텍스트가 줄바꿈되지 않고 `[📋 복사]`, `[🤖 분석]`이 깔끔한 한 줄로 표시되도록 UI 최적화 (`static/css/style.css`, `static/js/main.js`)
+  - **결과 화면 상단 검색바 & 필터 2행 분리 구조 개편 (버튼 겹침 현상 원천 차단)**:
+    - 상단 내비게이션 바(`results-nav-bar`)를 **1행(돌아가기 버튼 + 우측 검색바)**과 **2행(필터 옵션 그룹 + 결과 건수 배지)**의 2행 분리 독립 행 구조로 리팩토링하여 버튼과 드롭다운이 겹치거나 찌그러지던 현상 해결 (`templates/index.html`, `static/css/style.css`)
+  - **'지문 결과 창' 어법 필터 완전 숨김**:
+    - `currentMode === "passage"`(지문 결과 뷰어) 상태일 때는 2행 필터 바에서도 어법 필터 그룹(`resultsGrammarFiltersGroup`)을 자동으로 숨겨 지문 검색에만 집중할 수 있도록 처리 (`static/js/main.js`)
+  - **문장 검색 결과 화면 어법 필터 및 중요 문장 실시간 테이블 필터링 연동**:
+    - 문장 검색 모드에서 2행 필터 바의 `[어법 대분류]`, `[세부 어법 전체]`, `[⭐ 중요]` 필터 조작 시, 아래 문장 테이블 목록에서 해당 조건에 부합하는 문장들만 실시간으로 즉시 필터링/검색되어 테이블과 결과 건수 배지가 동기화되도록 개선 (`static/js/main.js`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
+
+

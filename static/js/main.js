@@ -116,6 +116,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSentenceBackToPassage = document.getElementById("btnSentenceBackToPassage");
 
   // 어법 범주 필터 및 별표 필터
+  const homeGrammarFiltersGroup = document.getElementById("homeGrammarFiltersGroup");
+  const resultsGrammarFiltersGroup = document.getElementById("resultsGrammarFiltersGroup");
   const filterGrammarPos = document.getElementById("filterGrammarPos");
   const filterGrammarCategory = document.getElementById("filterGrammarCategory");
   const btnToggleStarred = document.getElementById("btnToggleStarred");
@@ -193,6 +195,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 헤더 상태를 통계 배지 모드로 복원
     setHeaderSlotState("home");
     setSearchWithinState(false);
+    updateGrammarFiltersVisibility();
 
     // 결과창 검색어 및 필터를 홈 검색창에 동기화
     if (resultsSearchInput && resultsSearchInput.value) {
@@ -213,6 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
     homeSearchView.style.display = "none";
     resultsView.style.display = "flex";
     window.scrollTo({ top: 0, behavior: "smooth" });
+    updateGrammarFiltersVisibility();
   }
 
   // 홈으로 이동 버튼 이벤트 연결
@@ -225,6 +229,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================================================================
   // 3. 모드 전환 (지문 검색 vs 문장 검색)
   // =========================================================================
+
+  /** 문장 검색 모드일 때만 어법 대분류/세부어법/중요문장 필터를 노출 (지문 검색 시 숨김) */
+  function updateGrammarFiltersVisibility() {
+    const isSentence = (currentMode === "sentence");
+    if (homeGrammarFiltersGroup) {
+      homeGrammarFiltersGroup.style.display = isSentence ? "inline-flex" : "none";
+    }
+    if (resultsGrammarFiltersGroup) {
+      resultsGrammarFiltersGroup.style.display = isSentence ? "inline-flex" : "none";
+    }
+  }
 
   function setMode(mode, triggerSearch = false) {
     currentMode = mode;
@@ -243,6 +258,8 @@ document.addEventListener("DOMContentLoaded", () => {
       mainSearchInput.placeholder = "검색할 영어 문장 표현 또는 출처([고3-2024년...-1번째 문장])를 입력하세요...";
       if (resultsSearchInput) resultsSearchInput.placeholder = "영어 문장 또는 출처 입력...";
     }
+
+    updateGrammarFiltersVisibility();
 
     if (triggerSearch && resultsView.style.display !== "none") {
       executeSearch("results");
@@ -442,6 +459,7 @@ document.addEventListener("DOMContentLoaded", () => {
         resultsTotalCount.textContent = passagesData.length;
         renderPassageView(passagesData);
         setHeaderSlotState("passage");
+        updateGrammarFiltersVisibility();
       } else {
         const res = await fetch(`/api/search/sentences?${params.toString()}`);
         const data = await res.json();
@@ -450,6 +468,7 @@ document.addEventListener("DOMContentLoaded", () => {
         resultsTotalCount.textContent = sentencesData.length;
         renderSentenceView(sentencesData);
         setHeaderSlotState("sentence");
+        updateGrammarFiltersVisibility();
       }
     } catch (err) {
       console.error("검색 오류:", err);
@@ -537,6 +556,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      const activePos = (resultsFilterGrammarPos && resultsFilterGrammarPos.value) || (filterGrammarPos && filterGrammarPos.value) || "";
+      const activeCatId = (resultsFilterGrammarCategory && resultsFilterGrammarCategory.value) || (filterGrammarCategory && filterGrammarCategory.value) || "";
+
       const filtered = rawSentencesData.filter(s => {
         let tagMatch = true;
         if (tagLower) {
@@ -553,13 +575,28 @@ document.addEventListener("DOMContentLoaded", () => {
           kwMatch = inEng || inKor || inId;
         }
 
-        return tagMatch && kwMatch;
+        let posMatch = true;
+        if (activePos) {
+          posMatch = (s.grammar_annotations || []).some(a => a.pos_category === activePos);
+        }
+
+        let catMatch = true;
+        if (activeCatId) {
+          catMatch = (s.grammar_annotations || []).some(a => a.cat_id === activeCatId);
+        }
+
+        let starMatch = true;
+        if (isStarredFilterActive) {
+          starMatch = (s.is_starred === 1 || s.is_starred === true);
+        }
+
+        return tagMatch && kwMatch && posMatch && catMatch && starMatch;
       });
 
       if (filtered.length === 0) {
-        showToast(`결과 목록 내에서 '${rawVal}' 조건에 일치하는 문장이 없습니다.`, "warning");
+        showToast(`선택한 어법 및 키워드 조건에 일치하는 문장이 없습니다.`, "warning");
       } else {
-        showToast(`결과 내 검색: ${filtered.length}개 문장이 필터링되었습니다.`, "success");
+        showToast(`결과 필터링: ${filtered.length}개 문장이 표시됩니다.`, "success");
       }
 
       sentencesData = filtered;
@@ -1374,6 +1411,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
     if (tabModeSentence) tabModeSentence.classList.add("active");
     if (tabModePassage) tabModePassage.classList.remove("active");
+    updateGrammarFiltersVisibility();
 
     loadingIndicator.style.display = "flex";
     passageViewContainer.style.display = "none";
@@ -1408,6 +1446,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
     if (tabModePassage) tabModePassage.classList.add("active");
     if (tabModeSentence) tabModeSentence.classList.remove("active");
+    updateGrammarFiltersVisibility();
 
     sentenceViewContainer.style.display = "none";
     passageViewContainer.style.display = "flex";
@@ -1607,13 +1646,15 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </td>
         <td class="col-remarks">${escapeHtml(s.exam_type || "")} ${s.word_count ? `(${s.word_count}단어)` : ""}</td>
-        <td class="col-action" style="display: flex; gap: 4px; align-items: center;">
-          <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}">
-            📋 복사
-          </button>
-          <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
-            🤖 분석
-          </button>
+        <td class="col-action">
+          <div class="action-btn-group">
+            <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}">
+              📋 복사
+            </button>
+            <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
+              🤖 분석
+            </button>
+          </div>
         </td>
       `;
 
@@ -1932,7 +1973,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (filterGrammarPos) filterGrammarPos.value = pos;
       updateSubGrammarCategories(pos, filterGrammarCategory);
       updateSubGrammarCategories(pos, resultsFilterGrammarCategory);
-      executeSearch("results");
+      if (isSearchWithinActive && rawSentencesData && rawSentencesData.length > 0) {
+        executeSearchWithinResults();
+      } else {
+        executeSearch("results");
+      }
     });
   }
 
@@ -1944,7 +1989,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (resultsFilterGrammarCategory) {
     resultsFilterGrammarCategory.addEventListener("change", () => {
       if (filterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
-      executeSearch("results");
+      if (isSearchWithinActive && rawSentencesData && rawSentencesData.length > 0) {
+        executeSearchWithinResults();
+      } else {
+        executeSearch("results");
+      }
     });
   }
 
@@ -1973,7 +2022,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnResultsToggleStarred) {
     btnResultsToggleStarred.addEventListener("click", () => {
       setStarredFilter(!isStarredFilterActive);
-      executeSearch("results");
+      if (isSearchWithinActive && rawSentencesData && rawSentencesData.length > 0) {
+        executeSearchWithinResults();
+      } else {
+        executeSearch("results");
+      }
     });
   }
 
@@ -2048,15 +2101,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/settings/ai");
       if (res.ok) {
         const data = await res.json();
-        if (aiProviderSelect) aiProviderSelect.value = data.provider || "gemini";
-        if (aiModelInput) aiModelInput.value = data.model || "";
+        const prov = data.provider || "gemini";
+        if (aiProviderSelect) aiProviderSelect.value = prov;
+        const info = providerDefaults[prov] || providerDefaults.gemini;
+        if (aiModelInput) {
+          aiModelInput.value = data.model || info.model;
+        }
         if (currentKeyBadge) {
           currentKeyBadge.textContent = data.has_key
             ? `현재 키: ${data.masked_key} (${data.provider})`
             : "현재 키: 미설정";
           currentKeyBadge.style.color = data.has_key ? "var(--success)" : "#64748b";
         }
-        updateAiProviderHelp();
+        updateAiProviderHelp(false);
       }
     } catch (e) {
       console.error(e);
@@ -2069,7 +2126,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (aiApiKeyInput) aiApiKeyInput.value = "";
   }
 
-  function updateAiProviderHelp() {
+  function updateAiProviderHelp(isUserChange = false) {
     const prov = aiProviderSelect ? aiProviderSelect.value : "gemini";
     const info = providerDefaults[prov] || providerDefaults.gemini;
     if (aiModelHelp) aiModelHelp.textContent = info.help;
@@ -2077,8 +2134,12 @@ document.addEventListener("DOMContentLoaded", () => {
       apiKeyGuideLink.href = info.link;
       apiKeyGuideLink.textContent = info.linkText;
     }
-    if (aiModelInput && !aiModelInput.value) {
+    if (aiModelInput) {
       aiModelInput.placeholder = `예: ${info.model}`;
+      // 사용자가 직접 엔진(Provider)을 변경했으면 해당 엔진의 기본 권장 모델명으로 자동 갱신!
+      if (isUserChange) {
+        aiModelInput.value = info.model;
+      }
     }
   }
 
@@ -2092,7 +2153,9 @@ document.addEventListener("DOMContentLoaded", () => {
     btnCancelAiSettings.addEventListener("click", closeAiSettingsModal);
   }
   if (aiProviderSelect) {
-    aiProviderSelect.addEventListener("change", updateAiProviderHelp);
+    aiProviderSelect.addEventListener("change", () => {
+      updateAiProviderHelp(true);
+    });
   }
 
   if (btnToggleKeyVis && aiApiKeyInput) {
@@ -2167,5 +2230,8 @@ document.addEventListener("DOMContentLoaded", () => {
   function cssSafeId(id) {
     return id.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
+
+  // 초기 상태: 지문 검색 모드이므로 어법 필터 숨김
+  updateGrammarFiltersVisibility();
 });
 

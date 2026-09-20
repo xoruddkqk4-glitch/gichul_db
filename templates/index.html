@@ -132,28 +132,30 @@
             <option value="1지문3문항">1지문3문항</option>
           </select>
 
-          <!-- 어법 범주 필터 (2단계 캐스케이딩: 대분류 + 세부범주) -->
-          <select class="filter-select grammar-filter-select" id="filterGrammarPos" title="어법 대분류 선택">
-            <option value="">전체 어법 대분류</option>
-            <option value="명사">1. 명사</option>
-            <option value="대명사">2. 대명사</option>
-            <option value="문장">3. 문장 / 주어</option>
-            <option value="동사">4. 동사</option>
-            <option value="형용사/부사">5. 형용사/부사</option>
-            <option value="전치사">6. 전치사</option>
-            <option value="접속사">7. 접속사</option>
-            <option value="특수구문">8. 특수구문</option>
-          </select>
+          <!-- 어법 범주 필터 (문장 검색 모드 전용, 지문 검색 시 숨김) -->
+          <div class="home-grammar-filters-group" id="homeGrammarFiltersGroup" style="display: none;">
+            <select class="filter-select grammar-filter-select" id="filterGrammarPos" title="어법 대분류 선택">
+              <option value="">전체 어법 대분류</option>
+              <option value="명사">1. 명사</option>
+              <option value="대명사">2. 대명사</option>
+              <option value="문장">3. 문장 / 주어</option>
+              <option value="동사">4. 동사</option>
+              <option value="형용사/부사">5. 형용사/부사</option>
+              <option value="전치사">6. 전치사</option>
+              <option value="접속사">7. 접속사</option>
+              <option value="특수구문">8. 특수구문</option>
+            </select>
 
-          <select class="filter-select grammar-filter-select" id="filterGrammarCategory" title="세부 어법 범주 선택">
-            <option value="">세부 어법 전체</option>
-          </select>
+            <select class="filter-select grammar-filter-select" id="filterGrammarCategory" title="세부 어법 범주 선택">
+              <option value="">세부 어법 전체</option>
+            </select>
 
-          <!-- 중요 문장(⭐) 필터 토글 버튼 -->
-          <button type="button" class="btn-toggle-starred" id="btnToggleStarred" aria-pressed="false" title="별표(⭐) 표시된 중요 문장만 모아보기">
-            <span class="star-icon">☆</span>
-            <span class="star-text">중요 문장</span>
-          </button>
+            <!-- 중요 문장(⭐) 필터 토글 버튼 -->
+            <button type="button" class="btn-toggle-starred" id="btnToggleStarred" aria-pressed="false" title="별표(⭐) 표시된 중요 문장만 모아보기">
+              <span class="star-icon">☆</span>
+              <span class="star-text">중요 문장</span>
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -165,108 +167,118 @@
     <section class="results-view" id="resultsView" style="display: none;">
       
       <!-- 상단 결과 내비게이션 & 빠른 검색/필터 바 -->
+      <!-- 상단 결과 내비게이션 & 빠른 검색/필터 바 (2행 분리 구조) -->
       <div class="results-nav-bar">
-        <button type="button" class="btn btn-secondary btn-back-search" id="btnBackToSearch" title="메인 검색 화면으로 복귀">
-          <span class="back-arrow">←</span> 처음 화면으로 돌아가기
-        </button>
+        <!-- 1행: [← 처음 화면으로 돌아가기] & 검색창 -->
+        <div class="results-nav-top-row">
+          <button type="button" class="btn btn-secondary btn-back-search" id="btnBackToSearch" title="메인 검색 화면으로 복귀">
+            <span class="back-arrow">←</span> 처음 화면으로 돌아가기
+          </button>
 
-        <div class="results-search-bar">
-          <div class="results-mode-tabs">
-            <button type="button" class="mini-mode-btn active" id="resultsTabModePassage" data-mode="passage">지문</button>
-            <button type="button" class="mini-mode-btn" id="resultsTabModeSentence" data-mode="sentence">문장</button>
+          <div class="results-search-bar">
+            <div class="results-mode-tabs">
+              <button type="button" class="mini-mode-btn active" id="resultsTabModePassage" data-mode="passage">지문</button>
+              <button type="button" class="mini-mode-btn" id="resultsTabModeSentence" data-mode="sentence">문장</button>
+            </div>
+            <input 
+              type="text" 
+              class="results-search-input" 
+              id="resultsSearchInput" 
+              placeholder="검색어, 출처 또는 #태그를 입력하세요..." 
+              autocomplete="off"
+            >
+            <button type="button" class="btn btn-primary btn-sm" id="btnResultsSearch">검색</button>
+            <button type="button" class="btn-toggle-within" id="btnToggleSearchWithin" aria-pressed="false" title="클릭하여 결과 내 재검색 모드를 켜거나 끕니다">
+              <span class="toggle-dot"></span>
+              <span class="toggle-text">결과 내 검색</span>
+            </button>
           </div>
-          <input 
-            type="text" 
-            class="results-search-input" 
-            id="resultsSearchInput" 
-            placeholder="검색어, 출처 또는 #태그를 입력하세요..." 
-            autocomplete="off"
-          >
-          <button type="button" class="btn btn-primary btn-sm" id="btnResultsSearch">검색</button>
-          <button type="button" class="btn-toggle-within" id="btnToggleSearchWithin" aria-pressed="false" title="클릭하여 결과 내 재검색 모드를 켜거나 끕니다">
-            <span class="toggle-dot"></span>
-            <span class="toggle-text">결과 내 검색</span>
-          </button>
         </div>
 
-        <div class="results-filters-group">
-          <select class="filter-select compact-select" id="resultsFilterGrade">
-            <option value="">전체 학년</option>
-            <option value="고3">고3</option>
-            <option value="고2">고2</option>
-            <option value="고1">고1</option>
-          </select>
-          <select class="filter-select compact-select" id="resultsFilterYear">
-            <option value="">전체 연도</option>
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
-            <option value="2023">2023</option>
-            <option value="2022">2022</option>
-          </select>
-          <select class="filter-select compact-select" id="resultsFilterMonth">
-            <option value="">전체 월</option>
-            <option value="3">3월</option>
-            <option value="4">4월</option>
-            <option value="5">5월</option>
-            <option value="6">6월</option>
-            <option value="7">7월</option>
-            <option value="9">9월</option>
-            <option value="10">10월</option>
-            <option value="11">11월</option>
-          </select>
-          <select class="filter-select compact-select" id="resultsFilterExamType">
-            <option value="">시험구분</option>
-            <option value="평가원">평가원</option>
-            <option value="교육청">교육청</option>
-          </select>
-          <select class="filter-select compact-select" id="resultsFilterQuestionType">
-            <option value="">문제유형</option>
-            <option value="글의목적">글의목적</option>
-            <option value="심경변화">심경변화</option>
-            <option value="주장">주장</option>
-            <option value="어휘함축">어휘함축</option>
-            <option value="글의요지">글의요지</option>
-            <option value="글의주제">글의주제</option>
-            <option value="글의제목">글의제목</option>
-            <option value="도표">도표</option>
-            <option value="불일치">불일치</option>
-            <option value="실용문불일치">실용문불일치</option>
-            <option value="실용문일치">실용문일치</option>
-            <option value="어법">어법</option>
-            <option value="어휘">어휘</option>
-            <option value="빈칸">빈칸</option>
-            <option value="문장빼기">문장빼기</option>
-            <option value="글의순서">글의순서</option>
-            <option value="문장넣기">문장넣기</option>
-            <option value="글의요약">글의요약</option>
-            <option value="1지문2문항">1지문2문항</option>
-            <option value="1지문3문항">1지문3문항</option>
-          </select>
+        <!-- 2행: 필터 옵션 바 & 결과 수 배지 -->
+        <div class="results-nav-bottom-row">
+          <div class="results-filters-group">
+            <select class="filter-select compact-select" id="resultsFilterGrade">
+              <option value="">전체 학년</option>
+              <option value="고3">고3</option>
+              <option value="고2">고2</option>
+              <option value="고1">고1</option>
+            </select>
+            <select class="filter-select compact-select" id="resultsFilterYear">
+              <option value="">전체 연도</option>
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+              <option value="2023">2023</option>
+              <option value="2022">2022</option>
+            </select>
+            <select class="filter-select compact-select" id="resultsFilterMonth">
+              <option value="">전체 월</option>
+              <option value="3">3월</option>
+              <option value="4">4월</option>
+              <option value="5">5월</option>
+              <option value="6">6월</option>
+              <option value="7">7월</option>
+              <option value="9">9월</option>
+              <option value="10">10월</option>
+              <option value="11">11월</option>
+            </select>
+            <select class="filter-select compact-select" id="resultsFilterExamType">
+              <option value="">시험구분</option>
+              <option value="평가원">평가원</option>
+              <option value="교육청">교육청</option>
+            </select>
+            <select class="filter-select compact-select" id="resultsFilterQuestionType">
+              <option value="">문제유형</option>
+              <option value="글의목적">글의목적</option>
+              <option value="심경변화">심경변화</option>
+              <option value="주장">주장</option>
+              <option value="어휘함축">어휘함축</option>
+              <option value="글의요지">글의요지</option>
+              <option value="글의주제">글의주제</option>
+              <option value="글의제목">글의제목</option>
+              <option value="도표">도표</option>
+              <option value="불일치">불일치</option>
+              <option value="실용문불일치">실용문불일치</option>
+              <option value="실용문일치">실용문일치</option>
+              <option value="어법">어법</option>
+              <option value="어휘">어휘</option>
+              <option value="빈칸">빈칸</option>
+              <option value="문장빼기">문장빼기</option>
+              <option value="글의순서">글의순서</option>
+              <option value="문장넣기">문장넣기</option>
+              <option value="글의요약">글의요약</option>
+              <option value="1지문2문항">1지문2문항</option>
+              <option value="1지문3문항">1지문3문항</option>
+            </select>
 
-          <select class="filter-select compact-select grammar-filter-select" id="resultsFilterGrammarPos" title="어법 대분류">
-            <option value="">어법 대분류</option>
-            <option value="명사">1. 명사</option>
-            <option value="대명사">2. 대명사</option>
-            <option value="문장">3. 문장</option>
-            <option value="동사">4. 동사</option>
-            <option value="형용사/부사">5. 형용사/부사</option>
-            <option value="전치사">6. 전치사</option>
-            <option value="접속사">7. 접속사</option>
-            <option value="특수구문">8. 특수구문</option>
-          </select>
+            <!-- 문장 검색 모드 전용 어법 필터 그룹 (지문 검색 시 display: none 숨김) -->
+            <div class="results-grammar-filters-group" id="resultsGrammarFiltersGroup" style="display: none;">
+              <select class="filter-select compact-select grammar-filter-select" id="resultsFilterGrammarPos" title="어법 대분류">
+                <option value="">어법 대분류</option>
+                <option value="명사">1. 명사</option>
+                <option value="대명사">2. 대명사</option>
+                <option value="문장">3. 문장</option>
+                <option value="동사">4. 동사</option>
+                <option value="형용사/부사">5. 형용사/부사</option>
+                <option value="전치사">6. 전치사</option>
+                <option value="접속사">7. 접속사</option>
+                <option value="특수구문">8. 특수구문</option>
+              </select>
 
-          <select class="filter-select compact-select grammar-filter-select" id="resultsFilterGrammarCategory" title="세부 어법 범주">
-            <option value="">세부 어법 전체</option>
-          </select>
+              <select class="filter-select compact-select grammar-filter-select" id="resultsFilterGrammarCategory" title="세부 어법 범주">
+                <option value="">세부 어법 전체</option>
+              </select>
 
-          <button type="button" class="btn-toggle-starred compact-star-btn" id="btnResultsToggleStarred" aria-pressed="false" title="별표(⭐) 중요 문장만 모아보기">
-            <span class="star-icon">☆</span> 중요
-          </button>
-        </div>
+              <button type="button" class="btn-toggle-starred compact-star-btn" id="btnResultsToggleStarred" aria-pressed="false" title="별표(⭐) 중요 문장만 모아보기">
+                <span class="star-icon">☆</span> 중요
+              </button>
+            </div>
+          </div>
 
-        <div class="results-count-badge" id="resultsCountBadge">
-          결과: <strong id="resultsTotalCount">0</strong>건
+          <div class="results-count-badge" id="resultsCountBadge">
+            결과: <strong id="resultsTotalCount">0</strong>건
+          </div>
         </div>
       </div>
 
@@ -450,7 +462,7 @@
                 <th class="col-sentence">해당 문장 & 어법 범주</th>
                 <th class="col-tags">태그 정보</th>
                 <th class="col-remarks">비고</th>
-                <th class="col-action">복사 및 분석</th>
+                <th class="col-action" style="width: 175px; min-width: 175px; text-align: center; white-space: nowrap;">복사 및 분석</th>
               </tr>
             </thead>
             <tbody id="sentenceTableBody">

@@ -344,19 +344,42 @@ body {
   flex-direction: column;
 }
 
-/* 상단 결과 내비게이션 바 */
+/* 상단 결과 내비게이션 바 (2행 분리 레이아웃) */
 .results-nav-bar {
   background-color: var(--bg-card);
   border-bottom: 1px solid var(--border);
-  padding: 0.75rem 2rem;
+  padding: 0.65rem 2rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.55rem;
   position: sticky;
   top: 64px;
   z-index: 90;
   box-shadow: var(--shadow-sm);
+}
+
+.results-nav-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  width: 100%;
+}
+
+.results-nav-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.home-grammar-filters-group,
+.results-grammar-filters-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
@@ -1136,8 +1159,18 @@ mark.passage-highlight {
 }
 
 .col-action {
-  width: 110px;
+  width: 175px;
+  min-width: 175px;
   text-align: center;
+  white-space: nowrap;
+}
+
+.action-btn-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 /* 인라인 태그 추가 버튼 */
@@ -1160,16 +1193,20 @@ mark.passage-highlight {
 .copy-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  gap: 0.3rem;
   background-color: #f8fafc;
   color: var(--secondary);
   border: 1px solid var(--border);
-  padding: 0.35rem 0.7rem;
+  padding: 0.32rem 0.65rem;
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex-shrink: 0;
 }
 
 .copy-btn:hover {
@@ -1499,16 +1536,20 @@ mark.passage-highlight {
 .btn-analyze-inline {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 0.28rem 0.6rem;
+  padding: 0.32rem 0.65rem;
   border-radius: 6px;
   border: 1px solid #c7d2fe;
   background-color: #eef2ff;
   color: #4338ca;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex-shrink: 0;
 }
 .btn-analyze-inline:hover {
   background-color: #e0e7ff;
