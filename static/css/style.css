@@ -379,8 +379,16 @@ body {
 .results-grammar-filters-group {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+  gap: 8px;
+  background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%);
+  border: 1.5px solid #c7d2fe;
+  border-radius: 10px;
+  padding: 4px 8px;
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.08);
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .btn-back-search {
@@ -1430,29 +1438,53 @@ mark.passage-highlight {
 
 /* 필터 바 내 어법 셀렉트 및 별표 토글 버튼 */
 .grammar-filter-select {
-  border-color: #cbd5e1;
-  background-color: #f8fafc;
-  color: #1e293b;
-  font-weight: 600;
+  width: 210px !important;
+  min-width: 210px !important;
+  max-width: 210px !important;
+  text-align: center !important;
+  text-align-last: center !important;
+  -moz-text-align-last: center !important;
+  background-color: #ffffff !important;
+  border: 1.5px solid #a5b4fc !important;
+  color: #3730a3 !important;
+  font-weight: 700 !important;
+  font-size: 0.82rem !important;
+  border-radius: 8px !important;
+  padding: 0.38rem 0.5rem !important;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
 }
 .grammar-filter-select:focus {
-  border-color: #6366f1;
-  background-color: #ffffff;
+  border-color: #6366f1 !important;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  outline: none;
+}
+.grammar-filter-select option {
+  text-align: left;
+  color: #1e293b;
+  font-weight: 500;
 }
 
 .btn-toggle-starred {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 0.5rem 0.85rem;
-  border-radius: var(--radius-sm);
-  border: 1.5px solid #e2e8f0;
+  padding: 0.38rem 0.75rem;
+  border-radius: 8px;
+  border: 1.5px solid #cbd5e1;
   background-color: #ffffff;
-  color: #64748b;
-  font-size: 0.85rem;
+  color: #475569;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
 }
 .btn-toggle-starred:hover {
   border-color: #f59e0b;
@@ -1472,6 +1504,19 @@ mark.passage-highlight {
 .compact-star-btn {
   padding: 0.35rem 0.65rem;
   font-size: 0.78rem;
+}
+
+/* 문장 테이블 어법 범주 독립 열 */
+.col-grammar {
+  width: 220px;
+  min-width: 180px;
+  vertical-align: middle;
+}
+
+.empty-grammar-text {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 /* 테이블 내 별표(⭐) 버튼 */
@@ -1500,7 +1545,6 @@ mark.passage-highlight {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-top: 6px;
 }
 .grammar-tag-badge {
   display: inline-flex;

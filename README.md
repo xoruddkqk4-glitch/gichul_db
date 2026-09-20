@@ -313,4 +313,20 @@
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
 
+### [2026-09-20 17:18] 업데이트 이력 (Commit ID: a7c4222)
+- **수정 내용**:
+  - **중요 문장 버튼 동일 행 유지 & 줄바꿈 방지**:
+    - `home-grammar-filters-group` 및 `results-grammar-filters-group`에 `flex-wrap: nowrap !important; white-space: nowrap !important;`를 적용하여 `[어법 대분류]`, `[세부 어법 전체]`, `[⭐ 중요 문장]` 세 요소가 항상 동일한 한 행에 나란히 배열되도록 개선 (`static/css/style.css`)
+  - **어법 대분류 및 세부 어법 선택창 너비 210px 균등화 & 텍스트 가운데 정렬**:
+    - 첫 화면과 결과 화면의 어법 선택창 가로 너비를 210px로 균등 고정(`width: 210px !important; min-width: 210px !important; max-width: 210px !important;`)하고, 내부 텍스트를 정중앙 정렬(`text-align: center !important; text-align-last: center !important;`)하여 레이아웃 무결성 및 가독성 확보 (`static/css/style.css`)
+  - **어법 필터 및 중요 문장 버튼 파스텔톤 네모 배경 박스 적용**:
+    - 기본 필터(학년, 연도, 월, 시험구분, 문제유형)와 시각적 위계를 분리하기 위해 3개 요소를 감싸는 컨테이너에 은은한 파스텔 라벤더·인디고 그라데이션 네모 박스(`background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%); border: 1.5px solid #c7d2fe; border-radius: 10px; padding: 4px 8px;`)를 적용하여 시각적 가시성 강화 (`static/css/style.css`)
+  - **문장 검색 결과 테이블 내 '어법 범주' 독립 열 분리 신설**:
+    - 테이블 헤더 및 데이터 행을 `순번 | 출처 | 해당 문장 | 어법 범주 | 태그 정보 | 비고 | 복사 및 분석`으로 재편성하여 `해당 문장`과 전용 `어법 범주` 열(`col-grammar`, 220px)로 독립 분리 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)
+    - 영어 본문 문장과 어법 뱃지 칩을 열 단위로 분리하고 미분석 문장은 `미분석` 라벨로 표시하여 테이블 가독성 극대화 (`static/js/main.js`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
+
+
 

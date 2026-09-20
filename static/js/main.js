@@ -1571,7 +1571,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // 문장 텍스트 형광펜 하이라이트는 상단 정의된 highlightSentenceKeyword(highlightTextKeyword 기반)를 활용
 
   function renderGrammarBadges(annos) {
-    if (!annos || annos.length === 0) return "";
+    if (!annos || annos.length === 0) {
+      return '<span class="empty-grammar-text">미분석</span>';
+    }
     return annos
       .map((a) => {
         const badgeClass =
@@ -1632,6 +1634,8 @@ document.addEventListener("DOMContentLoaded", () => {
         </td>
         <td class="col-sentence">
           <div>${highlightedSentence}</div>
+        </td>
+        <td class="col-grammar">
           <div class="sentence-grammar-tags" id="grammar-tags-${cssSafeId(s.id)}">
             ${renderGrammarBadges(s.grammar_annotations)}
           </div>
