@@ -79,6 +79,12 @@ def init_db():
             );
         """)
 
+        # sentences 테이블에 is_starred 컬럼 안전 마이그레이션
+        try:
+            cursor.execute("ALTER TABLE sentences ADD COLUMN is_starred INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass  # 이미 컬럼이 존재함
+
         # 4. 지문 태그 테이블
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS passage_tags (
@@ -103,11 +109,40 @@ def init_db():
             );
         """)
 
+        # 6. 문장 어법 범주 분석 테이블 (다대다 어법 태깅 & AI 해설)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sentence_grammar_annotations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sentence_id TEXT NOT NULL,
+                category_id INTEGER NOT NULL,          -- grammar_categories.json의 id (1~243)
+                pos TEXT NOT NULL,                     -- 대분류 (명사, 동사, 특수구문 등)
+                full_path TEXT NOT NULL,               -- 전체 계층 경로
+                leaf_name TEXT NOT NULL,               -- 최하위 범주명
+                target_expression TEXT,                -- 문장 내 해당 표현 (하이라이트용)
+                explanation TEXT,                      -- AI 어법 해설
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (sentence_id, category_id),
+                FOREIGN KEY (sentence_id) REFERENCES sentences (id) ON DELETE CASCADE
+            );
+        """)
+
+        # 7. 시스템 설정 테이블 (AI API 키, 선택된 모델 등 로컬 저장)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         # 인덱스 생성
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam ON passages(exam_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_passage ON sentences(passage_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_tag ON passage_tags(tag_name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_tag ON sentence_tags(tag_name);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_cat ON sentence_grammar_annotations(category_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_pos ON sentence_grammar_annotations(pos);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_starred ON sentences(is_starred);")
 
         conn.commit()
 
@@ -340,6 +375,82 @@ def search_passages(
         return results
 
 
+def toggle_sentence_star(sentence_id: str) -> int:
+    """문장 별표(중요 문장) 플래그 토글 (0 -> 1, 1 -> 0) 후 새 상태 반환"""
+    clean_id = sentence_id.strip()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT is_starred FROM sentences WHERE id = ?", (clean_id,))
+        row = cursor.fetchone()
+        if not row:
+            return 0
+        current_state = row["is_starred"] if row["is_starred"] is not None else 0
+        new_state = 0 if current_state == 1 else 1
+        cursor.execute("UPDATE sentences SET is_starred = ? WHERE id = ?", (new_state, clean_id))
+        conn.commit()
+        return new_state
+
+
+def save_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]):
+    """문장에 어법 범주 분석 결과(복수 어법) 저장"""
+    clean_id = sentence_id.strip()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        for anno in annotations:
+            try:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO sentence_grammar_annotations 
+                    (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    clean_id,
+                    anno.get("category_id", 0),
+                    anno.get("pos", ""),
+                    anno.get("full_path", ""),
+                    anno.get("leaf_name", "") or anno.get("leaf", ""),
+                    anno.get("target_expression", ""),
+                    anno.get("explanation", "")
+                ))
+            except Exception:
+                pass
+        conn.commit()
+
+
+def get_sentence_grammar_annotations(sentence_id: str) -> List[Dict[str, Any]]:
+    """특정 문장의 어법 범주 분석 목록 조회"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT category_id, pos, full_path, leaf_name, target_expression, explanation
+            FROM sentence_grammar_annotations
+            WHERE sentence_id = ?
+            ORDER BY id ASC
+        """, (sentence_id.strip(),))
+        return [dict(r) for r in cursor.fetchall()]
+
+
+def get_setting(key: str, default: str = "") -> str:
+    """앱 설정값 조회"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        return row["value"] if row else default
+
+
+def set_setting(key: str, value: str):
+    """앱 설정값 저장/갱신"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+        """, (key, value))
+        conn.commit()
+
+
 def search_sentences(
     keyword: str = "",
     passage_id: str = "",
@@ -348,6 +459,9 @@ def search_sentences(
     month: Optional[int] = None,
     exam_type: str = "",
     tag: str = "",
+    is_starred: Optional[bool] = None,
+    grammar_cat_id: Optional[int] = None,
+    grammar_pos: Optional[str] = None,
     limit: int = 100
 ) -> List[Dict[str, Any]]:
     """문장 검색 (1행 테이블 뷰용)"""
@@ -385,6 +499,20 @@ def search_sentences(
         query += " AND e.exam_type = ?"
         params.append(exam_type)
 
+    if is_starred is True:
+        query += " AND s.is_starred = 1"
+
+    if grammar_cat_id:
+        query += """
+            AND s.id IN (SELECT sentence_id FROM sentence_grammar_annotations WHERE category_id = ?)
+        """
+        params.append(grammar_cat_id)
+    elif grammar_pos:
+        query += """
+            AND s.id IN (SELECT sentence_id FROM sentence_grammar_annotations WHERE pos = ?)
+        """
+        params.append(grammar_pos.strip())
+
     if tag:
         query += """
             AND s.id IN (SELECT sentence_id FROM sentence_tags WHERE tag_name LIKE ?)
@@ -402,7 +530,9 @@ def search_sentences(
         for idx, r in enumerate(rows, 1):
             s_dict = dict(r)
             s_dict["row_num"] = idx
+            s_dict["is_starred"] = 1 if r["is_starred"] == 1 else 0
             s_dict["tags"] = get_sentence_tags(r["id"])
+            s_dict["grammar_annotations"] = get_sentence_grammar_annotations(r["id"])
             results.append(s_dict)
         return results
 

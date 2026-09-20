@@ -24,6 +24,12 @@
 - 지문 식별자: `[O학년-OOOO년-OO월-OO번]`
 - 문장 식별자: `[O학년-OOOO년-OO월-OO번-O번째 문장]`
 
+### 5. Multi-LLM 기반 243개 세부 어법 범주 분류 및 필터링
+- **243개 표준 어법 분류체계**: 명사(33), 대명사(18), 문장/주어(11), 동사(123), 형용사/부사(16), 전치사(6), 접속사(26), 특수구문(10)의 8개 대분류 트리 구축 (`static/data/grammar_categories.json`).
+- **Multi-LLM 엔진 (`grammar_analyzer.py`)**: Google Gemini, OpenAI ChatGPT, Anthropic Claude 모델을 환경 의존성 없이 순수 REST API로 호출하여 문장 내 핵심 어법 범주, 타깃 어구, 어법 해설을 자동 생성.
+- **문장 검색 캐스케이딩 필터 & 중요(⭐) 문장 큐레이션**: 어법 대분류 ➔ 세부 범주 2단계 연동 필터, 중요 문장 원클릭 별표 북마크, 인라인 및 일괄 AI 분석 제공.
+
+
 ---
 
 ## 🖥️ 화면 구성 및 사용자 경험 (UI/UX)
@@ -53,20 +59,23 @@
 
 ```text
 05-gichul_db/
-├── database.py             # SQLite DB 스키마, CRUD, 인덱스 및 검색 헬퍼
+├── database.py             # SQLite DB 스키마, CRUD, 인덱스, 어법 태그 및 검색 헬퍼
 ├── sentence_tokenizer.py   # 약어/소수점/인용구 보존 영문 문장 분할 모듈
+├── grammar_analyzer.py     # Gemini/ChatGPT/Claude Multi-LLM 243개 어법 분석 엔진
 ├── pdf_parser.py           # PDF 2단 칼럼 분할 파싱 및 문항별 고화질 이미지 크롭
 ├── hwp_parser.py           # HWP/HWPX 문제지 파싱 및 정답/해설 추출
 ├── validator.py            # HWP vs PDF 상호 교차 검증 및 데이터 무결성 검사
 ├── app.py                  # FastAPI REST API 및 웹 서버 엔드포인트
 ├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기
 ├── templates/
-│   └── index.html          # 구글 스타일 검색 + 2x2 그리드 + 문장 테이블 SPA
+│   └── index.html          # 구글 스타일 검색 + 2x2 그리드 + 문장 테이블 + AI 설정 모달 SPA
 └── static/
     ├── css/
-    │   └── style.css       # 모던 디자인 시스템 스타일시트
+    │   └── style.css       # 모던 디자인 시스템 스타일시트 (어법 태그, 별표, 필터 바 등)
     ├── js/
-    │   └── main.js         # 검색, 2x2 뷰어, 테이블 뷰어, 클립보드 복사, 태그 비동기 로직
+    │   └── main.js         # 검색, 2x2 뷰어, 문장 뷰어, 어법 캐스케이딩 필터, AI 연동 로직
+    ├── data/
+    │   └── grammar_categories.json # 8개 대분류, 243개 세부 어법 분류체계 JSON
     └── captures/           # 크롭된 PDF 문항 고화질 이미지 저장소
 ```
 
@@ -257,3 +266,30 @@
   - `python -m py_compile pdf_parser.py app.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - 56개 전 문항 캡처 이미지 정답 번호 파스텔톤 노란색 하이라이트 정상 생성 확인
+
+### [2026-09-20 16:55] 업데이트 이력 (Commit ID: 452e7e2)
+- **수정 내용**:
+  - **243개 세부 어법 분류체계 구축 및 JSON 정적 서빙**:
+    - 사용자 제공 원본 분류표를 기반으로 8개 대분류(명사, 대명사, 문장/주어, 동사, 형용사/부사, 전치사, 접속사, 특수구문), 243개 세부 어법 범주를 계층 트리(`tree`), 고유 ID별 플랫 리스트(`list`), 메타데이터(`meta`) 구조로 정제하여 `static/data/grammar_categories.json`에 적재
+  - **Multi-LLM 기반 어법 분석 엔진 구현 (`grammar_analyzer.py`)**:
+    - 외부 라이브러리 의존성 없이 Python 기본 라이브러리(`urllib.request`)로 Google Gemini, OpenAI ChatGPT, Anthropic Claude 3개 주요 LLM의 REST API 클라이언트 구축
+    - 243개 범주 ID 및 `full_path`를 프롬프트에 주입하여 문장 분석 시 최대 3개 어법 범주 ID, 타깃 어구, 상세 어법 해설을 JSON 형태로 구조화하여 응답받는 알고리즘 구현 및 실시간 연결 테스트(`test_connection`) 기능 개발
+  - **데이터베이스 스키마 확장 및 영구 저장 (`database.py`)**:
+    - `sentences.is_starred` (INTEGER) 중요 문장 북마크 컬럼 추가 및 마이그레이션
+    - `sentence_grammar_annotations` 테이블 신설: 1개 문장에 복수 어법 태그(cat_id, pos_category, full_path, target_phrase, explanation, model_name) 연동
+    - `app_settings` 테이블 신설: LLM Provider, API Key, 자동 분석 옵션 영구 보관
+    - `search_sentences` 쿼리에 `is_starred`, `grammar_pos`, `grammar_cat_id` 조건 필터링 추가
+  - **FastAPI 백엔드 API 라우트 및 백그라운드 자동 분석 (`app.py`)**:
+    - AI 설정 조회/저장/테스트 엔드포인트(`GET/POST /api/settings/ai`, `POST /api/settings/ai/test`)
+    - 문장 별표 토글(`POST /api/sentences/{id}/star`), 단일 문장 AI 분석(`POST /api/sentences/{id}/analyze-grammar`), 중요 문장 일괄 분석(`POST /api/sentences/batch-analyze-grammar`) 엔드포인트 신설
+    - 신규 시험지 업로드 시 백그라운드 작업(`BackgroundTasks`)으로 전체 문장 자동 어법 분석을 비동기 수행하도록 연동
+  - **문장 검색 UI/UX 고도화 및 어법 캐스케이딩 필터 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - 상단 헤더에 `[🔑 AI 설정]` 버튼 및 Provider/API Key 설정/연결테스트 모달 구축
+    - 첫 화면 및 검색 결과 화면 필터 바에 어법 대분류 ➔ 세부 범주 2단계 연동 캐스케이딩 드롭다운 셀렉트 박스 신설
+    - `[⭐ 중요 문장만 보기]` 원클릭 토글 필터 및 테이블 상단 `[⭐ 중요 문장 일괄 AI 어법 분석]` 버튼 신설
+    - 문장 테이블 행마다: 원클릭 `⭐` 별표 토글 버튼, 대분류별 컬러 어법 뱃지 칩(툴팁으로 세부 경로 및 AI 해설 제공), 인라인 `[🤖 분석]` 버튼 및 로딩 스피너 구현
+- **검증 결과**:
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - 로컬 라이브 서버 API 단위 테스트 완료 (`GET /api/settings/ai`, `POST /api/sentences/1/star`, `GET /api/search/sentences?is_starred=true` 정상 응답)
+

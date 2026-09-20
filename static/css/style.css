@@ -1370,3 +1370,153 @@ mark.passage-highlight {
     transform: rotate(360deg);
   }
 }
+
+/* ==========================================================================
+   AI 어법 분석기 및 문장 어법 필터 / 별표(⭐) 플래그 스타일
+   ========================================================================== */
+
+/* 상단 AI 설정 버튼 */
+.btn-outline-ai {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #4338ca;
+  border: 1.5px solid #c7d2fe;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+.btn-outline-ai:hover {
+  background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%);
+  border-color: #818cf8;
+  color: #3730a3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(99, 102, 241, 0.15);
+}
+
+/* 필터 바 내 어법 셀렉트 및 별표 토글 버튼 */
+.grammar-filter-select {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+  color: #1e293b;
+  font-weight: 600;
+}
+.grammar-filter-select:focus {
+  border-color: #6366f1;
+  background-color: #ffffff;
+}
+
+.btn-toggle-starred {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid #e2e8f0;
+  background-color: #ffffff;
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-toggle-starred:hover {
+  border-color: #f59e0b;
+  color: #d97706;
+  background-color: #fffbeb;
+}
+.btn-toggle-starred.active {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-color: #f59e0b;
+  color: #b45309;
+  box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2);
+}
+.btn-toggle-starred.active .star-icon {
+  color: #d97706;
+}
+
+.compact-star-btn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+/* 테이블 내 별표(⭐) 버튼 */
+.btn-star {
+  background: transparent;
+  border: none;
+  font-size: 1.35rem;
+  color: #cbd5e1;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.btn-star:hover {
+  transform: scale(1.25);
+  color: #fbbf24;
+}
+.btn-star.starred {
+  color: #f59e0b;
+  text-shadow: 0 1px 3px rgba(245, 158, 11, 0.4);
+}
+
+/* 문장 테이블 내 어법 태그 컨테이너 */
+.sentence-grammar-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.grammar-tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0.18rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  cursor: help;
+  transition: all 0.15s ease;
+}
+.grammar-tag-badge:hover {
+  background-color: #dbeafe;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+.grammar-tag-badge.badge-special {
+  background-color: #f5f3ff;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}
+.grammar-tag-badge.badge-verb {
+  background-color: #fdf2f8;
+  color: #be185d;
+  border-color: #fbcfe8;
+}
+
+/* 인라인 AI 분석 버튼 */
+.btn-analyze-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.28rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background-color: #eef2ff;
+  color: #4338ca;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-analyze-inline:hover {
+  background-color: #e0e7ff;
+  border-color: #818cf8;
+  transform: translateY(-1px);
+}
+.btn-analyze-inline.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+

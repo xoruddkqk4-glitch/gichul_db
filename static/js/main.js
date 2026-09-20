@@ -115,6 +115,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const sentenceTableBody = document.getElementById("sentenceTableBody");
   const btnSentenceBackToPassage = document.getElementById("btnSentenceBackToPassage");
 
+  // 어법 범주 필터 및 별표 필터
+  const filterGrammarPos = document.getElementById("filterGrammarPos");
+  const filterGrammarCategory = document.getElementById("filterGrammarCategory");
+  const btnToggleStarred = document.getElementById("btnToggleStarred");
+  const resultsFilterGrammarPos = document.getElementById("resultsFilterGrammarPos");
+  const resultsFilterGrammarCategory = document.getElementById("resultsFilterGrammarCategory");
+  const btnResultsToggleStarred = document.getElementById("btnResultsToggleStarred");
+  const btnBatchAnalyzeStarred = document.getElementById("btnBatchAnalyzeStarred");
+  let isStarredFilterActive = false;
+  let grammarCategoriesList = [];
+
+  // AI 설정 모달 요소
+  const btnOpenAiSettingsModal = document.getElementById("btnOpenAiSettingsModal");
+  const aiSettingsModal = document.getElementById("aiSettingsModal");
+  const btnCloseAiSettingsModal = document.getElementById("btnCloseAiSettingsModal");
+  const btnCancelAiSettings = document.getElementById("btnCancelAiSettings");
+  const aiProviderSelect = document.getElementById("aiProviderSelect");
+  const aiModelInput = document.getElementById("aiModelInput");
+  const aiModelHelp = document.getElementById("aiModelHelp");
+  const aiApiKeyInput = document.getElementById("aiApiKeyInput");
+  const btnToggleKeyVis = document.getElementById("btnToggleKeyVis");
+  const currentKeyBadge = document.getElementById("currentKeyBadge");
+  const apiKeyGuideLink = document.getElementById("apiKeyGuideLink");
+  const aiSettingsStatus = document.getElementById("aiSettingsStatus");
+  const btnSaveAiSettings = document.getElementById("btnSaveAiSettings");
+
   // 업로드 모달 요소
   const uploadModal = document.getElementById("uploadModal");
   const uploadForm = document.getElementById("uploadForm");
@@ -352,6 +378,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (resultsFilterMonth) resultsFilterMonth.value = month;
       if (resultsFilterExamType) resultsFilterExamType.value = examType;
       if (resultsFilterQuestionType) resultsFilterQuestionType.value = questionType;
+      if (resultsFilterGrammarPos && filterGrammarPos) resultsFilterGrammarPos.value = filterGrammarPos.value;
+      if (resultsFilterGrammarCategory && filterGrammarCategory) resultsFilterGrammarCategory.value = filterGrammarCategory.value;
     } else {
       const parsed = parseSearchQuery(resultsSearchInput.value);
       keyword = parsed.keyword;
@@ -369,6 +397,8 @@ document.addEventListener("DOMContentLoaded", () => {
       filterMonth.value = month;
       filterExamType.value = examType;
       filterQuestionType.value = questionType;
+      if (filterGrammarPos && resultsFilterGrammarPos) filterGrammarPos.value = resultsFilterGrammarPos.value;
+      if (filterGrammarCategory && resultsFilterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
     }
 
     // 결과 화면으로 전환 및 로딩 표시
@@ -386,6 +416,20 @@ document.addEventListener("DOMContentLoaded", () => {
     if (examType) params.append("exam_type", examType);
     if (questionType) params.append("question_type", questionType);
     if (tag) params.append("tag", tag);
+
+    const activeGrammarPos = (resultsFilterGrammarPos && resultsFilterGrammarPos.value) || (filterGrammarPos && filterGrammarPos.value) || "";
+    const activeGrammarCat = (resultsFilterGrammarCategory && resultsFilterGrammarCategory.value) || (filterGrammarCategory && filterGrammarCategory.value) || "";
+
+    if (activeGrammarCat) {
+      params.append("grammar_cat_id", activeGrammarCat);
+    } else if (activeGrammarPos) {
+      params.append("grammar_pos", activeGrammarPos);
+    }
+
+    if (isStarredFilterActive) {
+      params.append("is_starred", "true");
+    }
+
     params.append("limit", "500");
 
     try {
@@ -1487,6 +1531,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 문장 텍스트 형광펜 하이라이트는 상단 정의된 highlightSentenceKeyword(highlightTextKeyword 기반)를 활용
 
+  function renderGrammarBadges(annos) {
+    if (!annos || annos.length === 0) return "";
+    return annos
+      .map((a) => {
+        const badgeClass =
+          a.pos === "특수구문" ? "badge-special" : a.pos === "동사" ? "badge-verb" : "";
+        const titleText = `${a.full_path || ""}\n${
+          a.target_expression ? `[해당 어구] ${a.target_expression}\n` : ""
+        }${a.explanation ? `[해설] ${a.explanation}` : ""}`.trim();
+        return `<span class="grammar-tag-badge ${badgeClass}" title="${escapeHtml(titleText)}">🏷️ ${escapeHtml(a.leaf_name || a.pos)}</span>`;
+      })
+      .join(" ");
+  }
+
   function renderSentenceView(items) {
     if (!items || items.length === 0) {
       emptyResultsBox.style.display = "flex";
@@ -1517,17 +1575,28 @@ document.addEventListener("DOMContentLoaded", () => {
       // 출처 ID에서 문항 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번])
       const targetPassageId = s.passage_id || extractPassageId(s.id);
 
-      // 검색 표현 노란색 형광펜 하이라이트 적용
+      // 검색 표현 형광펜 하이라이트 적용
       const highlightedSentence = highlightSentenceKeyword(s.sentence_text, currentQuery);
+      const isStarred = s.is_starred === 1 || s.is_starred === true;
 
       tr.innerHTML = `
+        <td class="col-star" style="text-align: center;">
+          <button type="button" class="btn-star ${isStarred ? "starred" : ""}" data-id="${escapeHtml(s.id)}" title="${isStarred ? "중요 문장 해제" : "중요 문장(⭐)으로 등록"}">
+            ${isStarred ? "★" : "☆"}
+          </button>
+        </td>
         <td class="col-num">${s.row_num}</td>
         <td class="col-source">
           <button type="button" class="btn-source-link" data-passage-id="${escapeHtml(targetPassageId)}" title="클릭하여 ${escapeHtml(targetPassageId)} 지문 결과 화면으로 이동">
             🔗 ${escapeHtml(s.id)}
           </button>
         </td>
-        <td class="col-sentence">${highlightedSentence}</td>
+        <td class="col-sentence">
+          <div>${highlightedSentence}</div>
+          <div class="sentence-grammar-tags" id="grammar-tags-${cssSafeId(s.id)}">
+            ${renderGrammarBadges(s.grammar_annotations)}
+          </div>
+        </td>
         <td class="col-tags">
           <div class="tags-container-${cssSafeId(s.id)}" style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem;">
             ${tagsHtml || '<span style="color: var(--text-light); font-size: 0.75rem;">태그 없음</span>'}
@@ -1538,12 +1607,73 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </td>
         <td class="col-remarks">${escapeHtml(s.exam_type || "")} ${s.word_count ? `(${s.word_count}단어)` : ""}</td>
-        <td class="col-action">
+        <td class="col-action" style="display: flex; gap: 4px; align-items: center;">
           <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}">
-            📋 텍스트 복사
+            📋 복사
+          </button>
+          <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
+            🤖 분석
           </button>
         </td>
       `;
+
+      // 별표 토글 이벤트
+      const starBtn = tr.querySelector(".btn-star");
+      if (starBtn) {
+        starBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          try {
+            const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/star`, { method: "POST" });
+            if (res.ok) {
+              const data = await res.json();
+              s.is_starred = data.is_starred;
+              if (data.is_starred === 1) {
+                starBtn.classList.add("starred");
+                starBtn.textContent = "★";
+                starBtn.title = "중요 문장 해제";
+                showToast("중요 문장(⭐)으로 등록되었습니다.", "success");
+              } else {
+                starBtn.classList.remove("starred");
+                starBtn.textContent = "☆";
+                starBtn.title = "중요 문장(⭐)으로 등록";
+                showToast("중요 문장에서 해제되었습니다.", "info");
+              }
+            }
+          } catch (err) {
+            console.error("Star toggle error:", err);
+          }
+        });
+      }
+
+      // 인라인 AI 어법 분석 이벤트
+      const analyzeBtn = tr.querySelector(".btn-analyze-inline");
+      if (analyzeBtn) {
+        analyzeBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          analyzeBtn.classList.add("loading");
+          analyzeBtn.textContent = "분석중...";
+          try {
+            const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/analyze-grammar`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              s.grammar_annotations = data.annotations || [];
+              const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
+              if (container) {
+                container.innerHTML = renderGrammarBadges(s.grammar_annotations);
+              }
+              showToast(`${s.grammar_annotations.length}개의 어법 포인트가 분석되었습니다.`, "success");
+            } else {
+              showToast(data.detail || data.message || "어법 분석 실패 (상단 AI 설정을 확인하세요)", "error");
+            }
+          } catch (err) {
+            console.error("Analyze error:", err);
+            showToast("AI 어법 분석 중 오류가 발생했습니다.", "error");
+          } finally {
+            analyzeBtn.classList.remove("loading");
+            analyzeBtn.textContent = "🤖 분석";
+          }
+        });
+      }
 
       // 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동
       const sourceBtn = tr.querySelector(".btn-source-link");
@@ -1561,7 +1691,7 @@ document.addEventListener("DOMContentLoaded", () => {
         copyBtn.textContent = "✔ 복사됨";
         copyBtn.classList.add("copied");
         setTimeout(() => {
-          copyBtn.innerHTML = "📋 텍스트 복사";
+          copyBtn.innerHTML = "📋 복사";
           copyBtn.classList.remove("copied");
         }, 1500);
       });
@@ -1757,6 +1887,272 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // =========================================================================
+  // 12. 어법 범주표 로드 및 캐스케이딩 드롭다운 연동
+  // =========================================================================
+
+  async function loadGrammarCategories() {
+    try {
+      const res = await fetch("/static/data/grammar_categories.json");
+      if (res.ok) {
+        const data = await res.json();
+        grammarCategoriesList = data.list || [];
+      }
+    } catch (e) {
+      console.error("어법 범주 데이터 로드 실패:", e);
+    }
+  }
+  loadGrammarCategories();
+
+  function updateSubGrammarCategories(pos, targetSelect) {
+    if (!targetSelect) return;
+    targetSelect.innerHTML = '<option value="">세부 어법 전체</option>';
+    if (!pos) return;
+    const filtered = grammarCategoriesList.filter((item) => item.pos === pos);
+    filtered.forEach((item) => {
+      const opt = document.createElement("option");
+      opt.value = item.id;
+      opt.textContent = `[${item.category_no}] ${item.leaf} (${item.full_path})`;
+      targetSelect.appendChild(opt);
+    });
+  }
+
+  if (filterGrammarPos) {
+    filterGrammarPos.addEventListener("change", () => {
+      const pos = filterGrammarPos.value;
+      if (resultsFilterGrammarPos) resultsFilterGrammarPos.value = pos;
+      updateSubGrammarCategories(pos, filterGrammarCategory);
+      updateSubGrammarCategories(pos, resultsFilterGrammarCategory);
+    });
+  }
+
+  if (resultsFilterGrammarPos) {
+    resultsFilterGrammarPos.addEventListener("change", () => {
+      const pos = resultsFilterGrammarPos.value;
+      if (filterGrammarPos) filterGrammarPos.value = pos;
+      updateSubGrammarCategories(pos, filterGrammarCategory);
+      updateSubGrammarCategories(pos, resultsFilterGrammarCategory);
+      executeSearch("results");
+    });
+  }
+
+  if (filterGrammarCategory) {
+    filterGrammarCategory.addEventListener("change", () => {
+      if (resultsFilterGrammarCategory) resultsFilterGrammarCategory.value = filterGrammarCategory.value;
+    });
+  }
+  if (resultsFilterGrammarCategory) {
+    resultsFilterGrammarCategory.addEventListener("change", () => {
+      if (filterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
+      executeSearch("results");
+    });
+  }
+
+  // 별표 필터 토글 제어
+  function setStarredFilter(active) {
+    isStarredFilterActive = active;
+    if (btnToggleStarred) {
+      btnToggleStarred.classList.toggle("active", active);
+      btnToggleStarred.setAttribute("aria-pressed", active ? "true" : "false");
+      const icon = btnToggleStarred.querySelector(".star-icon");
+      if (icon) icon.textContent = active ? "⭐" : "☆";
+    }
+    if (btnResultsToggleStarred) {
+      btnResultsToggleStarred.classList.toggle("active", active);
+      btnResultsToggleStarred.setAttribute("aria-pressed", active ? "true" : "false");
+      const icon = btnResultsToggleStarred.querySelector(".star-icon");
+      if (icon) icon.textContent = active ? "⭐" : "☆";
+    }
+  }
+
+  if (btnToggleStarred) {
+    btnToggleStarred.addEventListener("click", () => {
+      setStarredFilter(!isStarredFilterActive);
+    });
+  }
+  if (btnResultsToggleStarred) {
+    btnResultsToggleStarred.addEventListener("click", () => {
+      setStarredFilter(!isStarredFilterActive);
+      executeSearch("results");
+    });
+  }
+
+  // 중요 문장 일괄 AI 분석
+  if (btnBatchAnalyzeStarred) {
+    btnBatchAnalyzeStarred.addEventListener("click", async () => {
+      const starredSentences = sentencesData.filter((s) => s.is_starred === 1 || s.is_starred === true);
+      if (starredSentences.length === 0) {
+        showToast("별표(⭐) 표시된 중요 문장이 없습니다. 먼저 문장에 별표를 추가해 주세요.", "warning");
+        return;
+      }
+      if (!confirm(`현재 별표(⭐) 표시된 ${starredSentences.length}개 중요 문장을 일괄 AI 어법 분석하시겠습니까?`)) {
+        return;
+      }
+      btnBatchAnalyzeStarred.disabled = true;
+      btnBatchAnalyzeStarred.textContent = "⏳ 일괄 분석 중...";
+      try {
+        const res = await fetch("/api/sentences/batch-analyze-grammar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sentence_ids: starredSentences.map((s) => s.id),
+            starred_only: true,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(`성공적으로 ${data.total_processed}개 문장의 어법 분석을 완료했습니다!`, "success");
+          executeSearch("results");
+        } else {
+          showToast(data.detail || data.message || "일괄 분석 실패", "error");
+        }
+      } catch (err) {
+        console.error(err);
+        showToast("일괄 분석 통신 오류가 발생했습니다.", "error");
+      } finally {
+        btnBatchAnalyzeStarred.disabled = false;
+        btnBatchAnalyzeStarred.textContent = "⭐ 중요 문장 일괄 어법 분석";
+      }
+    });
+  }
+
+  // =========================================================================
+  // 13. AI 설정 모달 (Multi-LLM: Gemini / ChatGPT / Claude)
+  // =========================================================================
+
+  const providerDefaults = {
+    gemini: {
+      model: "gemini-1.5-flash",
+      help: "💡 기본 권장: gemini-1.5-flash (하루 수천 문장 무료 분석 지원)",
+      link: "https://aistudio.google.com/app/apikey",
+      linkText: "Google AI Studio 무료 키 발급 ↗",
+    },
+    openai: {
+      model: "gpt-4o-mini",
+      help: "💡 기본 권장: gpt-4o-mini (모의고사 1회당 약 5~10원의 초저비용)",
+      link: "https://platform.openai.com/api-keys",
+      linkText: "OpenAI API Keys 발급 ↗",
+    },
+    claude: {
+      model: "claude-3-5-haiku-20241022",
+      help: "💡 기본 권장: claude-3-5-haiku (어법 및 한국어 해설 생성 최적)",
+      link: "https://console.anthropic.com/settings/keys",
+      linkText: "Anthropic Console 키 발급 ↗",
+    },
+  };
+
+  async function openAiSettingsModal() {
+    if (!aiSettingsModal) return;
+    aiSettingsStatus.style.display = "none";
+    try {
+      const res = await fetch("/api/settings/ai");
+      if (res.ok) {
+        const data = await res.json();
+        if (aiProviderSelect) aiProviderSelect.value = data.provider || "gemini";
+        if (aiModelInput) aiModelInput.value = data.model || "";
+        if (currentKeyBadge) {
+          currentKeyBadge.textContent = data.has_key
+            ? `현재 키: ${data.masked_key} (${data.provider})`
+            : "현재 키: 미설정";
+          currentKeyBadge.style.color = data.has_key ? "var(--success)" : "#64748b";
+        }
+        updateAiProviderHelp();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    aiSettingsModal.style.display = "flex";
+  }
+
+  function closeAiSettingsModal() {
+    if (aiSettingsModal) aiSettingsModal.style.display = "none";
+    if (aiApiKeyInput) aiApiKeyInput.value = "";
+  }
+
+  function updateAiProviderHelp() {
+    const prov = aiProviderSelect ? aiProviderSelect.value : "gemini";
+    const info = providerDefaults[prov] || providerDefaults.gemini;
+    if (aiModelHelp) aiModelHelp.textContent = info.help;
+    if (apiKeyGuideLink) {
+      apiKeyGuideLink.href = info.link;
+      apiKeyGuideLink.textContent = info.linkText;
+    }
+    if (aiModelInput && !aiModelInput.value) {
+      aiModelInput.placeholder = `예: ${info.model}`;
+    }
+  }
+
+  if (btnOpenAiSettingsModal) {
+    btnOpenAiSettingsModal.addEventListener("click", openAiSettingsModal);
+  }
+  if (btnCloseAiSettingsModal) {
+    btnCloseAiSettingsModal.addEventListener("click", closeAiSettingsModal);
+  }
+  if (btnCancelAiSettings) {
+    btnCancelAiSettings.addEventListener("click", closeAiSettingsModal);
+  }
+  if (aiProviderSelect) {
+    aiProviderSelect.addEventListener("change", updateAiProviderHelp);
+  }
+
+  if (btnToggleKeyVis && aiApiKeyInput) {
+    btnToggleKeyVis.addEventListener("click", () => {
+      const isPwd = aiApiKeyInput.type === "password";
+      aiApiKeyInput.type = isPwd ? "text" : "password";
+      btnToggleKeyVis.textContent = isPwd ? "🙈" : "👁️";
+    });
+  }
+
+  if (btnSaveAiSettings) {
+    btnSaveAiSettings.addEventListener("click", async () => {
+      const provider = aiProviderSelect.value;
+      const apiKey = aiApiKeyInput.value.trim();
+      const model = aiModelInput.value.trim();
+
+      btnSaveAiSettings.disabled = true;
+      btnSaveAiSettings.textContent = "⏳ 연결 테스트 중...";
+      aiSettingsStatus.style.display = "block";
+      aiSettingsStatus.style.background = "#eff6ff";
+      aiSettingsStatus.style.color = "#1d4ed8";
+      aiSettingsStatus.textContent = "AI 연결 핑 테스트를 수행하고 있습니다...";
+
+      try {
+        const res = await fetch("/api/settings/ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: provider,
+            api_key: apiKey,
+            model: model,
+            test_now: true,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          aiSettingsStatus.style.background = "#ecfdf5";
+          aiSettingsStatus.style.color = "#047857";
+          aiSettingsStatus.textContent = `✔ ${data.message}`;
+          showToast("AI 설정이 저장되었습니다.", "success");
+          setTimeout(() => {
+            closeAiSettingsModal();
+          }, 1200);
+        } else {
+          aiSettingsStatus.style.background = "#fef2f2";
+          aiSettingsStatus.style.color = "#b91c1c";
+          aiSettingsStatus.textContent = `❌ ${data.detail || data.message || "연결 테스트 실패"}`;
+        }
+      } catch (err) {
+        console.error(err);
+        aiSettingsStatus.style.background = "#fef2f2";
+        aiSettingsStatus.style.color = "#b91c1c";
+        aiSettingsStatus.textContent = "서버 통신 오류가 발생했습니다.";
+      } finally {
+        btnSaveAiSettings.disabled = false;
+        btnSaveAiSettings.textContent = "🧪 연결 테스트 및 저장";
+      }
+    });
+  }
+
   // 유틸 함수
   function escapeHtml(text) {
     if (!text) return "";
@@ -1772,3 +2168,4 @@ document.addEventListener("DOMContentLoaded", () => {
     return id.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
 });
+

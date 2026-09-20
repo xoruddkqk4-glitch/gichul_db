@@ -28,6 +28,9 @@
       <button class="btn btn-secondary btn-sm" id="btnSeedSample" title="대표 기출 샘플 3지문 즉시 주입">
         ⚡ 샘플 데이터 주입
       </button>
+      <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal" title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
+        🔑 AI 설정
+      </button>
       <button class="btn btn-primary btn-sm" id="btnOpenUploadModal">
         📁 시험지 업로드 (PDF+HWP)
       </button>
@@ -128,6 +131,29 @@
             <option value="1지문2문항">1지문2문항</option>
             <option value="1지문3문항">1지문3문항</option>
           </select>
+
+          <!-- 어법 범주 필터 (2단계 캐스케이딩: 대분류 + 세부범주) -->
+          <select class="filter-select grammar-filter-select" id="filterGrammarPos" title="어법 대분류 선택">
+            <option value="">전체 어법 대분류</option>
+            <option value="명사">1. 명사</option>
+            <option value="대명사">2. 대명사</option>
+            <option value="문장">3. 문장 / 주어</option>
+            <option value="동사">4. 동사</option>
+            <option value="형용사/부사">5. 형용사/부사</option>
+            <option value="전치사">6. 전치사</option>
+            <option value="접속사">7. 접속사</option>
+            <option value="특수구문">8. 특수구문</option>
+          </select>
+
+          <select class="filter-select grammar-filter-select" id="filterGrammarCategory" title="세부 어법 범주 선택">
+            <option value="">세부 어법 전체</option>
+          </select>
+
+          <!-- 중요 문장(⭐) 필터 토글 버튼 -->
+          <button type="button" class="btn-toggle-starred" id="btnToggleStarred" aria-pressed="false" title="별표(⭐) 표시된 중요 문장만 모아보기">
+            <span class="star-icon">☆</span>
+            <span class="star-text">중요 문장</span>
+          </button>
         </div>
       </div>
     </section>
@@ -217,6 +243,26 @@
             <option value="1지문2문항">1지문2문항</option>
             <option value="1지문3문항">1지문3문항</option>
           </select>
+
+          <select class="filter-select compact-select grammar-filter-select" id="resultsFilterGrammarPos" title="어법 대분류">
+            <option value="">어법 대분류</option>
+            <option value="명사">1. 명사</option>
+            <option value="대명사">2. 대명사</option>
+            <option value="문장">3. 문장</option>
+            <option value="동사">4. 동사</option>
+            <option value="형용사/부사">5. 형용사/부사</option>
+            <option value="전치사">6. 전치사</option>
+            <option value="접속사">7. 접속사</option>
+            <option value="특수구문">8. 특수구문</option>
+          </select>
+
+          <select class="filter-select compact-select grammar-filter-select" id="resultsFilterGrammarCategory" title="세부 어법 범주">
+            <option value="">세부 어법 전체</option>
+          </select>
+
+          <button type="button" class="btn-toggle-starred compact-star-btn" id="btnResultsToggleStarred" aria-pressed="false" title="별표(⭐) 중요 문장만 모아보기">
+            <span class="star-icon">☆</span> 중요
+          </button>
         </div>
 
         <div class="results-count-badge" id="resultsCountBadge">
@@ -384,21 +430,27 @@
               ※ [텍스트 복사] 버튼 클릭 시 워드/한글/엑셀로 즉시 붙여넣기(Ctrl+V) 가능합니다.
             </span>
           </div>
-          <button type="button" class="btn btn-secondary btn-sm" id="btnSentenceBackToPassage" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 700;">
-            🔙 지문 결과창으로 돌아가기
-          </button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" class="btn btn-warning btn-sm" id="btnBatchAnalyzeStarred" title="별표(⭐) 표시된 중요 문장들을 일괄로 AI 어법 분석합니다">
+              ⭐ 중요 문장 일괄 어법 분석
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSentenceBackToPassage" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 700;">
+              🔙 지문 결과창으로 돌아가기
+            </button>
+          </div>
         </div>
 
         <div class="table-wrapper">
           <table class="sentence-table">
             <thead>
               <tr>
+                <th class="col-star" style="width: 44px; text-align: center;">⭐</th>
                 <th class="col-num">순번</th>
                 <th class="col-source">출처 ([학년-연도-월-번-문장])</th>
-                <th class="col-sentence">해당 문장</th>
-                <th class="col-tags">태그 입력창 및 태그 정보</th>
+                <th class="col-sentence">해당 문장 & 어법 범주</th>
+                <th class="col-tags">태그 정보</th>
                 <th class="col-remarks">비고</th>
-                <th class="col-action">텍스트 복사</th>
+                <th class="col-action">복사 및 분석</th>
               </tr>
             </thead>
             <tbody id="sentenceTableBody">
@@ -495,6 +547,60 @@
           <button type="submit" class="btn btn-primary" id="btnSubmitUpload">🚀 상호 검증 및 DB 저장</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       AI 설정 모달창 (Gemini, ChatGPT, Claude)
+       ==================================================================== -->
+  <div class="modal-backdrop" id="aiSettingsModal" style="display: none;">
+    <div class="modal-content ai-settings-modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">🤖 AI 어법 분석기 설정 (Multi-LLM)</h3>
+        <button class="modal-close" id="btnCloseAiSettingsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.86rem; color: var(--text-muted); margin-bottom: 1rem; line-height: 1.45;">
+          수능·모의고사 243개 어법 기준표(<code>grammar_categories.json</code>)에 맞춰 문장을 정밀 분석할 AI 엔진과 API 키를 설정합니다.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">AI 엔진 (Provider)</label>
+          <select class="form-control" id="aiProviderSelect">
+            <option value="gemini">Google Gemini (가장 빠름 & 넉넉한 무료 티어 - 권장)</option>
+            <option value="openai">OpenAI ChatGPT (gpt-4o-mini / gpt-4o)</option>
+            <option value="claude">Anthropic Claude (claude-3-5-haiku / claude-3-5-sonnet)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">모델명 (비워두면 권장 기본 모델 자동 적용)</label>
+          <input type="text" class="form-control" id="aiModelInput" placeholder="예: gemini-1.5-flash / gpt-4o-mini / claude-3-5-haiku-20241022">
+          <small class="form-help" id="aiModelHelp" style="display: block; margin-top: 4px; font-size: 0.78rem; color: #64748b;">
+            💡 기본 권장: gemini-1.5-flash (하루 수천 문장 무료 분석 가능)
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">API Key</label>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <input type="password" class="form-control" id="aiApiKeyInput" placeholder="API Key를 입력하세요 (AIzaSy... / sk-...)">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnToggleKeyVis" style="padding: 0.45rem 0.65rem;">👁️</button>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 0.8rem;">
+            <span id="currentKeyBadge" style="color: #64748b; font-weight: 600;">현재 키: 미설정</span>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" id="apiKeyGuideLink" style="color: var(--primary); text-decoration: none; font-weight: 700;">
+              무료 키 발급받기 ↗
+            </a>
+          </div>
+        </div>
+
+        <div id="aiSettingsStatus" style="display: none; padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 0.75rem; font-weight: 600;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btnCancelAiSettings">닫기</button>
+        <button type="button" class="btn btn-primary" id="btnSaveAiSettings">🧪 연결 테스트 및 저장</button>
+      </div>
     </div>
   </div>
 

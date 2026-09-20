@@ -10,12 +10,13 @@ import os
 import re
 import shutil
 from typing import Optional, List
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import database as db
+import grammar_analyzer
 from pdf_parser import extract_pdf_columns_and_questions
 from hwp_parser import parse_hwp_questions, parse_hwp_explanations, KNOWN_EXAM_ANSWERS, CIRCLED_MAP
 from validator import cross_validate_and_merge
@@ -45,6 +46,19 @@ class QuestionTypeRequest(BaseModel):
 
 class SeedDataRequest(BaseModel):
     pass
+
+
+class AISettingsRequest(BaseModel):
+    provider: str = "gemini"
+    api_key: str = ""
+    model: Optional[str] = ""
+    test_now: Optional[bool] = False
+
+
+class BatchAnalyzeRequest(BaseModel):
+    sentence_ids: Optional[List[str]] = None
+    starred_only: Optional[bool] = False
+    limit: Optional[int] = 50
 
 
 # --- 웹 페이지 루트 ---
@@ -107,6 +121,9 @@ async def api_search_sentences(
     month: Optional[int] = None,
     exam_type: str = "",
     tag: str = "",
+    is_starred: Optional[bool] = None,
+    grammar_cat_id: Optional[int] = None,
+    grammar_pos: Optional[str] = None,
     limit: int = 100
 ):
     """문장 검색 API (1행 테이블 뷰용)"""
@@ -125,6 +142,9 @@ async def api_search_sentences(
         month=month,
         exam_type=exam_type,
         tag=tag,
+        is_starred=is_starred,
+        grammar_cat_id=grammar_cat_id,
+        grammar_pos=grammar_pos,
         limit=limit
     )
     return {"count": len(results), "items": results}
@@ -211,9 +231,155 @@ async def api_delete_sentence_tag(sentence_id: str, tag_name: str):
     return {"success": success, "tags": tags}
 
 
+# --- AI 어법 분석 및 설정 API ---
+@app.get("/api/settings/ai")
+async def api_get_ai_settings():
+    """현재 저장된 AI Provider 및 마스킹된 API 키 상태 반환"""
+    provider, api_key, model = grammar_analyzer.get_ai_config()
+    masked_key = ""
+    if api_key:
+        if len(api_key) > 8:
+            masked_key = api_key[:4] + "•" * (len(api_key) - 8) + api_key[-4:]
+        else:
+            masked_key = "••••••••"
+
+    return {
+        "provider": provider,
+        "model": model,
+        "has_key": bool(api_key),
+        "masked_key": masked_key
+    }
+
+
+@app.post("/api/settings/ai")
+async def api_save_ai_settings(req: AISettingsRequest):
+    """AI 설정 저장 및 연결 테스트"""
+    p = req.provider.strip().lower()
+    k = req.api_key.strip()
+    m = req.model.strip() if req.model else ""
+
+    # 빈 키가 넘어왔는데 기존 키가 있다면 유지
+    if not k:
+        _, existing_k, _ = grammar_analyzer.get_ai_config()
+        k = existing_k
+
+    db.set_setting("ai_provider", p)
+    if k:
+        db.set_setting("ai_api_key", k)
+    if m:
+        db.set_setting("ai_model", m)
+
+    test_msg = ""
+    test_ok = True
+    if req.test_now and k:
+        test_ok, test_msg = grammar_analyzer.test_connection(p, k, m)
+        if not test_ok:
+            return JSONResponse(status_code=400, content={"success": False, "message": test_msg})
+
+    return {
+        "success": True,
+        "provider": p,
+        "model": m,
+        "message": test_msg or "AI 설정이 성공적으로 저장되었습니다."
+    }
+
+
+@app.post("/api/sentences/{sentence_id}/star")
+async def api_toggle_sentence_star(sentence_id: str):
+    """문장 별표(⭐ 중요 문장 플래그) 토글 API"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    new_state = db.toggle_sentence_star(clean_id)
+    return {"sentence_id": clean_id, "is_starred": new_state}
+
+
+@app.post("/api/sentences/{sentence_id}/analyze-grammar")
+async def api_analyze_sentence_grammar(sentence_id: str):
+    """단일 문장 실시간 AI 어법 분석 및 DB 저장"""
+    clean_id = sentence_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    sentences = db.search_sentences(keyword="", passage_id="", limit=1000)
+    target = None
+    for s in sentences:
+        if s["id"] == clean_id:
+            target = s
+            break
+
+    if not target:
+        raise HTTPException(status_code=404, detail="문장을 찾을 수 없습니다.")
+
+    try:
+        annos = grammar_analyzer.analyze_sentence(target["sentence_text"])
+        db.save_grammar_annotations(clean_id, annos)
+        return {
+            "success": True,
+            "sentence_id": clean_id,
+            "annotations": annos,
+            "count": len(annos)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI 어법 분석 실패: {str(e)}")
+
+
+@app.post("/api/sentences/batch-analyze-grammar")
+async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
+    """다중 문장 배치 AI 어법 분석"""
+    provider, api_key, model = grammar_analyzer.get_ai_config()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="AI API Key가 설정되지 않았습니다. 상단 [🔑 AI 설정]에서 먼저 등록해 주세요.")
+
+    sentences = db.search_sentences(is_starred=True if req.starred_only else None, limit=req.limit or 50)
+    
+    if req.sentence_ids:
+        sentences = [s for s in sentences if s["id"] in req.sentence_ids]
+
+    results = []
+    for s in sentences:
+        try:
+            annos = grammar_analyzer.analyze_sentence(s["sentence_text"], provider, api_key, model)
+            if annos:
+                db.save_grammar_annotations(s["id"], annos)
+            results.append({"sentence_id": s["id"], "count": len(annos), "success": True})
+        except Exception as e:
+            results.append({"sentence_id": s["id"], "error": str(e), "success": False})
+
+    return {
+        "total_processed": len(results),
+        "results": results
+    }
+
+
+def background_auto_analyze_exam_grammar(exam_id: str):
+    """업로드 완료 후 백그라운드에서 해당 시험지의 문장 자동 어법 분석"""
+    try:
+        provider, api_key, model = grammar_analyzer.get_ai_config()
+        if not api_key:
+            return
+
+        sentences = db.search_sentences(passage_id="", limit=1000)
+        prefix = exam_id.rstrip("]")
+        target_sentences = [s for s in sentences if s["id"].startswith(prefix)]
+        for s in target_sentences:
+            try:
+                if s.get("grammar_annotations"):
+                    continue
+                annos = grammar_analyzer.analyze_sentence(s["sentence_text"], provider, api_key, model)
+                if annos:
+                    db.save_grammar_annotations(s["id"], annos)
+            except Exception as ex:
+                print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
+    except Exception as e:
+        print(f"[Background Grammar Task Error] {e}")
+
+
 # --- 파일 업로드 및 상호 검증 파이프라인 API ---
 @app.post("/api/upload")
 async def api_upload_exam(
+    background_tasks: BackgroundTasks,
     grade: str = Form("고3"),
     year: int = Form(2024),
     month: int = Form(6),
@@ -255,58 +421,45 @@ async def api_upload_exam(
             "reading_end_q": reading_end or 45
         })
 
-        # 3. HWP 문제지 및 해설지 파싱 (정답 정보 우선 추출)
-        start_q = reading_start or 18
-        end_q = reading_end or 45
-        hwp_questions = parse_hwp_questions(
-            hwp_path=hwp_save_path,
-            grade=grade,
-            year=year,
-            month=month,
-            start_q=start_q,
-            end_q=end_q
-        )
-
-        # 4. 해설지 파싱 (해설 파일이 별도 업로드되었거나 문제지 뒤에 있는 경우)
-        explanations = {}
-        if exp_save_path:
-            explanations = parse_hwp_explanations(exp_save_path)
-        else:
-            # 문제지 파일 내에 정답/해설이 포함되어 있는지 검사
-            explanations = parse_hwp_explanations(hwp_save_path)
-
-        # 평가원/교육청 알려진 정답 백업 테이블 조회
-        exam_key = f"{year}_{month:02d}"
-        backup_answers = KNOWN_EXAM_ANSWERS.get(exam_key, {})
-
-        answers_dict = {}
-        for q in range(reading_start, reading_end + 1):
-            ans = ""
-            if q in explanations and explanations[q].get("answer"):
-                ans = explanations[q]["answer"]
-            elif q in backup_answers:
-                ans = backup_answers[q]
-
-            if ans:
-                if ans in CIRCLED_MAP:
-                    ans = CIRCLED_MAP[ans]
-                answers_dict[q] = ans
-                if q in explanations:
-                    explanations[q]["answer"] = ans
-                    exp_b = explanations[q].get("explanation", "").strip()
-                    if not re.search(r"^\s*\[\s*정답\s*\]", exp_b):
-                        explanations[q]["explanation"] = f"[정답] {ans}\n\n{exp_b}" if exp_b else f"[정답] {ans}"
-                else:
-                    explanations[q] = {"answer": ans, "explanation": f"[정답] {ans}"}
-
-        # 5. PDF 파싱 및 크롭 이미지 생성 (정답 선지 형광펜 하이라이트 자동 적용)
+        # 3. PDF 문제지 파싱 및 캡처
         pdf_questions = extract_pdf_columns_and_questions(
             pdf_path=pdf_save_path,
             grade=grade,
             year=year,
             month=month,
-            reading_start=reading_start,
-            reading_end=reading_end,
+            start_q=reading_start or 18,
+            end_q=reading_end or 45
+        )
+
+        # 4. 해설 파일이 있는 경우 해설 파싱
+        explanations = {}
+        if exp_save_path:
+            explanations = parse_hwp_explanations(exp_save_path)
+
+        # 정답표 결합 (HWP 해설지 우선, 미등록 시 기출 정답 백업 사전 참조)
+        answers_dict = {}
+        for q_num, exp_data in explanations.items():
+            ans = exp_data.get("answer", "").strip()
+            if ans in CIRCLED_MAP:
+                ans = CIRCLED_MAP[ans]
+            if ans:
+                answers_dict[q_num] = ans
+
+        exam_key = (grade, year, month)
+        if exam_key in KNOWN_EXAM_ANSWERS:
+            backup_answers = KNOWN_EXAM_ANSWERS[exam_key]
+            for q_num, ans in backup_answers.items():
+                if q_num not in answers_dict or not answers_dict[q_num]:
+                    answers_dict[q_num] = ans
+
+        # 5. HWP 문제지 파싱 (독해 지문 문항)
+        hwp_questions = parse_hwp_questions(
+            hwp_path=hwp_save_path,
+            grade=grade,
+            year=year,
+            month=month,
+            start_q=reading_start or 18,
+            end_q=reading_end or 45,
             answers_dict=answers_dict
         )
 
@@ -330,6 +483,11 @@ async def api_upload_exam(
             if pkg["sentences"]:
                 db.save_sentences(pkg["sentences"])
                 saved_sentences_count += len(pkg["sentences"])
+
+        # AI API 키가 설정되어 있는 경우 백그라운드 어법 자동 분석 스케줄링
+        _, ai_key, _ = grammar_analyzer.get_ai_config()
+        if ai_key:
+            background_tasks.add_task(background_auto_analyze_exam_grammar, exam_id)
 
         return {
             "status": "success",
