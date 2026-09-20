@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.cache/
+*.log
+.env
+.env.local
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local uploads & DB
+uploads/
+gichul.db

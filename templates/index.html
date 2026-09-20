@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gichul DB — 수능·모의고사 영어 기출 데이터베이스</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+  <!-- 상단 글로벌 내비게이션 헤더 -->
+  <header class="app-header">
+    <div class="brand" id="btnGoHome">
+      <span class="brand-badge">GICHUL DB</span>
+      <span>영어 기출 데이터베이스</span>
+    </div>
+
+    <div class="header-actions">
+      <div class="db-stats-badge" id="statsBadge">
+        📊 지문: <span id="statPassages">0</span>개 | 문장: <span id="statSentences">0</span>개
+      </div>
+      <button class="btn btn-secondary btn-sm" id="btnSeedSample" title="대표 기출 샘플 3지문 즉시 주입">
+        ⚡ 샘플 데이터 주입
+      </button>
+      <button class="btn btn-primary btn-sm" id="btnOpenUploadModal">
+        📁 시험지 업로드 (PDF+HWP)
+      </button>
+    </div>
+  </header>
+
+  <div class="main-wrapper">
+
+    <!-- ====================================================================
+         화면 1: 구글 스타일 첫 화면 (중앙 미니멀 검색창)
+         ==================================================================== -->
+    <section class="hero-search-section" id="heroSearchSection">
+      <h1 class="hero-title">Gichul English DB</h1>
+      <p class="hero-subtitle">수능 및 모의고사 영어 독해 지문·문장 단위 초고속 검색 시스템</p>
+
+      <!-- 모드 전환 탭: 지문 검색 vs 문장 검색 -->
+      <div class="search-mode-tabs">
+        <button type="button" class="search-mode-btn active" id="tabModePassage" data-mode="passage">
+          지문 검색
+        </button>
+        <button type="button" class="search-mode-btn" id="tabModeSentence" data-mode="sentence">
+          문장 검색
+        </button>
+      </div>
+
+      <!-- 구글 스타일 검색 박스 -->
+      <div class="google-search-box">
+        <span class="search-icon">🔍</span>
+        <input 
+          type="text" 
+          class="google-search-input" 
+          id="mainSearchInput" 
+          placeholder="검색할 키워드, 지문 주제, 문장 또는 출처([고3-2024년...])를 입력하세요..." 
+          autocomplete="off"
+        >
+        <button type="button" class="search-submit-btn" id="btnSearch">검색</button>
+      </div>
+
+      <!-- 접이식 필터 옵션 -->
+      <div class="filter-bar">
+        <select class="filter-select" id="filterGrade">
+          <option value="">전체 학년</option>
+          <option value="고3">고3</option>
+          <option value="고2">고2</option>
+          <option value="고1">고1</option>
+        </select>
+
+        <select class="filter-select" id="filterYear">
+          <option value="">전체 연도</option>
+          <option value="2026">2026년</option>
+          <option value="2025">2025년</option>
+          <option value="2024">2024년</option>
+          <option value="2023">2023년</option>
+          <option value="2022">2022년</option>
+        </select>
+
+        <select class="filter-select" id="filterMonth">
+          <option value="">전체 월</option>
+          <option value="3">3월</option>
+          <option value="6">6월 (평가원)</option>
+          <option value="9">9월 (평가원)</option>
+          <option value="11">11월 (수능)</option>
+        </select>
+
+        <input 
+          type="text" 
+          class="filter-select" 
+          id="filterTag" 
+          placeholder="태그 필터 (예: 빈칸, 순서)"
+          style="width: 140px;"
+        >
+      </div>
+    </section>
+
+    <!-- 로딩 스피너 -->
+    <div class="loading-indicator" id="loadingIndicator">
+      <div class="spinner"></div>
+      <span>데이터를 검색하고 있습니다...</span>
+    </div>
+
+    <!-- ====================================================================
+         화면 2: [지문 검색 결과 화면] 2x2 4분할 레이아웃
+         ==================================================================== -->
+    <div class="passage-view-container" id="passageViewContainer">
+      <!-- 좌측 검색된 지문 리스트 -->
+      <aside class="passage-sidebar">
+        <div class="sidebar-header">
+          <span>검색된 지문 목록</span>
+          <span id="passageMatchCount" style="color: var(--primary);">0건</span>
+        </div>
+        <div class="passage-list" id="passageList">
+          <!-- JS에서 동적으로 채워집니다 -->
+        </div>
+      </aside>
+
+      <!-- 우측 2x2 4분할 상세 패널 -->
+      <main class="grid-2x2" id="grid2x2">
+        
+        <!-- [좌측 상단]: HWP 정답과 해설 텍스트 -->
+        <section class="panel-card" style="grid-column: 1; grid-row: 1;">
+          <div class="panel-header">
+            <span class="panel-title">📘 HWP 정답 및 해설</span>
+            <button class="btn btn-secondary btn-sm" id="btnCopyExplanation">복사</button>
+          </div>
+          <div class="panel-content explanation-box" id="panelExplanation">
+            <span class="text-muted">좌측 목록에서 지문을 선택하면 정답과 해설이 표시됩니다.</span>
+          </div>
+        </section>
+
+        <!-- [우측 상단]: PDF 해당 문항 캡처 이미지 -->
+        <section class="panel-card" style="grid-column: 2; grid-row: 1;">
+          <div class="panel-header">
+            <span class="panel-title">🖼️ PDF 해당 문항 캡처 이미지</span>
+            <span class="text-muted" style="font-size: 0.8rem;" id="pdfImageStatus">원본 인쇄본</span>
+          </div>
+          <div class="panel-content" style="padding: 0.5rem;">
+            <div class="pdf-image-container" id="panelPdfImageContainer">
+              <div class="pdf-placeholder" id="pdfPlaceholder">
+                PDF 문항 캡처 이미지가 여기에 표시됩니다.
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- [좌측 하단]: 지문 정보 & 태그 관리 -->
+        <section class="panel-card" style="grid-column: 1; grid-row: 2;">
+          <div class="panel-header">
+            <span class="panel-title">🏷️ 지문 정보 & 태그 관리</span>
+            <span id="validationBadge" style="font-size: 0.8rem; font-weight: 700; color: var(--success);">일치율 100%</span>
+          </div>
+          <div class="panel-content tag-manager-box">
+            <div class="meta-info-row">
+              <div class="meta-item">
+                <span class="meta-label">지문 식별자</span>
+                <span class="meta-val" id="metaPassageId" style="color: var(--primary);">-</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">문항 번호</span>
+                <span class="meta-val" id="metaQNum">-</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">정답</span>
+                <span class="meta-val" id="metaAnswer" style="color: #dc2626;">-</span>
+              </div>
+            </div>
+
+            <!-- 발문 -->
+            <div class="meta-item">
+              <span class="meta-label">문제 발문</span>
+              <span class="meta-val" id="metaQuestionTitle" style="font-size: 0.88rem; font-weight: 500;">-</span>
+            </div>
+
+            <!-- 태그 목록 -->
+            <div class="meta-item">
+              <span class="meta-label">등록된 태그</span>
+              <div class="tags-list-container" id="passageTagsList">
+                <!-- 태그 배지가 동적으로 렌더링됩니다 -->
+              </div>
+            </div>
+
+            <!-- 태그 입력창 -->
+            <div class="tag-input-wrapper">
+              <input 
+                type="text" 
+                class="tag-input" 
+                id="inputPassageTag" 
+                placeholder="태그 입력 후 [추가] 또는 Enter (예: 빈칸추론, 킬러문항)"
+              >
+              <button class="btn btn-primary btn-sm" id="btnAddPassageTag">추가</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- [우측 하단]: TXT 지문 본문 텍스트 -->
+        <section class="panel-card" style="grid-column: 2; grid-row: 2;">
+          <div class="panel-header">
+            <span class="panel-title">📝 TXT 지문 텍스트</span>
+            <button class="btn btn-primary btn-sm" id="btnCopyPassage">📋 지문 전체 복사</button>
+          </div>
+          <div class="panel-content passage-text-box" id="panelPassageText">
+            <span class="text-muted">지문 본문이 여기에 표시됩니다.</span>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- ====================================================================
+         화면 3: [문장 검색 결과 화면] 1행 테이블 레이아웃
+         ==================================================================== -->
+    <div class="sentence-view-container" id="sentenceViewContainer">
+      <div style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-weight: 700; color: var(--secondary);">
+          검색 결과: <strong id="sentenceMatchCount" style="color: var(--primary);">0</strong>개의 문장
+        </span>
+        <span style="font-size: 0.82rem; color: var(--text-muted);">
+          ※ [복사] 버튼 클릭 시 워드/한글/엑셀로 즉시 붙여넣기(Ctrl+V) 가능합니다.
+        </span>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="sentence-table">
+          <thead>
+            <tr>
+              <th class="col-num">순번</th>
+              <th class="col-source">출처 ([학년-연도-월-번-문장])</th>
+              <th class="col-sentence">해당 문장</th>
+              <th class="col-tags">태그 입력창 및 태그 정보</th>
+              <th class="col-remarks">비고</th>
+              <th class="col-action">텍스트 복사</th>
+            </tr>
+          </thead>
+          <tbody id="sentenceTableBody">
+            <!-- JS에서 동적으로 채워집니다 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 토스트 알림 컨테이너 -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ====================================================================
+       시험지 업로드 모달창 (PDF + HWP)
+       ==================================================================== -->
+  <div class="modal-backdrop" id="uploadModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">시험지 업로드 및 상호 검증</h3>
+        <button class="modal-close" id="btnCloseUploadModal">&times;</button>
+      </div>
+      <form id="uploadForm">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">학년</label>
+              <select class="form-control" name="grade" id="modalGrade">
+                <option value="고3">고3</option>
+                <option value="고2">고2</option>
+                <option value="고1">고1</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">연도</label>
+              <input type="number" class="form-control" name="year" value="2024" min="1994" max="2030">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">월</label>
+              <select class="form-control" name="month">
+                <option value="3">3월 (교육청)</option>
+                <option value="6" selected>6월 (평가원)</option>
+                <option value="9">9월 (평가원)</option>
+                <option value="11">11월 (수능)</option>
+                <option value="4">4월</option>
+                <option value="7">7월</option>
+                <option value="10">10월</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">시험 구분</label>
+              <input type="text" class="form-control" name="exam_type" value="평가원" placeholder="평가원/교육청/수능">
+            </div>
+          </div>
+
+          <!-- 문항 번호 가변 입력 (하드코딩 배제) -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">독해 시작 번호 (기본: 18)</label>
+              <input type="number" class="form-control" name="reading_start" value="18" placeholder="자동 감지 또는 입력">
+            </div>
+            <div class="form-group">
+              <label class="form-label">독해 끝 번호 (기본: 45)</label>
+              <input type="number" class="form-control" name="reading_end" value="45" placeholder="자동 감지 또는 입력">
+            </div>
+          </div>
+
+          <!-- 파일 선택 영역 -->
+          <div class="form-group">
+            <label class="form-label">1. PDF 시험지 원본 파일 (필수)</label>
+            <input type="file" class="form-control" name="pdf_file" accept=".pdf" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">2. HWP/HWPX 문제지 파일 (필수 - 상호 검증용)</label>
+            <input type="file" class="form-control" name="hwp_file" accept=".hwp,.hwpx" required>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">3. HWP 정답 및 해설지 파일 (선택)</label>
+            <input type="file" class="form-control" name="exp_file" accept=".hwp,.hwpx">
+            <small style="color: var(--text-muted); font-size: 0.78rem;">
+              ※ 해설이 문제지 HWP 파일 뒤편에 포함되어 있다면 비워두셔도 자동 파싱됩니다.
+            </small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btnCancelUpload">취소</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitUpload">🚀 상호 검증 및 DB 저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/main.js"></script>
+</body>
+</html>
