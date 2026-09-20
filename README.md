@@ -206,4 +206,17 @@
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
   - 43번 영역 형광펜 주석 개수가 3개에서 정답 5번 선지 1개(`Rect(440.9, 768.1, 555.7, 788.3)`)로 정상화 확인
 
+### [2026-09-20 14:45] 업데이트 이력 (Commit ID: e5fefd4)
+- **수정 내용**:
+  - **문장 검색 결과 내 검색 표현(키워드) 노란색 형광펜 하이라이트 표시 구현**:
+    - 검색창에 입력된 키워드(예: `cultur`)를 대소문자 구분 없이 문장 텍스트 내에서 실시간 매칭하는 `highlightSentenceKeyword()` 함수 구현 (`static/js/main.js`)
+    - 문장 검색 테이블(`renderSentenceView`) 렌더링 시 검색 키워드와 일치하는 표현(`Culture`, `cultural` 등)을 `<mark class="sentence-highlight">` 태그로 감싸 선명하게 형광펜 처리 (`static/js/main.js`)
+    - 검색어에 `#태그`가 포함되어 있을 때도 해시태그를 제외한 순수 텍스트 키워드 부분만 정밀하게 분리하여 하이라이트 (`static/js/main.js`)
+    - `[📋 텍스트 복사]` 버튼 클릭 시에는 마크업 없는 순수 원본 영문 텍스트가 복사되도록 무결성 유지 (`static/js/main.js`)
+    - `.sentence-highlight` 및 `.col-sentence mark` 스타일 신설: 눈에 편안한 파스텔 형광 노란색(`background-color: #fef08a`), 글자색(`#0f172a`), 폰트 볼드(`700`), 4px 라운딩 및 은은한 음영 적용 (`static/css/style.css`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - 문장 검색 결과 화면에서 검색 키워드 하이라이트 렌더링 정상 동작 확인
+
+
 

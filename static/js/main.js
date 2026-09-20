@@ -1144,6 +1144,22 @@ document.addEventListener("DOMContentLoaded", () => {
   // 8. [문장 검색 결과] 1행 테이블 렌더링
   // =========================================================================
 
+  /** 문장 텍스트 내에서 검색 키워드를 찾아 노란색 형광펜으로 감싸기 */
+  function highlightSentenceKeyword(text, rawQuery) {
+    if (!text) return "";
+    const cleanText = escapeHtml(text);
+    if (!rawQuery) return cleanText;
+
+    const { keyword } = parseSearchQuery(rawQuery);
+    if (!keyword || !keyword.trim()) return cleanText;
+
+    // 정규식 특수문자 이스케이프
+    const escapedKw = keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${escapedKw})`, "gi");
+
+    return cleanText.replace(regex, `<mark class="sentence-highlight">$1</mark>`);
+  }
+
   function renderSentenceView(items) {
     if (!items || items.length === 0) {
       emptyResultsBox.style.display = "flex";
@@ -1155,6 +1171,10 @@ document.addEventListener("DOMContentLoaded", () => {
     sentenceViewContainer.style.display = "block";
     sentenceMatchCount.textContent = items.length;
     sentenceTableBody.innerHTML = "";
+
+    // 현재 검색창에 입력된 검색 키워드 확인
+    const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
+                         (mainSearchInput && mainSearchInput.value.trim()) || "";
 
     items.forEach((s) => {
       const tr = document.createElement("tr");
@@ -1170,6 +1190,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // 출처 ID에서 문항 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번])
       const targetPassageId = s.passage_id || extractPassageId(s.id);
 
+      // 검색 표현 노란색 형광펜 하이라이트 적용
+      const highlightedSentence = highlightSentenceKeyword(s.sentence_text, currentQuery);
+
       tr.innerHTML = `
         <td class="col-num">${s.row_num}</td>
         <td class="col-source">
@@ -1177,7 +1200,7 @@ document.addEventListener("DOMContentLoaded", () => {
             🔗 ${escapeHtml(s.id)}
           </button>
         </td>
-        <td class="col-sentence">${escapeHtml(s.sentence_text)}</td>
+        <td class="col-sentence">${highlightedSentence}</td>
         <td class="col-tags">
           <div class="tags-container-${cssSafeId(s.id)}" style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem;">
             ${tagsHtml || '<span style="color: var(--text-light); font-size: 0.75rem;">태그 없음</span>'}
