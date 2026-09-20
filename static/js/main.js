@@ -332,7 +332,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (currentMode === "passage") {
         const res = await fetch(`/api/search/passages?${params.toString()}`);
         const data = await res.json();
-        passagesData = data.items || [];
+        passagesData = groupPassageItems(data.items || []);
         resultsTotalCount.textContent = passagesData.length;
         renderPassageView(passagesData);
         setHeaderSlotState("passage");
@@ -379,6 +379,92 @@ document.addEventListener("DOMContentLoaded", () => {
   // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
   // =========================================================================
 
+  /** 41~42번(1지문2문항), 43~45번(1지문3문항)을 단일 탭으로 병합 */
+  function groupPassageItems(rawItems) {
+    if (!rawItems || rawItems.length === 0) return [];
+
+    const result = [];
+    const handledIds = new Set();
+
+    for (let i = 0; i < rawItems.length; i++) {
+      const p = rawItems[i];
+      if (handledIds.has(p.id)) continue;
+
+      // 41~42번 (1지문 2문항) 통합
+      if (p.q_num === 41 || (p.question_type === "1지문2문항" && p.q_num === 41)) {
+        const p42 = rawItems.find(item => item.q_num === 42 && item.exam_id === p.exam_id);
+        if (p42) {
+          handledIds.add(p.id);
+          handledIds.add(p42.id);
+
+          const examPrefix = p.id.replace(/-41번\]$/, "").replace(/^\[/, "");
+          const ans41 = p.answer_text || "-";
+          const ans42 = p42.answer_text || "-";
+          const ansLabel = `41.${ans41} / 42.${ans42}`;
+
+          result.push({
+            ...p,
+            isGroup: true,
+            groupType: "41-42",
+            q_num_label: "41~42번",
+            display_id: `[${examPrefix}-41~42번]`,
+            all_ids: [p.id, p42.id],
+            subItems: [p, p42],
+            question_type: "1지문2문항",
+            answer_text: ansLabel,
+            pdf_crop_images: [p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean),
+            explanation_text: p.explanation_text || p42.explanation_text
+          });
+          continue;
+        }
+      }
+
+      // 43~45번 (1지문 3문항) 통합
+      if (p.q_num === 43 || (p.question_type === "1지문3문항" && p.q_num === 43)) {
+        const p44 = rawItems.find(item => item.q_num === 44 && item.exam_id === p.exam_id);
+        const p45 = rawItems.find(item => item.q_num === 45 && item.exam_id === p.exam_id);
+        if (p44 && p45) {
+          handledIds.add(p.id);
+          handledIds.add(p44.id);
+          handledIds.add(p45.id);
+
+          const examPrefix = p.id.replace(/-43번\]$/, "").replace(/^\[/, "");
+          const ans43 = p.answer_text || "-";
+          const ans44 = p44.answer_text || "-";
+          const ans45 = p45.answer_text || "-";
+          const ansLabel = `43.${ans43} / 44.${ans44} / 45.${ans45}`;
+
+          result.push({
+            ...p,
+            isGroup: true,
+            groupType: "43-45",
+            q_num_label: "43~45번",
+            display_id: `[${examPrefix}-43~45번]`,
+            all_ids: [p.id, p44.id, p45.id],
+            subItems: [p, p44, p45],
+            question_type: "1지문3문항",
+            answer_text: ansLabel,
+            pdf_crop_images: [p.pdf_crop_image, p44.pdf_crop_image, p45.pdf_crop_image].filter(Boolean),
+            explanation_text: p.explanation_text || p44.explanation_text || p45.explanation_text
+          });
+          continue;
+        }
+      }
+
+      if (handledIds.has(p.id)) continue;
+
+      result.push({
+        ...p,
+        q_num_label: p.q_num ? `${p.q_num}번` : p.id,
+        display_id: p.id,
+        all_ids: [p.id],
+        pdf_crop_images: p.pdf_crop_image ? [p.pdf_crop_image] : []
+      });
+    }
+
+    return result;
+  }
+
   function renderPassageView(items) {
     if (!items || items.length === 0) {
       emptyResultsBox.style.display = "flex";
@@ -410,7 +496,7 @@ document.addEventListener("DOMContentLoaded", () => {
       tabBtn.dataset.index = idx;
       tabBtn.dataset.id = p.id;
 
-      const qLabel = p.q_num ? `${p.q_num}번` : p.id;
+      const qLabel = p.q_num_label || (p.q_num ? `${p.q_num}번` : p.id);
       const typeLabel = p.question_type ? escapeHtml(p.question_type) : "기타";
       const ansLabel = p.answer_text ? `(답: ${escapeHtml(p.answer_text)})` : "";
 
@@ -479,15 +565,32 @@ document.addEventListener("DOMContentLoaded", () => {
   function loadPassageDetail(p) {
     currentPassageId = p.id;
 
-    // [좌측 상단]: PDF 문항 캡처 이미지
-    if (p.pdf_crop_image) {
-      panelPdfImageContainer.innerHTML = `
-        <img src="${p.pdf_crop_image}" class="pdf-crop-img" alt="${escapeHtml(p.id)} 문항 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
-      `;
-      const imgEl = panelPdfImageContainer.querySelector("img");
-      if (imgEl) {
-        imgEl.addEventListener("click", () => {
-          window.open(p.pdf_crop_image, "_blank");
+    // [좌측 상단]: PDF 문항 캡처 이미지 (단일 또는 그룹 이미지들)
+    const images = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
+      ? p.pdf_crop_images
+      : (p.pdf_crop_image ? [p.pdf_crop_image] : []);
+
+    if (images.length > 0) {
+      if (images.length === 1) {
+        panelPdfImageContainer.innerHTML = `
+          <img src="${images[0]}" class="pdf-crop-img" alt="${escapeHtml(p.display_id || p.id)} 문항 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
+        `;
+        const imgEl = panelPdfImageContainer.querySelector("img");
+        if (imgEl) {
+          imgEl.addEventListener("click", () => window.open(images[0], "_blank"));
+        }
+      } else {
+        panelPdfImageContainer.innerHTML = `
+          <div class="pdf-multi-container">
+            ${images.map((imgUrl, i) => `
+              <div class="pdf-multi-item">
+                <img src="${imgUrl}" class="pdf-crop-img" alt="${escapeHtml(p.display_id || p.id)} [${i+1}] 문항 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
+              </div>
+            `).join('')}
+          </div>
+        `;
+        panelPdfImageContainer.querySelectorAll("img").forEach((imgEl, i) => {
+          imgEl.addEventListener("click", () => window.open(images[i], "_blank"));
         });
       }
     } else {
@@ -502,15 +605,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // [좌측 하단]: TXT 지문 본문
-    panelPassageText.textContent = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
+    if (p.isGroup && p.subItems && p.subItems.length > 1) {
+      panelPassageText.textContent = p.subItems.map(si => si.passage_text || si.question_title).join("\n\n----------------------------------------\n\n");
+    } else {
+      panelPassageText.textContent = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
+    }
 
     // [우측 상단]: HWP 정답 및 해설
     panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
 
     // [우측 하단]: 지문 메타 정보, 문제 유형, 태그 관리
-    metaPassageId.textContent = p.id;
-    metaQNum.textContent = p.q_num ? `${p.q_num}번` : "-";
-    metaAnswer.textContent = p.answer_text ? `${p.answer_text}번` : "-";
+    metaPassageId.textContent = p.display_id || p.id;
+    metaQNum.textContent = p.q_num_label || (p.q_num ? `${p.q_num}번` : "-");
+    metaAnswer.textContent = p.answer_text ? `${p.answer_text}` : "-";
     metaQuestionTitle.textContent = p.question_title || "-";
     validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
 
@@ -716,7 +823,7 @@ document.addEventListener("DOMContentLoaded", () => {
       resultsTotalCount.textContent = passagesData.length;
       let targetIndex = currentPassageIndex;
       if (currentPassageId) {
-        const found = passagesData.findIndex(p => p.id === currentPassageId);
+        const found = passagesData.findIndex(p => p.id === currentPassageId || (p.all_ids && p.all_ids.includes(currentPassageId)));
         if (found >= 0) targetIndex = found;
       }
       if (targetIndex < 0 || targetIndex >= passagesData.length) targetIndex = 0;
@@ -755,7 +862,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 1. 현재 passagesData 목록에 해당 지문이 이미 존재하는지 확인
     let idx = -1;
     if (passagesData && passagesData.length > 0) {
-      idx = passagesData.findIndex(p => p.id === pId);
+      idx = passagesData.findIndex(p => p.id === pId || (p.all_ids && p.all_ids.includes(pId)));
     }
 
     if (idx >= 0) {
@@ -775,10 +882,10 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.ok) {
         const data = await res.json();
         if (data.items && data.items.length > 0) {
-          passagesData = data.items;
+          passagesData = groupPassageItems(data.items);
           resultsTotalCount.textContent = passagesData.length;
           renderPassageView(passagesData);
-          const foundIdx = passagesData.findIndex(p => p.id === pId);
+          const foundIdx = passagesData.findIndex(p => p.id === pId || (p.all_ids && p.all_ids.includes(pId)));
           selectPassageTab(foundIdx >= 0 ? foundIdx : 0, passagesData);
           setHeaderSlotState("passage");
           showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
@@ -790,7 +897,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const singleRes = await fetch(`/api/passages/${encodeURIComponent(pId)}`);
       if (singleRes.ok) {
         const singleData = await singleRes.json();
-        passagesData = [singleData];
+        passagesData = groupPassageItems([singleData]);
         resultsTotalCount.textContent = 1;
         renderPassageView(passagesData);
         selectPassageTab(0, passagesData);

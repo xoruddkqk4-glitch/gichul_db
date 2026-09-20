@@ -240,17 +240,7 @@ async def api_upload_exam(
             "reading_end_q": reading_end or 45
         })
 
-        # 3. PDF 파싱 및 크롭 이미지 생성
-        pdf_questions = extract_pdf_columns_and_questions(
-            pdf_path=pdf_save_path,
-            grade=grade,
-            year=year,
-            month=month,
-            reading_start=reading_start,
-            reading_end=reading_end
-        )
-
-        # 4. HWP 문제지 파싱
+        # 3. HWP 문제지 및 해설지 파싱 (정답 정보 우선 추출)
         start_q = reading_start or 18
         end_q = reading_end or 45
         hwp_questions = parse_hwp_questions(
@@ -262,13 +252,26 @@ async def api_upload_exam(
             end_q=end_q
         )
 
-        # 5. 해설지 파싱 (해설 파일이 별도 업로드되었거나 문제지 뒤에 있는 경우)
+        # 4. 해설지 파싱 (해설 파일이 별도 업로드되었거나 문제지 뒤에 있는 경우)
         explanations = {}
         if exp_save_path:
             explanations = parse_hwp_explanations(exp_save_path)
         else:
             # 문제지 파일 내에 정답/해설이 포함되어 있는지 검사
             explanations = parse_hwp_explanations(hwp_save_path)
+
+        answers_dict = {q: exp.get("answer", "") for q, exp in explanations.items() if exp.get("answer")}
+
+        # 5. PDF 파싱 및 크롭 이미지 생성 (정답 선지 형광펜 하이라이트 자동 적용)
+        pdf_questions = extract_pdf_columns_and_questions(
+            pdf_path=pdf_save_path,
+            grade=grade,
+            year=year,
+            month=month,
+            reading_start=reading_start,
+            reading_end=reading_end,
+            answers_dict=answers_dict
+        )
 
         # 6. 상호 검증 및 문장 분할
         merged_packages = cross_validate_and_merge(

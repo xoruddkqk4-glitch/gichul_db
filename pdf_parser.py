@@ -15,6 +15,8 @@ import pymupdf as fitz
 CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "captures")
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
+CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
+
 
 def detect_listening_range(full_text: str) -> Tuple[int, int]:
     """
@@ -23,10 +25,8 @@ def detect_listening_range(full_text: str) -> Tuple[int, int]:
     """
     match = re.search(r"1\s*번\s*부터\s*(\d{1,2})\s*번\s*까지\s*는\s*듣고", full_text)
     if match:
-        listening_end = int(match.group(1))
-        return listening_end + 1, 45
-
-    if "A형" in full_text or "B형" in full_text:
+        return int(match.group(1)) + 1, 45
+    else:
         match_ab = re.search(r"(\d{1,2})\s*번\s*까지는\s*듣고", full_text)
         if match_ab:
             return int(match_ab.group(1)) + 1, 45
@@ -40,7 +40,8 @@ def extract_pdf_columns_and_questions(
     year: int = 2024,
     month: int = 6,
     reading_start: Optional[int] = None,
-    reading_end: Optional[int] = None
+    reading_end: Optional[int] = None,
+    answers_dict: Optional[Dict[int, str]] = None
 ) -> Dict[int, Dict]:
     """
     PDF 시험지에서 2단(Two-Column) 레이아웃을 칼럼별로 독립 분석하여
@@ -108,9 +109,11 @@ def extract_pdf_columns_and_questions(
                 if grp_match:
                     # 이전 문항이 있다면 종료
                     if current_q and current_text_lines:
+                        ans_sym = (answers_dict or {}).get(current_q, "")
                         save_extracted_question(
                             doc, current_q, current_text_lines, current_rects,
-                            grade, year, month, questions_data, shared_group_cache
+                            grade, year, month, questions_data, shared_group_cache,
+                            answer_symbol=ans_sym
                         )
                         current_q = None
                         current_text_lines = []
@@ -139,9 +142,11 @@ def extract_pdf_columns_and_questions(
 
                         # 이전 문항 마무리
                         if current_q and current_text_lines:
+                            ans_sym = (answers_dict or {}).get(current_q, "")
                             save_extracted_question(
                                 doc, current_q, current_text_lines, current_rects,
-                                grade, year, month, questions_data, shared_group_cache
+                                grade, year, month, questions_data, shared_group_cache,
+                                answer_symbol=ans_sym
                             )
 
                         current_q = q_num
@@ -162,9 +167,11 @@ def extract_pdf_columns_and_questions(
 
             # 칼럼 종료 시 열려있는 문항 마무리 (칼럼 간 침범 방지)
             if current_q and current_text_lines:
+                ans_sym = (answers_dict or {}).get(current_q, "")
                 save_extracted_question(
                     doc, current_q, current_text_lines, current_rects,
-                    grade, year, month, questions_data, shared_group_cache
+                    grade, year, month, questions_data, shared_group_cache,
+                    answer_symbol=ans_sym
                 )
 
             # 칼럼 끝에 공유 지문이 걸려있을 경우 캐시 저장
@@ -188,9 +195,10 @@ def save_extracted_question(
     year: int,
     month: int,
     out_dict: dict,
-    shared_group_cache: dict
+    shared_group_cache: dict,
+    answer_symbol: str = ""
 ):
-    """문항 텍스트 정제 및 PDF 해당 문항 고화질 이미지 크롭 저장"""
+    """문항 텍스트 정제, 정답 선지 형광펜 하이라이트 및 고화질 이미지 크롭 저장"""
     full_q_text = "\n".join(text_lines)
 
     lines = [l.strip() for l in full_q_text.split("\n") if l.strip()]
@@ -209,16 +217,16 @@ def save_extracted_question(
                 passage_body = "\n".join(g_data["text"]) + "\n" + passage_body
             break
 
-    # 하단 선택지(① ~ ⑤) 앞까지의 순수 지문 본문 정제
+    # 하단 선택지(① ~ ⑤) 앞까지의 순수 지문 본문 정제 (문장 분할용)
     clean_passage_body = passage_body
     if q_num not in (29, 30, 35, 38, 39):
         choice_split = re.split(r"(?:^|\n)\s*[①1]\b|[①]", passage_body)
         if len(choice_split) > 1:
             clean_passage_body = choice_split[0].strip()
 
-    # 지문 TXT: 문항 번호와 발문을 포함한 정제 텍스트
-    if clean_passage_body:
-        full_passage_text = f"{question_title}\n\n{clean_passage_body}"
+    # 지문 TXT: 문항 번호와 발문, 지문 본문, 그리고 객관식 선지(①~⑤)까지 모두 포함
+    if passage_body:
+        full_passage_text = f"{question_title}\n\n{passage_body.strip()}"
     else:
         full_passage_text = question_title
 
@@ -248,9 +256,64 @@ def save_extracted_question(
                 min(page.rect.height, max_y)
             )
 
+            # 정답 선지 형광펜 하이라이트 주석 적용
+            added_annots = []
+            if answer_symbol:
+                target_sym = CIRCLED_MAP.get(str(answer_symbol).strip(), str(answer_symbol).strip())
+                try:
+                    words = page.get_text("words", clip=crop_rect)
+                    choice_words = []
+                    collecting = False
+                    for w in words:
+                        w_text = w[4]
+                        if target_sym in w_text:
+                            collecting = True
+                            choice_words.append(w)
+                            continue
+                        if collecting:
+                            if any(sym in w_text for sym in ("①", "②", "③", "④", "⑤")) or w_text.startswith("*"):
+                                collecting = False
+                                break
+                            choice_words.append(w)
+
+                    # 줄(line) 단위로 묶기 (y 좌표 5pt 이내)
+                    lines_grouped = []
+                    curr_line = []
+                    for w in choice_words:
+                        if not curr_line:
+                            curr_line.append(w)
+                        else:
+                            if abs(w[1] - curr_line[0][1]) < 5:
+                                curr_line.append(w)
+                            else:
+                                lines_grouped.append(curr_line)
+                                curr_line = [w]
+                    if curr_line:
+                        lines_grouped.append(curr_line)
+
+                    for l in lines_grouped:
+                        lx0 = min(w[0] for w in l) - 3
+                        ly0 = min(w[1] for w in l) - 2
+                        lx1 = max(w[2] for w in l) + 3
+                        ly1 = max(w[3] for w in l) + 2
+                        hl_rect = fitz.Rect(lx0, ly0, lx1, ly1)
+                        annot = page.add_highlight_annot(hl_rect)
+                        annot.set_colors(stroke=(1.0, 0.95, 0.1))  # 선명한 형광 노란색
+                        annot.update()
+                        added_annots.append(annot)
+                except Exception as e:
+                    print(f"[{q_num}번 정답 선지 하이라이트 경고] {e}")
+
             # 200 DPI로 고화질 크롭 이미지 생성
             pix = page.get_pixmap(clip=crop_rect, dpi=200)
             pix.save(img_filepath)
+
+            # 임시 형광펜 주석 제거 (다음 문항 및 페이지 원본 무결성 보존)
+            for annot in added_annots:
+                try:
+                    page.delete_annot(annot)
+                except Exception:
+                    pass
     else:
         web_img_url = ""
 
