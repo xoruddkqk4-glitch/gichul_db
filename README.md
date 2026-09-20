@@ -697,3 +697,22 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py grammar_analyzer.py database.py run.py` 파이썬 구문 검증 완료 (통과)
   - `resolve_gemini_model` 단위 테스트 완료 (모든 구버전 요청 시 `gemini-3.6-flash` 정상 반환 확인)
   - `GET /api/settings/ai` 호출 시 `gemini-3.6-flash` 모델 정상 응답 확인
+
+### [2026-09-20 20:56] 업데이트 이력 (Commit ID: 42c5f60)
+- **수정 내용**:
+  - **Google Gemini 503 트래픽 과부하(High Demand) 지수 백오프 자동 재시도 및 다중 모델 자동 페일오버(Failover) 시스템 구축 (`grammar_analyzer.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **원인 해결**: 신규 권장 모델 `gemini-3.6-flash`로 트래픽이 집중됨에 따라 구글 서버에서 일시적 과부하로 인한 `HTTP 503 (This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.)` 오류가 발생하던 문제를 해결하기 위해 고가용성 복원력(Resilience) 아키텍처 구축
+    - **지수 백오프 자동 재시도 (`_call_gemini_with_resilience`)**:
+      - 구글 안내 지침에 따라 503 수신 시 1.5초 대기 후 1회 즉시 재시도하여 순간적인 트래픽 스파이크를 자동 흡수
+    - **지능형 다중 모델 자동 페일오버(Failover)**:
+      - 503 재시도 실패, 429(Rate Limit), 404 발생 시, 가용 대체 모델 큐(`gemini-2.5-flash-lite`, `gemini-3.7-flash`, `gemini-3.5-flash` 등)로 끊김 없이 자동 전환하여 호출 완수
+      - 특히 초고속/경량화 모델인 `gemini-2.5-flash-lite`를 안정 폴백으로 확보하여 트래픽 병목 원천 차단
+      - 대체 모델로 전환 성공 시 시스템 DB(`ai_model_gemini`) 및 프론트엔드 입력값을 자동 갱신하여 향후 호출 안정성 보장
+    - **Gemini 추천 모델 퀵 선택 칩 UI 제공**:
+      - `templates/index.html` 및 `style.css`: 모델명 입력란 하단에 `gemini-3.6-flash`, `⚡ gemini-2.5-flash-lite (안정)`, `gemini-3.7-flash` 원클릭 칩 버튼 추가
+      - `static/js/main.js`: 칩 클릭 시 모델명이 즉각 자동 입력되도록 이벤트 바인딩
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py grammar_analyzer.py` 파이썬 구문 검증 통과 (오류 0건)
+  - `grammar_analyzer.test_connection` 3요소 언팩 및 FastAPI `/api/settings/ai/test` 엔드포인트 응답 검증 완료
+

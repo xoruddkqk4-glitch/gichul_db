@@ -299,10 +299,10 @@ async def api_test_single_ai_provider(req: SingleProviderTestRequest):
     if p == "gemini":
         m = grammar_analyzer.resolve_gemini_model(k, m)
 
-    ok, msg = grammar_analyzer.test_connection(p, k, m)
+    ok, msg, used_model = grammar_analyzer.test_connection(p, k, m)
     if not ok:
         return JSONResponse(status_code=400, content={"success": False, "message": msg})
-    return {"success": True, "provider": p, "model": m, "message": msg}
+    return {"success": True, "provider": p, "model": used_model, "message": msg}
 
 
 @app.post("/api/settings/ai")
@@ -350,7 +350,7 @@ async def api_save_ai_settings(req: AISettingsRequest):
         target_p = active[0] if active else "gemini"
         tk, tm = grammar_analyzer.get_provider_config(target_p)
         if tk:
-            ok, test_msg = grammar_analyzer.test_connection(target_p, tk, tm)
+            ok, test_msg, _ = grammar_analyzer.test_connection(target_p, tk, tm)
             if not ok:
                 return JSONResponse(status_code=400, content={"success": False, "message": test_msg})
 

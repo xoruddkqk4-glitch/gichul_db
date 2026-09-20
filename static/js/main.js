@@ -3886,6 +3886,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // 모델 추천 칩 클릭 시 해당 모델명 자동 입력
+  document.querySelectorAll(".btn-model-tag").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.target;
+      const targetInput = document.getElementById(targetId);
+      if (targetInput && btn.dataset.model) {
+        targetInput.value = btn.dataset.model;
+        targetInput.focus();
+      }
+    });
+  });
+
   if (btnOpenAiSettingsModal) {
     btnOpenAiSettingsModal.addEventListener("click", openAiSettingsModal);
   }
