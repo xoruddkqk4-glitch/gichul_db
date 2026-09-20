@@ -165,7 +165,10 @@
             autocomplete="off"
           >
           <button type="button" class="btn btn-primary btn-sm" id="btnResultsSearch">검색</button>
-          <button type="button" class="btn btn-secondary btn-sm btn-within-search" id="btnSearchWithinResults" title="현재 검색 결과 목록 내에서 재검색">결과 내 검색</button>
+          <button type="button" class="btn-toggle-within" id="btnToggleSearchWithin" aria-pressed="false" title="클릭하여 결과 내 재검색 모드를 켜거나 끕니다">
+            <span class="toggle-dot"></span>
+            <span class="toggle-text">결과 내 검색</span>
+          </button>
         </div>
 
         <div class="results-filters-group">

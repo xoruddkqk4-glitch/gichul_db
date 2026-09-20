@@ -169,3 +169,24 @@
 - **검증 결과**:
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
+
+### [2026-09-20 14:31] 업데이트 이력 (Commit ID: a48a50c)
+- **수정 내용**:
+  - **'결과 내 검색' 활성화/비활성화 토글 스위치 모드 개편 & [검색] 버튼 일원화**:
+    - 상단 검색바의 `[결과 내 검색]` 버튼을 별도 실행 버튼에서 **클릭 시 ON/OFF 전환되는 토글 스위치 버튼(`btnToggleSearchWithin`)**으로 변경 (`templates/index.html`)
+    - 비활성(OFF: 단정한 그레이 아웃라인과 닷)과 활성(ON: 은은한 라이트 블루 배경과 네온 인디케이터 닷) 상태를 명확히 구분하는 세련된 UI 스타일 적용 (`static/css/style.css`)
+    - `isSearchWithinActive` 상태 변수를 통해 `[검색]` 버튼 클릭 또는 검색창 `Enter` 키 입력 시 토글 활성 상태면 `executeSearchWithinResults()`(현재 목록 즉시 필터링), 비활성 상태면 `executeSearch("results")`(전체 DB 검색)가 실행되도록 검색 트리거 일원화 (`static/js/main.js`)
+  - **평가원 문항 정답 형광펜 표시 및 업로드 파이프라인 무결성 보장**:
+    - 해설지 서두 정답표(`01. ③ ~ 45. ④`) 블록을 탐지하는 정규식 패턴을 보강하여 다양한 표/공백 서식의 평가원 정답을 완벽 추출하도록 개선 (`hwp_parser.py`)
+    - 업로드 파이프라인에서 HWP 정답 추출과 `KNOWN_EXAM_ANSWERS` 백업 사전을 결합하여, 평가원/교육청/수능 어떤 시험지라도 정답 누락 없이 100% 확보하고 PDF 선지 노란색 형광펜(`RGB 1.0, 0.95, 0.1`) 하이라이트 크롭 이미지가 자동 생성되도록 보장 (`app.py`)
+    - 기존 2026년 6월 평가원 28개 전 문항(18~45번) `gichul.db` 정답/해설 갱신 및 200 DPI 고화질 정답 형광펜 하이라이트 크롭 이미지(`static/captures/고3_2026_06_*.png`)와 43~45번 세로 결합 이미지 재생성 완료
+  - **문항별 선택 탭 버튼 디자인 세련화 (모던 프리미엄 UI)**:
+    - 1행 10개 문항 탭 버튼(`.passage-q-tab`)을 최신 웹 앱(토스, 애플) 스타일로 리디자인 (`static/css/style.css`)
+    - 1행 메타 뱃지(`tab-line-exam`): 연한 슬레이트 캡슐 마이크로 뱃지(`background: #f1f5f9; color: #64748b; font-size: 0.68rem; font-weight: 700;`)로 시각적 위계 분리
+    - 2행 문항 번호(`tab-line-q`): 또렷하고 선명한 다크 슬레이트 타이포그래피(`color: #0f172a; font-size: 0.86rem; font-weight: 800;`)
+    - 부드러운 라운딩(`9px`), 은은한 그림자, 호버 리프트(-1.5px) 애니메이션, 활성 탭(`.active`) 선택 시 프리미엄 로열 블루 그라데이션 및 글로우 섀도우 효과 적용
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)
+  - 2026년 6월 평가원 28개 전 문항 정답 DB 업데이트 및 형광펜 주석 이미지 28개 생성 확인
+

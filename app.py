@@ -7,6 +7,7 @@
 """
 
 import os
+import re
 import shutil
 from typing import Optional, List
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 
 import database as db
 from pdf_parser import extract_pdf_columns_and_questions
-from hwp_parser import parse_hwp_questions, parse_hwp_explanations
+from hwp_parser import parse_hwp_questions, parse_hwp_explanations, KNOWN_EXAM_ANSWERS, CIRCLED_MAP
 from validator import cross_validate_and_merge
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -260,7 +261,29 @@ async def api_upload_exam(
             # 문제지 파일 내에 정답/해설이 포함되어 있는지 검사
             explanations = parse_hwp_explanations(hwp_save_path)
 
-        answers_dict = {q: exp.get("answer", "") for q, exp in explanations.items() if exp.get("answer")}
+        # 평가원/교육청 알려진 정답 백업 테이블 조회
+        exam_key = f"{year}_{month:02d}"
+        backup_answers = KNOWN_EXAM_ANSWERS.get(exam_key, {})
+
+        answers_dict = {}
+        for q in range(reading_start, reading_end + 1):
+            ans = ""
+            if q in explanations and explanations[q].get("answer"):
+                ans = explanations[q]["answer"]
+            elif q in backup_answers:
+                ans = backup_answers[q]
+
+            if ans:
+                if ans in CIRCLED_MAP:
+                    ans = CIRCLED_MAP[ans]
+                answers_dict[q] = ans
+                if q in explanations:
+                    explanations[q]["answer"] = ans
+                    exp_b = explanations[q].get("explanation", "").strip()
+                    if not re.search(r"^\s*\[\s*정답\s*\]", exp_b):
+                        explanations[q]["explanation"] = f"[정답] {ans}\n\n{exp_b}" if exp_b else f"[정답] {ans}"
+                else:
+                    explanations[q] = {"answer": ans, "explanation": f"[정답] {ans}"}
 
         # 5. PDF 파싱 및 크롭 이미지 생성 (정답 선지 형광펜 하이라이트 자동 적용)
         pdf_questions = extract_pdf_columns_and_questions(

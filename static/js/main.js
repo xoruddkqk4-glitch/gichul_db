@@ -53,7 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnBackToSearch = document.getElementById("btnBackToSearch");
   const resultsSearchInput = document.getElementById("resultsSearchInput");
   const btnResultsSearch = document.getElementById("btnResultsSearch");
-  const btnSearchWithinResults = document.getElementById("btnSearchWithinResults");
+  const btnToggleSearchWithin = document.getElementById("btnToggleSearchWithin") || document.getElementById("btnSearchWithinResults");
+  let isSearchWithinActive = false;
   const resultsTabModePassage = document.getElementById("resultsTabModePassage");
   const resultsTabModeSentence = document.getElementById("resultsTabModeSentence");
 
@@ -153,6 +154,7 @@ document.addEventListener("DOMContentLoaded", () => {
     
     // 헤더 상태를 통계 배지 모드로 복원
     setHeaderSlotState("home");
+    setSearchWithinState(false);
 
     // 결과창 검색어 및 필터를 홈 검색창에 동기화
     if (resultsSearchInput && resultsSearchInput.value) {
@@ -442,23 +444,53 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") executeSearch("home");
   });
 
-  // 결과창 검색 트리거
-  if (btnResultsSearch) {
-    btnResultsSearch.addEventListener("click", () => executeSearch("results"));
+  /** 결과 내 검색 토글 상태 제어 */
+  function setSearchWithinState(active) {
+    isSearchWithinActive = !!active;
+    if (btnToggleSearchWithin) {
+      btnToggleSearchWithin.classList.toggle("active", isSearchWithinActive);
+      btnToggleSearchWithin.setAttribute("aria-pressed", String(isSearchWithinActive));
+    }
   }
-  if (btnSearchWithinResults) {
-    btnSearchWithinResults.addEventListener("click", executeSearchWithinResults);
-  }
-  if (resultsSearchInput) {
-    resultsSearchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") executeSearch("results");
+
+  // 결과 내 검색 토글 클릭 핸들러
+  if (btnToggleSearchWithin) {
+    btnToggleSearchWithin.addEventListener("click", () => {
+      setSearchWithinState(!isSearchWithinActive);
+      if (isSearchWithinActive) {
+        showToast("결과 내 재검색 모드가 켜졌습니다. (검색 버튼을 누르면 현재 결과 목록 내에서 필터링됩니다)", "info");
+      } else {
+        showToast("결과 내 재검색 모드가 꺼졌습니다. (검색 버튼을 누르면 전체 DB를 검색합니다)", "info");
+      }
     });
   }
 
-  // 결과창 필터 변경 시 자동 재검색
+  // 결과창 검색 실행 함수 (토글 활성 여부에 따라 결과 내 검색 또는 전체 DB 검색 수행)
+  function handleResultsSearch() {
+    if (isSearchWithinActive) {
+      executeSearchWithinResults();
+    } else {
+      executeSearch("results");
+    }
+  }
+
+  // 결과창 검색 트리거 (검색 버튼 및 엔터키)
+  if (btnResultsSearch) {
+    btnResultsSearch.addEventListener("click", handleResultsSearch);
+  }
+  if (resultsSearchInput) {
+    resultsSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleResultsSearch();
+    });
+  }
+
+  // 결과창 필터 변경 시 자동 재검색 (필터 변경은 항상 DB 전체 기반으로 재검색)
   [resultsFilterGrade, resultsFilterYear, resultsFilterMonth, resultsFilterExamType, resultsFilterQuestionType].forEach((el) => {
     if (el) {
-      el.addEventListener("change", () => executeSearch("results"));
+      el.addEventListener("change", () => {
+        setSearchWithinState(false);
+        executeSearch("results");
+      });
     }
   });
 

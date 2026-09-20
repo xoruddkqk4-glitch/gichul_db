@@ -365,6 +365,17 @@ def format_hwp_question(
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
 
 KNOWN_EXAM_ANSWERS = {
+    "2026_06": {
+        1: "③", 2: "⑤", 3: "①", 4: "②", 5: "①",
+        6: "④", 7: "⑤", 8: "③", 9: "④", 10: "②",
+        11: "①", 12: "⑤", 13: "①", 14: "②", 15: "④",
+        16: "②", 17: "⑤", 18: "③", 19: "①", 20: "③",
+        21: "②", 22: "①", 23: "②", 24: "②", 25: "③",
+        26: "③", 27: "④", 28: "④", 29: "②", 30: "④",
+        31: "①", 32: "②", 33: "②", 34: "①", 35: "④",
+        36: "⑤", 37: "④", 38: "③", 39: "③", 40: "⑤",
+        41: "①", 42: "⑤", 43: "⑤", 44: "⑤", 45: "④"
+    },
     "2026_07": {
         1: "②", 2: "②", 3: "②", 4: "⑤", 5: "①",
         6: "④", 7: "④", 8: "⑤", 9: "⑤", 10: "④",
@@ -383,11 +394,28 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
     """
     HWP 파일에서 문항별 정답 및 해설/해석/어휘 추출
     단일 HWP 파일에 문제와 해설이 함께 있는 경우 해설 영역을 우선 탐색
+    평가원/교육청 정답표 자동 감지 및 매핑
     범위 헤더(41~42, 43~45 등) 지원 및 정답 정보 자동 매핑
     """
     full_text = get_hwp_text(hwp_path)
     if not full_text:
         return {}
+
+    # 1. 문서 전체에서 1~45번 정답표 사전 탐색 (평가원/교육청/수능 전체 공통 지원)
+    table_answers = {}
+    ans_patterns = [
+        re.compile(r'(?:^|\n|\s)0?(\d{1,2})\s*[\.\s\t:]\s*([①②③④⑤1-5])(?:\s|$)'),
+        re.compile(r'\[0?(\d{1,2})\]\s*[\.\s\t:]\s*([①②③④⑤1-5])')
+    ]
+    for pat in ans_patterns:
+        for tm in pat.finditer(full_text):
+            try:
+                t_q = int(tm.group(1))
+                if 1 <= t_q <= 45 and t_q not in table_answers:
+                    t_sym = tm.group(2)
+                    table_answers[t_q] = CIRCLED_MAP.get(t_sym, t_sym)
+            except Exception:
+                pass
 
     _, exp_text = split_questions_and_explanations(full_text)
     # 해설 마커가 명확히 분리되었으면 exp_text 사용, 아니면 full_text 전체에서 해설 패턴 탐색
@@ -456,7 +484,7 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
 
     # 정답 정보 표준화 및 해설 상단에 [정답] 라벨 명시
     for q_num, exp_info in explanations.items():
-        ans = exp_info.get("answer") or known_answers.get(q_num, "")
+        ans = exp_info.get("answer") or table_answers.get(q_num, "") or known_answers.get(q_num, "")
         if ans in CIRCLED_MAP:
             ans = CIRCLED_MAP[ans]
         exp_info["answer"] = ans
