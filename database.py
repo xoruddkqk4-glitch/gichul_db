@@ -48,6 +48,7 @@ def init_db():
                 exam_id TEXT NOT NULL,
                 q_num INTEGER NOT NULL,
                 question_title TEXT,              -- 발문 (e.g. '21. 밑줄 친 부분이 의미하는 바로...')
+                question_type TEXT,               -- 문제 유형 (e.g. '빈칸', '어휘함축' 등)
                 passage_text TEXT NOT NULL,       -- txt 변환 순수 영문 지문 본문
                 answer_text TEXT,                 -- 정답 번호 (e.g. '③')
                 explanation_text TEXT,            -- HWP 추출 정답 및 해설/해석
@@ -58,6 +59,12 @@ def init_db():
                 FOREIGN KEY (exam_id) REFERENCES exams (id) ON DELETE CASCADE
             );
         """)
+
+        # 기존 테이블에 question_type 컬럼이 없는 경우 안전 마이그레이션
+        try:
+            cursor.execute("ALTER TABLE passages ADD COLUMN question_type TEXT;")
+        except sqlite3.OperationalError:
+            pass  # 이미 컬럼이 존재함
 
         # 3. 문장 테이블
         cursor.execute("""
@@ -128,19 +135,22 @@ def save_exam(exam_data: dict) -> str:
 
 def save_passage(passage_data: dict) -> str:
     """지문 정보 저장"""
+    if "question_type" not in passage_data:
+        passage_data["question_type"] = ""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO passages (
-                id, exam_id, q_num, question_title, passage_text,
+                id, exam_id, q_num, question_title, question_type, passage_text,
                 answer_text, explanation_text, pdf_crop_image, validation_ratio, remarks
             )
             VALUES (
-                :id, :exam_id, :q_num, :question_title, :passage_text,
+                :id, :exam_id, :q_num, :question_title, :question_type, :passage_text,
                 :answer_text, :explanation_text, :pdf_crop_image, :validation_ratio, :remarks
             )
             ON CONFLICT(id) DO UPDATE SET
                 question_title = excluded.question_title,
+                question_type = excluded.question_type,
                 passage_text = excluded.passage_text,
                 answer_text = excluded.answer_text,
                 explanation_text = excluded.explanation_text,
@@ -150,6 +160,18 @@ def save_passage(passage_data: dict) -> str:
         """, passage_data)
         conn.commit()
         return passage_data["id"]
+
+
+def update_passage_question_type(passage_id: str, question_type: str) -> bool:
+    """지문의 문제 유형 업데이트"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE passages SET question_type = ? WHERE id = ?",
+            (question_type.strip(), passage_id.strip())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def save_sentences(sentences: List[dict]):
@@ -255,10 +277,12 @@ def search_passages(
     grade: str = "",
     year: Optional[int] = None,
     month: Optional[int] = None,
+    exam_type: str = "",
+    question_type: str = "",
     tag: str = "",
     limit: int = 50
 ) -> List[Dict[str, Any]]:
-    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그)"""
+    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분)"""
     query = """
         SELECT p.*, e.grade, e.year, e.month, e.exam_type
         FROM passages p
@@ -288,6 +312,12 @@ def search_passages(
     if month:
         query += " AND e.month = ?"
         params.append(month)
+    if exam_type:
+        query += " AND e.exam_type = ?"
+        params.append(exam_type)
+    if question_type:
+        query += " AND p.question_type = ?"
+        params.append(question_type)
 
     if tag:
         query += """
@@ -312,9 +342,11 @@ def search_passages(
 
 def search_sentences(
     keyword: str = "",
+    passage_id: str = "",
     grade: str = "",
     year: Optional[int] = None,
     month: Optional[int] = None,
+    exam_type: str = "",
     tag: str = "",
     limit: int = 100
 ) -> List[Dict[str, Any]]:
@@ -327,6 +359,13 @@ def search_sentences(
         WHERE 1=1
     """
     params = []
+
+    if passage_id:
+        clean_pid = passage_id.strip()
+        if not clean_pid.startswith("["):
+            clean_pid = f"[{clean_pid}]"
+        query += " AND s.passage_id = ?"
+        params.append(clean_pid)
 
     if keyword:
         kw = f"%{keyword.strip()}%"
@@ -342,6 +381,9 @@ def search_sentences(
     if month:
         query += " AND e.month = ?"
         params.append(month)
+    if exam_type:
+        query += " AND e.exam_type = ?"
+        params.append(exam_type)
 
     if tag:
         query += """

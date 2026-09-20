@@ -46,17 +46,82 @@ def extract_hwpx_text(file_path: str) -> str:
     return sanitize_text("".join(full_text))
 
 
+def ensure_hwp_security_module() -> bool:
+    """
+    한글(Hancom Office) 자동화 시 보안 경고 팝업
+    ('한글을 이용하여 위 파일에 접근하려는 시도... 접근 허용')을 억제하기 위해
+    Windows 레지스트리에 FilePathCheckerModule 보안 모듈을 자동 등록합니다.
+    """
+    import sys
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import winreg
+        import pyhwpx
+        pyhwpx_dir = os.path.dirname(pyhwpx.__file__)
+        dll_path = os.path.join(pyhwpx_dir, "FilePathCheckerModule.dll")
+        if not os.path.exists(dll_path):
+            user_profile = os.environ.get("USERPROFILE", "")
+            alt_path = os.path.join(user_profile, "FilePathCheckerModule.dll")
+            if os.path.exists(alt_path):
+                dll_path = alt_path
+            else:
+                return False
+
+        target_keys = [
+            (winreg.HKEY_CURRENT_USER, r"Software\HNC\HwpAutomation\Modules"),
+            (winreg.HKEY_CURRENT_USER, r"Software\Hnc\HwpUserAction\Modules"),
+        ]
+
+        for root_key, sub_key in target_keys:
+            for access_flag in [0, winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY]:
+                try:
+                    k = winreg.CreateKeyEx(root_key, sub_key, 0, winreg.KEY_SET_VALUE | access_flag)
+                    winreg.SetValueEx(k, "FilePathCheckerModule", 0, winreg.REG_SZ, os.path.abspath(dll_path))
+                    winreg.CloseKey(k)
+                except Exception:
+                    pass
+        return True
+    except Exception as e:
+        print(f"[HWP 보안모듈 레지스트리 등록 경고] {e}")
+        return False
+
+
+# 모듈 임포트 시 자동 보안 모듈 등록 실행
+ensure_hwp_security_module()
+
+
 def extract_hwp_text_pyhwpx(file_path: str) -> str:
-    """pyhwpx를 사용하여 HWP 텍스트 추출 (백그라운드 OLE)"""
+    """pyhwpx를 사용하여 HWP 텍스트 추출 (백그라운드 OLE 및 보안 팝업 차단)"""
+    ensure_hwp_security_module()
     try:
         from pyhwpx import Hwp
-        hwp = Hwp(new=True, visible=False)
+        hwp = Hwp(new=True, visible=False, register_module=True)
         try:
-            hwp.Open(os.path.abspath(file_path))
-            text = hwp.GetTextFile("TEXT")
-            return sanitize_text(text)
+            # 보안 승인 모듈 명시적 등록 및 메시지 박스 억제
+            try:
+                hwp.RegisterModule("FilePathCheckDLL", "FilePathCheckerModule")
+            except Exception:
+                pass
+            try:
+                hwp.SetMessageBoxMode(0x00020000)
+            except Exception:
+                pass
+
+            opened = hwp.Open(os.path.abspath(file_path))
+            if not opened:
+                print(f"[pyhwpx] 파일 열기 실패: {file_path}")
+            # option="" 전달하여 전체 문서 텍스트 추출 (기본값 saveblock:true 시 None 반환 방지)
+            text = hwp.GetTextFile("TEXT", "")
+            if not text:
+                text = hwp.GetTextFile("UNICODE", "")
+            return sanitize_text(text or "")
         finally:
-            hwp.Quit()
+            try:
+                hwp.Quit()
+            except Exception:
+                pass
     except Exception as e:
         print(f"[pyhwpx 추출 경고] {e}")
         return ""
@@ -72,6 +137,79 @@ def get_hwp_text(file_path: str) -> str:
     return extract_hwp_text_pyhwpx(file_path)
 
 
+# 20대 표준 문제 유형 정의
+QUESTION_TYPES = [
+    "글의목적", "심경변화", "주장", "어휘함축", "글의요지", "글의주제", "글의제목",
+    "도표", "불일치", "실용문불일치", "실용문일치", "어법", "어휘", "빈칸",
+    "문장빼기", "글의순서", "문장넣기", "글의요약", "1지문2문항", "1지문3문항"
+]
+
+
+def classify_question_type(title: str, q_num: int = 0) -> str:
+    """발문(문제 제목)과 문항 번호를 기반으로 20대 문제 유형 자동 판별"""
+    t = title.strip()
+
+    # 복합 장문 우선 판별
+    if q_num in (41, 42) or "41~42" in t or "41-42" in t or "41～42" in t:
+        return "1지문2문항"
+    if q_num in (43, 44, 45) or "43~45" in t or "43-45" in t or "43～45" in t:
+        return "1지문3문항"
+
+    if "목적" in t:
+        return "글의목적"
+    if "심경" in t or "분위기" in t:
+        return "심경변화"
+    if "주장" in t:
+        return "주장"
+    if "함축" in t or "밑줄 친 부분" in t or "의미하는 바" in t or "밑줄 친" in t:
+        return "어휘함축"
+    if "요지" in t:
+        return "글의요지"
+    if "주제" in t:
+        return "글의주제"
+    if "제목" in t:
+        return "글의제목"
+    if "도표" in t or "그래프" in t:
+        return "도표"
+    if "실용문" in t or "안내문" in t or "광고" in t:
+        if "일치하지 않는" in t:
+            return "실용문불일치"
+        if "일치하는" in t:
+            return "실용문일치"
+    if "일치하지 않는" in t:
+        return "불일치"
+    if "일치하는" in t:
+        return "불일치"
+    if "어법" in t or "문법" in t:
+        return "어법"
+    if "문맥상 낱말" in t or "어휘" in t or "쓰임이 적절하지" in t or "낱말의 쓰임" in t:
+        return "어휘"
+    if "빈칸" in t:
+        return "빈칸"
+    if "관계 없는 문장" in t or "관계없는 문장" in t or "흐름과 관계" in t:
+        return "문장빼기"
+    if "이어질 글의 순서" in t or "순서로 가장" in t or "글의 순서" in t:
+        return "글의순서"
+    if "문장이 들어가기에" in t or "위치로 가장" in t:
+        return "문장넣기"
+    if "요약" in t:
+        return "글의요약"
+
+    return "기타"
+
+
+def split_questions_and_explanations(full_text: str) -> Tuple[str, str]:
+    """한 개의 HWP 문서 안에서 [문제지 영역]과 [정답 및 해설 영역] 분리"""
+    pattern = re.compile(
+        r"(?:^|\n)\s*(?:\[|\b)?(?:정답\s*(?:및|과)?\s*해설|정답표|정답\s*및\s*풀이|해설\s*및\s*정답|해설편|정답편)(?:\s*\])?",
+        re.IGNORECASE
+    )
+    match = pattern.search(full_text)
+    if match:
+        return full_text[:match.start()], full_text[match.start():]
+    return full_text, full_text
+
+
 def parse_hwp_questions(
     hwp_path: str,
     grade: str = "고3",
@@ -82,41 +220,89 @@ def parse_hwp_questions(
 ) -> Dict[int, Dict]:
     """
     HWP 시험지에서 독해 문항별 발문, 지문, 보기 추출
+    단일 HWP 파일(문제+해설 포함)에서도 문제지 영역만 분리하여 파싱
+    복합 지문([41~42], [43~45]) 공유 지문 정상 매핑
     """
     full_text = get_hwp_text(hwp_path)
     if not full_text:
         return {}
 
-    lines = full_text.splitlines()
-    q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.\s*(.+)")
+    # 문제지와 해설지 영역 분리
+    question_text, _ = split_questions_and_explanations(full_text)
+
+    lines = question_text.splitlines()
+    q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?$")
+    group_header_pattern = re.compile(r"^\s*\[\s*(\d{1,2})\s*[~～\-]\s*(\d{1,2})\s*\](?:\s*(.*))?")
 
     questions = {}
     current_q = None
     current_lines = []
+    current_inherited_title = ""
+    active_group_header = ""
+    active_group_range = (0, 0)
+    group_passage_lines = []
+    group_passages = {}
 
     for line in lines:
         line_s = line.strip()
         if not line_s:
             continue
 
+        # [31~34] 다음 빈칸... 과 같은 복합 그룹 헤더 감지
+        grp_match = group_header_pattern.match(line_s)
+        if grp_match:
+            # 이전 문항 마무리
+            if current_q and current_lines:
+                questions[current_q] = format_hwp_question(
+                    current_q, current_lines, grade, year, month, current_inherited_title, group_passages
+                )
+                current_q = None
+                current_lines = []
+
+            g_start = int(grp_match.group(1))
+            g_end = int(grp_match.group(2))
+            active_group_header = line_s
+            active_group_range = (g_start, g_end)
+            group_passage_lines = []
+            continue
+
         match = q_pattern.match(line_s)
         if match:
             q_num = int(match.group(1))
             if start_q <= q_num <= end_q:
+                # 그룹 지문 수집 중이었으면 캐시에 저장
+                if active_group_range[0] > 0 and group_passage_lines:
+                    group_passages[active_group_range] = "\n".join(group_passage_lines).strip()
+                    group_passage_lines = []
+
                 if current_q and current_lines:
                     questions[current_q] = format_hwp_question(
-                        current_q, current_lines, grade, year, month
+                        current_q, current_lines, grade, year, month, current_inherited_title, group_passages
                     )
                 current_q = q_num
                 current_lines = [line_s]
+
+                # 발문 설정: 단독 발문이 있으면 우선 사용, 비어있으면 그룹 헤더 상속
+                rest_title = (match.group(2) or "").strip()
+                if rest_title and rest_title not in ("[3점]", "[2점]", "3점", "2점"):
+                    current_inherited_title = f"{q_num}. {rest_title}"
+                elif active_group_range[0] <= q_num <= active_group_range[1] and active_group_header:
+                    current_inherited_title = f"{q_num}. {active_group_header}"
+                else:
+                    current_inherited_title = f"{q_num}. 문항"
                 continue
+
+        # 복합 지문 본문 누적 (문항 번호가 시작되기 전 지문 텍스트)
+        if current_q is None and active_group_range[0] > 0:
+            group_passage_lines.append(line_s)
+            continue
 
         if current_q:
             current_lines.append(line_s)
 
     if current_q and current_lines:
         questions[current_q] = format_hwp_question(
-            current_q, current_lines, grade, year, month
+            current_q, current_lines, grade, year, month, current_inherited_title, group_passages
         )
 
     return questions
@@ -127,56 +313,81 @@ def format_hwp_question(
     lines: list,
     grade: str,
     year: int,
-    month: int
+    month: int,
+    inherited_title: str = "",
+    group_passages: dict = None
 ) -> dict:
-    """문항 본문과 발문 정리"""
-    title = lines[0] if lines else f"{q_num}. 문항"
+    """문항 본문, 발문, 문제 유형 자동 분류"""
+    raw_title = lines[0] if lines else f"{q_num}. 문항"
+    if inherited_title and (len(raw_title.strip()) <= 4 or raw_title.strip().endswith(".")):
+        title = inherited_title
+    else:
+        title = raw_title
+
     body = "\n".join(lines[1:]) if len(lines) > 1 else ""
+
+    # 복합 지문(예: [41~42], [43~45])에 속한 문항의 지문 본문은 공유 지문 텍스트 적용
+    if group_passages:
+        for (g_s, g_e), g_text in group_passages.items():
+            if g_s <= q_num <= g_e and g_text:
+                body = g_text
+                break
 
     # 보기(① ~ ⑤) 앞까지의 영문 지문 추출
     choice_split = re.split(r"(?:^|\n)\s*①", body, maxsplit=1)
-    passage_text = choice_split[0].strip() if choice_split else body.strip()
+    passage_body = choice_split[0].strip() if choice_split else body.strip()
+
+    # TXT 지문 본문: 문항 번호와 발문을 상단에 포함
+    if passage_body:
+        full_passage_text = f"{title}\n\n{passage_body}"
+    else:
+        full_passage_text = title
 
     passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
+    q_type = classify_question_type(title, q_num)
 
     return {
         "passage_id": passage_id,
         "q_num": q_num,
         "question_title": title,
-        "passage_text": passage_text,
+        "question_type": q_type,
+        "passage_body": passage_body,
+        "passage_text": full_passage_text,
         "full_text": "\n".join(lines)
     }
 
 
 def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
     """
-    해설지 HWP 파일에서 문항별 정답 및 해설/해석/어휘 추출
-    지원 패턴:
-    - [21번] 또는 21. [정답] ③ [해설] ...
-    - [문항 21] ...
+    HWP 파일에서 문항별 정답 및 해설/해석/어휘 추출
+    단일 HWP 파일에 문제와 해설이 함께 있는 경우 해설 영역을 우선 탐색
+    범위 헤더(41~42, 43~45 등) 지원
     """
     full_text = get_hwp_text(hwp_path)
     if not full_text:
         return {}
 
-    # 문항 번호 헤더 감지 패턴
-    # 예: "21. 정답 ③", "[21]", "21번", "[21번]"
+    _, exp_text = split_questions_and_explanations(full_text)
+    # 해설 마커가 명확히 분리되었으면 exp_text 사용, 아니면 full_text 전체에서 해설 패턴 탐색
+    target_text = exp_text if exp_text != full_text else full_text
+
+    # 문항 번호 헤더 감지 패턴 (18. 또는 41~42. 등)
     header_pattern = re.compile(
-        r"(?:^|\n)\s*(?:\[|\b)(\d{1,2})(?:번|\.|\s*\])(?:\s*(?:정답|\[정답\])\s*([①②③④⑤1-5]))?"
+        r"(?:^|\n)\s*(?:\[|\b)?(\d{1,2}(?:\s*[~～\-]\s*\d{1,2})?)(?:번|\.|\s*\])(?:\s*(?:정답|\[정답\])\s*([①②③④⑤1-5]))?"
     )
 
-    matches = list(header_pattern.finditer(full_text))
+    matches = list(header_pattern.finditer(target_text))
     explanations = {}
 
     for i in range(len(matches)):
         m = matches[i]
-        q_num = int(m.group(1))
+        raw_q = m.group(1).replace(" ", "")
         answer = m.group(2) or ""
 
         start_idx = m.end()
-        end_idx = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
+        end_idx = matches[i + 1].start() if i + 1 < len(matches) else len(target_text)
 
-        content = full_text[start_idx:end_idx].strip()
+        content = target_text[start_idx:end_idx].strip()
 
         # 정답 번호가 본문 안에 따로 있는 경우 추가 탐지
         if not answer:
@@ -184,9 +395,30 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
             if ans_match:
                 answer = ans_match.group(1)
 
-        explanations[q_num] = {
-            "answer": answer,
-            "explanation": content
-        }
+        # 번호 범위 처리 (예: 41~42 -> 41, 42)
+        range_match = re.match(r"^(\d{1,2})[~～\-](\d{1,2})$", raw_q)
+        if range_match:
+            s_q = int(range_match.group(1))
+            e_q = int(range_match.group(2))
+            for sub_q in range(s_q, e_q + 1):
+                if sub_q not in explanations or len(explanations[sub_q].get("explanation", "")) < len(content):
+                    explanations[sub_q] = {
+                        "answer": answer,
+                        "explanation": content
+                    }
+        else:
+            try:
+                q_num = int(raw_q)
+                # 기존 범위 해설이 있으면 내용 병합
+                if q_num in explanations and explanations[q_num].get("explanation"):
+                    prev_exp = explanations[q_num]["explanation"]
+                    if content not in prev_exp:
+                        content = f"{prev_exp}\n\n{content}"
+                explanations[q_num] = {
+                    "answer": answer or explanations.get(q_num, {}).get("answer", ""),
+                    "explanation": content
+                }
+            except ValueError:
+                pass
 
     return explanations

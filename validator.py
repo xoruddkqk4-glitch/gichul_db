@@ -56,17 +56,7 @@ def cross_validate_and_merge(
         hwp_item = hwp_data.get(q_num, {})
         pdf_item = pdf_data.get(q_num, {})
         exp_item = explanations.get(q_num, {})
-
         passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
-
-        hwp_text = hwp_item.get("passage_text", "")
-        pdf_text = pdf_item.get("passage_body", "")
-
-        # 상호 유사도 계산
-        ratio = calculate_similarity(hwp_text, pdf_text) if hwp_text and pdf_text else 1.0
-
-        # 지문 본문 결정 (HWP 서식/단락 우선, 없으면 PDF)
-        final_passage_text = hwp_text if hwp_text else pdf_text
 
         # 문제 발문
         question_title = (
@@ -75,6 +65,23 @@ def cross_validate_and_merge(
             f"{q_num}. 문항"
         )
 
+        hwp_body = hwp_item.get("passage_body", "")
+        pdf_body = pdf_item.get("passage_body", "")
+        hwp_text = hwp_item.get("passage_text", "")
+        pdf_text = pdf_item.get("passage_text", "") or pdf_body
+
+        # 상호 유사도 계산 (순수 본문 기준)
+        ratio = calculate_similarity(hwp_body, pdf_body) if hwp_body and pdf_body else 1.0
+
+        # 지문 본문 결정 (HWP 서식/단락 우선, 없으면 PDF)
+        chosen_text = hwp_text if hwp_text else pdf_text
+
+        # TXT 지문 본문 텍스트: 문항 번호와 발문 포함 보장
+        if question_title and not chosen_text.startswith(question_title):
+            final_passage_text = f"{question_title}\n\n{chosen_text}"
+        else:
+            final_passage_text = chosen_text
+
         # PDF 크롭 이미지
         crop_img = pdf_item.get("pdf_crop_image", "")
 
@@ -82,7 +89,7 @@ def cross_validate_and_merge(
         ans_text = exp_item.get("answer", "")
         exp_text = exp_item.get("explanation", "")
 
-        # 문장 단위 분할
+        # 문장 단위 분할 (선지, 발문, 각주 배제된 순수 영어 문장만 생성)
         sentence_records = create_sentence_records(passage_id, final_passage_text)
 
         merged_results.append({
@@ -91,6 +98,7 @@ def cross_validate_and_merge(
                 "exam_id": f"[{grade}-{year}년-{month:02d}월]",
                 "q_num": q_num,
                 "question_title": question_title,
+                "question_type": hwp_item.get("question_type", ""),
                 "passage_text": final_passage_text,
                 "answer_text": ans_text,
                 "explanation_text": exp_text,

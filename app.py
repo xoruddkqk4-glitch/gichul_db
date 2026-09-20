@@ -38,6 +38,10 @@ class TagRequest(BaseModel):
     tag_name: str
 
 
+class QuestionTypeRequest(BaseModel):
+    question_type: str
+
+
 class SeedDataRequest(BaseModel):
     pass
 
@@ -67,6 +71,8 @@ async def api_search_passages(
     grade: str = "",
     year: Optional[int] = None,
     month: Optional[int] = None,
+    exam_type: str = "",
+    question_type: str = "",
     tag: str = "",
     limit: int = 50
 ):
@@ -76,6 +82,8 @@ async def api_search_passages(
         grade=grade,
         year=year,
         month=month,
+        exam_type=exam_type,
+        question_type=question_type,
         tag=tag,
         limit=limit
     )
@@ -85,18 +93,22 @@ async def api_search_passages(
 @app.get("/api/search/sentences")
 async def api_search_sentences(
     keyword: str = "",
+    passage_id: str = "",
     grade: str = "",
     year: Optional[int] = None,
     month: Optional[int] = None,
+    exam_type: str = "",
     tag: str = "",
     limit: int = 100
 ):
     """문장 검색 API (1행 테이블 뷰용)"""
     results = db.search_sentences(
         keyword=keyword,
+        passage_id=passage_id,
         grade=grade,
         year=year,
         month=month,
+        exam_type=exam_type,
         tag=tag,
         limit=limit
     )
@@ -106,7 +118,7 @@ async def api_search_sentences(
 # --- 단일 지문 상세 API (2x2 그리드 뷰용) ---
 @app.get("/api/passages/{passage_id}")
 async def api_get_passage(passage_id: str):
-    """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그)"""
+    """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형)"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
@@ -121,6 +133,18 @@ async def api_get_passage(passage_id: str):
         data = dict(row)
         data["tags"] = db.get_passage_tags(clean_id)
         return data
+
+
+# --- 문제 유형 수정 API ---
+@app.patch("/api/passages/{passage_id}/question-type")
+async def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
+    """지문의 문제 유형 변경/저장"""
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    success = db.update_passage_question_type(clean_id, req.question_type)
+    return {"success": success, "question_type": req.question_type}
 
 
 # --- 태그 관리 API ---
@@ -314,6 +338,7 @@ async def api_seed_sample_data():
         "exam_id": exam1["id"],
         "q_num": 21,
         "question_title": "21. 밑줄 친 viewing reality from nowhere가 다음 글에서 의미하는 바로 가장 적절한 것은? [3점]",
+        "question_type": "어휘함축",
         "passage_text": p21_text,
         "answer_text": "③",
         "explanation_text": (
@@ -351,6 +376,7 @@ async def api_seed_sample_data():
         "exam_id": exam1["id"],
         "q_num": 31,
         "question_title": "31. 다음 빈칸에 들어갈 말로 가장 적절한 것을 고르시오. [3점]",
+        "question_type": "빈칸",
         "passage_text": p31_text,
         "answer_text": "②",
         "explanation_text": (
@@ -395,6 +421,7 @@ async def api_seed_sample_data():
         "exam_id": exam2["id"],
         "q_num": 34,
         "question_title": "34. 다음 빈칸에 들어갈 말로 가장 적절한 것을 고르시오.",
+        "question_type": "빈칸",
         "passage_text": p34_text,
         "answer_text": "①",
         "explanation_text": (

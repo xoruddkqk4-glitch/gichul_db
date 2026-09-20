@@ -1,9 +1,10 @@
 """
 05-gichul_db: PDF 2단 레이아웃 파서 및 문항별 이미지 크롭 모듈 (pdf_parser.py)
 - PyMuPDF(fitz) 기반
-- 2단(좌/우 칼럼) 구조를 분할하여 문항 순서대로 텍스트 추출
+- 2단(좌/우 칼럼) 구조를 칼럼별로 독립 분할하여 문항 순서대로 텍스트 추출
 - 듣기 안내문 기반 동적 문항 번호 감지 (하드코딩 배제)
-- 각 문항의 좌표(Bounding Box)를 계산하여 고화질 문항 이미지(/static/captures/) 크롭 저장
+- 각 문항의 좌표(Bounding Box)를 정밀 계산하여 고화질 문항 이미지(/static/captures/) 크롭 저장
+- 칼럼 경계 및 헤더/푸터 침범을 차단하여 단일 문항 단위로만 정확히 크롭
 """
 
 import os
@@ -20,13 +21,11 @@ def detect_listening_range(full_text: str) -> Tuple[int, int]:
     시험지 텍스트에서 듣기 평가 문항 번호 범위 감지
     기본값: 독해 시작 18, 끝 45 (안내문 발견 시 동적 설정)
     """
-    # 패턴 예: "1번부터 17번까지는 듣고", "1번부터 22번까지는 듣고"
     match = re.search(r"1\s*번\s*부터\s*(\d{1,2})\s*번\s*까지\s*는\s*듣고", full_text)
     if match:
         listening_end = int(match.group(1))
-        return listening_end + 1, 45  # 독해 시작 번호, 기본 끝 번호
+        return listening_end + 1, 45
 
-    # 2014년 수준별 수능(22번까지 듣기) 등 다른 패턴 탐색
     if "A형" in full_text or "B형" in full_text:
         match_ab = re.search(r"(\d{1,2})\s*번\s*까지는\s*듣고", full_text)
         if match_ab:
@@ -42,15 +41,14 @@ def extract_pdf_columns_and_questions(
     month: int = 6,
     reading_start: Optional[int] = None,
     reading_end: Optional[int] = None
-) -> Dict[str, Dict]:
+) -> Dict[int, Dict]:
     """
-    PDF 시험지에서 2단(Two-Column) 레이아웃을 분리 분석하여
-    문항별 텍스트 및 크롭 이미지 생성
+    PDF 시험지에서 2단(Two-Column) 레이아웃을 칼럼별로 독립 분석하여
+    문항별 텍스트 및 정확한 크롭 이미지 생성
     """
     doc = fitz.open(pdf_path)
     all_page_text = ""
 
-    # 전체 텍스트 수집 (듣기 범위 동적 탐지용)
     for page in doc:
         all_page_text += page.get_text() + "\n"
 
@@ -58,12 +56,13 @@ def extract_pdf_columns_and_questions(
     start_q = reading_start if reading_start is not None else detected_start
     end_q = reading_end if reading_end is not None else detected_end
 
-    # 문항 번호 감지 정규식 (예: "18. 다음 글의", "19 . 다음")
-    q_pattern = re.compile(r"(?:^|\n)\s*(\d{1,2})\s*\.\s*(.+)")
+    # 문항 번호 감지 정규식 (예: "18. 다음 글의", "36.", "37. ")
+    q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?")
+    # 복합 지문 헤더 감지 정규식 (예: "[41~42] 다음 글을 읽고...")
+    group_header_pattern = re.compile(r"^\s*\[\s*(\d{1,2})\s*[~～\-]\s*(\d{1,2})\s*\](?:\s*(.*))?")
 
-    # 칼럼 단위로 블록 수집
-    # 각 블록: (page_num, col_idx, rect, text)
-    column_blocks = []
+    questions_data = {}
+    shared_group_cache = {}  # (g_start, g_end): {'rects': [...], 'text': [...], 'page_num': int}
 
     for page_num in range(len(doc)):
         page = doc[page_num]
@@ -71,64 +70,110 @@ def extract_pdf_columns_and_questions(
         width, height = rect.width, rect.height
         mid_x = width / 2.0
 
-        # 좌측 칼럼 (상단 여백 40pt, 하단 여백 40pt 제외)
-        left_clip = fitz.Rect(20, 30, mid_x - 10, height - 30)
-        # 우측 칼럼
-        right_clip = fitz.Rect(mid_x + 10, 30, width - 20, height - 30)
+        # 헤더(상단 155pt)와 푸터(하단 60pt)를 제외한 칼럼 클립 영역
+        left_clip = fitz.Rect(35, 155, mid_x - 5, height - 60)
+        right_clip = fitz.Rect(mid_x + 5, 155, width - 35, height - 60)
 
-        # 좌측 칼럼 블록
-        left_text_blocks = page.get_text("blocks", clip=left_clip)
-        left_text_blocks.sort(key=lambda b: (b[1], b[0]))  # Y좌표 정렬
-        column_blocks.append((page_num, "L", left_clip, left_text_blocks))
+        for col_idx, col_clip in [("L", left_clip), ("R", right_clip)]:
+            raw_blocks = page.get_text("blocks", clip=col_clip)
+            # Y좌표 우선 정렬
+            blocks = sorted(raw_blocks, key=lambda b: (b[1], b[0]))
 
-        # 우측 칼럼 블록
-        right_text_blocks = page.get_text("blocks", clip=right_clip)
-        right_text_blocks.sort(key=lambda b: (b[1], b[0]))
-        column_blocks.append((page_num, "R", right_clip, right_text_blocks))
+            current_q = None
+            current_text_lines = []
+            current_rects = []
 
-    # 문항별 영역 탐지 및 데이터 추출
-    questions_data = {}
+            # 공유 지문 임시 버퍼
+            active_group = None
+            group_text_lines = []
+            group_rects = []
 
-    # 모든 블록을 순서대로 순회하며 문항 번호 매핑
-    current_q = None
-    current_text_lines = []
-    current_rects = []  # (page_num, rect)
+            for b in blocks:
+                b_rect = fitz.Rect(b[0], b[1], b[2], b[3])
+                b_text = b[4].strip()
+                if not b_text:
+                    continue
 
-    for page_num, col_idx, col_rect, blocks in column_blocks:
-        page = doc[page_num]
-        for b in blocks:
-            b_rect = fitz.Rect(b[0], b[1], b[2], b[3])
-            b_text = b[4].strip()
-            if not b_text:
-                continue
+                # 헤더/푸터/페이지 번호 단독 블록 필터링
+                if b_rect.y1 < 160 or b_rect.y0 > height - 65:
+                    continue
+                if b_text in ("영어 영역", "홀수형", "짝수형") or re.match(r"^\d{1,2}$", b_text):
+                    continue
 
-            # 문항 시작 검사
-            match = q_pattern.match(b_text)
-            if match:
-                q_num = int(match.group(1))
-                if start_q <= q_num <= end_q:
-                    # 이전 문항 마무리
+                lines = b_text.split("\n")
+                first_line = lines[0].strip()
+
+                # 복합 지문 헤더 확인 (예: [41~42])
+                grp_match = group_header_pattern.match(first_line)
+                if grp_match:
+                    # 이전 문항이 있다면 종료
                     if current_q and current_text_lines:
                         save_extracted_question(
                             doc, current_q, current_text_lines, current_rects,
-                            grade, year, month, questions_data
+                            grade, year, month, questions_data, shared_group_cache
                         )
+                        current_q = None
+                        current_text_lines = []
+                        current_rects = []
 
-                    current_q = q_num
-                    current_text_lines = [b_text]
-                    current_rects = [(page_num, b_rect)]
+                    g_s = int(grp_match.group(1))
+                    g_e = int(grp_match.group(2))
+                    active_group = (g_s, g_e)
+                    group_text_lines = [b_text]
+                    group_rects = [(page_num, b_rect)]
                     continue
 
-            if current_q:
-                current_text_lines.append(b_text)
-                current_rects.append((page_num, b_rect))
+                # 문항 번호 시작 확인
+                q_match = q_pattern.match(first_line)
+                if q_match:
+                    q_num = int(q_match.group(1))
+                    if start_q <= q_num <= end_q:
+                        # 복합 지문 버퍼가 있으면 캐시에 저장
+                        if active_group:
+                            shared_group_cache[active_group] = {
+                                "page_num": page_num,
+                                "rects": list(group_rects),
+                                "text": list(group_text_lines)
+                            }
+                            active_group = None
 
-    # 마지막 문항 마무리
-    if current_q and current_text_lines:
-        save_extracted_question(
-            doc, current_q, current_text_lines, current_rects,
-            grade, year, month, questions_data
-        )
+                        # 이전 문항 마무리
+                        if current_q and current_text_lines:
+                            save_extracted_question(
+                                doc, current_q, current_text_lines, current_rects,
+                                grade, year, month, questions_data, shared_group_cache
+                            )
+
+                        current_q = q_num
+                        current_text_lines = [b_text]
+                        current_rects = [(page_num, b_rect)]
+                        continue
+
+                # 복합 지문 본문 누적
+                if active_group:
+                    group_text_lines.append(b_text)
+                    group_rects.append((page_num, b_rect))
+                    continue
+
+                # 현재 문항 본문 누적
+                if current_q:
+                    current_text_lines.append(b_text)
+                    current_rects.append((page_num, b_rect))
+
+            # 칼럼 종료 시 열려있는 문항 마무리 (칼럼 간 침범 방지)
+            if current_q and current_text_lines:
+                save_extracted_question(
+                    doc, current_q, current_text_lines, current_rects,
+                    grade, year, month, questions_data, shared_group_cache
+                )
+
+            # 칼럼 끝에 공유 지문이 걸려있을 경우 캐시 저장
+            if active_group and group_rects:
+                shared_group_cache[active_group] = {
+                    "page_num": page_num,
+                    "rects": list(group_rects),
+                    "text": list(group_text_lines)
+                }
 
     doc.close()
     return questions_data
@@ -142,37 +187,60 @@ def save_extracted_question(
     grade: str,
     year: int,
     month: int,
-    out_dict: dict
+    out_dict: dict,
+    shared_group_cache: dict
 ):
     """문항 텍스트 정제 및 PDF 해당 문항 고화질 이미지 크롭 저장"""
     full_q_text = "\n".join(text_lines)
 
-    # 발문(문제 제목)과 본문/보기 분리
     lines = [l.strip() for l in full_q_text.split("\n") if l.strip()]
     question_title = lines[0] if lines else f"{q_num}. 문항"
     passage_body = "\n".join(lines[1:]) if len(lines) > 1 else ""
 
-    # 지문 ID: [O학년-OOOO년-OO월-OO번]
+    # 공유 지문에 속한 문항(예: 41번)인 경우 공유 지문 텍스트 및 영역 병합
+    attached_group_rects = []
+    for (g_s, g_e), g_data in shared_group_cache.items():
+        if g_s <= q_num <= g_e:
+            # 41번 또는 첫 문항의 경우 공유 지문 Bounding Box 포함하여 크롭
+            if q_num == g_s:
+                attached_group_rects = g_data.get("rects", [])
+            # 본문이 비어있으면 공유 지문 텍스트 채우기
+            if not passage_body and g_data.get("text"):
+                passage_body = "\n".join(g_data["text"]) + "\n" + passage_body
+            break
+
+    # 하단 선택지(① ~ ⑤) 앞까지의 순수 지문 본문 정제
+    clean_passage_body = passage_body
+    if q_num not in (29, 30, 35, 38, 39):
+        choice_split = re.split(r"(?:^|\n)\s*[①1]\b|[①]", passage_body)
+        if len(choice_split) > 1:
+            clean_passage_body = choice_split[0].strip()
+
+    # 지문 TXT: 문항 번호와 발문을 포함한 정제 텍스트
+    if clean_passage_body:
+        full_passage_text = f"{question_title}\n\n{clean_passage_body}"
+    else:
+        full_passage_text = question_title
+
+    # 지문 식별자: [고3-2024년-06월-21번]
     passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
     img_filename = f"{grade}_{year}_{month:02d}_{q_num:02d}.png"
     img_filepath = os.path.join(CAPTURES_DIR, img_filename)
     web_img_url = f"/static/captures/{img_filename}"
 
-    # 문항 영역 크롭 이미지 생성
-    if rects:
-        # 동일 페이지 내 영역 통합
-        page_num = rects[0][0]
+    all_crop_rects = list(attached_group_rects) + list(rects)
+
+    if all_crop_rects:
+        page_num = all_crop_rects[0][0]
         page = doc[page_num]
 
-        # 첫 번째 페이지 내의 모든 rect 합치기
-        same_page_rects = [r[1] for r in rects if r[0] == page_num]
+        same_page_rects = [r[1] for r in all_crop_rects if r[0] == page_num]
         if same_page_rects:
-            min_x = min(r.x0 for r in same_page_rects) - 5
-            min_y = min(r.y0 for r in same_page_rects) - 5
-            max_x = max(r.x1 for r in same_page_rects) + 5
-            max_y = max(r.y1 for r in same_page_rects) + 5
+            min_x = min(r.x0 for r in same_page_rects) - 6
+            min_y = min(r.y0 for r in same_page_rects) - 6
+            max_x = max(r.x1 for r in same_page_rects) + 6
+            max_y = max(r.y1 for r in same_page_rects) + 6
 
-            # 경계 벗어남 방지
             crop_rect = fitz.Rect(
                 max(0, min_x),
                 max(0, min_y),
@@ -180,7 +248,7 @@ def save_extracted_question(
                 min(page.rect.height, max_y)
             )
 
-            # 200 DPI로 선명하게 렌더링
+            # 200 DPI로 고화질 크롭 이미지 생성
             pix = page.get_pixmap(clip=crop_rect, dpi=200)
             pix.save(img_filepath)
     else:
@@ -191,6 +259,7 @@ def save_extracted_question(
         "q_num": q_num,
         "question_title": question_title,
         "raw_text": full_q_text,
-        "passage_body": passage_body,
+        "passage_body": clean_passage_body,
+        "passage_text": full_passage_text,
         "pdf_crop_image": web_img_url
     }

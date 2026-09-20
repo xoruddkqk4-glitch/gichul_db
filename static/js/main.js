@@ -1,71 +1,229 @@
 /**
  * 05-gichul_db: 메인 프론트엔드 자바스크립트 로직 (main.js)
- * - 구글 스타일 검색창 및 지문/문장 모드 제어
- * - 2x2 지문 그리드 뷰어 및 실시간 태그 관리
- * - 1행 테이블 문장 뷰어 및 클립보드 복사(Ctrl+V) 연동
- * - PDF+HWP 업로드 및 샘플 데이터 원클릭 주입
+ * - 통계 배지 클릭 시 전체 지문 결과 표시
+ * - 동일 위치(헤더 슬롯) '전체 문장' <-> '지문 결과창으로 돌아가기' 양방향 전환
+ * - 검색창 화면과 결과창 화면의 완전한 분리 및 전환
+ * - 상단 가로 문항별 탭 바(복수 결과 탭 전환) 및 전체 너비 2x2 그리드
+ * - 1행 테이블 문장 뷰어 및 클립보드 원클릭 복사
+ * - PDF+HWP 업로드 및 상호 검증 파이프라인
  */
 
 document.addEventListener("DOMContentLoaded", () => {
   // 상태 변수
   let currentMode = "passage"; // 'passage' 또는 'sentence'
   let currentPassageId = null;
+  let currentPassageIndex = 0;
   let passagesData = [];
   let sentencesData = [];
 
+  // =========================================================================
   // DOM 요소 캐싱
-  const heroSearchSection = document.getElementById("heroSearchSection");
+  // =========================================================================
+  
+  // 글로벌 헤더 & 홈 로고
+  const btnGoHome = document.getElementById("btnGoHome");
+  const statPassages = document.getElementById("statPassages");
+  const statSentences = document.getElementById("statSentences");
+  const btnSeedSample = document.getElementById("btnSeedSample");
+  const btnOpenUploadModal = document.getElementById("btnOpenUploadModal");
+
+  // 헤더 동적 액션 슬롯 (통계 배지 <-> 전체 문장 버튼 <-> 지문 복귀 버튼)
+  const statsBadge = document.getElementById("statsBadge");
+  const btnHeaderFlow = document.getElementById("btnHeaderFlow");
+
+  // 화면 1: 홈 검색 화면
+  const homeSearchView = document.getElementById("homeSearchView");
   const tabModePassage = document.getElementById("tabModePassage");
   const tabModeSentence = document.getElementById("tabModeSentence");
   const mainSearchInput = document.getElementById("mainSearchInput");
   const btnSearch = document.getElementById("btnSearch");
-  const btnGoHome = document.getElementById("btnGoHome");
 
-  // 필터
+  // 홈 필터
   const filterGrade = document.getElementById("filterGrade");
   const filterYear = document.getElementById("filterYear");
   const filterMonth = document.getElementById("filterMonth");
+  const filterExamType = document.getElementById("filterExamType");
+  const filterQuestionType = document.getElementById("filterQuestionType");
   const filterTag = document.getElementById("filterTag");
 
-  // 컨테이너
-  const loadingIndicator = document.getElementById("loadingIndicator");
-  const passageViewContainer = document.getElementById("passageViewContainer");
-  const sentenceViewContainer = document.getElementById("sentenceViewContainer");
+  // 화면 2: 결과창 화면
+  const resultsView = document.getElementById("resultsView");
+  const btnBackToSearch = document.getElementById("btnBackToSearch");
+  const resultsSearchInput = document.getElementById("resultsSearchInput");
+  const btnResultsSearch = document.getElementById("btnResultsSearch");
+  const resultsTabModePassage = document.getElementById("resultsTabModePassage");
+  const resultsTabModeSentence = document.getElementById("resultsTabModeSentence");
 
-  // 지문 2x2 뷰 요소
-  const passageList = document.getElementById("passageList");
-  const passageMatchCount = document.getElementById("passageMatchCount");
-  const panelExplanation = document.getElementById("panelExplanation");
+  // 결과창 필터
+  const resultsFilterGrade = document.getElementById("resultsFilterGrade");
+  const resultsFilterYear = document.getElementById("resultsFilterYear");
+  const resultsFilterMonth = document.getElementById("resultsFilterMonth");
+  const resultsFilterExamType = document.getElementById("resultsFilterExamType");
+  const resultsFilterQuestionType = document.getElementById("resultsFilterQuestionType");
+  const resultsTotalCount = document.getElementById("resultsTotalCount");
+
+  // 상태 컨테이너
+  const loadingIndicator = document.getElementById("loadingIndicator");
+  const emptyResultsBox = document.getElementById("emptyResultsBox");
+  const btnEmptyBackToSearch = document.getElementById("btnEmptyBackToSearch");
+
+  // [지문 결과 화면] 요소
+  const passageViewContainer = document.getElementById("passageViewContainer");
+  const passageTabBarContainer = document.getElementById("passageTabBarContainer");
+  const passageTabBar = document.getElementById("passageTabBar");
+  const passageTabCount = document.getElementById("passageTabCount");
+  const btnTabScrollLeft = document.getElementById("btnTabScrollLeft");
+  const btnTabScrollRight = document.getElementById("btnTabScrollRight");
+
+  // 2x2 그리드 요소
   const panelPdfImageContainer = document.getElementById("panelPdfImageContainer");
   const panelPassageText = document.getElementById("panelPassageText");
+  const panelExplanation = document.getElementById("panelExplanation");
   const metaPassageId = document.getElementById("metaPassageId");
   const metaQNum = document.getElementById("metaQNum");
   const metaAnswer = document.getElementById("metaAnswer");
   const metaQuestionTitle = document.getElementById("metaQuestionTitle");
+  const selectQuestionType = document.getElementById("selectQuestionType");
   const validationBadge = document.getElementById("validationBadge");
   const passageTagsList = document.getElementById("passageTagsList");
   const inputPassageTag = document.getElementById("inputPassageTag");
   const btnAddPassageTag = document.getElementById("btnAddPassageTag");
   const btnCopyPassage = document.getElementById("btnCopyPassage");
+  const btnCardPassageSentences = document.getElementById("btnCardPassageSentences");
   const btnCopyExplanation = document.getElementById("btnCopyExplanation");
 
-  // 문장 테이블 뷰 요소
+  // [문장 결과 화면] 요소
+  const sentenceViewContainer = document.getElementById("sentenceViewContainer");
   const sentenceMatchCount = document.getElementById("sentenceMatchCount");
   const sentenceTableBody = document.getElementById("sentenceTableBody");
+  const btnSentenceBackToPassage = document.getElementById("btnSentenceBackToPassage");
 
-  // 업로드 모달 및 버튼
-  const btnOpenUploadModal = document.getElementById("btnOpenUploadModal");
-  const btnCloseUploadModal = document.getElementById("btnCloseUploadModal");
-  const btnCancelUpload = document.getElementById("btnCancelUpload");
+  // 업로드 모달 요소
   const uploadModal = document.getElementById("uploadModal");
   const uploadForm = document.getElementById("uploadForm");
-  const btnSeedSample = document.getElementById("btnSeedSample");
+  const btnCloseUploadModal = document.getElementById("btnCloseUploadModal");
+  const btnCancelUpload = document.getElementById("btnCancelUpload");
+  const modalExamType = document.getElementById("modalExamType");
+  const modalMonth = document.getElementById("modalMonth");
 
-  // 통계 배지
-  const statPassages = document.getElementById("statPassages");
-  const statSentences = document.getElementById("statSentences");
+  // =========================================================================
+  // 1. 헤더 액션 슬롯 상태 제어 (통계 배지 <-> 전체 문장 <-> 지문 복귀)
+  // =========================================================================
 
-  // --- 1. 초기화 및 통계 로드 ---
+  /**
+   * 헤더 액션 슬롯 상태 전환 함수
+   * @param {'home' | 'passage' | 'sentence'} state 
+   */
+  function setHeaderSlotState(state) {
+    if (!statsBadge || !btnHeaderFlow) return;
+
+    if (state === "home") {
+      statsBadge.style.display = "flex";
+      btnHeaderFlow.style.display = "none";
+    } else if (state === "passage") {
+      statsBadge.style.display = "none";
+      btnHeaderFlow.style.display = "inline-flex";
+      btnHeaderFlow.textContent = "📝 전체 문장";
+      btnHeaderFlow.title = "현재 지문의 전체 문장 결과창 보기";
+      btnHeaderFlow.classList.remove("mode-back");
+    } else if (state === "sentence") {
+      statsBadge.style.display = "none";
+      btnHeaderFlow.style.display = "inline-flex";
+      btnHeaderFlow.textContent = "🔙 지문 결과창으로 돌아가기";
+      btnHeaderFlow.title = "이전 지문 상세 화면으로 복귀";
+      btnHeaderFlow.classList.add("mode-back");
+    }
+  }
+
+  // =========================================================================
+  // 2. 화면 전환 및 동기화 로직
+  // =========================================================================
+
+  /** 홈 검색 화면으로 복귀 */
+  function showHomeScreen() {
+    homeSearchView.style.display = "flex";
+    resultsView.style.display = "none";
+    if (emptyResultsBox) emptyResultsBox.style.display = "none";
+    if (passageViewContainer) passageViewContainer.style.display = "none";
+    if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
+    
+    // 헤더 상태를 통계 배지 모드로 복원
+    setHeaderSlotState("home");
+
+    // 결과창 검색어 및 필터를 홈 검색창에 동기화
+    if (resultsSearchInput && resultsSearchInput.value) {
+      mainSearchInput.value = resultsSearchInput.value;
+    }
+    if (resultsFilterGrade) filterGrade.value = resultsFilterGrade.value;
+    if (resultsFilterYear) filterYear.value = resultsFilterYear.value;
+    if (resultsFilterMonth) filterMonth.value = resultsFilterMonth.value;
+    if (resultsFilterExamType) filterExamType.value = resultsFilterExamType.value;
+    if (resultsFilterQuestionType) filterQuestionType.value = resultsFilterQuestionType.value;
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    mainSearchInput.focus();
+  }
+
+  /** 결과 화면으로 전환 */
+  function showResultsScreen() {
+    homeSearchView.style.display = "none";
+    resultsView.style.display = "flex";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // 홈으로 이동 버튼 이벤트 연결
+  btnGoHome.addEventListener("click", showHomeScreen);
+  btnBackToSearch.addEventListener("click", showHomeScreen);
+  if (btnEmptyBackToSearch) {
+    btnEmptyBackToSearch.addEventListener("click", showHomeScreen);
+  }
+
+  // =========================================================================
+  // 3. 모드 전환 (지문 검색 vs 문장 검색)
+  // =========================================================================
+
+  function setMode(mode, triggerSearch = false) {
+    currentMode = mode;
+    if (mode === "passage") {
+      tabModePassage.classList.add("active");
+      tabModeSentence.classList.remove("active");
+      if (resultsTabModePassage) resultsTabModePassage.classList.add("active");
+      if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
+      mainSearchInput.placeholder = "검색할 키워드, 지문 주제, 문항 번호 또는 출처([고3-2024년...])를 입력하세요...";
+      if (resultsSearchInput) resultsSearchInput.placeholder = "지문 검색어 또는 출처 입력...";
+    } else {
+      tabModeSentence.classList.add("active");
+      tabModePassage.classList.remove("active");
+      if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
+      if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
+      mainSearchInput.placeholder = "검색할 영어 문장 표현 또는 출처([고3-2024년...-1번째 문장])를 입력하세요...";
+      if (resultsSearchInput) resultsSearchInput.placeholder = "영어 문장 또는 출처 입력...";
+    }
+
+    if (triggerSearch && resultsView.style.display !== "none") {
+      executeSearch("results");
+    }
+  }
+
+  tabModePassage.addEventListener("click", () => setMode("passage"));
+  tabModeSentence.addEventListener("click", () => setMode("sentence"));
+  if (resultsTabModePassage) {
+    resultsTabModePassage.addEventListener("click", () => {
+      if (currentMode === "passage") return;
+      backToPassageView();
+    });
+  }
+  if (resultsTabModeSentence) {
+    resultsTabModeSentence.addEventListener("click", () => {
+      if (currentMode === "sentence") return;
+      showSentencesForPassage(currentPassageId);
+    });
+  }
+
+  // =========================================================================
+  // 4. 통계 데이터 로드 및 통계 배지 클릭(전체 지문 보기)
+  // =========================================================================
+
   async function loadStats() {
     try {
       const res = await fetch("/api/stats");
@@ -80,72 +238,83 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   loadStats();
 
-  // 홈 로고 클릭 시 첫 검색창으로 복귀
-  btnGoHome.addEventListener("click", () => {
-    heroSearchSection.classList.remove("compact");
-    passageViewContainer.style.display = "none";
-    sentenceViewContainer.style.display = "none";
-    mainSearchInput.value = "";
-    mainSearchInput.focus();
-  });
+  // [첫번째 첨부 이미지 클릭] : 통계 배지 클릭 시 -> 전체 지문이 결과창에 표시됨
+  if (statsBadge) {
+    statsBadge.addEventListener("click", () => {
+      // 모든 필터 및 검색어 비우기 (전체 지문 조회)
+      mainSearchInput.value = "";
+      if (resultsSearchInput) resultsSearchInput.value = "";
+      filterGrade.value = "";
+      filterYear.value = "";
+      filterMonth.value = "";
+      filterExamType.value = "";
+      filterQuestionType.value = "";
+      if (filterTag) filterTag.value = "";
 
-  // --- 2. 모드 전환 (지문 검색 vs 문장 검색) ---
-  tabModePassage.addEventListener("click", () => {
-    currentMode = "passage";
-    tabModePassage.classList.add("active");
-    tabModeSentence.classList.remove("active");
-    mainSearchInput.placeholder = "검색할 키워드, 지문 주제 또는 출처([고3-2024년...])를 입력하세요...";
-    if (heroSearchSection.classList.contains("compact")) {
-      executeSearch();
-    }
-  });
+      if (resultsFilterGrade) resultsFilterGrade.value = "";
+      if (resultsFilterYear) resultsFilterYear.value = "";
+      if (resultsFilterMonth) resultsFilterMonth.value = "";
+      if (resultsFilterExamType) resultsFilterExamType.value = "";
+      if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
 
-  tabModeSentence.addEventListener("click", () => {
-    currentMode = "sentence";
-    tabModeSentence.classList.add("active");
-    tabModePassage.classList.remove("active");
-    mainSearchInput.placeholder = "검색할 영어 문장 표현 또는 출처([고3-2024년...-1번째 문장])를 입력하세요...";
-    if (heroSearchSection.classList.contains("compact")) {
-      executeSearch();
-    }
-  });
-
-  // 검색 트리거 (Enter 또는 버튼 클릭)
-  btnSearch.addEventListener("click", executeSearch);
-  mainSearchInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      executeSearch();
-    }
-  });
-
-  // 필터 변경 시 자동 재검색
-  [filterGrade, filterYear, filterMonth].forEach((el) => {
-    el.addEventListener("change", () => {
-      if (heroSearchSection.classList.contains("compact")) {
-        executeSearch();
-      }
+      setMode("passage");
+      executeSearch("all_passages");
     });
-  });
+  }
 
-  filterTag.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && heroSearchSection.classList.contains("compact")) {
-      executeSearch();
+  // =========================================================================
+  // 5. 검색 실행 함수
+  // =========================================================================
+
+  async function executeSearch(source = "home") {
+    let keyword, grade, year, month, examType, questionType, tag;
+
+    if (source === "all_passages") {
+      keyword = "";
+      grade = "";
+      year = "";
+      month = "";
+      examType = "";
+      questionType = "";
+      tag = "";
+    } else if (source === "home") {
+      keyword = mainSearchInput.value.trim();
+      grade = filterGrade.value;
+      year = filterYear.value;
+      month = filterMonth.value;
+      examType = filterExamType ? filterExamType.value : "";
+      questionType = filterQuestionType ? filterQuestionType.value : "";
+      tag = filterTag ? filterTag.value.trim() : "";
+
+      // 결과창 바에 동기화
+      if (resultsSearchInput) resultsSearchInput.value = keyword;
+      if (resultsFilterGrade) resultsFilterGrade.value = grade;
+      if (resultsFilterYear) resultsFilterYear.value = year;
+      if (resultsFilterMonth) resultsFilterMonth.value = month;
+      if (resultsFilterExamType) resultsFilterExamType.value = examType;
+      if (resultsFilterQuestionType) resultsFilterQuestionType.value = questionType;
+    } else {
+      keyword = resultsSearchInput.value.trim();
+      grade = resultsFilterGrade.value;
+      year = resultsFilterYear.value;
+      month = resultsFilterMonth.value;
+      examType = resultsFilterExamType.value;
+      questionType = resultsFilterQuestionType.value;
+      tag = filterTag ? filterTag.value.trim() : "";
+
+      // 홈 바에 역동기화
+      mainSearchInput.value = keyword;
+      filterGrade.value = grade;
+      filterYear.value = year;
+      filterMonth.value = month;
+      filterExamType.value = examType;
+      filterQuestionType.value = questionType;
     }
-  });
 
-  // --- 3. 검색 실행 함수 ---
-  async function executeSearch() {
-    const keyword = mainSearchInput.value.trim();
-    const grade = filterGrade.value;
-    const year = filterYear.value;
-    const month = filterMonth.value;
-    const tag = filterTag.value.trim();
-
-    // 상단 검색 섹션을 컴팩트 모드로 축소
-    heroSearchSection.classList.add("compact");
-
-    // UI 가시성 처리
+    // 결과 화면으로 전환 및 로딩 표시
+    showResultsScreen();
     loadingIndicator.style.display = "flex";
+    emptyResultsBox.style.display = "none";
     passageViewContainer.style.display = "none";
     sentenceViewContainer.style.display = "none";
 
@@ -154,19 +323,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (grade) params.append("grade", grade);
     if (year) params.append("year", year);
     if (month) params.append("month", month);
+    if (examType) params.append("exam_type", examType);
+    if (questionType) params.append("question_type", questionType);
     if (tag) params.append("tag", tag);
+    params.append("limit", "500");
 
     try {
       if (currentMode === "passage") {
         const res = await fetch(`/api/search/passages?${params.toString()}`);
         const data = await res.json();
         passagesData = data.items || [];
+        resultsTotalCount.textContent = passagesData.length;
         renderPassageView(passagesData);
+        setHeaderSlotState("passage");
       } else {
         const res = await fetch(`/api/search/sentences?${params.toString()}`);
         const data = await res.json();
         sentencesData = data.items || [];
+        resultsTotalCount.textContent = sentencesData.length;
         renderSentenceView(sentencesData);
+        setHeaderSlotState("sentence");
       }
     } catch (err) {
       console.error("검색 오류:", err);
@@ -176,92 +352,213 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // --- 4. 화면 2: 지문 검색 결과 렌더링 (2x2 그리드) ---
-  function renderPassageView(items) {
-    passageViewContainer.style.display = "flex";
-    passageMatchCount.textContent = `${items.length}건`;
-    passageList.innerHTML = "";
+  // 홈 검색 트리거
+  btnSearch.addEventListener("click", () => executeSearch("home"));
+  mainSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") executeSearch("home");
+  });
 
-    if (items.length === 0) {
-      passageList.innerHTML = `<div style="text-align: center; padding: 2rem; color: var(--text-muted);">검색 결과가 없습니다.</div>`;
+  // 결과창 검색 트리거
+  if (btnResultsSearch) {
+    btnResultsSearch.addEventListener("click", () => executeSearch("results"));
+  }
+  if (resultsSearchInput) {
+    resultsSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") executeSearch("results");
+    });
+  }
+
+  // 결과창 필터 변경 시 자동 재검색
+  [resultsFilterGrade, resultsFilterYear, resultsFilterMonth, resultsFilterExamType, resultsFilterQuestionType].forEach((el) => {
+    if (el) {
+      el.addEventListener("change", () => executeSearch("results"));
+    }
+  });
+
+  // =========================================================================
+  // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
+  // =========================================================================
+
+  function renderPassageView(items) {
+    if (!items || items.length === 0) {
+      emptyResultsBox.style.display = "flex";
+      passageViewContainer.style.display = "none";
       clear2x2Panels();
       return;
     }
 
-    // 좌측 지문 목록 생성
-    items.forEach((p, idx) => {
-      const itemEl = document.createElement("div");
-      itemEl.className = `passage-list-item ${idx === 0 ? "active" : ""}`;
-      itemEl.dataset.id = p.id;
-      itemEl.innerHTML = `
-        <div class="item-badge-row">
-          <span class="item-q-id">${p.id}</span>
-          <span class="item-ratio">정답 ${p.answer_text || "-"}</span>
-        </div>
-        <div class="item-snippet">${escapeHtml(p.question_title || p.passage_text)}</div>
-      `;
+    emptyResultsBox.style.display = "none";
+    passageViewContainer.style.display = "flex";
+    currentPassageIndex = 0;
 
-      itemEl.addEventListener("click", () => {
-        document.querySelectorAll(".passage-list-item").forEach((el) => el.classList.remove("active"));
-        itemEl.classList.add("active");
-        loadPassageDetail(p);
-      });
+    // 상단 문항별 탭 바 생성
+    renderPassageTabs(items);
 
-      passageList.appendChild(itemEl);
-    });
-
-    // 첫 번째 지문 기본 선택 로드
+    // 첫 번째 문항 상세 로드
     loadPassageDetail(items[0]);
   }
 
+  /** 상단 가로 문항별 탭 생성 */
+  function renderPassageTabs(items) {
+    passageTabBar.innerHTML = "";
+    passageTabCount.textContent = items.length;
+
+    items.forEach((p, idx) => {
+      const tabBtn = document.createElement("button");
+      tabBtn.type = "button";
+      tabBtn.className = `passage-q-tab ${idx === 0 ? "active" : ""}`;
+      tabBtn.dataset.index = idx;
+      tabBtn.dataset.id = p.id;
+
+      const qLabel = p.q_num ? `${p.q_num}번` : p.id;
+      const typeLabel = p.question_type ? escapeHtml(p.question_type) : "기타";
+      const ansLabel = p.answer_text ? `(답: ${escapeHtml(p.answer_text)})` : "";
+
+      tabBtn.innerHTML = `
+        <span class="tab-q-number">${qLabel}</span>
+        <span class="tab-type-tag">${typeLabel}</span>
+        ${ansLabel ? `<span class="tab-ans-tag">${ansLabel}</span>` : ""}
+      `;
+
+      tabBtn.addEventListener("click", () => {
+        selectPassageTab(idx, items);
+      });
+
+      passageTabBar.appendChild(tabBtn);
+    });
+  }
+
+  /** 특정 문항 탭 선택 및 2x2 그리드 동기화 */
+  function selectPassageTab(idx, items) {
+    if (idx < 0 || idx >= items.length) return;
+    currentPassageIndex = idx;
+
+    const tabs = passageTabBar.querySelectorAll(".passage-q-tab");
+    tabs.forEach((t, i) => {
+      if (i === idx) {
+        t.classList.add("active");
+        t.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      } else {
+        t.classList.remove("active");
+      }
+    });
+
+    loadPassageDetail(items[idx]);
+  }
+
+  // 상단 탭 스크롤 버튼
+  if (btnTabScrollLeft) {
+    btnTabScrollLeft.addEventListener("click", () => {
+      passageTabBar.scrollBy({ left: -220, behavior: "smooth" });
+    });
+  }
+  if (btnTabScrollRight) {
+    btnTabScrollRight.addEventListener("click", () => {
+      passageTabBar.scrollBy({ left: 220, behavior: "smooth" });
+    });
+  }
+
+  // 키보드 방향키(←, →)로 문항 탭 전환 지원 (입력창에 포커스가 없을 때)
+  window.addEventListener("keydown", (e) => {
+    if (passageViewContainer.style.display === "none") return;
+    const activeTagName = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+    if (activeTagName === "input" || activeTagName === "textarea" || activeTagName === "select") return;
+
+    if (e.key === "ArrowLeft") {
+      if (currentPassageIndex > 0) {
+        selectPassageTab(currentPassageIndex - 1, passagesData);
+      }
+    } else if (e.key === "ArrowRight") {
+      if (currentPassageIndex < passagesData.length - 1) {
+        selectPassageTab(currentPassageIndex + 1, passagesData);
+      }
+    }
+  });
+
+  /** 2x2 패널에 특정 지문 상세 정보 로드 */
   function loadPassageDetail(p) {
     currentPassageId = p.id;
 
-    // 1. [좌측 상단]: HWP 정답과 해설
-    panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
-
-    // 2. [우측 상단]: PDF 해당 문항 캡처 이미지
+    // [좌측 상단]: PDF 문항 캡처 이미지
     if (p.pdf_crop_image) {
       panelPdfImageContainer.innerHTML = `
-        <img src="${p.pdf_crop_image}" class="pdf-crop-img" alt="${p.id} 문항 캡처" title="클릭 시 새 창에서 원본 크기 보기">
+        <img src="${p.pdf_crop_image}" class="pdf-crop-img" alt="${escapeHtml(p.id)} 문항 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
       `;
-      panelPdfImageContainer.querySelector("img").addEventListener("click", () => {
-        window.open(p.pdf_crop_image, "_blank");
-      });
+      const imgEl = panelPdfImageContainer.querySelector("img");
+      if (imgEl) {
+        imgEl.addEventListener("click", () => {
+          window.open(p.pdf_crop_image, "_blank");
+        });
+      }
     } else {
       panelPdfImageContainer.innerHTML = `
         <div class="pdf-placeholder">
           🖼️ PDF 문항 캡처 이미지가 생성되지 않았거나 없습니다.<br>
-          <small style="color: var(--text-light);">시험지 업로드 시 PDF 파일을 함께 등록하시면 원본 문항 이미지가 자동 크롭됩니다.</small>
+          <small style="color: var(--text-light); margin-top: 6px; display: inline-block;">
+            시험지 업로드 시 PDF 파일을 함께 등록하시면 원본 문항 인쇄 영역이 고화질로 자동 크롭됩니다.
+          </small>
         </div>
       `;
     }
 
-    // 3. [좌측 하단]: 지문 정보 & 태그 관리
+    // [좌측 하단]: TXT 지문 본문
+    panelPassageText.textContent = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
+
+    // [우측 상단]: HWP 정답 및 해설
+    panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
+
+    // [우측 하단]: 지문 메타 정보, 문제 유형, 태그 관리
     metaPassageId.textContent = p.id;
-    metaQNum.textContent = `${p.q_num}번`;
+    metaQNum.textContent = p.q_num ? `${p.q_num}번` : "-";
     metaAnswer.textContent = p.answer_text ? `${p.answer_text}번` : "-";
     metaQuestionTitle.textContent = p.question_title || "-";
     validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
 
-    renderPassageTags(p.tags || []);
+    // 20대 문제 유형 선택기 반영
+    if (selectQuestionType) {
+      selectQuestionType.value = p.question_type || "글의목적";
+      selectQuestionType.onchange = async () => {
+        const newType = selectQuestionType.value;
+        try {
+          const res = await fetch(`/api/passages/${encodeURIComponent(currentPassageId)}/question-type`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question_type: newType }),
+          });
+          if (res.ok) {
+            p.question_type = newType;
+            showToast(`문제 유형이 '${newType}'(으)로 즉시 저장되었습니다.`, "success");
+            
+            // 상단 탭의 유형 배지도 즉시 갱신
+            const activeTab = passageTabBar.querySelector(`.passage-q-tab.active .tab-type-tag`);
+            if (activeTab) {
+              activeTab.textContent = newType;
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          showToast("문제 유형 변경 실패", "error");
+        }
+      };
+    }
 
-    // 4. [우측 하단]: TXT 지문 본문
-    panelPassageText.textContent = p.passage_text || "지문 본문이 비어 있습니다.";
+    renderPassageTags(p.tags || []);
   }
 
   function clear2x2Panels() {
-    panelExplanation.textContent = "-";
     panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">지문을 선택하세요.</div>`;
+    panelPassageText.textContent = "-";
+    panelExplanation.textContent = "-";
     metaPassageId.textContent = "-";
     metaQNum.textContent = "-";
     metaAnswer.textContent = "-";
     metaQuestionTitle.textContent = "-";
     passageTagsList.innerHTML = "";
-    panelPassageText.textContent = "-";
+    passageTabBar.innerHTML = "";
+    passageTabCount.textContent = "0";
   }
 
-  // 지문 태그 렌더링
+  /** 지문 태그 목록 렌더링 */
   function renderPassageTags(tags) {
     passageTagsList.innerHTML = "";
     if (!tags || tags.length === 0) {
@@ -286,7 +583,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 지문 태그 추가 API
+  /** 지문 태그 추가 API */
   async function addPassageTagAction() {
     const tagName = inputPassageTag.value.trim();
     if (!tagName || !currentPassageId) return;
@@ -312,12 +609,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   btnAddPassageTag.addEventListener("click", addPassageTagAction);
   inputPassageTag.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      addPassageTagAction();
-    }
+    if (e.key === "Enter") addPassageTagAction();
   });
 
-  // 지문 태그 삭제 API
+  /** 지문 태그 삭제 API */
   async function deletePassageTag(passageId, tagName) {
     try {
       const res = await fetch(
@@ -352,27 +647,201 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // --- 5. 화면 3: 문장 검색 결과 렌더링 (1행 테이블) ---
+  // =========================================================================
+  // 7. [전체 문장 보기] <-> [지문 결과창으로 돌아가기] 연동
+  // =========================================================================
+
+  /** 특정 지문의 전체 문장 결과창을 1행 테이블로 표시 */
+  async function showSentencesForPassage(passageId) {
+    if (!passageId) {
+      if (passagesData && passagesData.length > 0) {
+        passageId = passagesData[currentPassageIndex].id;
+      }
+    }
+    if (!passageId) {
+      setMode("sentence", true);
+      return;
+    }
+
+    currentPassageId = passageId;
+    currentMode = "sentence";
+    if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
+    if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
+    if (tabModeSentence) tabModeSentence.classList.add("active");
+    if (tabModePassage) tabModePassage.classList.remove("active");
+
+    loadingIndicator.style.display = "flex";
+    passageViewContainer.style.display = "none";
+    emptyResultsBox.style.display = "none";
+
+    try {
+      const res = await fetch(`/api/search/sentences?passage_id=${encodeURIComponent(passageId)}&limit=300`);
+      const data = await res.json();
+      sentencesData = data.items || [];
+      resultsTotalCount.textContent = sentencesData.length;
+      renderSentenceView(sentencesData);
+
+      // 상단 문장 건수 표시 커스텀 타이틀 반영
+      if (sentenceMatchCount) {
+        sentenceMatchCount.innerHTML = `<strong>${escapeHtml(passageId)}</strong> 문항 전체 문장 (${sentencesData.length}개)`;
+      }
+
+      // 동일 위치(헤더 슬롯) 버튼을 '지문 결과창으로 돌아가기'로 전환
+      setHeaderSlotState("sentence");
+    } catch (err) {
+      console.error(err);
+      showToast("문장 데이터를 불러오지 못했습니다.", "error");
+    } finally {
+      loadingIndicator.style.display = "none";
+    }
+  }
+
+  /** 전체 문장 결과창에서 이전 지문 상세 화면으로 복귀 */
+  function backToPassageView() {
+    currentMode = "passage";
+    if (resultsTabModePassage) resultsTabModePassage.classList.add("active");
+    if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
+    if (tabModePassage) tabModePassage.classList.add("active");
+    if (tabModeSentence) tabModeSentence.classList.remove("active");
+
+    sentenceViewContainer.style.display = "none";
+    passageViewContainer.style.display = "flex";
+    emptyResultsBox.style.display = "none";
+
+    // 동일 위치(헤더 슬롯) 버튼을 '전체 문장' 버튼으로 복원
+    setHeaderSlotState("passage");
+
+    // 직전에 선택되었던 지문 상태 유지 (18번 리셋 방지)
+    if (passagesData && passagesData.length > 0) {
+      resultsTotalCount.textContent = passagesData.length;
+      let targetIndex = currentPassageIndex;
+      if (currentPassageId) {
+        const found = passagesData.findIndex(p => p.id === currentPassageId);
+        if (found >= 0) targetIndex = found;
+      }
+      if (targetIndex < 0 || targetIndex >= passagesData.length) targetIndex = 0;
+      selectPassageTab(targetIndex, passagesData);
+    } else if (currentPassageId) {
+      navigateToPassageView(currentPassageId);
+    } else {
+      executeSearch("results");
+    }
+  }
+
+  /** 출처 문자열에서 순수 지문 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번]) */
+  function extractPassageId(str) {
+    if (!str) return "";
+    const m = str.match(/(\[[^\]]+?-\d+번)(?:-\d+번째 문장\]|\])/);
+    if (m) return m[1] + "]";
+    return str.replace(/-\d+번째 문장\]$/, "]");
+  }
+
+  /** 문장 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동 및 탭 포커스 */
+  async function navigateToPassageView(targetPassageId) {
+    const pId = extractPassageId(targetPassageId);
+    if (!pId) return;
+
+    currentPassageId = pId;
+    currentMode = "passage";
+    if (resultsTabModePassage) resultsTabModePassage.classList.add("active");
+    if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
+    if (tabModePassage) tabModePassage.classList.add("active");
+    if (tabModeSentence) tabModeSentence.classList.remove("active");
+
+    sentenceViewContainer.style.display = "none";
+    passageViewContainer.style.display = "flex";
+    emptyResultsBox.style.display = "none";
+
+    // 1. 현재 passagesData 목록에 해당 지문이 이미 존재하는지 확인
+    let idx = -1;
+    if (passagesData && passagesData.length > 0) {
+      idx = passagesData.findIndex(p => p.id === pId);
+    }
+
+    if (idx >= 0) {
+      resultsTotalCount.textContent = passagesData.length;
+      setHeaderSlotState("passage");
+      selectPassageTab(idx, passagesData);
+      showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
+      return;
+    }
+
+    // 2. passagesData에 없을 경우(단독 문장 검색 등에서 유입된 경우)
+    loadingIndicator.style.display = "flex";
+    try {
+      // 해당 시험지 전체 지문 로드 시도
+      const examId = pId.substring(0, pId.lastIndexOf("-")) + "]";
+      const res = await fetch(`/api/search/passages?exam_id=${encodeURIComponent(examId)}&limit=100`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+          passagesData = data.items;
+          resultsTotalCount.textContent = passagesData.length;
+          renderPassageView(passagesData);
+          const foundIdx = passagesData.findIndex(p => p.id === pId);
+          selectPassageTab(foundIdx >= 0 ? foundIdx : 0, passagesData);
+          setHeaderSlotState("passage");
+          showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
+          return;
+        }
+      }
+
+      // 단일 지문 로드 폴백
+      const singleRes = await fetch(`/api/passages/${encodeURIComponent(pId)}`);
+      if (singleRes.ok) {
+        const singleData = await singleRes.json();
+        passagesData = [singleData];
+        resultsTotalCount.textContent = 1;
+        renderPassageView(passagesData);
+        selectPassageTab(0, passagesData);
+        setHeaderSlotState("passage");
+        showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
+      }
+    } catch (err) {
+      console.error("지문 이동 오류:", err);
+      showToast("지문 화면으로 이동하지 못했습니다.", "error");
+    } finally {
+      loadingIndicator.style.display = "none";
+    }
+  }
+
+  // 헤더 슬롯 버튼 클릭 시 상태에 따라 문장 보기 / 지문 복귀 수행
+  if (btnHeaderFlow) {
+    btnHeaderFlow.addEventListener("click", () => {
+      if (btnHeaderFlow.classList.contains("mode-back")) {
+        backToPassageView();
+      } else {
+        showSentencesForPassage(currentPassageId);
+      }
+    });
+  }
+
+  // 문장 결과창 헤더의 '지문 결과창으로 돌아가기' 버튼
+  if (btnSentenceBackToPassage) {
+    btnSentenceBackToPassage.addEventListener("click", () => {
+      backToPassageView();
+    });
+  }
+
+  // =========================================================================
+  // 8. [문장 검색 결과] 1행 테이블 렌더링
+  // =========================================================================
+
   function renderSentenceView(items) {
+    if (!items || items.length === 0) {
+      emptyResultsBox.style.display = "flex";
+      sentenceViewContainer.style.display = "none";
+      return;
+    }
+
+    emptyResultsBox.style.display = "none";
     sentenceViewContainer.style.display = "block";
     sentenceMatchCount.textContent = items.length;
     sentenceTableBody.innerHTML = "";
 
-    if (items.length === 0) {
-      sentenceTableBody.innerHTML = `
-        <tr>
-          <td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-muted);">
-            검색된 문장이 없습니다. 다른 검색어를 입력해 보세요.
-          </td>
-        </tr>
-      `;
-      return;
-    }
-
     items.forEach((s) => {
       const tr = document.createElement("tr");
 
-      // 태그 배지 HTML 생성
       const tagsHtml = (s.tags || [])
         .map(
           (t) =>
@@ -381,9 +850,16 @@ document.addEventListener("DOMContentLoaded", () => {
         )
         .join(" ");
 
+      // 출처 ID에서 문항 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번])
+      const targetPassageId = s.passage_id || extractPassageId(s.id);
+
       tr.innerHTML = `
         <td class="col-num">${s.row_num}</td>
-        <td class="col-source">${escapeHtml(s.id)}</td>
+        <td class="col-source">
+          <button type="button" class="btn-source-link" data-passage-id="${escapeHtml(targetPassageId)}" title="클릭하여 ${escapeHtml(targetPassageId)} 지문 결과 화면으로 이동">
+            🔗 ${escapeHtml(s.id)}
+          </button>
+        </td>
         <td class="col-sentence">${escapeHtml(s.sentence_text)}</td>
         <td class="col-tags">
           <div class="tags-container-${cssSafeId(s.id)}" style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem;">
@@ -397,10 +873,19 @@ document.addEventListener("DOMContentLoaded", () => {
         <td class="col-remarks">${escapeHtml(s.exam_type || "")} ${s.word_count ? `(${s.word_count}단어)` : ""}</td>
         <td class="col-action">
           <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}">
-            📋 복사
+            📋 텍스트 복사
           </button>
         </td>
       `;
+
+      // 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동
+      const sourceBtn = tr.querySelector(".btn-source-link");
+      if (sourceBtn) {
+        sourceBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          navigateToPassageView(targetPassageId);
+        });
+      }
 
       // 인라인 복사 이벤트
       const copyBtn = tr.querySelector(".btn-copy-sentence");
@@ -409,7 +894,7 @@ document.addEventListener("DOMContentLoaded", () => {
         copyBtn.textContent = "✔ 복사됨";
         copyBtn.classList.add("copied");
         setTimeout(() => {
-          copyBtn.innerHTML = "📋 복사";
+          copyBtn.innerHTML = "📋 텍스트 복사";
           copyBtn.classList.remove("copied");
         }, 1500);
       });
@@ -430,7 +915,7 @@ document.addEventListener("DOMContentLoaded", () => {
           if (res.ok) {
             tagInput.value = "";
             showToast(`문장 태그 '#${val}' 추가 완료`, "success");
-            executeSearch(); // 갱신
+            executeSearch("results");
             loadStats();
           }
         } catch (e) {
@@ -454,7 +939,7 @@ document.addEventListener("DOMContentLoaded", () => {
             );
             if (res.ok) {
               showToast(`문장 태그 '#${tagToDelete}' 삭제 완료`, "info");
-              executeSearch();
+              executeSearch("results");
               loadStats();
             }
           } catch (e) {
@@ -467,7 +952,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // --- 6. 클립보드 복사 헬퍼 ---
+  // =========================================================================
+  // 9. 클립보드 복사 & 토스트 알림 헬퍼
+  // =========================================================================
+
   function copyToClipboard(text, successMsg) {
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(text).then(() => {
@@ -497,9 +985,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.removeChild(textArea);
   }
 
-  // --- 7. 토스트 알림 헬퍼 ---
   function showToast(message, type = "info") {
     const toastContainer = document.getElementById("toastContainer");
+    if (!toastContainer) return;
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
     toast.innerHTML = `<span>${message}</span>`;
@@ -513,7 +1001,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 3000);
   }
 
-  // --- 8. 업로드 모달 제어 및 API 제출 ---
+  // =========================================================================
+  // 10. 시험지 업로드 모달 제어 (월 자동 가이드 및 파이프라인 제출)
+  // =========================================================================
+
   btnOpenUploadModal.addEventListener("click", () => {
     uploadModal.classList.add("show");
   });
@@ -525,12 +1016,27 @@ document.addEventListener("DOMContentLoaded", () => {
   btnCloseUploadModal.addEventListener("click", closeUploadModal);
   btnCancelUpload.addEventListener("click", closeUploadModal);
 
+  // 시험 구분 변경 시 월 기본값 지능적 안내
+  if (modalExamType && modalMonth) {
+    modalExamType.addEventListener("change", () => {
+      if (modalExamType.value === "교육청") {
+        if (!["3", "4", "5", "7", "10"].includes(modalMonth.value)) {
+          modalMonth.value = "7";
+        }
+      } else {
+        if (!["6", "9", "11"].includes(modalMonth.value)) {
+          modalMonth.value = "6";
+        }
+      }
+    });
+  }
+
   uploadForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const formData = new FormData(uploadForm);
     const submitBtn = document.getElementById("btnSubmitUpload");
     submitBtn.disabled = true;
-    submitBtn.textContent = "⏳ 파싱 및 검증 중...";
+    submitBtn.textContent = "⏳ 파싱 및 보안 승인 검증 중...";
 
     try {
       const res = await fetch("/api/upload", {
@@ -543,9 +1049,9 @@ document.addEventListener("DOMContentLoaded", () => {
         closeUploadModal();
         uploadForm.reset();
         loadStats();
-        // 업로드된 시험지로 자동 검색
+        // 업로드된 시험지로 자동 검색 실행
         mainSearchInput.value = data.exam_id || "";
-        executeSearch();
+        executeSearch("home");
       } else {
         alert(`업로드 실패: ${data.detail || "알 수 없는 오류"}`);
       }
@@ -558,7 +1064,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // --- 9. 샘플 데이터 즉시 주입 ---
+  // =========================================================================
+  // 11. 샘플 데이터 즉시 주입
+  // =========================================================================
+
   btnSeedSample.addEventListener("click", async () => {
     btnSeedSample.disabled = true;
     btnSeedSample.textContent = "주입 중...";
@@ -568,9 +1077,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.ok) {
         showToast(data.message, "success");
         loadStats();
-        // 첫 검색 자동 실행
+        // 검색 자동 실행
         mainSearchInput.value = "";
-        executeSearch();
+        executeSearch("home");
       }
     } catch (e) {
       console.error(e);
