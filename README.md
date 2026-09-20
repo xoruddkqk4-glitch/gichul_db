@@ -753,7 +753,7 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/main.js` 자바스크립트 문법 검증 통과 (오류 0건)
   - Git 트래킹 및 원격 main 브랜치 동기화 완료
 
-### [2026-09-21 00:17] 업데이트 이력 (Commit ID: fb7e5c5)
+### [2026-09-21 00:17] 업데이트 이력 (Commit ID: c45817b)
 - **수정 내용**:
   - **정답표 이미지(`-A.png` / `.jpg`) Vision AI 자동 파싱 및 3종 세트 일괄 업로드 파이프라인 구축 (`hwp_parser.py`, `app.py`, `templates/index.html`, `static/js/main.js`)**:
     - **Vision AI 정답표 파서 (`parse_answer_image`)**: HWP 내에 텍스트가 없고 이미지 형태로 표가 삽입된 시험지의 정답 누락 문제를 해결하기 위해, Gemini / OpenAI / OpenRouter Vision 모델을 연동하여 10열 9행 또는 격자형 정답표 이미지에서 1~45번 정답을 원문자(`①~⑤`) 딕셔너리로 100% 자동 파싱하는 엔진 신설
