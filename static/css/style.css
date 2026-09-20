@@ -376,10 +376,11 @@ body {
 }
 
 .home-grammar-filters-group,
-.results-grammar-filters-group {
+.results-grammar-filters-group,
+.grammar-breadcrumb-filter-bar {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: linear-gradient(135deg, #eef2ff 0%, #f5f3ff 100%);
   border: 1.5px solid #c7d2fe;
   border-radius: 10px;
@@ -389,6 +390,36 @@ body {
   white-space: nowrap !important;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.grammar-breadcrumb-filter-bar .breadcrumb-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.grammar-breadcrumb-trail {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.breadcrumb-select-wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.grammar-breadcrumb-filter-bar .breadcrumb-separator {
+  color: #818cf8;
+  font-size: 1rem;
+  font-weight: 800;
+  user-select: none;
+  margin: 0 2px;
+}
+
+.compact-breadcrumb-bar {
+  padding: 3px 6px;
+  gap: 5px;
 }
 
 .btn-back-search {
@@ -662,6 +693,40 @@ body {
   background: #f1f5f9;
   color: #1e293b;
   border-color: #94a3b8;
+}
+
+/* 모든 계층형 브레드크럼 네비게이션 공통: 설정 초기화 버튼 */
+.btn-tree-reset-exam,
+.btn-grammar-reset-step,
+.btn-breadcrumb-reset {
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #64748b;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-tree-reset-exam:hover,
+.btn-grammar-reset-step:hover,
+.btn-breadcrumb-reset:hover {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fca5a5;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);
+}
+
+.compact-reset {
+  padding: 0.28rem 0.6rem;
+  font-size: 0.78rem;
 }
 
 /* 2. 상위 계층 단계별 선택기 (학년 / 년도 / 월) */
@@ -1468,37 +1533,63 @@ mark.passage-highlight {
   box-shadow: 0 4px 10px rgba(99, 102, 241, 0.15);
 }
 
-/* 필터 바 내 어법 셀렉트 및 별표 토글 버튼 */
-.grammar-filter-select {
-  width: 210px !important;
-  min-width: 210px !important;
-  max-width: 210px !important;
+/* 필터 바 내 어법 셀렉트 (계층형 브레드크럼 셀렉트 스타일) */
+.grammar-filter-select,
+.breadcrumb-select {
+  width: auto !important;
+  min-width: 140px !important;
+  max-width: 220px !important;
   text-align: center !important;
   text-align-last: center !important;
   -moz-text-align-last: center !important;
   background-color: #ffffff !important;
-  border: 1.5px solid #a5b4fc !important;
-  color: #3730a3 !important;
+  border: 1.5px solid #cbd5e1 !important;
+  color: #334155 !important;
   font-weight: 700 !important;
   font-size: 0.82rem !important;
   border-radius: 8px !important;
-  padding: 0.38rem 0.5rem !important;
+  padding: 0.38rem 0.65rem !important;
   cursor: pointer;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
   box-sizing: border-box;
   transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-.grammar-filter-select:focus {
+.grammar-filter-select:hover,
+.breadcrumb-select:hover {
+  border-color: #94a3b8 !important;
+  background-color: #f8fafc !important;
+}
+.grammar-filter-select:focus,
+.breadcrumb-select:focus {
   border-color: #6366f1 !important;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
   outline: none;
 }
-.grammar-filter-select option {
+.grammar-filter-select option,
+.breadcrumb-select option {
   text-align: left;
   color: #1e293b;
   font-weight: 500;
+}
+
+/* 활성 상태 (어법 대분류 또는 세부 어법이 선택되었을 때 계층 강조) */
+.grammar-filter-select.active,
+.breadcrumb-select.active {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border-color: #93c5fd !important;
+  font-weight: 800 !important;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.15) !important;
+}
+
+.compact-breadcrumb-select {
+  min-width: 115px !important;
+  max-width: 175px !important;
+  padding: 0.28rem 0.5rem !important;
+  font-size: 0.78rem !important;
 }
 
 .btn-toggle-starred {

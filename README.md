@@ -371,6 +371,28 @@
   - `/api/search/sentences?limit=5000` 호출 시 539건 문장 0.07초 내 완전 응답 검증 완료
   - 로컬 HTTP 서버 정상 200 응답 확인 완료
 
-
-
-
+### [2026-09-20 18:30] 업데이트 이력 (Commit ID: 0cda24f)
+- **수정 내용**:
+  - **문장 검색 어법 필터: 계층형 브레드크럼 네비게이션 시스템 개편**:
+    - 첫 검색 화면(`#homeGrammarFiltersGroup`) 및 검색 결과창(`#resultsGrammarFiltersGroup`)의 어법 필터 그룹을 기존 단순 `<select>` 나열 방식에서 **`📍 [ 어법 대분류 ▾ ] > [ 세부 어법 ▾ ]`**의 일원화된 계층형 브레드크럼 네비게이션 구조로 전면 개편 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)
+    - 어법 대분류 및 세부 어법 선택 시 활성 상태(`.active`) 브레드크럼 pill 스타일(소프트 로열 블루 배경 `#eff6ff`, 블루 텍스트 `#1d4ed8`, 테두리 `#93c5fd`, 그림자) 적용
+  - **웹앱 내 3대 계층형 브레드크럼 시스템 전체에 '설정 초기화'(`↺ 설정 초기화`) 기능 구축**:
+    - **1) 문장 검색 어법 브레드크럼 필터 바 (홈 & 결과창 공통)**:
+      - `↺ 설정 초기화` 버튼 (`#btnResetHomeGrammarFilter`, `#btnResetResultsGrammarFilter`) 신설
+      - 어법 대분류, 세부 어법, 중요 문장(⭐) 중 어느 하나라도 활성화되면 동적으로 버튼 노출
+      - 클릭 시 모든 어법 조건과 중요 문장 필터를 한 번에 무설정 상태로 초기화하고 실시간 검색/필터링 반영 (`static/js/main.js`, `templates/index.html`, `static/css/style.css`)
+    - **2) 지문 시험 선택기 브레드크럼 바 (`#treeBreadcrumbBar`)**:
+      - `↺ 설정 초기화` 버튼 (`#btnTreeResetExam`) 및 브레드크럼 홈 아이콘(`treeBreadcrumbHome`, `📍`) 클릭 기능 신설
+      - 시험 선택(학년/년도/월) 단계가 진행 중일 때 `[ 🔄 다른 시험 선택 ]` 좌측에 노출
+      - 클릭 시 모든 선택 상태를 비우고 최초 학년 선택 단계로 즉각 복귀 (`templates/index.html`, `static/js/main.js`, `static/css/style.css`)
+    - **3) 어법 범주 모달 브레드크럼 바 (`#grammarBreadcrumbBar`)**:
+      - `↺ 설정 초기화` 버튼 (`#btnGrammarResetStep`) 신설
+      - 품사 선택, 세부 분류 탐색, 전체 보기 모드, 또는 실시간 검색 중일 때 노출
+      - 클릭 시 검색어 및 세부 탐색 경로를 모두 비우고 1단계(9대 품사 카드 개요) 화면으로 즉각 복귀 (`templates/index.html`, `static/js/main.js`, `static/css/style.css`)
+  - **공통 브레드크럼 초기화 버튼 모던 UI 스타일 구축**:
+    - `.btn-tree-reset-exam`, `.btn-grammar-reset-step`, `.btn-breadcrumb-reset` 공통 클래스 정의 (`static/css/style.css`)
+    - 호버 시 소프트 레드 배경(`background: #fef2f2; color: #dc2626; border-color: #fca5a5;`) 및 미세 리프트 효과로 직관적인 시각 피드백 제공
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py run.py` 파이썬 구문 검증 완료 (통과)
+  - `http://127.0.0.1:8000` 로컬 HTTP 서버 200 OK 응답 및 변경된 브레드크럼 HTML 마크업 정상 전달 확인

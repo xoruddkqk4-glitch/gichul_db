@@ -77,7 +77,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const passageTabBar = document.getElementById("passageTabBar");
   const passageTabCount = document.getElementById("passageTabCount");
   const treeBreadcrumbBar = document.getElementById("treeBreadcrumbBar");
+  const treeBreadcrumbHome = document.getElementById("treeBreadcrumbHome");
   const breadcrumbTrail = document.getElementById("breadcrumbTrail");
+  const btnTreeResetExam = document.getElementById("btnTreeResetExam");
   const btnTreeChangeExam = document.getElementById("btnTreeChangeExam");
   const treeStepSelector = document.getElementById("treeStepSelector");
   const btnTabScrollLeft = document.getElementById("btnTabScrollLeft");
@@ -120,9 +122,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultsGrammarFiltersGroup = document.getElementById("resultsGrammarFiltersGroup");
   const filterGrammarPos = document.getElementById("filterGrammarPos");
   const filterGrammarCategory = document.getElementById("filterGrammarCategory");
+  const btnResetHomeGrammarFilter = document.getElementById("btnResetHomeGrammarFilter");
   const btnToggleStarred = document.getElementById("btnToggleStarred");
   const resultsFilterGrammarPos = document.getElementById("resultsFilterGrammarPos");
   const resultsFilterGrammarCategory = document.getElementById("resultsFilterGrammarCategory");
+  const btnResetResultsGrammarFilter = document.getElementById("btnResetResultsGrammarFilter");
   const btnResultsToggleStarred = document.getElementById("btnResultsToggleStarred");
   const btnBatchAnalyzeStarred = document.getElementById("btnBatchAnalyzeStarred");
   let isStarredFilterActive = false;
@@ -416,6 +420,10 @@ document.addEventListener("DOMContentLoaded", () => {
       filterQuestionType.value = questionType;
       if (filterGrammarPos && resultsFilterGrammarPos) filterGrammarPos.value = resultsFilterGrammarPos.value;
       if (filterGrammarCategory && resultsFilterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
+    }
+
+    if (typeof updateGrammarBreadcrumbFilterUI === "function") {
+      updateGrammarBreadcrumbFilterUI();
     }
 
     // 결과 화면으로 전환 및 로딩 표시
@@ -1069,6 +1077,36 @@ document.addEventListener("DOMContentLoaded", () => {
         updateTreeUI(tree, allItems, totalExamsCount);
       });
     });
+
+    // "↺ 설정 초기화" 버튼: 시험 선택 상태(학년/년도/월)라면 언제든 무설정 상태(처음 학년 선택)로 복귀 가능
+    if (btnTreeResetExam) {
+      const hasTreeSelection = !!(treeNavState.grade || treeNavState.year || treeNavState.month);
+      if (totalExamsCount > 1 && hasTreeSelection) {
+        btnTreeResetExam.style.display = "inline-flex";
+        btnTreeResetExam.onclick = () => {
+          treeNavState.grade = null;
+          treeNavState.year = null;
+          treeNavState.month = null;
+          updateTreeUI(tree, allItems, totalExamsCount);
+          showToast("시험 선택이 초기화되었습니다.", "info");
+        };
+      } else {
+        btnTreeResetExam.style.display = "none";
+      }
+    }
+
+    // 브레드크럼 홈 아이콘(📍) 클릭 시 처음 학년 선택으로 복귀
+    if (treeBreadcrumbHome) {
+      treeBreadcrumbHome.style.cursor = "pointer";
+      treeBreadcrumbHome.onclick = () => {
+        if (treeNavState.grade || treeNavState.year || treeNavState.month) {
+          treeNavState.grade = null;
+          treeNavState.year = null;
+          treeNavState.month = null;
+          updateTreeUI(tree, allItems, totalExamsCount);
+        }
+      };
+    }
 
     // "🔄 다른 시험 선택" 버튼: 복수 시험일 때만 노출
     if (btnTreeChangeExam) {
@@ -2022,6 +2060,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const grammarBreadcrumbBar = document.getElementById("grammarBreadcrumbBar");
   const grammarBreadcrumbTrail = document.getElementById("grammarBreadcrumbTrail");
   const grammarBreadcrumbHome = document.getElementById("grammarBreadcrumbHome");
+  const btnGrammarResetStep = document.getElementById("btnGrammarResetStep");
   const btnGrammarChangeStep = document.getElementById("btnGrammarChangeStep");
   const btnGrammarToggleView = document.getElementById("btnGrammarToggleView");
 
@@ -2099,6 +2138,29 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!grammarBreadcrumbTrail) return;
 
     const isSearching = !!(grammarSearchTerm && grammarSearchTerm.trim());
+    const isNavActive = !!(
+      grammarNavState.pos ||
+      grammarNavState.subPos ||
+      grammarNavState.mode === "all" ||
+      isSearching
+    );
+
+    // "↺ 설정 초기화" 버튼: 단계 선택, 전체 보기 또는 검색 중일 때 노출 (초기 9대 품사 화면으로 즉시 복귀)
+    if (btnGrammarResetStep) {
+      if (isNavActive) {
+        btnGrammarResetStep.style.display = "inline-flex";
+        btnGrammarResetStep.onclick = () => {
+          grammarNavState = { pos: null, subPos: null, mode: "step" };
+          grammarSearchTerm = "";
+          if (inputGrammarSearch) inputGrammarSearch.value = "";
+          if (btnClearGrammarSearch) btnClearGrammarSearch.style.display = "none";
+          renderGrammarModalView();
+          showToast("어법 탐색이 초기화되었습니다.", "info");
+        };
+      } else {
+        btnGrammarResetStep.style.display = "none";
+      }
+    }
 
     if (isSearching) {
       const q = grammarSearchTerm.trim().toLowerCase();
@@ -2652,12 +2714,75 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // =========================================================================
+  // 어법 계층형 브레드크럼 필터 바 상태 동기화 및 설정 초기화
+  // =========================================================================
+
+  /** 브레드크럼 필터 바의 active pill 스타일 및 '설정 초기화' 버튼 가시성 업데이트 */
+  function updateGrammarBreadcrumbFilterUI() {
+    const pos = (filterGrammarPos && filterGrammarPos.value) || (resultsFilterGrammarPos && resultsFilterGrammarPos.value) || "";
+    const cat = (filterGrammarCategory && filterGrammarCategory.value) || (resultsFilterGrammarCategory && resultsFilterGrammarCategory.value) || "";
+
+    if (filterGrammarPos) filterGrammarPos.classList.toggle("active", !!pos);
+    if (resultsFilterGrammarPos) resultsFilterGrammarPos.classList.toggle("active", !!pos);
+
+    if (filterGrammarCategory) filterGrammarCategory.classList.toggle("active", !!cat);
+    if (resultsFilterGrammarCategory) resultsFilterGrammarCategory.classList.toggle("active", !!cat);
+
+    const hasActiveFilter = !!(pos || cat || isStarredFilterActive);
+    if (btnResetHomeGrammarFilter) {
+      btnResetHomeGrammarFilter.style.display = hasActiveFilter ? "inline-flex" : "none";
+    }
+    if (btnResetResultsGrammarFilter) {
+      btnResetResultsGrammarFilter.style.display = hasActiveFilter ? "inline-flex" : "none";
+    }
+  }
+
+  /** 모든 어법 필터 및 별표 필터를 무설정 상태로 초기화 */
+  function resetAllGrammarFilters(triggerSearch = false) {
+    if (filterGrammarPos) filterGrammarPos.value = "";
+    if (resultsFilterGrammarPos) resultsFilterGrammarPos.value = "";
+    if (filterGrammarCategory) filterGrammarCategory.value = "";
+    if (resultsFilterGrammarCategory) resultsFilterGrammarCategory.value = "";
+
+    updateSubGrammarCategories("", filterGrammarCategory);
+    updateSubGrammarCategories("", resultsFilterGrammarCategory);
+
+    setStarredFilter(false);
+    updateGrammarBreadcrumbFilterUI();
+
+    if (triggerSearch) {
+      if (isSearchWithinActive && rawSentencesData && rawSentencesData.length > 0) {
+        executeSearchWithinResults();
+      } else {
+        executeSearch("results");
+      }
+    }
+  }
+
+  // 홈 어법 필터 바 '설정 초기화' 버튼 이벤트
+  if (btnResetHomeGrammarFilter) {
+    btnResetHomeGrammarFilter.addEventListener("click", () => {
+      resetAllGrammarFilters(false);
+      showToast("어법 필터 설정이 초기화되었습니다.", "info");
+    });
+  }
+
+  // 결과창 어법 필터 바 '설정 초기화' 버튼 이벤트
+  if (btnResetResultsGrammarFilter) {
+    btnResetResultsGrammarFilter.addEventListener("click", () => {
+      resetAllGrammarFilters(true);
+      showToast("어법 필터 설정이 초기화되었습니다.", "info");
+    });
+  }
+
   if (filterGrammarPos) {
     filterGrammarPos.addEventListener("change", () => {
       const pos = filterGrammarPos.value;
       if (resultsFilterGrammarPos) resultsFilterGrammarPos.value = pos;
       updateSubGrammarCategories(pos, filterGrammarCategory);
       updateSubGrammarCategories(pos, resultsFilterGrammarCategory);
+      updateGrammarBreadcrumbFilterUI();
     });
   }
 
@@ -2667,6 +2792,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (filterGrammarPos) filterGrammarPos.value = pos;
       updateSubGrammarCategories(pos, filterGrammarCategory);
       updateSubGrammarCategories(pos, resultsFilterGrammarCategory);
+      updateGrammarBreadcrumbFilterUI();
       if (isSearchWithinActive && rawSentencesData && rawSentencesData.length > 0) {
         executeSearchWithinResults();
       } else {
@@ -2678,11 +2804,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (filterGrammarCategory) {
     filterGrammarCategory.addEventListener("change", () => {
       if (resultsFilterGrammarCategory) resultsFilterGrammarCategory.value = filterGrammarCategory.value;
+      updateGrammarBreadcrumbFilterUI();
     });
   }
   if (resultsFilterGrammarCategory) {
     resultsFilterGrammarCategory.addEventListener("change", () => {
       if (filterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
+      updateGrammarBreadcrumbFilterUI();
       if (isSearchWithinActive && rawSentencesData && rawSentencesData.length > 0) {
         executeSearchWithinResults();
       } else {
@@ -2706,6 +2834,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const icon = btnResultsToggleStarred.querySelector(".star-icon");
       if (icon) icon.textContent = active ? "⭐" : "☆";
     }
+    updateGrammarBreadcrumbFilterUI();
   }
 
   if (btnToggleStarred) {
