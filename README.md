@@ -716,7 +716,7 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py grammar_analyzer.py` 파이썬 구문 검증 통과 (오류 0건)
   - `grammar_analyzer.test_connection` 3요소 언팩 및 FastAPI `/api/settings/ai/test` 엔드포인트 응답 검증 완료
 
-### [2026-09-20 21:55] 업데이트 이력 (Commit ID: <PENDING_COMMIT_ID>)
+### [2026-09-20 21:55] 업데이트 이력 (Commit ID: 221d1ce)
 - **수정 내용**:
   - **문장 분석 시 밑줄(빈칸) 정답 선지 자동 결합 및 온전한 문장 생성 (`grammar_analyzer.py`, `database.py`, `app.py`, `validator.py`, `static/js/main.js`)**:
     - **빈칸 문제 정답 선지 결합**: 31~34번 빈칸 추론 문항 등 지문에 밑줄(`_______`)이 있는 경우 지문의 선택지(①~⑤) 및 정답 번호(`answer_text`)를 대조하여 밑줄 위치에 실제 정답 선지를 삽입한 **온전한 문장**으로 자동 완성
