@@ -76,8 +76,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const passageTabBarContainer = document.getElementById("passageTabBarContainer");
   const passageTabBar = document.getElementById("passageTabBar");
   const passageTabCount = document.getElementById("passageTabCount");
+  const treeBreadcrumbBar = document.getElementById("treeBreadcrumbBar");
+  const breadcrumbTrail = document.getElementById("breadcrumbTrail");
+  const btnTreeChangeExam = document.getElementById("btnTreeChangeExam");
+  const treeStepSelector = document.getElementById("treeStepSelector");
   const btnTabScrollLeft = document.getElementById("btnTabScrollLeft");
   const btnTabScrollRight = document.getElementById("btnTabScrollRight");
+
+  // 트리 계층형 네비게이션 상태 ([학년] -> [년도] -> [월] -> [문항 1행 10개])
+  let treeNavState = {
+    grade: null,
+    year: null,
+    month: null
+  };
+  let currentExamQuestions = []; // 현재 선택된 시험의 문항 목록 (최하위 10열 그리드 렌더링용)
 
   // 2x2 그리드 요소
   const panelPdfImageContainer = document.getElementById("panelPdfImageContainer");
@@ -280,6 +292,26 @@ document.addEventListener("DOMContentLoaded", () => {
     return { keyword: q, tag: tag };
   }
 
+  /** 텍스트 내에서 검색 표현을 찾아 파스텔톤 빨간색 형광펜으로 감싸기 */
+  function highlightTextKeyword(text, rawQuery, highlightClass = "sentence-highlight") {
+    if (!text) return "";
+    const cleanText = escapeHtml(text);
+    if (!rawQuery) return cleanText;
+
+    const { keyword } = parseSearchQuery(rawQuery);
+    if (!keyword || !keyword.trim()) return cleanText;
+
+    // HTML 이스케이프된 키워드로 정규식 특수문자 이스케이프
+    const escapedKw = escapeHtml(keyword.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${escapedKw})`, "gi");
+
+    return cleanText.replace(regex, `<mark class="${highlightClass}">$1</mark>`);
+  }
+
+  function highlightSentenceKeyword(text, rawQuery) {
+    return highlightTextKeyword(text, rawQuery, "sentence-highlight");
+  }
+
   // =========================================================================
   // 5. 검색 실행 함수
   // =========================================================================
@@ -358,6 +390,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       if (currentMode === "passage") {
+        treeNavState = { grade: null, year: null, month: null };
         const res = await fetch(`/api/search/passages?${params.toString()}`);
         const data = await res.json();
         passagesData = groupPassageItems(data.items || []);
@@ -450,6 +483,7 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast(`결과 내 검색: ${filtered.length}개 문항이 필터링되었습니다.`, "success");
       }
 
+      treeNavState = { grade: null, year: null, month: null };
       passagesData = filtered;
       resultsTotalCount.textContent = filtered.length;
       renderPassageView(passagesData);
@@ -653,7 +687,50 @@ document.addEventListener("DOMContentLoaded", () => {
     return questionTitle || text;
   }
 
-  function renderPassageView(items) {
+  /** 지문 객체에서 학년, 년도, 월, 시험 유형 추출 */
+  function parsePassageHierarchy(p) {
+    let grade = p.grade || "";
+    let year = p.year ? `${p.year}년` : "";
+    let month = p.month ? `${String(p.month).padStart(2, "0")}월` : "";
+    let examType = p.exam_type || "";
+
+    const rawId = p.display_id || p.id || "";
+    const match = rawId.match(/^\[?([^-]+)-(\d{4}년)-(\d{1,2}월)-(.+?)\]?$/);
+    if (match) {
+      if (!grade) grade = match[1];
+      if (!year) year = match[2];
+      if (!month) month = match[3];
+    }
+    if (!grade) grade = "기타";
+    if (!year) year = "기타";
+    if (!month) month = "기타";
+
+    return { grade, year, month, examType };
+  }
+
+  /** 전체 지문 목록을 학년 -> 년도 -> 월 계층 트리로 구성 */
+  function buildExamTree(items) {
+    const tree = {};
+    if (!items) return tree;
+
+    items.forEach((p) => {
+      const { grade, year, month, examType } = parsePassageHierarchy(p);
+      if (!tree[grade]) tree[grade] = {};
+      if (!tree[grade][year]) tree[grade][year] = {};
+      if (!tree[grade][year][month]) {
+        tree[grade][year][month] = {
+          examType: examType,
+          items: []
+        };
+      }
+      tree[grade][year][month].items.push(p);
+    });
+
+    return tree;
+  }
+
+  /** 지문 결과 화면 렌더링 (트리 계층 기반) */
+  function renderPassageView(items, targetPassageId = null) {
     if (!items || items.length === 0) {
       emptyResultsBox.style.display = "flex";
       passageViewContainer.style.display = "none";
@@ -663,19 +740,278 @@ document.addEventListener("DOMContentLoaded", () => {
 
     emptyResultsBox.style.display = "none";
     passageViewContainer.style.display = "flex";
-    currentPassageIndex = 0;
 
-    // 상단 문항별 탭 바 생성
-    renderPassageTabs(items);
+    const tree = buildExamTree(items);
+    const grades = Object.keys(tree);
 
-    // 첫 번째 문항 상세 로드
-    loadPassageDetail(items[0]);
+    // 단일 시험인지 확인: 총 고유 (grade, year, month) 조합 개수 계산
+    let totalExamsCount = 0;
+    let singleExamCombo = null;
+    grades.forEach((g) => {
+      Object.keys(tree[g]).forEach((y) => {
+        Object.keys(tree[g][y]).forEach((m) => {
+          totalExamsCount++;
+          singleExamCombo = { grade: g, year: y, month: m };
+        });
+      });
+    });
+
+    // 1) 특정 targetPassageId로 직접 이동하는 경우 (예: 문장 검색에서 넘어온 경우)
+    if (targetPassageId) {
+      const targetP = items.find((p) => p.id === targetPassageId || (p.all_ids && p.all_ids.includes(targetPassageId)));
+      if (targetP) {
+        const h = parsePassageHierarchy(targetP);
+        treeNavState.grade = h.grade;
+        treeNavState.year = h.year;
+        treeNavState.month = h.month;
+      }
+    } else if (totalExamsCount === 1 && singleExamCombo) {
+      // 2) 검색 결과가 단 1개의 시험인 경우: 자동으로 즉시 최하위 문항 탭으로 직행!
+      treeNavState.grade = singleExamCombo.grade;
+      treeNavState.year = singleExamCombo.year;
+      treeNavState.month = singleExamCombo.month;
+    } else {
+      // 3) 복수 시험인 경우: 현재 선택된 상태가 유효한지 검사
+      if (!treeNavState.grade || !tree[treeNavState.grade]) {
+        if (grades.length === 1) {
+          treeNavState.grade = grades[0];
+        } else {
+          treeNavState.grade = null;
+          treeNavState.year = null;
+          treeNavState.month = null;
+        }
+      }
+
+      if (treeNavState.grade && tree[treeNavState.grade]) {
+        const years = Object.keys(tree[treeNavState.grade]);
+        if (!treeNavState.year || !tree[treeNavState.grade][treeNavState.year]) {
+          if (years.length === 1) {
+            treeNavState.year = years[0];
+          } else {
+            treeNavState.year = null;
+            treeNavState.month = null;
+          }
+        }
+      }
+
+      if (treeNavState.grade && treeNavState.year && tree[treeNavState.grade]?.[treeNavState.year]) {
+        const months = Object.keys(tree[treeNavState.grade][treeNavState.year]);
+        if (!treeNavState.month || !tree[treeNavState.grade][treeNavState.year][treeNavState.month]) {
+          if (months.length === 1) {
+            treeNavState.month = months[0];
+          } else {
+            treeNavState.month = null;
+          }
+        }
+      }
+    }
+
+    // 단계별 UI 렌더링 실행
+    updateTreeUI(tree, items, totalExamsCount, targetPassageId);
   }
 
-  /** 상단 가로 문항별 탭 생성 */
+  /** 트리 단계에 따라 상위 선택기 / 최하위 문항 1행 10개 탭 전환 */
+  function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
+    const grades = Object.keys(tree);
+
+    // 상단 브레드크럼 갱신
+    renderBreadcrumb(tree, allItems, totalExamsCount);
+
+    // Case 1: 학년 미선택 상태 -> 학년 선택 버튼들 표시
+    if (!treeNavState.grade || !tree[treeNavState.grade]) {
+      treeStepSelector.style.display = "flex";
+      passageTabBar.style.display = "none";
+
+      let html = `<span class="tree-step-title">📁 학년 선택:</span><div class="tree-step-buttons">`;
+      grades.forEach((g) => {
+        let count = 0;
+        Object.keys(tree[g]).forEach((y) => {
+          Object.keys(tree[g][y]).forEach((m) => {
+            count += tree[g][y][m].items.length;
+          });
+        });
+        html += `<button type="button" class="btn-tree-chip" data-grade="${escapeHtml(g)}">${escapeHtml(g)} <span class="chip-count">${count}</span></button>`;
+      });
+      html += `</div>`;
+      treeStepSelector.innerHTML = html;
+
+      treeStepSelector.querySelectorAll(".btn-tree-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          treeNavState.grade = btn.dataset.grade;
+          treeNavState.year = null;
+          treeNavState.month = null;
+          const years = Object.keys(tree[treeNavState.grade] || {});
+          if (years.length === 1) {
+            treeNavState.year = years[0];
+            const months = Object.keys(tree[treeNavState.grade][treeNavState.year] || {});
+            if (months.length === 1) {
+              treeNavState.month = months[0];
+            }
+          }
+          updateTreeUI(tree, allItems, totalExamsCount);
+        });
+      });
+      return;
+    }
+
+    // Case 2: 학년 선택됨, 년도 미선택 상태 -> 년도 선택 버튼들 표시
+    const years = Object.keys(tree[treeNavState.grade] || {});
+    if (!treeNavState.year || !tree[treeNavState.grade][treeNavState.year]) {
+      treeStepSelector.style.display = "flex";
+      passageTabBar.style.display = "none";
+
+      let html = `<span class="tree-step-title">📅 [${escapeHtml(treeNavState.grade)}] 년도 선택:</span><div class="tree-step-buttons">`;
+      years.forEach((y) => {
+        let count = 0;
+        Object.keys(tree[treeNavState.grade][y]).forEach((m) => {
+          count += tree[treeNavState.grade][y][m].items.length;
+        });
+        html += `<button type="button" class="btn-tree-chip" data-year="${escapeHtml(y)}">${escapeHtml(y)} <span class="chip-count">${count}</span></button>`;
+      });
+      html += `</div>`;
+      treeStepSelector.innerHTML = html;
+
+      treeStepSelector.querySelectorAll(".btn-tree-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          treeNavState.year = btn.dataset.year;
+          treeNavState.month = null;
+          const months = Object.keys(tree[treeNavState.grade][treeNavState.year] || {});
+          if (months.length === 1) {
+            treeNavState.month = months[0];
+          }
+          updateTreeUI(tree, allItems, totalExamsCount);
+        });
+      });
+      return;
+    }
+
+    // Case 3: 학년과 년도 선택됨, 월 미선택 상태 -> 월 선택 버튼들 표시
+    const months = Object.keys(tree[treeNavState.grade][treeNavState.year] || {});
+    if (!treeNavState.month || !tree[treeNavState.grade][treeNavState.year][treeNavState.month]) {
+      treeStepSelector.style.display = "flex";
+      passageTabBar.style.display = "none";
+
+      let html = `<span class="tree-step-title">📆 [${escapeHtml(treeNavState.grade)} ${escapeHtml(treeNavState.year)}] 월/시험 선택:</span><div class="tree-step-buttons">`;
+      months.forEach((m) => {
+        const examObj = tree[treeNavState.grade][treeNavState.year][m];
+        const count = examObj.items.length;
+        const examType = examObj.examType ? ` (${examObj.examType})` : "";
+        html += `<button type="button" class="btn-tree-chip" data-month="${escapeHtml(m)}">${escapeHtml(m)}${escapeHtml(examType)} <span class="chip-count">${count}</span></button>`;
+      });
+      html += `</div>`;
+      treeStepSelector.innerHTML = html;
+
+      treeStepSelector.querySelectorAll(".btn-tree-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          treeNavState.month = btn.dataset.month;
+          updateTreeUI(tree, allItems, totalExamsCount);
+        });
+      });
+      return;
+    }
+
+    // Case 4: 학년, 년도, 월 모두 선택 완료! -> 상위 선택 버튼들은 숨기고, 최하위 문항 탭만 1행 10개로 표시!
+    treeStepSelector.style.display = "none";
+    passageTabBar.style.display = "grid";
+
+    const examData = tree[treeNavState.grade][treeNavState.year][treeNavState.month];
+    currentExamQuestions = (examData && examData.items) ? examData.items : [];
+
+    // 문항 탭 렌더링
+    renderPassageTabs(currentExamQuestions);
+
+    // 대상 문항 선택
+    let activeIdx = 0;
+    if (targetPassageId) {
+      const fIdx = currentExamQuestions.findIndex((p) => p.id === targetPassageId || (p.all_ids && p.all_ids.includes(targetPassageId)));
+      if (fIdx >= 0) activeIdx = fIdx;
+    }
+    selectPassageTab(activeIdx, currentExamQuestions);
+  }
+
+  /** 인라인 브레드크럼 바 렌더링 */
+  function renderBreadcrumb(tree, allItems, totalExamsCount) {
+    if (!breadcrumbTrail) return;
+
+    let trailHtml = "";
+    const isExamSelected = !!(treeNavState.grade && treeNavState.year && treeNavState.month);
+
+    if (isExamSelected) {
+      const examData = tree[treeNavState.grade]?.[treeNavState.year]?.[treeNavState.month];
+      const count = examData ? examData.items.length : 0;
+      const examType = examData?.examType ? ` · ${examData.examType}` : "";
+
+      trailHtml = `
+        <span class="breadcrumb-item" data-step="grade" title="학년 변경">${escapeHtml(treeNavState.grade)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-item" data-step="year" title="년도 변경">${escapeHtml(treeNavState.year)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-item active" data-step="month" title="월/시험 변경">${escapeHtml(treeNavState.month)}${escapeHtml(examType)}</span>
+        <span class="breadcrumb-count-badge">(${count}문항)</span>
+      `;
+    } else if (treeNavState.grade && treeNavState.year) {
+      trailHtml = `
+        <span class="breadcrumb-item" data-step="grade" title="학년 변경">${escapeHtml(treeNavState.grade)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-item active" data-step="year">${escapeHtml(treeNavState.year)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-hint">월/시험을 선택하세요</span>
+      `;
+    } else if (treeNavState.grade) {
+      trailHtml = `
+        <span class="breadcrumb-item active" data-step="grade">${escapeHtml(treeNavState.grade)}</span>
+        <span class="breadcrumb-separator">&gt;</span>
+        <span class="breadcrumb-hint">년도를 선택하세요</span>
+      `;
+    } else {
+      trailHtml = `
+        <span class="breadcrumb-hint">총 ${allItems.length}개 문항 중 탐색할 학년을 선택하세요</span>
+      `;
+    }
+
+    breadcrumbTrail.innerHTML = trailHtml;
+
+    // 브레드크럼 항목 클릭 시 해당 상위 단계로 즉시 이동
+    breadcrumbTrail.querySelectorAll(".breadcrumb-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const step = item.dataset.step;
+        if (step === "grade") {
+          treeNavState.grade = null;
+          treeNavState.year = null;
+          treeNavState.month = null;
+        } else if (step === "year") {
+          treeNavState.year = null;
+          treeNavState.month = null;
+        } else if (step === "month") {
+          treeNavState.month = null;
+        }
+        updateTreeUI(tree, allItems, totalExamsCount);
+      });
+    });
+
+    // "🔄 다른 시험 선택" 버튼: 복수 시험일 때만 노출
+    if (btnTreeChangeExam) {
+      if (totalExamsCount > 1 && isExamSelected) {
+        btnTreeChangeExam.style.display = "inline-flex";
+        btnTreeChangeExam.onclick = () => {
+          treeNavState.month = null;
+          const years = Object.keys(tree[treeNavState.grade] || {});
+          if (years.length <= 1) {
+            treeNavState.grade = null;
+            treeNavState.year = null;
+          }
+          updateTreeUI(tree, allItems, totalExamsCount);
+        };
+      } else {
+        btnTreeChangeExam.style.display = "none";
+      }
+    }
+  }
+
+  /** 최하위 문항별 탭 생성 (1행 10개 문항 초컴팩트 28px 버튼) */
   function renderPassageTabs(items) {
     passageTabBar.innerHTML = "";
-    passageTabCount.textContent = items.length;
+    if (passageTabCount) passageTabCount.textContent = items.length;
 
     items.forEach((p, idx) => {
       const tabBtn = document.createElement("button");
@@ -684,28 +1020,15 @@ document.addEventListener("DOMContentLoaded", () => {
       tabBtn.dataset.index = idx;
       tabBtn.dataset.id = p.id;
 
-      // 1행: [고O-OOOO년], 2행: [OO월-OO번] (41~42번 등 복합 문항은 [07월-41~42번])
-      let line1 = "[고3-2026년]";
-      let line2 = "[07월-18번]";
-
-      const rawId = p.display_id || p.id || "";
-      const match = rawId.match(/^\[?([^-]+)-(\d{4}년)-(\d{1,2}월)-(.+?)\]?$/);
-      if (match) {
-        line1 = `[${match[1]}-${match[2]}]`;
-        line2 = `[${match[3]}-${match[4]}]`;
-      } else {
-        const gradeStr = p.grade || "고3";
-        const yearStr = p.year ? `${p.year}년` : "2026년";
-        const monthNum = p.month ? `${String(p.month).padStart(2, "0")}월` : "07월";
-        const qLabel = p.q_num_label || (p.q_num ? `${p.q_num}번` : "");
-        line1 = `[${gradeStr}-${yearStr}]`;
-        line2 = `[${monthNum}-${qLabel}]`;
+      let qLabel = p.q_num_label || (p.q_num ? `${p.q_num}번` : "");
+      if (!qLabel) {
+        const rawId = p.display_id || p.id || "";
+        const m = rawId.match(/-([^-]+)$/);
+        qLabel = m ? m[1] : rawId;
       }
 
-      tabBtn.innerHTML = `
-        <span class="tab-line-exam">${escapeHtml(line1)}</span>
-        <span class="tab-line-q">${escapeHtml(line2)}</span>
-      `;
+      tabBtn.innerHTML = `<span class="tab-line-q">${escapeHtml(qLabel)}</span>`;
+      tabBtn.title = `${escapeHtml(p.display_id || p.id)} (${p.question_type || "유형 미지정"})`;
 
       tabBtn.addEventListener("click", () => {
         selectPassageTab(idx, items);
@@ -717,7 +1040,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /** 특정 문항 탭 선택 및 2x2 그리드 동기화 */
   function selectPassageTab(idx, items) {
-    if (idx < 0 || idx >= items.length) return;
+    if (!items || items.length === 0) return;
+    if (idx < 0) idx = 0;
+    if (idx >= items.length) idx = items.length - 1;
     currentPassageIndex = idx;
 
     const tabs = passageTabBar.querySelectorAll(".passage-q-tab");
@@ -751,13 +1076,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const activeTagName = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
     if (activeTagName === "input" || activeTagName === "textarea" || activeTagName === "select") return;
 
+    const targetList = (currentExamQuestions && currentExamQuestions.length > 0) ? currentExamQuestions : passagesData;
+    if (!targetList || targetList.length === 0) return;
+
     if (e.key === "ArrowLeft") {
       if (currentPassageIndex > 0) {
-        selectPassageTab(currentPassageIndex - 1, passagesData);
+        selectPassageTab(currentPassageIndex - 1, targetList);
       }
     } else if (e.key === "ArrowRight") {
-      if (currentPassageIndex < passagesData.length - 1) {
-        selectPassageTab(currentPassageIndex + 1, passagesData);
+      if (currentPassageIndex < targetList.length - 1) {
+        selectPassageTab(currentPassageIndex + 1, targetList);
       }
     }
   });
@@ -806,6 +1134,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // [좌측 하단]: TXT 지문 본문 (41번/43번에만 지문 전체 포함, 42번/44번/45번은 발문+선지만 표시)
+    let rawPassageText = "";
     if (p.isGroup && p.subItems && p.subItems.length > 1) {
       const parts = p.subItems.map((si, sIdx) => {
         if (sIdx === 0) {
@@ -814,10 +1143,17 @@ document.addEventListener("DOMContentLoaded", () => {
           return extractQuestionChoicesOnly(si.passage_text, si.question_title);
         }
       });
-      panelPassageText.textContent = parts.filter(Boolean).join("\n\n----------------------------------------\n\n");
+      rawPassageText = parts.filter(Boolean).join("\n\n----------------------------------------\n\n");
     } else {
-      panelPassageText.textContent = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
+      rawPassageText = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
     }
+
+    panelPassageText.dataset.rawText = rawPassageText;
+
+    // 현재 검색창에 입력된 검색 키워드로 파스텔톤 빨간색 형광펜 하이라이트 적용 (PDF 이미지는 원본 유지)
+    const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
+                         (mainSearchInput && mainSearchInput.value.trim()) || "";
+    panelPassageText.innerHTML = highlightTextKeyword(rawPassageText, currentQuery, "passage-highlight");
 
     // [우측 상단]: HWP 정답 및 해설
     panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
@@ -864,6 +1200,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function clear2x2Panels() {
     panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">지문을 선택하세요.</div>`;
     panelPassageText.textContent = "-";
+    panelPassageText.dataset.rawText = "";
     panelExplanation.textContent = "-";
     metaPassageId.textContent = "-";
     metaQNum.textContent = "-";
@@ -872,7 +1209,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (metaQuestionTitle) metaQuestionTitle.textContent = "-";
     passageTagsList.innerHTML = "";
     passageTabBar.innerHTML = "";
-    passageTabCount.textContent = "0";
+    if (treeStepSelector) treeStepSelector.innerHTML = "";
+    if (breadcrumbTrail) breadcrumbTrail.innerHTML = "";
+    if (btnTreeChangeExam) btnTreeChangeExam.style.display = "none";
+    if (passageTabCount) passageTabCount.textContent = "0";
   }
 
   /** 지문 태그 목록 렌더링 */
@@ -950,8 +1290,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 지문 전체 복사 버튼
   btnCopyPassage.addEventListener("click", () => {
-    const text = panelPassageText.textContent;
-    if (text && text !== "지문 본문이 여기에 표시됩니다.") {
+    const text = panelPassageText.dataset.rawText || panelPassageText.textContent;
+    if (text && text !== "지문 본문이 여기에 표시됩니다." && text !== "-") {
       copyToClipboard(text, "지문 본문이 클립보드에 복사되었습니다! (Ctrl+V)");
     }
   });
@@ -971,8 +1311,12 @@ document.addEventListener("DOMContentLoaded", () => {
   /** 특정 지문의 전체 문장 결과창을 1행 테이블로 표시 */
   async function showSentencesForPassage(passageId) {
     if (!passageId) {
-      if (passagesData && passagesData.length > 0) {
-        passageId = passagesData[currentPassageIndex].id;
+      if (currentPassageId) {
+        passageId = currentPassageId;
+      } else if (currentExamQuestions && currentExamQuestions.length > 0) {
+        passageId = currentExamQuestions[currentPassageIndex]?.id;
+      } else if (passagesData && passagesData.length > 0) {
+        passageId = passagesData[0].id;
       }
     }
     if (!passageId) {
@@ -1078,7 +1422,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (idx >= 0) {
       resultsTotalCount.textContent = passagesData.length;
       setHeaderSlotState("passage");
-      selectPassageTab(idx, passagesData);
+      renderPassageView(passagesData, pId);
       showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
       return;
     }
@@ -1094,9 +1438,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.items && data.items.length > 0) {
           passagesData = groupPassageItems(data.items);
           resultsTotalCount.textContent = passagesData.length;
-          renderPassageView(passagesData);
-          const foundIdx = passagesData.findIndex(p => p.id === pId || (p.all_ids && p.all_ids.includes(pId)));
-          selectPassageTab(foundIdx >= 0 ? foundIdx : 0, passagesData);
+          renderPassageView(passagesData, pId);
           setHeaderSlotState("passage");
           showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
           return;
@@ -1109,8 +1451,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const singleData = await singleRes.json();
         passagesData = groupPassageItems([singleData]);
         resultsTotalCount.textContent = 1;
-        renderPassageView(passagesData);
-        selectPassageTab(0, passagesData);
+        renderPassageView(passagesData, pId);
         setHeaderSlotState("passage");
         showToast(`${pId} 지문 상세로 이동했습니다.`, "info");
       }
@@ -1144,21 +1485,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 8. [문장 검색 결과] 1행 테이블 렌더링
   // =========================================================================
 
-  /** 문장 텍스트 내에서 검색 키워드를 찾아 노란색 형광펜으로 감싸기 */
-  function highlightSentenceKeyword(text, rawQuery) {
-    if (!text) return "";
-    const cleanText = escapeHtml(text);
-    if (!rawQuery) return cleanText;
-
-    const { keyword } = parseSearchQuery(rawQuery);
-    if (!keyword || !keyword.trim()) return cleanText;
-
-    // 정규식 특수문자 이스케이프
-    const escapedKw = keyword.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(${escapedKw})`, "gi");
-
-    return cleanText.replace(regex, `<mark class="sentence-highlight">$1</mark>`);
-  }
+  // 문장 텍스트 형광펜 하이라이트는 상단 정의된 highlightSentenceKeyword(highlightTextKeyword 기반)를 활용
 
   function renderSentenceView(items) {
     if (!items || items.length === 0) {

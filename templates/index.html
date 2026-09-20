@@ -241,19 +241,32 @@
       <!-- [지문 검색 결과 화면] : 상단 문항별 탭 + 2x2 그리드 레이아웃 -->
       <div class="passage-view-container" id="passageViewContainer" style="display: none;">
         
-        <!-- 상단 가로 문항별 탭 바 (복수 문항 선택 네비게이션) -->
+        <!-- 상단 초컴팩트 트리 계층형 문항 선택 네비게이터 -->
         <div class="passage-tab-bar-container" id="passageTabBarContainer">
-          <div class="tab-bar-header">
-            <div class="tab-bar-title-group">
-              <span class="tab-bar-icon">📋</span>
-              <span class="tab-bar-title">문항별 선택 탭 (<span id="passageTabCount">0</span>개 문항)</span>
+          <!-- 상위 계층 브레드크럼 (인라인 경로 표시 + 시험 변경 버튼) -->
+          <div class="tree-breadcrumb-bar" id="treeBreadcrumbBar">
+            <div class="breadcrumb-left">
+              <span class="breadcrumb-icon">📍</span>
+              <div class="breadcrumb-trail" id="breadcrumbTrail">
+                <!-- JS 동적 생성: [고3] > [2026년] > [07월 학평] (N문항) -->
+              </div>
+              <span id="passageTabCount" style="display: none;">0</span>
             </div>
-            <div class="tab-bar-controls">
-              <span class="tab-bar-hint">※ 탭을 클릭하면 해당 문항의 2x2 정보로 즉시 전환됩니다. (1행 10개 문항 배치)</span>
+            <div class="breadcrumb-right" id="breadcrumbRight">
+              <button type="button" class="btn-tree-change-exam" id="btnTreeChangeExam" style="display: none;">
+                🔄 다른 시험 선택
+              </button>
             </div>
           </div>
+
+          <!-- 상위 계층 선택기 (복수 시험 검색 시 학년 / 년도 / 월 버튼 표시) -->
+          <div class="tree-step-selector" id="treeStepSelector" style="display: none;">
+            <!-- JS 동적 생성: 계층 선택 버튼들 -->
+          </div>
+
+          <!-- 최하위 문항 탭 바 (1행 10개 문항 초컴팩트 그리드) -->
           <div class="passage-tab-bar" id="passageTabBar">
-            <!-- 문항 탭들이 JS로 동적 생성됩니다 -->
+            <!-- 문항 탭들이 JS로 동적 생성됩니다 (18번 ~ 45번) -->
           </div>
         </div>
 

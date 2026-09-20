@@ -514,99 +514,209 @@ body {
 /* ==========================================================================
    상단 가로 문항별 탭 바 (문항 검색 결과 전용)
    ========================================================================== */
+/* ==========================================================================
+   상단 초컴팩트 트리 계층형 문항 선택 네비게이터 ([학년] -> [년도] -> [월] -> [문항 1행 10개])
+   ========================================================================== */
 .passage-tab-bar-container {
   background-color: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 0.85rem 1.25rem;
-  margin-bottom: 1.25rem;
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.65rem 0.45rem;
+  margin-bottom: 0.55rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
 }
 
-.tab-bar-header {
+/* 1. 상위 계층 브레드크럼 바 (인라인 경로 표시 + 시험 변경 버튼) */
+.tree-breadcrumb-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.65rem;
-  padding-bottom: 0.45rem;
+  gap: 0.5rem;
+  padding: 0.1rem 0.15rem 0.3rem;
   border-bottom: 1px solid #f1f5f9;
+  font-size: 0.82rem;
+  min-height: 26px;
 }
 
-.tab-bar-title-group {
+.breadcrumb-left {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem;
+  flex-wrap: wrap;
 }
 
-.tab-bar-icon {
-  font-size: 1.15rem;
+.breadcrumb-icon {
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
-.tab-bar-title {
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: var(--text-main);
-}
-
-.tab-bar-controls {
+.breadcrumb-trail {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  font-weight: 600;
+  color: #334155;
+  flex-wrap: wrap;
 }
 
-.btn-tab-scroll {
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
   background: #f1f5f9;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.15rem 0.45rem;
-  font-size: 0.72rem;
+  color: #475569;
   cursor: pointer;
-  color: var(--secondary);
-  transition: all 0.15s;
-}
-
-.btn-tab-scroll:hover {
-  background: #e2e8f0;
-  color: var(--primary);
-}
-
-.tab-bar-hint {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  border: 1px solid #e2e8f0;
+  transition: all 0.15s ease;
 }
 
+.breadcrumb-item:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+  border-color: #cbd5e1;
+}
+
+.breadcrumb-item.active {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  font-weight: 700;
+}
+
+.breadcrumb-separator {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  user-select: none;
+}
+
+.breadcrumb-count-badge {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 700;
+  margin-left: 0.2rem;
+}
+
+.breadcrumb-hint {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-left: 0.25rem;
+}
+
+.btn-tree-change-exam {
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-tree-change-exam:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+  border-color: #94a3b8;
+}
+
+/* 2. 상위 계층 단계별 선택기 (학년 / 년도 / 월) */
+.tree-step-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.15rem 0.15rem;
+  flex-wrap: wrap;
+}
+
+.tree-step-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.tree-step-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.btn-tree-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.65rem;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.btn-tree-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: #eff6ff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.12);
+}
+
+.btn-tree-chip .chip-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.05rem 0.3rem;
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 9999px;
+}
+
+.btn-tree-chip:hover .chip-count {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* 3. 최하위 문항 탭 바 (1행 10개 문항 초컴팩트 28px 버튼) */
 .passage-tab-bar {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
-  gap: 0.5rem;
-  padding: 0.35rem 0.1rem;
+  gap: 0.32rem;
+  padding: 0.3rem 0.1rem 0.1rem;
 }
 
 .passage-q-tab {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 0.45rem 0.2rem 0.4rem;
+  height: 28px;
+  padding: 0 0.15rem;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 9px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
   cursor: pointer;
   user-select: none;
-  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
-  width: 100%;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
   box-sizing: border-box;
   text-align: center;
-  position: relative;
 }
 
 .passage-q-tab:hover {
   background-color: #f8fafc;
-  border-color: #cbd5e1;
-  transform: translateY(-1.5px);
-  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
 .passage-q-tab:active {
@@ -615,45 +725,26 @@ body {
 
 .passage-q-tab.active {
   background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 14px -1px rgba(37, 99, 235, 0.42), 0 2px 6px rgba(37, 99, 235, 0.2);
-  transform: translateY(-1px);
-}
-
-.tab-line-exam {
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: #64748b;
-  background: #f1f5f9;
-  padding: 1.5px 5.5px;
-  border-radius: 4px;
-  letter-spacing: -0.2px;
-  line-height: 1.2;
-  transition: all 0.15s ease;
+  border-color: #1d4ed8;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.32);
 }
 
 .tab-line-q {
-  font-size: 0.86rem;
-  font-weight: 800;
-  color: #0f172a;
-  letter-spacing: -0.3px;
-  line-height: 1.25;
-  transition: all 0.15s ease;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.2px;
+  line-height: 1;
 }
 
-.passage-q-tab:hover .tab-line-exam {
-  background: #e2e8f0;
-  color: #475569;
-}
-
-.passage-q-tab.active .tab-line-exam {
-  background: rgba(255, 255, 255, 0.2);
-  color: #e0f2fe;
+.passage-q-tab:hover .tab-line-q {
+  color: var(--primary);
 }
 
 .passage-q-tab.active .tab-line-q {
   color: #ffffff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  font-weight: 800;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 /* ==========================================================================
@@ -1011,16 +1102,19 @@ body {
   color: #1e293b;
 }
 
-/* 문장 검색 결과 키워드 노란색 형광펜 하이라이트 */
+/* 문장 및 지문 본문 검색 표현 파스텔톤 빨간색 형광펜 하이라이트 */
 .col-sentence mark,
 .sentence-highlight,
-mark.sentence-highlight {
-  background-color: #fef08a;
-  color: #0f172a;
+mark.sentence-highlight,
+.passage-text-box mark,
+.passage-highlight,
+mark.passage-highlight {
+  background-color: #fecdd3; /* 부드럽고 선명한 파스텔톤 로즈 레드 */
+  color: #9f1239;            /* 가독성을 높여주는 진한 크림슨 */
   font-weight: 700;
-  padding: 0.12rem 0.3rem;
+  padding: 0.12rem 0.32rem;
   border-radius: 4px;
-  box-shadow: 0 1px 2px rgba(202, 138, 4, 0.25);
+  box-shadow: 0 1px 2px rgba(225, 29, 72, 0.18);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
