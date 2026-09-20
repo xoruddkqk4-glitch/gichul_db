@@ -1782,7 +1782,8 @@ document.addEventListener("DOMContentLoaded", () => {
           const removeBtn = sentenceId
             ? `<button type="button" class="grammar-remove-btn" data-sent-id="${escapeHtml(sentenceId)}" data-id="${escapeHtml(String(identifier))}" title="어법 범주 삭제">&times;</button>`
             : "";
-          return `<span class="grammar-tag-badge ${badgeClass}" data-sent-id="${escapeHtml(sentenceId || '')}" data-idx="${idx}" title="클릭하여 상세 해설 보기">🏷️ ${escapeHtml(a.leaf_name || a.pos || "")}${removeBtn}</span>`;
+          const annoJson = escapeHtml(JSON.stringify(a));
+          return `<span class="grammar-tag-badge ${badgeClass}" data-sent-id="${escapeHtml(sentenceId || '')}" data-idx="${idx}" data-anno="${annoJson}" title="클릭하여 상세 해설 보기">🏷️ ${escapeHtml(a.leaf_name || a.pos || "")}${removeBtn}</span>`;
         })
         .join(" ");
     }
@@ -1859,10 +1860,31 @@ document.addEventListener("DOMContentLoaded", () => {
     btnCloseGrammarPopover.addEventListener("click", closeGrammarPopover);
   }
 
-  // 바깥 영역 클릭 시 팝오버 닫기
+  // 전역 이벤트 위임: 어법 배지 클릭 시 상세 해설 팝오버 표시 및 바깥 클릭 시 닫기
   document.addEventListener("click", (e) => {
+    const badge = e.target.closest(".grammar-tag-badge");
+    if (badge) {
+      // 배지 내 삭제(×) 버튼 클릭 시에는 해설 팝오버를 열지 않음
+      if (e.target.closest(".grammar-remove-btn")) return;
+
+      e.stopPropagation();
+      let anno = null;
+      if (badge.dataset.anno) {
+        try {
+          anno = JSON.parse(badge.dataset.anno);
+        } catch (err) {
+          console.error("Anno parse error:", err);
+        }
+      }
+      if (anno) {
+        showGrammarPopover(anno, badge);
+      }
+      return;
+    }
+
+    // 바깥 영역 클릭 시 팝오버 닫기
     if (grammarExplanationPopover && grammarExplanationPopover.style.display !== "none") {
-      if (!grammarExplanationPopover.contains(e.target) && !e.target.closest(".grammar-tag-badge")) {
+      if (!grammarExplanationPopover.contains(e.target)) {
         closeGrammarPopover();
       }
     }
@@ -1874,13 +1896,6 @@ document.addEventListener("DOMContentLoaded", () => {
       closeGrammarPopover();
     }
   });
-
-  // 화면 스크롤 시 팝오버 닫기 (캡처 모드)
-  window.addEventListener("scroll", () => {
-    if (grammarExplanationPopover && grammarExplanationPopover.style.display !== "none") {
-      closeGrammarPopover();
-    }
-  }, true);
 
   function renderSentenceView(items) {
     if (!items || items.length === 0) {
@@ -1974,7 +1989,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // 어법 셀 갱신 및 삭제/클릭 이벤트 바인딩
       const updateGrammarCell = () => {
-        const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
+        const container = tr.querySelector(".sentence-grammar-tags");
         if (container) {
           container.innerHTML = renderGrammarBadges(s.grammar_annotations, s.id, s.grammar_analyzed);
           bindGrammarRemoveBtns();
@@ -1987,7 +2002,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       const bindGrammarRemoveBtns = () => {
-        const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
+        const container = tr.querySelector(".sentence-grammar-tags");
         if (!container) return;
         container.querySelectorAll(".grammar-remove-btn").forEach((btn) => {
           btn.addEventListener("click", async (e) => {
@@ -2015,15 +2030,21 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       const bindGrammarBadgeClicks = () => {
-        const container = tr.querySelector(`#grammar-tags-${cssSafeId(s.id)}`);
+        const container = tr.querySelector(".sentence-grammar-tags");
         if (!container) return;
         container.querySelectorAll(".grammar-tag-badge").forEach((badge) => {
           badge.addEventListener("click", (e) => {
             // 삭제 버튼(×)을 클릭한 경우는 팝오버를 열지 않음
             if (e.target.closest(".grammar-remove-btn")) return;
             e.stopPropagation();
-            const idx = parseInt(badge.dataset.idx, 10);
-            const anno = (s.grammar_annotations && s.grammar_annotations[idx]) ? s.grammar_annotations[idx] : null;
+            let anno = null;
+            if (badge.dataset.anno) {
+              try { anno = JSON.parse(badge.dataset.anno); } catch (err) {}
+            }
+            if (!anno) {
+              const idx = parseInt(badge.dataset.idx, 10);
+              anno = (s.grammar_annotations && s.grammar_annotations[idx]) ? s.grammar_annotations[idx] : null;
+            }
             if (anno) {
               showGrammarPopover(anno, badge);
             }

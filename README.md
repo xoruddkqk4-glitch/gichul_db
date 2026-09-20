@@ -620,5 +620,20 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
   - 로컬 HTTP 서버 정상 200 OK 응답 및 기능 무결성 확인
 
+### [2026-09-20 20:21] 업데이트 이력 (Commit ID: cf75005)
+- **수정 내용**:
+  - **어법 범주 상세 해설 팝오버 미노출 버그 원천 해결 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **HTML 부모 모달 중첩 오류 수정**: `templates/index.html`에서 앞선 `#batchAnalysisModal` 모달의 닫는 `</div>` 태그가 누락되어 `#grammarExplanationPopover`가 숨김 모달(`display: none`) 내부에 갇혀 브라우저에 표시되지 못하던 문제를 닫는 태그 추가로 완벽 해결
+    - **팝오버 z-index 및 레이어 보강**: `.grammar-popover`의 `z-index`를 `999999`로 대폭 상향하고 `pointer-events: auto`를 적용하여 모든 스티키 헤더 및 컨테이너 위로 선명하게 노출되도록 보장
+    - **배지 데이터 내장 및 전역 이벤트 위임**: `renderGrammarBadges`에서 배지 생성 시 어법 데이터 전체를 `data-anno` 속성으로 완전 내장하고, `document.addEventListener("click")` 전역 이벤트 위임을 통해 어떤 행/뷰에서든 배지 클릭 즉시 팝오버가 정확히 연동되도록 리팩토링
+    - **미세 스크롤 시 조기 닫힘 방지**: 클릭 시점의 미세한 컨테이너 스크롤 간섭으로 팝오버가 즉시 닫혀버리던 `window.scroll` 캡처 리스너 제거 및 ESC/바깥 클릭 닫기 최적화
+  - **복수 LLM 앙상블 합의 판정(Multi-LLM Consensus Voting) 기술 검토**:
+    - 단일 모델 대신 OpenRouter를 통한 복수 모델(DeepSeek V3 + GPT-4o-mini + Claude) 비동기 병렬(`asyncio.gather`) 교차 검증 및 엄격 교집합/다수결(2/3) 합의 아키텍처 타당성 검토 완료
+- **검증 결과**:
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py` 파이썬 구문 검증 완료 (통과)
+  - 로컬 웹서버 정상 동작 확인
+
+
 
 
