@@ -137,5 +137,13 @@
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 구문 검증 완료 (통과)
   - `node --check static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - 고3 2026년 7월 28개 전 문항 정답 선지 형광펜 하이라이트 크롭 이미지 시각 확인 및 데이터베이스 재동기화 완료
-  - `GET /api/search/passages` 28개 문항 정답 정보 및 41~42번, 43~45번 복합 지문 탭 통합 동작 검증 완료
-
+### [2026-09-20 13:52] 업데이트 이력 (Commit ID: be300cc)
+- **수정 내용**:
+  - **상단 문항별 선택 탭 정답 표기 제거**: 상단 가로 스크롤 문항별 탭 버튼에서 정답 정보(`(답: ①)`)를 배제하여, 문항 번호와 문제 유형 라벨(`18번 [글의목적]`, `41~42번 [1지문2문항]` 등)만 직관적이고 깔끔하게 표시되도록 UI 개선 (`static/js/main.js`)
+  - **우측 하단 메타 패널 간소화 ('추가 정보')**:
+    - 패널 카드 헤더 제목을 `'🏷️ 지문 정보 · 문제 유형 · 태그'`에서 **`'🏷️ 추가 정보'`**로 변경 (`templates/index.html`)
+    - 패널 내부에서 **'문제 유형'** 선택 셀렉트 박스 및 **'문제 발문'** 텍스트 표시 영역을 완전히 제거하여 지문 식별자/문항번호/정답/일치율 및 태그 관리 영역의 가독성과 집중도 향상 (`templates/index.html`)
+    - 프론트엔드 스크립트 내 삭제된 DOM 요소(`metaQuestionTitle`, `selectQuestionType`)에 대한 null 안전 참조 처리 완료 (`static/js/main.js`)
+- **검증 결과**:
+  - `node --check static/js/main.js` 자바스크립트 구문 검사 통과 (오류 0건)
+  - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py sentence_tokenizer.py validator.py run.py` 파이썬 구문 검증 완료 (통과)

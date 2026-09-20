@@ -314,11 +314,11 @@
             </div>
           </section>
 
-          <!-- [우측 하단]: 지문 메타 정보 + 20대 문제 유형 선택기 + 실시간 태그 관리 -->
+          <!-- [우측 하단]: 지문 메타 정보 + 실시간 태그 관리 -->
           <section class="panel-card" style="grid-column: 2; grid-row: 2;">
             <div class="panel-header">
               <div class="panel-header-left">
-                <span class="panel-title">🏷️ 지문 정보 · 문제 유형 · 태그</span>
+                <span class="panel-title">🏷️ 추가 정보</span>
               </div>
               <span id="validationBadge" style="font-size: 0.8rem; font-weight: 700; color: var(--success);">일치율 100%</span>
             </div>
@@ -336,42 +336,6 @@
                   <span class="meta-label">정답</span>
                   <span class="meta-val" id="metaAnswer" style="color: #dc2626; font-weight: 700;">-</span>
                 </div>
-              </div>
-
-              <!-- 문제 유형 선택 (20대 표준 유형, 선택 시 자동 즉시 DB 저장) -->
-              <div class="meta-item">
-                <span class="meta-label">문제 유형</span>
-                <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.2rem;">
-                  <select class="filter-select" id="selectQuestionType" style="font-weight: 700; color: #4338ca; background-color: #e0e7ff; border-color: #c7d2fe;">
-                    <option value="글의목적">글의목적</option>
-                    <option value="심경변화">심경변화</option>
-                    <option value="주장">주장</option>
-                    <option value="어휘함축">어휘함축</option>
-                    <option value="글의요지">글의요지</option>
-                    <option value="글의주제">글의주제</option>
-                    <option value="글의제목">글의제목</option>
-                    <option value="도표">도표</option>
-                    <option value="불일치">불일치</option>
-                    <option value="실용문불일치">실용문불일치</option>
-                    <option value="실용문일치">실용문일치</option>
-                    <option value="어법">어법</option>
-                    <option value="어휘">어휘</option>
-                    <option value="빈칸">빈칸</option>
-                    <option value="문장빼기">문장빼기</option>
-                    <option value="글의순서">글의순서</option>
-                    <option value="문장넣기">문장넣기</option>
-                    <option value="글의요약">글의요약</option>
-                    <option value="1지문2문항">1지문2문항</option>
-                    <option value="1지문3문항">1지문3문항</option>
-                  </select>
-                  <span style="font-size: 0.78rem; color: var(--text-muted);">(선택 시 DB 즉시 저장)</span>
-                </div>
-              </div>
-
-              <!-- 문제 발문 -->
-              <div class="meta-item">
-                <span class="meta-label">문제 발문</span>
-                <span class="meta-val" id="metaQuestionTitle" style="font-size: 0.88rem; font-weight: 500;">-</span>
               </div>
 
               <!-- 등록된 태그 목록 (삭제 가능 배지) -->

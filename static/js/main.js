@@ -498,12 +498,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const qLabel = p.q_num_label || (p.q_num ? `${p.q_num}번` : p.id);
       const typeLabel = p.question_type ? escapeHtml(p.question_type) : "기타";
-      const ansLabel = p.answer_text ? `(답: ${escapeHtml(p.answer_text)})` : "";
 
       tabBtn.innerHTML = `
         <span class="tab-q-number">${qLabel}</span>
         <span class="tab-type-tag">${typeLabel}</span>
-        ${ansLabel ? `<span class="tab-ans-tag">${ansLabel}</span>` : ""}
       `;
 
       tabBtn.addEventListener("click", () => {
@@ -618,7 +616,7 @@ document.addEventListener("DOMContentLoaded", () => {
     metaPassageId.textContent = p.display_id || p.id;
     metaQNum.textContent = p.q_num_label || (p.q_num ? `${p.q_num}번` : "-");
     metaAnswer.textContent = p.answer_text ? `${p.answer_text}` : "-";
-    metaQuestionTitle.textContent = p.question_title || "-";
+    if (metaQuestionTitle) metaQuestionTitle.textContent = p.question_title || "-";
     validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
 
     // 20대 문제 유형 선택기 반영
@@ -659,7 +657,7 @@ document.addEventListener("DOMContentLoaded", () => {
     metaPassageId.textContent = "-";
     metaQNum.textContent = "-";
     metaAnswer.textContent = "-";
-    metaQuestionTitle.textContent = "-";
+    if (metaQuestionTitle) metaQuestionTitle.textContent = "-";
     passageTagsList.innerHTML = "";
     passageTabBar.innerHTML = "";
     passageTabCount.textContent = "0";
