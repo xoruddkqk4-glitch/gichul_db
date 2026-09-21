@@ -108,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const metaPassageId = document.getElementById("metaPassageId");
   const metaQNum = document.getElementById("metaQNum");
   const metaAnswer = document.getElementById("metaAnswer");
+  const metaCorrectRate = document.getElementById("metaCorrectRate");
   const metaQuestionTitle = document.getElementById("metaQuestionTitle");
   const metaQuestionType = document.getElementById("metaQuestionType");
   const selectQuestionType = document.getElementById("selectQuestionType");
@@ -118,6 +119,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCopyPassage = document.getElementById("btnCopyPassage");
   const btnCardPassageSentences = document.getElementById("btnCardPassageSentences");
   const btnCopyExplanation = document.getElementById("btnCopyExplanation");
+
+  // 선지별 선택률 시각화 패널 요소
+  const choiceRatesContainer = document.getElementById("choiceRatesContainer");
+  const passageDifficultyBadge = document.getElementById("passageDifficultyBadge");
+  const choiceRatesStatsSub = document.getElementById("choiceRatesStatsSub");
+  const choiceBarsList = document.getElementById("choiceBarsList");
+  const choiceRatesEmpty = document.getElementById("choiceRatesEmpty");
+  const btnUploadRateFromViewer = document.getElementById("btnUploadRateFromViewer");
 
   // [문장 결과 화면] 요소
   const sentenceViewContainer = document.getElementById("sentenceViewContainer");
@@ -218,10 +227,22 @@ document.addEventListener("DOMContentLoaded", () => {
   function setHeaderSlotState(state) {
     if (!statsBadge || !btnHeaderFlow) return;
 
-    if (state === "home") {
+    // 절대 규칙: 홈 검색 화면(homeSearchView)이 노출되어 있거나 상태가 'home'인 경우
+    // '해당 지문의 전체 문장' 버튼을 무조건 숨기고 통계 배지만 표시
+    const isHomeVisible = (homeSearchView && homeSearchView.style.display !== "none");
+    if (state === "home" || isHomeVisible) {
       statsBadge.style.display = "flex";
       btnHeaderFlow.style.display = "none";
-    } else if (state === "passage") {
+      return;
+    }
+
+    if (state === "passage") {
+      // 선택된 지문이 없으면 노출하지 않음
+      if (!currentPassageId) {
+        statsBadge.style.display = "flex";
+        btnHeaderFlow.style.display = "none";
+        return;
+      }
       statsBadge.style.display = "none";
       btnHeaderFlow.style.display = "inline-flex";
       btnHeaderFlow.textContent = "📝 해당 지문의 전체 문장";
@@ -242,6 +263,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /** 홈 검색 화면으로 복귀 */
   function showHomeScreen() {
+    currentPassageId = null;
+    currentPassageIndex = 0;
     homeSearchView.style.display = "flex";
     resultsView.style.display = "none";
     if (emptyResultsBox) emptyResultsBox.style.display = "none";
@@ -1619,6 +1642,129 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     renderPassageTags(p.tags || []);
+    renderChoiceRates(p);
+  }
+
+  function getDifficultyInfo(rate) {
+    if (rate === null || rate === undefined || isNaN(rate)) {
+      return { level: "none", label: "미등록", badgeClass: "badge-rate-none" };
+    }
+    const r = parseFloat(rate);
+    if (r < 40.0) {
+      return { level: "killer", label: "🔴 킬러 · 고난도", badgeClass: "badge-rate-killer" };
+    } else if (r < 60.0) {
+      return { level: "hard", label: "🟠 중고난도", badgeClass: "badge-rate-hard" };
+    } else if (r < 80.0) {
+      return { level: "medium", label: "🟡 보통 난이도", badgeClass: "badge-rate-medium" };
+    } else {
+      return { level: "easy", label: "🟢 평이 문항", badgeClass: "badge-rate-easy" };
+    }
+  }
+
+  function renderChoiceRates(p) {
+    if (!choiceRatesContainer) return;
+
+    const rate = (p.correct_rate !== null && p.correct_rate !== undefined) ? parseFloat(p.correct_rate) : null;
+    const diff = getDifficultyInfo(rate);
+
+    // 1. 메타 정답률 배지 렌더링
+    if (metaCorrectRate) {
+      if (rate !== null) {
+        metaCorrectRate.innerHTML = `<span class="${diff.badgeClass}" title="정답률 ${rate.toFixed(1)}%">${rate.toFixed(1)}%</span>`;
+      } else {
+        metaCorrectRate.innerHTML = `<span class="badge-rate-none">미등록</span>`;
+      }
+    }
+
+    if (passageDifficultyBadge) {
+      passageDifficultyBadge.className = `choice-rates-difficulty-badge ${diff.badgeClass}`;
+      passageDifficultyBadge.textContent = diff.label;
+    }
+
+    // 2. 선지별 선택률 파싱
+    let ratesObj = null;
+    if (p.choice_rates_obj && typeof p.choice_rates_obj === "object") {
+      ratesObj = p.choice_rates_obj;
+    } else if (p.choice_rates) {
+      if (typeof p.choice_rates === "object") {
+        ratesObj = p.choice_rates;
+      } else if (typeof p.choice_rates === "string") {
+        try {
+          ratesObj = JSON.parse(p.choice_rates);
+        } catch (e) {
+          ratesObj = null;
+        }
+      }
+    }
+
+    // 데이터가 없는 경우 -> 엠프티 안내 및 단독 등록 버튼 노출
+    if (!ratesObj || (!ratesObj["1"] && !ratesObj["2"] && !ratesObj["3"] && !ratesObj["4"] && !ratesObj["5"])) {
+      if (choiceBarsList) choiceBarsList.innerHTML = "";
+      if (choiceRatesStatsSub) choiceRatesStatsSub.textContent = "정답률 데이터가 등록되지 않았습니다.";
+      if (choiceRatesEmpty) choiceRatesEmpty.style.display = "flex";
+      return;
+    }
+
+    if (choiceRatesEmpty) choiceRatesEmpty.style.display = "none";
+
+    // 총 응시자 수 표기
+    const totalCount = ratesObj.counts?.total;
+    if (choiceRatesStatsSub) {
+      choiceRatesStatsSub.textContent = totalCount ? `총 응시자 ${totalCount.toLocaleString()}명 기준` : `선지별 선택 비율`;
+    }
+
+    // 정답 선지 및 원문자 정규화
+    const circleSymbols = { "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤" };
+    const circleToNum = { "①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" };
+    const ansRaw = (p.answer_text || "").trim();
+    const correctAnsNum = circleToNum[ansRaw] || "";
+
+    // 매력적 오답 정보
+    const attractiveWrong = ratesObj.attractive_wrong;
+    const attractiveChoice = attractiveWrong ? String(attractiveWrong.choice) : "";
+
+    if (choiceBarsList) {
+      choiceBarsList.innerHTML = "";
+      for (let ch = 1; ch <= 5; ch++) {
+        const chStr = String(ch);
+        const circleSym = circleSymbols[chStr];
+        const val = ratesObj[chStr] !== undefined ? parseFloat(ratesObj[chStr]) : 0.0;
+        const count = (ratesObj.counts && ratesObj.counts[chStr] !== undefined) ? ratesObj.counts[chStr] : null;
+
+        const isCorrect = (chStr === correctAnsNum);
+        const isTrap = !isCorrect && (chStr === attractiveChoice);
+
+        let rowClass = "choice-bar-row";
+        if (isCorrect) rowClass += " choice-correct";
+        else if (isTrap) rowClass += " choice-trap";
+
+        let tagHtml = "";
+        if (isCorrect) {
+          tagHtml = `<span class="choice-star">★ 정답</span>`;
+        } else if (isTrap) {
+          tagHtml = `<span class="choice-trap-tag">🚨 매력적 오답</span>`;
+        }
+
+        const countLabel = (count !== null) ? `<span class="choice-count-label">(${count.toLocaleString()}명)</span>` : "";
+
+        const row = document.createElement("div");
+        row.className = rowClass;
+        row.innerHTML = `
+          <div class="choice-label-badge">
+            <span class="choice-num-circle">${circleSym}</span>
+            ${tagHtml}
+          </div>
+          <div class="choice-progress-wrapper" title="${circleSym} 선택률: ${val.toFixed(1)}%${count !== null ? ` (${count}명)` : ''}">
+            <div class="choice-progress-fill" style="width: ${Math.min(100, Math.max(0, val))}%;"></div>
+          </div>
+          <div class="choice-percent-val">
+            <strong>${val.toFixed(1)}%</strong>
+            ${countLabel}
+          </div>
+        `;
+        choiceBarsList.appendChild(row);
+      }
+    }
   }
 
   function clear2x2Panels() {
@@ -1630,13 +1776,28 @@ document.addEventListener("DOMContentLoaded", () => {
     metaQNum.textContent = "-";
     if (metaQuestionType) metaQuestionType.textContent = "-";
     metaAnswer.textContent = "-";
+    if (metaCorrectRate) metaCorrectRate.innerHTML = "-";
     if (metaQuestionTitle) metaQuestionTitle.textContent = "-";
+    if (choiceBarsList) choiceBarsList.innerHTML = "";
+    if (passageDifficultyBadge) {
+      passageDifficultyBadge.textContent = "-";
+      passageDifficultyBadge.className = "choice-rates-difficulty-badge";
+    }
+    if (choiceRatesStatsSub) choiceRatesStatsSub.textContent = "-";
+    if (choiceRatesEmpty) choiceRatesEmpty.style.display = "none";
     passageTagsList.innerHTML = "";
     passageTabBar.innerHTML = "";
     if (treeStepSelector) treeStepSelector.innerHTML = "";
     if (breadcrumbTrail) breadcrumbTrail.innerHTML = "";
     if (btnTreeChangeExam) btnTreeChangeExam.style.display = "none";
     if (passageTabCount) passageTabCount.textContent = "0";
+  }
+
+  if (btnUploadRateFromViewer) {
+    btnUploadRateFromViewer.addEventListener("click", () => {
+      if (!currentExamId) return;
+      triggerSingleFileUpload(currentExamId, "csv", btnUploadRateFromViewer);
+    });
   }
 
   /** 지문 태그 목록 렌더링 */
@@ -2534,6 +2695,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const closeUploadModal = () => {
     uploadModal.classList.remove("show");
+    // 홈 검색 화면이 표시 중일 때 헤더 액션 슬롯을 확실하게 홈 상태(통계 배지)로 복원
+    if (homeSearchView && homeSearchView.style.display !== "none") {
+      setHeaderSlotState("home");
+    }
     // 완료된 상태에서 닫히는 경우 배치 업로드 상태 정리
     if (btnStartBatchUpload && btnStartBatchUpload.dataset.state === "finished") {
       batchSetsMap = {};
@@ -2615,6 +2780,7 @@ document.addEventListener("DOMContentLoaded", () => {
           pdfFile: null,
           hwpFile: null,
           ansFile: null,
+          csvFile: null,
         };
       }
 
@@ -2623,6 +2789,8 @@ document.addEventListener("DOMContentLoaded", () => {
         batchSetsMap[key].pdfFile = file;
       } else if (lowerName.endsWith(".hwp") || lowerName.endsWith(".hwpx")) {
         batchSetsMap[key].hwpFile = file;
+      } else if (lowerName.endsWith(".csv")) {
+        batchSetsMap[key].csvFile = file;
       } else if (lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || meta.is_ans) {
         batchSetsMap[key].ansFile = file;
       }
@@ -2660,6 +2828,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let readyCount = 0;
     let ansOnlyCount = 0;
+    let csvOnlyCount = 0;
     let fullUploadCount = 0;
 
     sets.forEach(set => {
@@ -2669,29 +2838,42 @@ document.addEventListener("DOMContentLoaded", () => {
       const hasPdf = Boolean(set.pdfFile);
       const hasHwp = Boolean(set.hwpFile);
       const hasAns = Boolean(set.ansFile);
+      const hasCsv = Boolean(set.csvFile);
       const isAlreadyRegistered = registeredExamsSet.has(examId);
 
       let isReady = false;
-      let mode = ""; // "full" | "ans_only" | "incomplete"
+      let mode = ""; // "full" | "ans_only" | "csv_only" | "ans_and_csv" | "incomplete"
       let statusHtml = "";
 
       if (hasPdf && hasHwp) {
         isReady = true;
         mode = "full";
         fullUploadCount++;
-        statusHtml = hasAns
-          ? `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료 (정답표 포함)</span>`
-          : `<span class="badge-match-ready">✅ 준비 완료</span>`;
+        const extras = [];
+        if (hasAns) extras.push("정답표");
+        if (hasCsv) extras.push("정답률");
+        const extraText = extras.length > 0 ? ` (${extras.join("·")} 포함)` : "";
+        statusHtml = `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료${extraText}</span>`;
+      } else if (hasAns && hasCsv && isAlreadyRegistered) {
+        isReady = true;
+        mode = "ans_and_csv";
+        statusHtml = `<span class="badge-match-ready" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">🔄 정답표+정답률 갱신 (준비 완료)</span>`;
       } else if (hasAns && isAlreadyRegistered) {
         // PDF/HWP가 없더라도 이미 DB에 등록된 시험지라면 정답표 단독 갱신 모드로 준비 완료!
         isReady = true;
         mode = "ans_only";
         ansOnlyCount++;
         statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
+      } else if (hasCsv && isAlreadyRegistered) {
+        // PDF/HWP가 없더라도 이미 DB에 등록된 시험지라면 정답률 CSV 단독 갱신 모드로 준비 완료!
+        isReady = true;
+        mode = "csv_only";
+        csvOnlyCount++;
+        statusHtml = `<span class="badge-match-ready" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;">📊 정답률 갱신 (준비 완료)</span>`;
       } else {
         isReady = false;
         mode = "incomplete";
-        statusHtml = hasAns
+        statusHtml = (hasAns || hasCsv)
           ? `<span class="badge-match-warn" style="color: #dc2626; border-color: #fecaca; background: #fef2f2;">⚠️ 미등록 시험지 (PDF/HWP 필요)</span>`
           : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
       }
@@ -2718,6 +2900,10 @@ document.addEventListener("DOMContentLoaded", () => {
         ? `<span style="color: #7e22ce; font-weight: 700;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
         : `<span style="color: #94a3b8;">⚪ 미포함 (HWP 사용)</span>`;
 
+      const csvCellHtml = hasCsv
+        ? `<span style="color: #15803d; font-weight: 700;">📊 ${escapeHtml(set.csvFile.name)}</span>`
+        : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`;
+
       tr.innerHTML = `
         <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">
           ${escapeHtml(set.set_key)}
@@ -2731,6 +2917,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="padding: 8px 10px; white-space: nowrap;">${pdfCellHtml}</td>
         <td style="padding: 8px 10px; white-space: nowrap;">${hwpCellHtml}</td>
         <td style="padding: 8px 10px; white-space: nowrap;">${ansCellHtml}</td>
+        <td style="padding: 8px 10px; white-space: nowrap;">${csvCellHtml}</td>
         <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">${statusHtml}</td>
       `;
       batchSetsTableBody.appendChild(tr);
@@ -2740,8 +2927,10 @@ document.addEventListener("DOMContentLoaded", () => {
       btnStartBatchUpload.disabled = (readyCount === 0);
       if (readyCount === 0) {
         btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
-      } else if (ansOnlyCount > 0 && fullUploadCount === 0) {
+      } else if (ansOnlyCount > 0 && fullUploadCount === 0 && csvOnlyCount === 0) {
         btnStartBatchUpload.textContent = `🔄 정답표 ${ansOnlyCount}개 세트 일괄 분석 및 반영 시작`;
+      } else if (csvOnlyCount > 0 && fullUploadCount === 0 && ansOnlyCount === 0) {
+        btnStartBatchUpload.textContent = `📊 정답률 CSV ${csvOnlyCount}개 세트 일괄 반영 시작`;
       } else {
         btnStartBatchUpload.textContent = `🚀 ${readyCount}개 세트 일괄 업로드/갱신 시작`;
       }
@@ -2798,7 +2987,11 @@ document.addEventListener("DOMContentLoaded", () => {
       // 이미 처리가 완료된 상태에서 버튼을 누른 경우 -> 모달을 닫고 홈 검색 갱신
       if (btnStartBatchUpload.dataset.state === "finished") {
         closeUploadModal();
-        executeSearch("home");
+        if (resultsView && resultsView.style.display !== "none") {
+          executeSearch("results");
+        } else {
+          showHomeScreen();
+        }
         return;
       }
 
@@ -2827,13 +3020,74 @@ document.addEventListener("DOMContentLoaded", () => {
         if (batchProgressCount) batchProgressCount.textContent = `${i + 1} / ${sets.length}`;
         if (batchProgressTitle) batchProgressTitle.textContent = `[${set.set_key}] 처리 중...`;
         if (batchProgressSubtext) {
-          batchProgressSubtext.textContent = (set.mode === "ans_only")
-            ? `정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`
-            : `PDF 2단 분할 파싱 및 HWP 교차 검증 진행 중 (${i + 1}/${sets.length})`;
+          if (set.mode === "ans_only") {
+            batchProgressSubtext.textContent = `정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`;
+          } else if (set.mode === "csv_only") {
+            batchProgressSubtext.textContent = `정답률 CSV 파싱 및 문항별 선택률 반영 중 (${i + 1}/${sets.length})`;
+          } else if (set.mode === "ans_and_csv") {
+            batchProgressSubtext.textContent = `정답표 분석 및 정답률 CSV 동시 반영 중 (${i + 1}/${sets.length})`;
+          } else {
+            batchProgressSubtext.textContent = `PDF 2단 분할 파싱 및 HWP 교차 검증 진행 중 (${i + 1}/${sets.length})`;
+          }
         }
 
         try {
-          if (set.mode === "ans_only") {
+          if (set.mode === "csv_only") {
+            // 기존 등록 시험지에 대한 정답률 CSV 단독 일괄 갱신
+            const formData = new FormData();
+            formData.append("file_type", "csv");
+            formData.append("file", set.csvFile);
+
+            const res = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+              method: "POST",
+              body: formData
+            });
+            const resData = await res.json();
+            if (res.ok) {
+              successCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답률 (${resData.updated_count || resData.parsed_count || 0}문항)</span>`;
+              }
+            } else {
+              failCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+              }
+            }
+          } else if (set.mode === "ans_and_csv") {
+            // 정답표와 정답률 CSV를 순차적으로 단독 갱신
+            let ok1 = false;
+            let ok2 = false;
+            let cntAns = 0;
+            let cntCsv = 0;
+            if (set.ansFile) {
+              const fdAns = new FormData();
+              fdAns.append("file_type", "ans");
+              fdAns.append("file", set.ansFile);
+              const r1 = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, { method: "POST", body: fdAns });
+              const d1 = await r1.json();
+              if (r1.ok) { ok1 = true; cntAns = d1.extracted_count || 45; }
+            }
+            if (set.csvFile) {
+              const fdCsv = new FormData();
+              fdCsv.append("file_type", "csv");
+              fdCsv.append("file", set.csvFile);
+              const r2 = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, { method: "POST", body: fdCsv });
+              const d2 = await r2.json();
+              if (r2.ok) { ok2 = true; cntCsv = d2.updated_count || 0; }
+            }
+            if (ok1 || ok2) {
+              successCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답+정답률 (${cntCsv || cntAns}문항)</span>`;
+              }
+            } else {
+              failCount++;
+              if (statusCell) {
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+              }
+            }
+          } else if (set.mode === "ans_only") {
             // 기존 등록 시험지에 대한 정답표 단독 일괄 갱신
             const formData = new FormData();
             formData.append("file_type", "ans");
@@ -2869,6 +3123,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (set.ansFile) {
               formData.append("ans_file", set.ansFile);
             }
+            if (set.csvFile) {
+              formData.append("csv_file", set.csvFile);
+            }
 
             const res = await fetch("/api/upload", { method: "POST", body: formData });
             const resData = await res.json();
@@ -2903,7 +3160,9 @@ document.addEventListener("DOMContentLoaded", () => {
       await fetchRegisteredExamsSet();
       if (typeof loadFilesStatusList === 'function') await loadFilesStatusList();
       if (typeof loadExamsManagerList === 'function') await loadExamsManagerList();
-      if (typeof executeSearch === 'function') executeSearch("home");
+      if (resultsView && resultsView.style.display !== "none") {
+        executeSearch("results");
+      }
 
       // 지문 뷰어에 띄워져 있는 이미지 캐시 버스팅
       const activePanelImgs = document.querySelectorAll("#panelPdfImageContainer img");
@@ -3138,6 +3397,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (fileType === "ans") {
       examSingleFileInput.accept = ".png,.jpg,.jpeg";
+    } else if (fileType === "csv") {
+      examSingleFileInput.accept = ".csv";
     } else if (fileType === "pdf") {
       examSingleFileInput.accept = ".pdf";
     } else if (fileType === "hwp") {
@@ -3159,7 +3420,9 @@ document.addEventListener("DOMContentLoaded", () => {
         targetBtn.disabled = true;
         targetBtn.innerHTML = activeSingleTargetType === "ans"
           ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> AI 분석 중...`
-          : `⏳ 업로드 중...`;
+          : (activeSingleTargetType === "csv"
+            ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> 파싱 중...`
+            : `⏳ 업로드 중...`);
       }
 
       const formData = new FormData();
@@ -3176,7 +3439,22 @@ document.addEventListener("DOMContentLoaded", () => {
           alert(`🎉 [${activeSingleTargetExamId}] ${data.message || '성공적으로 반영되었습니다.'}`);
           await loadExamsManagerList();
           await loadFilesStatusList();
-          if (typeof executeSearch === 'function') executeSearch("home");
+          if (resultsView && resultsView.style.display !== "none") {
+            executeSearch("results");
+          }
+
+          // 현재 열려있는 지문이 있다면 실시간 갱신 (정답률 시각화 등)
+          if (currentPassageId) {
+            try {
+              const pRes = await fetch(`/api/passages/${currentPassageId}`);
+              if (pRes.ok) {
+                const updatedP = await pRes.json();
+                renderChoiceRates(updatedP);
+              }
+            } catch (pErr) {
+              console.error("지문 상세 갱신 실패:", pErr);
+            }
+          }
 
           // 지문 뷰어에 띄워져 있는 이미지 캐시 버스팅
           const activePanelImgs = document.querySelectorAll("#panelPdfImageContainer img");
@@ -3207,13 +3485,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // =========================================================================
-  // 10-X. 원본 파일 현황 전용 탭 (PDF / HWP / PNG 업로드 유무 테이블 및 개별 업로드)
+  // 10-X. 원본 파일 현황 전용 탭 (PDF / HWP / PNG / CSV 업로드 유무 테이블 및 개별 업로드)
   // =========================================================================
 
   const filesTotalExamsCount = document.getElementById("filesTotalExamsCount");
   const filesTotalPdfCount = document.getElementById("filesTotalPdfCount");
   const filesTotalHwpCount = document.getElementById("filesTotalHwpCount");
   const filesTotalAnsCount = document.getElementById("filesTotalAnsCount");
+  const filesTotalCsvCount = document.getElementById("filesTotalCsvCount");
   const chkFilterMissingFiles = document.getElementById("chkFilterMissingFiles");
   const btnRefreshFilesStatus = document.getElementById("btnRefreshFilesStatus");
   const filesStatusTableBody = document.getElementById("filesStatusTableBody");
@@ -3222,7 +3501,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadFilesStatusList() {
     if (!filesStatusTableBody) return;
-    filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
 
     try {
       const res = await fetch("/api/exams");
@@ -3231,7 +3510,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderFilesStatusTable();
     } catch (err) {
       console.error(err);
-      filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
+      filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
     }
   }
 
@@ -3244,18 +3523,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const pdfCount = items.filter(e => e.file_status?.pdf?.exists).length;
     const hwpCount = items.filter(e => e.file_status?.hwp?.exists).length;
     const ansCount = items.filter(e => e.file_status?.ans?.exists || (e.file_status?.ans?.answered_count > 0)).length;
+    const csvCount = items.filter(e => e.file_status?.csv?.exists || (e.file_status?.csv?.rated_count > 0)).length;
 
     if (filesTotalExamsCount) filesTotalExamsCount.textContent = totalCount;
     if (filesTotalPdfCount) filesTotalPdfCount.textContent = pdfCount;
     if (filesTotalHwpCount) filesTotalHwpCount.textContent = hwpCount;
     if (filesTotalAnsCount) filesTotalAnsCount.textContent = ansCount;
+    if (filesTotalCsvCount) filesTotalCsvCount.textContent = csvCount;
 
     document.querySelectorAll(".stat-total-ref").forEach(el => {
       el.textContent = totalCount;
     });
 
     if (items.length === 0) {
-      filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
+      filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
       return;
     }
 
@@ -3266,12 +3547,13 @@ document.addEventListener("DOMContentLoaded", () => {
           const hasPdf = fs.pdf?.exists;
           const hasHwp = fs.hwp?.exists;
           const hasAns = fs.ans?.exists || (fs.ans?.answered_count > 0);
-          return !(hasPdf && hasHwp && hasAns);
+          const hasCsv = fs.csv?.exists || (fs.csv?.rated_count > 0);
+          return !(hasPdf && hasHwp && hasAns && hasCsv);
         })
       : items;
 
     if (displayItems.length === 0) {
-      filesStatusTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 미등록 파일이 있는 세트가 없습니다! 모든 세트가 완비되었습니다.</td></tr>`;
+      filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률(4종)이 완비되었습니다!</td></tr>`;
       return;
     }
 
@@ -3287,6 +3569,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const pdfStat = fStat.pdf || {};
       const hwpStat = fStat.hwp || {};
       const ansStat = fStat.ans || {};
+      const csvStat = fStat.csv || {};
 
       // 1. PDF 문제지 버튼
       let pdfBtnHtml = "";
@@ -3307,7 +3590,7 @@ document.addEventListener("DOMContentLoaded", () => {
       // 3. 정답표 이미지 (-A) 버튼
       let ansBtnHtml = "";
       const answeredCount = ansStat.answered_count || 0;
-      const totalCount = ansStat.total_count || exam.passage_count || 28;
+      const totalCount = exam.passage_count || 28;
       if (ansStat.exists) {
         ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 정답표로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
       } else if (answeredCount > 0) {
@@ -3316,14 +3599,30 @@ document.addEventListener("DOMContentLoaded", () => {
         ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 업로드</button>`;
       }
 
-      // 4. 종합 상태 배지
+      // 4. 정답률 CSV 버튼
+      let csvBtnHtml = "";
+      const ratedCount = csvStat.rated_count || 0;
+      if (csvStat.exists) {
+        const avgText = csvStat.avg_rate != null ? ` (평균 ${csvStat.avg_rate}%)` : ` (${ratedCount}/${totalCount})`;
+        csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="${escapeHtml(csvStat.filename)} (정답률 ${ratedCount}/${totalCount}문항 반영됨, 클릭 시 새 파일로 교체)">📊 등록됨${avgText}</button>`;
+      } else if (ratedCount > 0) {
+        const avgText = csvStat.avg_rate != null ? ` (평균 ${csvStat.avg_rate}%)` : ` (${ratedCount}/${totalCount})`;
+        csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="DB 정답률 등록 완료 (${ratedCount}/${totalCount}문항), 클릭 시 새 CSV 등록">📊 등록됨${avgText}</button>`;
+      } else {
+        csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="클릭하여 정답률 CSV 업로드">➕ 정답률 업로드</button>`;
+      }
+
+      // 5. 종합 상태 배지
       let overallStatusHtml = "";
       const hasPdf = pdfStat.exists;
       const hasHwp = hwpStat.exists;
       const hasAns = ansStat.exists || (answeredCount > 0);
+      const hasCsv = csvStat.exists || (ratedCount > 0);
 
-      if (hasPdf && hasHwp && hasAns) {
-        overallStatusHtml = `<span style="font-size: 0.74rem; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟢 3종 완비</span>`;
+      if (hasPdf && hasHwp && hasAns && hasCsv) {
+        overallStatusHtml = `<span style="font-size: 0.74rem; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟢 4종 완비</span>`;
+      } else if (hasPdf && hasHwp && hasAns && !hasCsv) {
+        overallStatusHtml = `<span style="font-size: 0.74rem; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟡 정답률 필요</span>`;
       } else if (hasPdf && hasHwp && !hasAns) {
         overallStatusHtml = `<span style="font-size: 0.74rem; background: #faf5ff; color: #6b21a8; border: 1px solid #e9d5ff; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟣 정답표 필요</span>`;
       } else {
@@ -3340,6 +3639,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${csvBtnHtml}</td>
         <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">${overallStatusHtml}</td>
       `;
       filesStatusTableBody.appendChild(tr);
@@ -5694,7 +5994,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return id.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
 
-  // 초기 상태: 지문 검색 모드이므로 어법 필터 숨김 및 AI 연결 상태 확인
+  // 초기 상태: 홈 검색 화면이 기본이므로 헤더 슬롯을 'home' 상태(통계 배지 노출, 해당 지문 버튼 숨김)로 명시 초기화
+  setHeaderSlotState("home");
   updateGrammarFiltersVisibility();
   refreshAiStatusIndicator();
 });

@@ -456,10 +456,42 @@
                   <span class="meta-label">정답</span>
                   <span class="meta-val" id="metaAnswer" style="color: #dc2626; font-weight: 700;">-</span>
                 </div>
+                <div class="meta-item">
+                  <span class="meta-label">정답률</span>
+                  <span class="meta-val" id="metaCorrectRate">-</span>
+                </div>
+              </div>
+
+              <!-- [선지별 선택률 시각화 패널] -->
+              <div class="choice-rates-container" id="choiceRatesContainer">
+                <div class="choice-rates-header">
+                  <div class="choice-rates-title-left">
+                    <span class="choice-rates-title">📊 선지별 선택률 (%)</span>
+                    <span class="choice-rates-difficulty-badge" id="passageDifficultyBadge">-</span>
+                  </div>
+                  <div class="choice-rates-stats-sub" id="choiceRatesStatsSub">
+                    총 응시자 -명 기준
+                  </div>
+                </div>
+
+                <!-- 5개 선지 게이지 바 목록 -->
+                <div class="choice-bars-list" id="choiceBarsList">
+                  <!-- 1~5번 선지 JS 동적 렌더링 -->
+                </div>
+
+                <!-- 미등록 시 업로드 안내 박스 -->
+                <div class="choice-rates-empty" id="choiceRatesEmpty" style="display: none;">
+                  <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                    <span>📊 정답률 및 선지 선택률 미등록</span>
+                  </div>
+                  <button type="button" class="btn-file-chip chip-rate-needed" id="btnUploadRateFromViewer">
+                    ➕ 정답률 CSV 등록
+                  </button>
+                </div>
               </div>
 
               <!-- 등록된 태그 목록 (삭제 가능 배지) -->
-              <div class="meta-item">
+              <div class="meta-item" style="margin-top: 0.85rem;">
                 <span class="meta-label">등록된 태그</span>
                 <div class="tags-list-container" id="passageTagsList">
                   <!-- 태그 배지 동적 렌더링 -->
@@ -573,14 +605,14 @@
             <div class="dropzone-icon">📁</div>
             <div class="dropzone-title">복수 모의고사 파일들을 이곳에 드래그&드롭하세요</div>
             <div class="dropzone-desc">
-              예시 파일명: <code>고3-[2026-06].pdf</code>, <code>고3-[2026-06].hwp</code>, <code>고3-[2026-06]-A.png</code> (정답표 이미지, 선택)<br>
+              예시 파일명: <code>고3-[2026-06].pdf</code>, <code>고3-[2026-06].hwp</code>, <code>고3-[2026-06]-A.png</code> (정답표 이미지, 선택), <code>고3-[2026-06].csv</code> (정답률 통계, 선택)<br>
               <span style="color: var(--text-muted); font-size: 0.78rem;">
                 ※ 파일명에서 학년, 연도, 월을 자동 추출하며, <strong>3학년 6·9·11월은 평가원</strong>, 그 외는 <strong>교육청</strong>으로 자동 분류됩니다.
               </span>
             </div>
             <label class="btn btn-secondary btn-sm dropzone-btn" style="cursor: pointer; margin-top: 0.75rem;">
-              📂 파일 선택하기 (PDF & HWP & 정답이미지 다중 선택)
-              <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg" multiple style="display: none;">
+              📂 파일 선택하기 (PDF & HWP & 정답이미지 & 정답률CSV 다중 선택)
+              <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg,.csv" multiple style="display: none;">
             </label>
           </div>
 
@@ -605,6 +637,7 @@
                     <th style="padding: 8px 10px; white-space: nowrap;">PDF 파일</th>
                     <th style="padding: 8px 10px; white-space: nowrap;">HWP 파일</th>
                     <th style="padding: 8px 10px; white-space: nowrap;">정답표 (-A)</th>
+                    <th style="padding: 8px 10px; white-space: nowrap;">📊 정답률 (CSV)</th>
                     <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">상태</th>
                   </tr>
                 </thead>
@@ -656,6 +689,9 @@
               <span class="badge-files-stat" id="statBadgeAns" style="background: #faf5ff; color: #7e22ce; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #e9d5ff;">
                 🖼️ 정답표(이미지): <strong id="filesTotalAnsCount">0</strong> / <span class="stat-total-ref">0</span>
               </span>
+              <span class="badge-files-stat" id="statBadgeCsv" style="background: #fffbeb; color: #b45309; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #fde68a;">
+                📊 정답률(CSV): <strong id="filesTotalCsvCount">0</strong> / <span class="stat-total-ref">0</span>
+              </span>
             </div>
 
             <div style="display: flex; gap: 8px; align-items: center;">
@@ -681,6 +717,7 @@
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (-A 이미지)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📊 정답률 (CSV)</th>
                   <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">종합 상태</th>
                 </tr>
               </thead>
@@ -691,7 +728,7 @@
           </div>
 
           <div style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
-            💡 <strong>원클릭 파일 업로드 안내</strong>: 각 모의고사 행에서 등록되지 않은 파일의 <strong>[➕ 업로드]</strong> 버튼을 누르면 해당 파일만 단독으로 즉시 업로드됩니다. 특히 <strong>[➕ 정답표 등록]</strong> 버튼을 누르면 Vision AI가 1~45번 정답을 시각적으로 자동 추출하여 DB 지문 및 PDF 형광펜 하이라이트에 즉시 반영합니다.
+            💡 <strong>원클릭 파일 업로드 안내</strong>: 각 모의고사 행에서 등록되지 않은 파일의 <strong>[➕ 업로드]</strong> 버튼을 누르면 해당 파일만 단독으로 즉시 업로드됩니다. <strong>[➕ 정답표 등록]</strong>은 Vision AI 1~45번 정답 추출 및 PDF 형광펜 하이라이트를 연동하며, <strong>[➕ 정답률 등록]</strong>은 1~45번 정답률(%) 및 1~5번 선지 선택률 데이터를 2x2 지문 뷰어에 즉시 시각화합니다.
           </div>
         </div>
 
@@ -773,6 +810,14 @@
               <input type="file" class="form-control" name="ans_file" id="modalAnsFile" accept=".png,.jpg,.jpeg">
               <small style="color: var(--text-muted); font-size: 0.78rem;">
                 ※ HWP 내에 정답이 없거나 이미지로 삽입된 경우, 1~45번 정답표 이미지를 함께 첨부하면 Vision AI가 정답을 자동 추출합니다.
+              </small>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">4. 정답률 데이터 파일 (선택, CSV)</label>
+              <input type="file" class="form-control" name="csv_file" id="modalCsvFile" accept=".csv">
+              <small style="color: var(--text-muted); font-size: 0.78rem;">
+                ※ OMR 또는 채점 통계 프로그램에서 추출된 번호, 정답, 정답률, 1~5번 선지 응시자 수 CSV 파일을 첨부하면 2x2 뷰어에 선지별 선택률이 시각화됩니다.
               </small>
             </div>
           </div>
@@ -1438,6 +1483,6 @@
     </div>
   </div>
 
-  <script src="/static/js/main.js?v=20260921_1320"></script>
+  <script src="/static/js/main.js?v=20260921_1345"></script>
 </body>
 </html>

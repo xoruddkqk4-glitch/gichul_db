@@ -78,6 +78,17 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # 이미 컬럼이 존재함
 
+        # passages 테이블에 correct_rate 및 choice_rates 컬럼 안전 마이그레이션
+        try:
+            cursor.execute("ALTER TABLE passages ADD COLUMN correct_rate REAL DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE passages ADD COLUMN choice_rates TEXT DEFAULT NULL;")
+        except sqlite3.OperationalError:
+            pass
+
         # 3. 문장 테이블
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sentences (
@@ -293,22 +304,27 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
             raw_basenames = [os.path.basename(f) for f in raw_files]
             ex["raw_files"] = raw_basenames
 
-            # 3대 파일(PDF, HWP, 정답표 이미지) 개별 유무 판별
+            # 4대 파일(PDF, HWP, 정답표 이미지, 정답률 CSV) 개별 유무 판별
             pdf_file = next((f for f in raw_basenames if f.lower().endswith(".pdf")), None)
             hwp_file = next((f for f in raw_basenames if f.lower().endswith((".hwp", ".hwpx")) and "_exp_" not in f), None)
             ans_file = next((f for f in raw_basenames if "_ans_" in f or f.lower().endswith((".png", ".jpg", ".jpeg"))), None)
+            csv_file = next((f for f in raw_basenames if f.lower().endswith(".csv")), None)
 
-            # 지문 정답 입력 현황 조회
+            # 지문 정답 및 정답률 입력 현황 조회
             cursor.execute("""
                 SELECT 
                     COUNT(*) AS total_passages,
-                    SUM(CASE WHEN answer_text IS NOT NULL AND TRIM(answer_text) != '' THEN 1 ELSE 0 END) AS answered_passages
+                    SUM(CASE WHEN answer_text IS NOT NULL AND TRIM(answer_text) != '' THEN 1 ELSE 0 END) AS answered_passages,
+                    SUM(CASE WHEN correct_rate IS NOT NULL THEN 1 ELSE 0 END) AS rated_passages,
+                    AVG(correct_rate) AS avg_correct_rate
                 FROM passages
                 WHERE exam_id = ?
             """, (eid,))
             ans_row = cursor.fetchone()
             total_passages = ans_row["total_passages"] if ans_row else 0
             answered_passages = ans_row["answered_passages"] if ans_row and ans_row["answered_passages"] else 0
+            rated_passages = ans_row["rated_passages"] if ans_row and ans_row["rated_passages"] else 0
+            avg_rate = round(ans_row["avg_correct_rate"], 1) if (ans_row and ans_row["avg_correct_rate"] is not None) else None
 
             ex["file_status"] = {
                 "pdf": {
@@ -324,6 +340,13 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
                     "filename": ans_file or "",
                     "answered_count": answered_passages,
                     "total_count": total_passages
+                },
+                "csv": {
+                    "exists": bool(csv_file) or (rated_passages > 0),
+                    "filename": csv_file or "",
+                    "rated_count": rated_passages,
+                    "total_count": total_passages,
+                    "avg_rate": avg_rate
                 }
             }
 
@@ -492,16 +515,22 @@ def save_passage(passage_data: dict) -> str:
     """지문 정보 저장"""
     if "question_type" not in passage_data:
         passage_data["question_type"] = ""
+    if "correct_rate" not in passage_data:
+        passage_data["correct_rate"] = None
+    if "choice_rates" not in passage_data:
+        passage_data["choice_rates"] = None
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO passages (
                 id, exam_id, q_num, question_title, question_type, passage_text,
-                answer_text, explanation_text, pdf_crop_image, validation_ratio, remarks
+                answer_text, explanation_text, pdf_crop_image, validation_ratio, remarks,
+                correct_rate, choice_rates
             )
             VALUES (
                 :id, :exam_id, :q_num, :question_title, :question_type, :passage_text,
-                :answer_text, :explanation_text, :pdf_crop_image, :validation_ratio, :remarks
+                :answer_text, :explanation_text, :pdf_crop_image, :validation_ratio, :remarks,
+                :correct_rate, :choice_rates
             )
             ON CONFLICT(id) DO UPDATE SET
                 question_title = excluded.question_title,
@@ -511,10 +540,61 @@ def save_passage(passage_data: dict) -> str:
                 explanation_text = excluded.explanation_text,
                 pdf_crop_image = excluded.pdf_crop_image,
                 validation_ratio = excluded.validation_ratio,
-                remarks = excluded.remarks
+                remarks = excluded.remarks,
+                correct_rate = COALESCE(excluded.correct_rate, passages.correct_rate),
+                choice_rates = COALESCE(excluded.choice_rates, passages.choice_rates)
         """, passage_data)
         conn.commit()
         return passage_data["id"]
+
+
+def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    특정 시험지의 문항별 정답률 및 선지 선택률 일괄 DB 갱신
+    rates_dict: { q_num: { 'correct_rate': float, 'choice_rates': dict, 'correct_ans_circle': str } }
+    """
+    clean_id = exam_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    updated_count = 0
+    rates_collected = []
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, q_num, answer_text FROM passages WHERE exam_id = ?", (clean_id,))
+        passages = cursor.fetchall()
+
+        for p in passages:
+            q_num = p["q_num"]
+            q_int = int(q_num) if str(q_num).isdigit() else q_num
+            target_data = rates_dict.get(q_int) or rates_dict.get(str(q_int))
+            if target_data:
+                c_rate = target_data.get("correct_rate")
+                ch_rates = target_data.get("choice_rates")
+                ch_rates_json = json.dumps(ch_rates, ensure_ascii=False) if ch_rates else None
+                c_ans = target_data.get("correct_ans_circle")
+
+                old_ans = p["answer_text"] or ""
+                new_ans = old_ans if old_ans.strip() else (c_ans or "")
+
+                cursor.execute("""
+                    UPDATE passages 
+                    SET correct_rate = ?, choice_rates = ?, answer_text = ?
+                    WHERE id = ?
+                """, (c_rate, ch_rates_json, new_ans if new_ans else old_ans, p["id"]))
+                updated_count += 1
+                if c_rate is not None:
+                    rates_collected.append(c_rate)
+
+        conn.commit()
+
+    avg_rate = round(sum(rates_collected) / len(rates_collected), 1) if rates_collected else None
+    return {
+        "exam_id": clean_id,
+        "updated_count": updated_count,
+        "avg_rate": avg_rate
+    }
 
 
 def update_passage_question_type(passage_id: str, question_type: str) -> bool:
@@ -727,6 +807,11 @@ def search_passages(
         for r in rows:
             p_dict = dict(r)
             p_dict["tags"] = get_passage_tags(r["id"])
+            if p_dict.get("choice_rates") and isinstance(p_dict["choice_rates"], str):
+                try:
+                    p_dict["choice_rates_obj"] = json.loads(p_dict["choice_rates"])
+                except Exception:
+                    p_dict["choice_rates_obj"] = None
             results.append(p_dict)
         return results
 
@@ -748,6 +833,11 @@ def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:
         if row:
             p_dict = dict(row)
             p_dict["tags"] = get_passage_tags(p_dict["id"])
+            if p_dict.get("choice_rates") and isinstance(p_dict["choice_rates"], str):
+                try:
+                    p_dict["choice_rates_obj"] = json.loads(p_dict["choice_rates"])
+                except Exception:
+                    p_dict["choice_rates_obj"] = None
             return p_dict
         return None
 

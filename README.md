@@ -29,6 +29,11 @@
 - **Multi-LLM 엔진 (`grammar_analyzer.py`)**: Google Gemini, OpenAI ChatGPT, Anthropic Claude 모델을 환경 의존성 없이 순수 REST API로 호출하여 문장 내 핵심 어법 범주, 타깃 어구, 어법 해설을 자동 생성.
 - **문장 검색 캐스케이딩 필터 & 중요(⭐) 문장 큐레이션**: 어법 대분류 ➔ 세부 범주 2단계 연동 필터, 중요 문장 원클릭 별표 북마크, 인라인 및 일괄 AI 분석 제공.
 
+### 6. 정답률 CSV 파싱 및 선지별 선택률·매력적 오답 시각화
+- **정답률 CSV 자동 파싱 (`rate_parser.py`)**: OMR/채점 통계 CSV(`CP949`/`EUC-KR`/`UTF-8`)를 업로드하여 문항별 정답률(%), 선지별(①~⑤) 응시자 수 및 선택률, 무응답/중복답을 DB에 자동 연동.
+- **2x2 지문 뷰어 시각화**: 난이도 등급 배지(🔴 킬러 / 🟠 중고난도 / 🟡 보통 / 🟢 평이), 5개 선지별 선택률 가로 프로그레스 바, `★ 정답`(에메랄드) 및 15% 이상 오답인 `🚨 매력적 오답`(레드 배지) 직관적 강조.
+- **4종 세트 스마트 업로드**: 문제지(PDF) + 해설지(HWP) + 정답표(-A.png) + 정답률(CSV) 4종 파일의 일괄/단독 업로드 및 세트별 현황 관리 지원.
+
 
 ---
 
@@ -65,6 +70,7 @@
 ├── pdf_parser.py           # PDF 2단 칼럼 분할 파싱 및 문항별 고화질 이미지 크롭
 ├── hwp_parser.py           # HWP/HWPX 문제지 파싱 및 정답/해설 추출
 ├── validator.py            # HWP vs PDF 상호 교차 검증 및 데이터 무결성 검사
+├── rate_parser.py          # OMR/채점 통계 CSV 파서 (정답률, 선지별 선택률, 매력적 오답 탐지)
 ├── app.py                  # FastAPI REST API 및 웹 서버 엔드포인트
 ├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기
 ├── templates/
@@ -818,3 +824,28 @@ CREATE TABLE user_sentence_status (
   - `GET /api/openrouter/models` 실시간 446개 모델 조회 및 커스텀 앙상블 3개 모델 DB 저장/복원 검증 완료
   - `GET /api/search/sentences` 호출 시 7,913개 문장 전체 누락 없이 1.2초 내 완전 응답 확인
   - AI 프로바이더별 개별 연결 핑 테스트(`/api/settings/ai/test`) 정상 작동 확인 (OpenRouter 200, OpenAI 200, Claude 400 키 요구)
+
+### [2026-09-21 13:50] 업데이트 이력 (Commit ID: 1536910)
+- **수정 내용**:
+  - **정답률 CSV 파일 업로드 및 문항별 2x2 지문 뷰어 선지 선택률 시각화 엔진 구축 (`rate_parser.py`, `database.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **정답률 CSV 파서 모듈 신설 (`rate_parser.py`)**: OMR/채점 통계 프로그램의 `CP949`/`EUC-KR`/`UTF-8` 인코딩 자동 판별, 문항 번호(18~45), 정답률(%), 선지별(1~5번) 응시자 수 및 선택 비율, 무응답/중복답 및 15% 이상 선택된 매력적 오답(`🚨 매력적 오답`) 자동 추출 알고리즘 구현
+    - **데이터베이스 스키마 확장 및 마이그레이션 (`database.py`)**: `passages` 테이블에 `correct_rate REAL`, `choice_rates TEXT` 컬럼 추가 및 데이터 손상 방지 COALESCE 보정, 문항 번호 기반 정답률 및 선지 선택률(JSON) 자동 매칭 갱신(`save_exam_correct_rates`), 시험지별 통계에 `file_status.csv` 연동
+    - **단일 지문 상세 API 확장 (`app.py`)**: `/api/passages/{passage_id}` 호출 시 `choice_rates_obj` 및 `correct_rate` 반환 보장
+    - **2x2 지문 뷰어 패널 4(추가 정보) 선지별 선택률 시각화 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+      - 4대 난이도 등급 배지: 🔴 킬러 · 고난도 (<40%), 🟠 중고난도 (40~60%), 🟡 보통 (60~80%), 🟢 평이 (80% 이상)
+      - 5개 선지(①~⑤)별 선택률 가로 프로그레스 게이지 바 및 실제 응시자 수(`(00명)`) 표기
+      - `★ 정답 선지`(에메랄드 그라데이션) 및 `🚨 매력적 오답 선지`(레드/로즈 그라데이션 배지) 시각적 강조
+      - 미등록 시 안내 상자 및 `[➕ 정답률 CSV 등록]` 원클릭 단독 업로드 연동
+    - **시험지 업로드 모달 3대 탭과의 4종 세트 완전 통합 (`templates/index.html`, `static/js/main.js`)**:
+      - 탭 1 (스마트 일괄 업로드): 드롭존 및 파일 선택에 `.csv` 추가, `고O-[OOOO-OO].csv` 자동 페어링 및 감지 테이블에 `📊 정답률 (CSV)` 컬럼 추가, 신규 세트 또는 정답률 단독 일괄 갱신 지원
+      - 탭 2 (원본 파일 현황): 상단 통계에 `📊 정답률(CSV)` 배지 추가, 9열 테이블로 확장하여 세트별 `📊 등록됨 (평균 XX%)` 또는 `➕ 정답률 업로드` 원클릭 단독 등록 지원, `🟢 4종 완비` / `🟡 정답률 필요` 상태 배지 연동
+      - 탭 3 (단일 세트 업로드): `4. 정답률 데이터 파일 (선택, CSV)` 입력 필드 연동
+  - **첫 검색 화면(홈 화면) 헤더 내 '해당 지문의 전체 문장' 버튼 노출 버그 해결 (`static/js/main.js`, `templates/index.html`)**:
+    - 홈 검색 화면(`homeSearchView`)에서는 특정 지문이 선택되지 않았으므로 `btnHeaderFlow`(`📝 해당 지문의 전체 문장`) 버튼이 노출되지 않도록 `setHeaderSlotState`에 홈 화면 가드 조건(`isHomeVisible || state === "home"`) 적용
+    - 모의고사 파일 업로드 완료 시 무조건적인 `executeSearch("home")` 호출을 제거하고, 현재 결과창(`resultsView`)이 활성화되어 있을 때만 결과를 갱신하도록 수정
+    - 초기 로드(`DOMContentLoaded`), 모달 닫기(`closeUploadModal`), 홈 화면 복귀(`showHomeScreen`) 시 `setHeaderSlotState("home")`을 명시 호출하여 `📊 지문/문장 통계 배지` 노출 보장
+- **검증 결과**:
+  - `python -m py_compile app.py database.py rate_parser.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - 실제 사용자 샘플 CSV(`media_1789958309858.csv`)를 `[고3-2026년-09월]` 시험지에 적용하여 28문항 100% 매칭, 평균 정답률 64.2%, 21번 킬러 문항(정답률 24.1%, 매력적 오답 ③번 40.3%) 정상 파싱 및 DB 적재 검증 완료
+  - FastAPI TestClient 및 in-process API 검증 (`/api/exams`, `/api/passages/[고3-2026년-09월-31번]`, `/api/passages/[고3-2026년-09월-21번]`) 정상 200 OK 응답 확인

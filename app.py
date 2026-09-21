@@ -21,6 +21,7 @@ import grammar_analyzer
 from pdf_parser import extract_pdf_columns_and_questions
 from hwp_parser import parse_hwp_questions, parse_hwp_explanations, parse_answer_image, KNOWN_EXAM_ANSWERS, CIRCLED_MAP
 from validator import cross_validate_and_merge
+from rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -184,21 +185,15 @@ async def api_search_sentences(
 # --- 단일 지문 상세 API (2x2 그리드 뷰용) ---
 @app.get("/api/passages/{passage_id}")
 async def api_get_passage(passage_id: str):
-    """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형)"""
+    """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형, 정답률 및 선지 선택률)"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
-    with db.get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM passages WHERE id = ?", (clean_id,))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="해당 지문을 찾을 수 없습니다.")
-
-        data = dict(row)
-        data["tags"] = db.get_passage_tags(clean_id)
-        return data
+    data = db.get_passage(clean_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="해당 지문을 찾을 수 없습니다.")
+    return data
 
 
 # --- 문제 유형 수정 API ---
@@ -673,10 +668,11 @@ async def api_upload_exam(
     pdf_file: UploadFile = File(...),
     hwp_file: UploadFile = File(...),
     exp_file: Optional[UploadFile] = File(None),
-    ans_file: Optional[UploadFile] = File(None)
+    ans_file: Optional[UploadFile] = File(None),
+    csv_file: Optional[UploadFile] = File(None)
 ):
     """
-    동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP), 선택적 정답표 이미지(PNG/JPG) 파일 업로드 및 상호 검증 파이프라인
+    동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP), 선택적 정답표 이미지(PNG/JPG), 선택적 정답률 CSV 파일 업로드 및 상호 검증 파이프라인
     """
     # 1. 업로드 파일 임시 저장
     pdf_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{pdf_file.filename}")
@@ -698,6 +694,12 @@ async def api_upload_exam(
         ans_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{ans_file.filename}")
         with open(ans_save_path, "wb") as buffer:
             shutil.copyfileobj(ans_file.file, buffer)
+
+    csv_save_path = None
+    if csv_file and csv_file.filename:
+        csv_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{csv_file.filename}")
+        with open(csv_save_path, "wb") as buffer:
+            shutil.copyfileobj(csv_file.file, buffer)
 
     try:
         # 2. 시험지 정보 DB 등록
@@ -775,6 +777,20 @@ async def api_upload_exam(
                             explanations[q_num]["answer"] = ans
                 break
 
+        # (4) 정답률 CSV 파일이 제공된 경우 정답률/선지 선택률 파싱 및 정답 사전 보강
+        rates_dict = {}
+        if csv_save_path and os.path.exists(csv_save_path):
+            try:
+                rates_dict = parse_correct_rate_csv(csv_save_path)
+                for q_num, item in rates_dict.items():
+                    c_circle = item.get("correct_ans_circle")
+                    if c_circle and (q_num not in answers_dict or not answers_dict[q_num]):
+                        answers_dict[q_num] = c_circle
+                        if q_num in explanations and not explanations[q_num].get("answer"):
+                            explanations[q_num]["answer"] = c_circle
+            except Exception as e:
+                print(f"[Upload] 정답률 CSV 파싱 실패: {e}")
+
         # 4. PDF 문제지 파싱 및 캡처 (정답 선지 형광펜 하이라이트 연동)
         pdf_questions = extract_pdf_columns_and_questions(
             pdf_path=pdf_save_path,
@@ -817,6 +833,13 @@ async def api_upload_exam(
             if pkg["sentences"]:
                 db.save_sentences(pkg["sentences"])
                 saved_sentences_count += len(pkg["sentences"])
+
+        # 정답률 데이터가 파싱된 경우 passages 테이블에 일괄 반영
+        if rates_dict:
+            try:
+                db.save_exam_correct_rates(exam_id, rates_dict)
+            except Exception as e:
+                print(f"[Upload] 정답률 DB 갱신 실패: {e}")
 
         # AI API 키가 설정되어 있는 경우 백그라운드 어법 자동 분석 스케줄링
         _, ai_key, _ = grammar_analyzer.get_ai_config()
@@ -865,12 +888,12 @@ async def api_delete_exam(exam_id: str):
 @app.post("/api/exams/{exam_id}/upload-file")
 async def api_upload_exam_single_file(
     exam_id: str,
-    file_type: str = Form(...),  # "ans" | "pdf" | "hwp"
+    file_type: str = Form(...),  # "ans" | "pdf" | "hwp" | "csv"
     file: UploadFile = File(...)
 ):
     """
-    기존 등록된 특정 시험지에 대해 단독 파일(정답표 이미지, PDF, HWP)을 업로드 및 갱신하는 API
-    특히 정답표 이미지(ans) 업로드 시 Vision AI 정답 추출 + DB 갱신 + PDF 하이라이트 크롭 재생성 자동 수행
+    기존 등록된 특정 시험지에 대해 단독 파일(정답표 이미지, PDF, HWP, 정답률 CSV)을 업로드 및 갱신하는 API
+    특히 정답표 이미지(ans) 또는 정답률 CSV(csv) 업로드 시 데이터 추출 + DB 갱신 자동 수행
     """
     clean_id = exam_id.strip()
     if not clean_id.startswith("["):
@@ -1003,7 +1026,26 @@ async def api_upload_exam_single_file(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"정답 이미지 파싱 중 오류: {str(e)}")
 
-    # 4. PDF 또는 HWP 파일 단독 교체 시
+    # 4. 정답률 및 선지 선택률 CSV 파일 처리
+    elif file_type == "csv":
+        try:
+            rates_dict = parse_correct_rate_csv(save_path)
+            if not rates_dict:
+                raise ValueError("정답률 CSV 파일에서 유효한 문항 데이터를 추출하지 못했습니다.")
+            res_data = db.save_exam_correct_rates(clean_id, rates_dict)
+            return {
+                "status": "success",
+                "exam_id": clean_id,
+                "file_type": "csv",
+                "extracted_count": len(rates_dict),
+                "updated_count": res_data["updated_count"],
+                "avg_rate": res_data["avg_rate"],
+                "message": f"정답률 및 선지 선택률 데이터 {res_data['updated_count']}개 문항이 성공적으로 반영되었습니다." + (f" (평균 정답률: {res_data['avg_rate']}%)" if res_data["avg_rate"] is not None else "")
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"정답률 CSV 파싱 중 오류: {str(e)}")
+
+    # 5. PDF 또는 HWP 파일 단독 교체 시
     return {
         "status": "success",
         "exam_id": clean_id,
