@@ -850,7 +850,7 @@ CREATE TABLE user_sentence_status (
   - 실제 사용자 샘플 CSV(`media_1789958309858.csv`)를 `[고3-2026년-09월]` 시험지에 적용하여 28문항 100% 매칭, 평균 정답률 64.2%, 21번 킬러 문항(정답률 24.1%, 매력적 오답 ③번 40.3%) 정상 파싱 및 DB 적재 검증 완료
   - FastAPI TestClient 및 in-process API 검증 (`/api/exams`, `/api/passages/[고3-2026년-09월-31번]`, `/api/passages/[고3-2026년-09월-21번]`) 정상 200 OK 응답 확인
 
-### [2026-09-21 14:17] 업데이트 이력 (Commit ID: PENDING_COMMIT_HASH)
+### [2026-09-21 14:17] 업데이트 이력 (Commit ID: 4cf3840)
 - **수정 내용**:
   - **지문 선택 상태 시 상단 헤더 '해당 지문의 전체 문장' 버튼 노출 정상화 (`static/js/main.js`, `templates/index.html`)**:
     - `setHeaderSlotState` 로직을 정밀화하여, 결과창(`resultsView`)이 활성화되어 있고 현재 지문(`currentPassageId`)이 존재하는 경우 `statsBadge`를 숨기고 `btnHeaderFlow`(`📝 해당 지문의 전체 문장`)가 100% 확실히 표시되도록 개선
