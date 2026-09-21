@@ -884,7 +884,7 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py rate_parser.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
   - 모달 내 두 탭 모두 테이블 정렬 및 4대 파일 칩 버튼 연동 정상 확인
 
-### [2026-09-21 18:56] 업데이트 이력 (Commit ID: PENDING_COMMIT_ID)
+### [2026-09-21 18:56] 업데이트 이력 (Commit ID: e102818)
 - **수정 내용**:
   - **정답률 검색 필터 10% 단위 세분화 체계 개편 (`templates/index.html`, `database.py`, `static/js/main.js`)**:
     - 중복되고 모호했던 `50% 이하` 및 `60% 이하` 구간을 제거하고, 10% 단위의 표준 구간 체계로 재정비:
