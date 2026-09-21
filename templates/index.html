@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gichul DB — 수능·모의고사 영어 기출 데이터베이스</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260921_1405">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260921_1445">
 </head>
 <body>
 
@@ -711,8 +711,10 @@
               <thead>
                 <tr style="background: #f8fafc; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2;">
                   <th style="width: 42px; padding: 10px 8px; text-align: center; white-space: nowrap;">No.</th>
-                  <th style="padding: 10px 12px; white-space: nowrap;">시험지 식별자</th>
-                  <th style="padding: 10px 10px; white-space: nowrap;">학년/월</th>
+                  <th class="sortable-th" data-table="files" data-sort="id" style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="files" data-sort="grade" style="width: 62px; padding: 10px 8px; text-align: center; white-space: nowrap;" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="files" data-sort="year" style="width: 68px; padding: 10px 8px; text-align: center; white-space: nowrap;" title="클릭하여 년도별 정렬">년도 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="files" data-sort="month" style="width: 58px; padding: 10px 8px; text-align: center; white-space: nowrap;" title="클릭하여 월별 정렬">월 <span class="sort-icon">⇅</span></th>
                   <th style="padding: 10px 10px; white-space: nowrap;">출제기관</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
@@ -759,19 +761,10 @@
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">월</label>
-                <select class="form-control" name="month" id="modalMonth">
-                  <option value="3">3월 (교육청)</option>
-                  <option value="4">4월 (교육청)</option>
-                  <option value="5">5월 (교육청)</option>
-                  <option value="6">6월 (평가원)</option>
-                  <option value="7" selected>7월 (교육청)</option>
-                  <option value="9">9월 (평가원)</option>
-                  <option value="10">10월 (교육청)</option>
-                  <option value="11">11월 (수능/평가원)</option>
-                </select>
+                <input type="number" class="form-control" name="month" id="modalMonth" value="3" min="1" max="12">
               </div>
               <div class="form-group">
-                <label class="form-label">시험 구분</label>
+                <label class="form-label">출제기관</label>
                 <select class="form-control" name="exam_type" id="modalExamType">
                   <option value="교육청" selected>교육청</option>
                   <option value="평가원">평가원</option>
@@ -850,12 +843,15 @@
                   <th style="width: 36px; padding: 10px 10px; text-align: center; white-space: nowrap;">
                     <input type="checkbox" id="chkAllExams" style="cursor: pointer;">
                   </th>
-                  <th style="padding: 10px 12px; white-space: nowrap;">시험지 식별자</th>
-                  <th style="padding: 10px 10px; white-space: nowrap;">학년/월</th>
+                  <th class="sortable-th" data-table="manage" data-sort="id" style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="manage" data-sort="grade" style="width: 62px; padding: 10px 8px; text-align: center; white-space: nowrap;" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="manage" data-sort="year" style="width: 68px; padding: 10px 8px; text-align: center; white-space: nowrap;" title="클릭하여 년도별 정렬">년도 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="manage" data-sort="month" style="width: 58px; padding: 10px 8px; text-align: center; white-space: nowrap;" title="클릭하여 월별 정렬">월 <span class="sort-icon">⇅</span></th>
                   <th style="padding: 10px 10px; white-space: nowrap;">출제기관</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (-A 이미지)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📊 정답률 (CSV)</th>
                   <th style="padding: 10px 10px; white-space: nowrap;">📊 코어 본문 / 메타데이터</th>
                   <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">관리</th>
                 </tr>
@@ -870,7 +866,7 @@
           <input type="file" id="examSingleFileInput" style="display: none;">
 
           <div style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
-            💡 <strong>3대 파일 직접 업로드 안내</strong>: 각 시험지의 <strong>[📄 문제지]</strong>, <strong>[📝 해설지]</strong>, <strong>[🖼️ 정답표]</strong> 버튼을 클릭하면 해당 파일만 단독으로 즉시 등록하거나 교체할 수 있습니다. 특히 <strong>정답표 이미지</strong>를 등록하시면 Vision AI가 1~45번 정답을 자동 추출하여 DB 지문 및 PDF 형광펜 하이라이트를 즉시 갱신합니다.
+            💡 <strong>4종 원본 파일 및 정답률 직접 업로드 안내</strong>: 각 시험지의 <strong>[📄 문제지]</strong>, <strong>[📝 해설지]</strong>, <strong>[🖼️ 정답표]</strong>, <strong>[📊 정답률 CSV]</strong> 버튼을 클릭하면 해당 파일만 단독으로 즉시 등록하거나 교체할 수 있습니다. 특히 <strong>정답표 이미지</strong>를 등록하시면 Vision AI가 1~45번 정답을 자동 추출하고, <strong>정답률 CSV</strong>를 등록하시면 2x2 지문 뷰어에 문항별 정답률 및 선지 선택률이 즉시 시각화됩니다.
           </div>
         </div>
 
@@ -1483,6 +1479,6 @@
     </div>
   </div>
 
-  <script src="/static/js/main.js?v=20260921_1405"></script>
+  <script src="/static/js/main.js?v=20260921_1445"></script>
 </body>
 </html>

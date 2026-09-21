@@ -4519,6 +4519,72 @@ mark.passage-highlight {
   margin-top: 0.25rem;
 }
 
+/* ====================================================================
+   업로드 모달 테이블 정렬 가능한 헤더 (Sortable TH) & 배지 스타일
+   ==================================================================== */
+.sortable-th {
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  position: relative;
+}
+
+.sortable-th:hover {
+  background-color: #f1f5f9 !important;
+  color: var(--primary) !important;
+}
+
+.sortable-th .sort-icon {
+  display: inline-block;
+  margin-left: 3px;
+  font-size: 0.72rem;
+  opacity: 0.4;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  vertical-align: middle;
+}
+
+.sortable-th:hover .sort-icon {
+  opacity: 0.85;
+}
+
+.sortable-th.active-sort {
+  background-color: #eff6ff !important;
+  color: var(--primary) !important;
+  font-weight: 700 !important;
+}
+
+.sortable-th.active-sort .sort-icon {
+  opacity: 1 !important;
+  color: var(--primary) !important;
+  font-weight: 900;
+}
+
+/* 학년/연도/월 전용 배지 및 텍스트 스타일 */
+.badge-grade-sub {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+.badge-grade-g3 {
+  background: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+.badge-grade-g2 {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+.badge-grade-g1 {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+
 
 
 

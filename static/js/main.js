@@ -3296,9 +3296,64 @@ document.addEventListener("DOMContentLoaded", () => {
   let loadedExamsCache = [];
   let pendingDeleteExamIds = [];
 
+  // 업로드 모달 테이블 정렬 상태 (기본: 연도 내림차순 최신순)
+  let filesStatusSort = { key: "year", order: "desc" };
+  let manageExamsSort = { key: "year", order: "desc" };
+
+  // 공통 시험지 정렬 비교 함수 (학년 고1<고2<고3, 연도 숫자, 월 숫자, 보조 정렬)
+  function compareExams(a, b, key, order) {
+    let result = 0;
+    if (key === "grade") {
+      const gradeOrder = { "고1": 1, "고2": 2, "고3": 3 };
+      const rA = gradeOrder[a.grade] || 9;
+      const rB = gradeOrder[b.grade] || 9;
+      result = rA - rB;
+    } else if (key === "year") {
+      result = (parseInt(a.year, 10) || 0) - (parseInt(b.year, 10) || 0);
+    } else if (key === "month") {
+      result = (parseInt(a.month, 10) || 0) - (parseInt(b.month, 10) || 0);
+    } else if (key === "id") {
+      result = (a.id || "").localeCompare(b.id || "");
+    }
+
+    // 기본 보조 정렬: 연도 내림차순 -> 월 내림차순 -> 학년 내림차순 -> id 오름차순
+    if (result === 0) {
+      const yDiff = (parseInt(b.year, 10) || 0) - (parseInt(a.year, 10) || 0);
+      if (yDiff !== 0) return yDiff;
+      const mDiff = (parseInt(b.month, 10) || 0) - (parseInt(a.month, 10) || 0);
+      if (mDiff !== 0) return mDiff;
+      const gradeOrder = { "고1": 1, "고2": 2, "고3": 3 };
+      const gDiff = (gradeOrder[b.grade] || 9) - (gradeOrder[a.grade] || 9);
+      if (gDiff !== 0) return gDiff;
+      return (a.id || "").localeCompare(b.id || "");
+    }
+
+    return order === "desc" ? -result : result;
+  }
+
+  // 테이블 헤더 정렬 아이콘(▲/▼/⇅) 및 활성 클래스 갱신
+  function updateSortHeaders(tableType, currentKey, currentOrder) {
+    const selector = `.sortable-th[data-table="${tableType}"]`;
+    document.querySelectorAll(selector).forEach(th => {
+      const sortKey = th.dataset.sort;
+      const iconSpan = th.querySelector(".sort-icon");
+      if (sortKey === currentKey) {
+        th.classList.add("active-sort");
+        if (iconSpan) {
+          iconSpan.textContent = currentOrder === "asc" ? "▲" : "▼";
+        }
+      } else {
+        th.classList.remove("active-sort");
+        if (iconSpan) {
+          iconSpan.textContent = "⇅";
+        }
+      }
+    });
+  }
+
   async function loadExamsManagerList() {
     if (!manageExamsTableBody) return;
-    manageExamsTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">시험지 목록 및 3대 데이터 영역 통계를 불러오는 중...</td></tr>`;
+    manageExamsTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: var(--text-muted);">시험지 목록 및 4대 데이터 영역 통계를 불러오는 중...</td></tr>`;
 
     try {
       const res = await fetch("/api/exams");
@@ -3308,113 +3363,149 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (manageExamsTotalCount) manageExamsTotalCount.textContent = items.length;
 
-      if (items.length === 0) {
-        manageExamsTableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 2rem; color: var(--text-muted);">등록된 시험지가 없습니다.</td></tr>`;
-        updateExamsSelectionState();
-        return;
-      }
-
-      manageExamsTableBody.innerHTML = "";
-      items.forEach(exam => {
-        const tr = document.createElement("tr");
-        tr.style.borderBottom = "1px solid var(--border)";
-
-        const instClass = (exam.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
-        const instIcon = (exam.exam_type === "평가원") ? "🏛️" : "🏫";
-
-        const fStat = exam.file_status || {};
-        const pdfStat = fStat.pdf || {};
-        const hwpStat = fStat.hwp || {};
-        const ansStat = fStat.ans || {};
-
-        // 1. PDF 문제지 칩 버튼
-        let pdfBtnHtml = "";
-        if (pdfStat.exists) {
-          pdfBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="${escapeHtml(pdfStat.filename)} (클릭 시 파일 교체)">📄 등록됨</button>`;
-        } else {
-          pdfBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="클릭하여 PDF 문제지 단독 업로드">➕ PDF 등록</button>`;
-        }
-
-        // 2. HWP 해설지 칩 버튼
-        let hwpBtnHtml = "";
-        if (hwpStat.exists) {
-          hwpBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="${escapeHtml(hwpStat.filename)} (클릭 시 파일 교체)">📝 등록됨</button>`;
-        } else {
-          hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 등록</button>`;
-        }
-
-        // 3. 정답표 이미지 (-A) 칩 버튼
-        let ansBtnHtml = "";
-        const answeredCount = ansStat.answered_count || 0;
-        const totalCount = ansStat.total_count || exam.passage_count || 28;
-        if (ansStat.exists) {
-          ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 이미지로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
-        } else if (answeredCount > 0) {
-          ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표 이미지 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
-        } else {
-          ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
-        }
-
-        // 4. 코어 본문 / 메타데이터 요약 배지
-        const coreMetaHtml = `
-          <div style="display: flex; flex-direction: column; gap: 3px;">
-            <span class="badge-tier badge-tier-core" style="font-size: 0.72rem; padding: 2px 6px;">📄 ${exam.passage_count}지문 / ${exam.sentence_count}문장</span>
-            <span class="badge-tier ${exam.grammar_count > 0 ? 'badge-tier-meta' : 'badge-tier-empty'}" style="font-size: 0.72rem; padding: 2px 6px;">🏷️ 어법 ${exam.grammar_count} / 태그 ${exam.tag_count}</span>
-          </div>
-        `;
-
-        tr.innerHTML = `
-          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">
-            <input type="checkbox" class="chk-exam-row" data-id="${escapeHtml(exam.id)}" style="cursor: pointer;">
-          </td>
-          <td style="padding: 10px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(exam.id)}</td>
-          <td style="padding: 10px 10px; white-space: nowrap;">${escapeHtml(exam.grade)} ${exam.month}월</td>
-          <td style="padding: 10px 10px; white-space: nowrap;">
-            <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(exam.exam_type)}</span>
-          </td>
-          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
-          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
-          <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
-          <td style="padding: 10px 10px; white-space: nowrap;">${coreMetaHtml}</td>
-          <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">
-            <button type="button" class="btn-icon-delete btn-single-delete-exam" data-id="${escapeHtml(exam.id)}" title="해당 시험지 데이터 선택 삭제" style="white-space: nowrap;">
-              🗑️ 삭제
-            </button>
-          </td>
-        `;
-        manageExamsTableBody.appendChild(tr);
-      });
-
-      // 개별 체크박스 변경 리스너
-      manageExamsTableBody.querySelectorAll(".chk-exam-row").forEach(chk => {
-        chk.addEventListener("change", updateExamsSelectionState);
-      });
-
-      // 개별 삭제 버튼 리스너 -> 선택적 삭제 모달 오픈
-      manageExamsTableBody.querySelectorAll(".btn-single-delete-exam").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const examId = btn.dataset.id;
-          if (!examId) return;
-          openSelectiveDeleteModal([examId]);
-        });
-      });
-
-      // 파일 단독 등록/교체 칩 버튼 클릭 리스너 연결
-      manageExamsTableBody.querySelectorAll(".btn-upload-single-file").forEach(btn => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const targetExamId = btn.dataset.id;
-          const targetFileType = btn.dataset.type;
-          triggerSingleFileUpload(targetExamId, targetFileType, btn);
-        });
-      });
-
-      updateExamsSelectionState();
-
+      renderManageExamsTable();
     } catch (err) {
       console.error(err);
-      manageExamsTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #dc2626;">시험지 목록을 불러오지 못했습니다.</td></tr>`;
+      manageExamsTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: #dc2626;">시험지 목록을 불러오지 못했습니다.</td></tr>`;
     }
+  }
+
+  function renderManageExamsTable() {
+    if (!manageExamsTableBody) return;
+
+    if (!loadedExamsCache || loadedExamsCache.length === 0) {
+      manageExamsTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: var(--text-muted);">등록된 시험지가 없습니다.</td></tr>`;
+      updateExamsSelectionState();
+      return;
+    }
+
+    // 이전에 체크되어 있던 exam.id 보존 (정렬 전환 시에도 체크 유지)
+    const previouslyChecked = new Set(
+      Array.from(manageExamsTableBody.querySelectorAll(".chk-exam-row:checked")).map(c => c.dataset.id)
+    );
+
+    const sortedItems = [...loadedExamsCache].sort((a, b) => compareExams(a, b, manageExamsSort.key, manageExamsSort.order));
+
+    manageExamsTableBody.innerHTML = "";
+    sortedItems.forEach(exam => {
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid var(--border)";
+
+      const instClass = (exam.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
+      const instIcon = (exam.exam_type === "평가원") ? "🏛️" : "🏫";
+
+      const fStat = exam.file_status || {};
+      const pdfStat = fStat.pdf || {};
+      const hwpStat = fStat.hwp || {};
+      const ansStat = fStat.ans || {};
+      const csvStat = fStat.csv || {};
+
+      // 1. PDF 문제지 칩 버튼
+      let pdfBtnHtml = "";
+      if (pdfStat.exists) {
+        pdfBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="${escapeHtml(pdfStat.filename)} (클릭 시 파일 교체)">📄 등록됨</button>`;
+      } else {
+        pdfBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="클릭하여 PDF 문제지 단독 업로드">➕ PDF 등록</button>`;
+      }
+
+      // 2. HWP 해설지 칩 버튼
+      let hwpBtnHtml = "";
+      if (hwpStat.exists) {
+        hwpBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="${escapeHtml(hwpStat.filename)} (클릭 시 파일 교체)">📝 등록됨</button>`;
+      } else {
+        hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 등록</button>`;
+      }
+
+      // 3. 정답표 이미지 (-A) 칩 버튼
+      let ansBtnHtml = "";
+      const answeredCount = ansStat.answered_count || 0;
+      const totalCount = ansStat.total_count || exam.passage_count || 28;
+      if (ansStat.exists) {
+        ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 이미지로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
+      } else if (answeredCount > 0) {
+        ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표 이미지 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
+      } else {
+        ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
+      }
+
+      // 4. 정답률 CSV 칩 버튼
+      let csvBtnHtml = "";
+      const ratedCount = csvStat.rated_count || 0;
+      if (csvStat.exists) {
+        const avgText = csvStat.avg_rate != null ? ` (평균 ${csvStat.avg_rate}%)` : ` (${ratedCount}/${totalCount})`;
+        csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="${escapeHtml(csvStat.filename)} (정답률 ${ratedCount}/${totalCount}문항 반영됨, 클릭 시 새 파일로 교체)">📊 등록됨${avgText}</button>`;
+      } else if (ratedCount > 0) {
+        const avgText = csvStat.avg_rate != null ? ` (평균 ${csvStat.avg_rate}%)` : ` (${ratedCount}/${totalCount})`;
+        csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="DB 정답률 등록 완료 (${ratedCount}/${totalCount}문항), 클릭 시 새 CSV 등록">📊 등록됨${avgText}</button>`;
+      } else {
+        csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="클릭하여 정답률 CSV 업로드">➕ CSV 등록</button>`;
+      }
+
+      // 5. 코어 본문 / 메타데이터 요약 배지
+      const coreMetaHtml = `
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <span class="badge-tier badge-tier-core" style="font-size: 0.72rem; padding: 2px 6px;">📄 ${exam.passage_count}지문 / ${exam.sentence_count}문장</span>
+          <span class="badge-tier ${exam.grammar_count > 0 ? 'badge-tier-meta' : 'badge-tier-empty'}" style="font-size: 0.72rem; padding: 2px 6px;">🏷️ 어법 ${exam.grammar_count} / 태그 ${exam.tag_count}</span>
+        </div>
+      `;
+
+      // 학년 배지 스타일
+      const gradeBadgeClass = exam.grade === "고3" ? "badge-grade-g3" : (exam.grade === "고2" ? "badge-grade-g2" : "badge-grade-g1");
+      const gradeBadgeHtml = `<span class="badge-grade-sub ${gradeBadgeClass}">${escapeHtml(exam.grade)}</span>`;
+
+      const isChecked = previouslyChecked.has(exam.id) ? "checked" : "";
+
+      tr.innerHTML = `
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">
+          <input type="checkbox" class="chk-exam-row" data-id="${escapeHtml(exam.id)}" ${isChecked} style="cursor: pointer;">
+        </td>
+        <td style="padding: 10px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(exam.id)}</td>
+        <td style="padding: 10px 8px; text-align: center; white-space: nowrap;">${gradeBadgeHtml}</td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.year}년</td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.month}월</td>
+        <td style="padding: 10px 10px; white-space: nowrap;">
+          <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(exam.exam_type)}</span>
+        </td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${csvBtnHtml}</td>
+        <td style="padding: 10px 10px; white-space: nowrap;">${coreMetaHtml}</td>
+        <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">
+          <button type="button" class="btn-icon-delete btn-single-delete-exam" data-id="${escapeHtml(exam.id)}" title="해당 시험지 데이터 선택 삭제" style="white-space: nowrap;">
+            🗑️ 삭제
+          </button>
+        </td>
+      `;
+      manageExamsTableBody.appendChild(tr);
+    });
+
+    // 개별 체크박스 변경 리스너
+    manageExamsTableBody.querySelectorAll(".chk-exam-row").forEach(chk => {
+      chk.addEventListener("change", updateExamsSelectionState);
+    });
+
+    // 개별 삭제 버튼 리스너 -> 선택적 삭제 모달 오픈
+    manageExamsTableBody.querySelectorAll(".btn-single-delete-exam").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const examId = btn.dataset.id;
+        if (!examId) return;
+        openSelectiveDeleteModal([examId]);
+      });
+    });
+
+    // 파일 단독 등록/교체 칩 버튼 클릭 리스너 연결
+    manageExamsTableBody.querySelectorAll(".btn-upload-single-file").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const targetExamId = btn.dataset.id;
+        const targetFileType = btn.dataset.type;
+        triggerSingleFileUpload(targetExamId, targetFileType, btn);
+      });
+    });
+
+    updateSortHeaders("manage", manageExamsSort.key, manageExamsSort.order);
+    updateExamsSelectionState();
   }
 
   // 단독 파일 업로드 트리거 및 처리 함수
@@ -3535,7 +3626,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadFilesStatusList() {
     if (!filesStatusTableBody) return;
-    filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
 
     try {
       const res = await fetch("/api/exams");
@@ -3544,7 +3635,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderFilesStatusTable();
     } catch (err) {
       console.error(err);
-      filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
+      filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
     }
   }
 
@@ -3570,7 +3661,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (items.length === 0) {
-      filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
+      filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
       return;
     }
 
@@ -3587,12 +3678,14 @@ document.addEventListener("DOMContentLoaded", () => {
       : items;
 
     if (displayItems.length === 0) {
-      filesStatusTableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률(4종)이 완비되었습니다!</td></tr>`;
+      filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률(4종)이 완비되었습니다!</td></tr>`;
       return;
     }
 
+    const sortedItems = [...displayItems].sort((a, b) => compareExams(a, b, filesStatusSort.key, filesStatusSort.order));
+
     filesStatusTableBody.innerHTML = "";
-    displayItems.forEach((exam, index) => {
+    sortedItems.forEach((exam, index) => {
       const tr = document.createElement("tr");
       tr.style.borderBottom = "1px solid var(--border)";
 
@@ -3663,10 +3756,16 @@ document.addEventListener("DOMContentLoaded", () => {
         overallStatusHtml = `<span style="font-size: 0.74rem; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🔴 파일 누락</span>`;
       }
 
+      // 학년 배지 스타일
+      const gradeBadgeClass = exam.grade === "고3" ? "badge-grade-g3" : (exam.grade === "고2" ? "badge-grade-g2" : "badge-grade-g1");
+      const gradeBadgeHtml = `<span class="badge-grade-sub ${gradeBadgeClass}">${escapeHtml(exam.grade)}</span>`;
+
       tr.innerHTML = `
         <td style="padding: 10px 8px; text-align: center; color: var(--text-muted); font-weight: 600;">${index + 1}</td>
         <td style="padding: 10px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(exam.id)}</td>
-        <td style="padding: 10px 10px; white-space: nowrap;">${escapeHtml(exam.grade)} ${exam.month}월</td>
+        <td style="padding: 10px 8px; text-align: center; white-space: nowrap;">${gradeBadgeHtml}</td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.year}년</td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.month}월</td>
         <td style="padding: 10px 10px; white-space: nowrap;">
           <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(exam.exam_type)}</span>
         </td>
@@ -3688,7 +3787,36 @@ document.addEventListener("DOMContentLoaded", () => {
         triggerSingleFileUpload(targetExamId, targetFileType, btn);
       });
     });
+
+    updateSortHeaders("files", filesStatusSort.key, filesStatusSort.order);
   }
+
+  // 테이블 헤더 정렬 클릭 이벤트 (이벤트 위임 방식으로 견고하게 처리)
+  document.addEventListener("click", (e) => {
+    const th = e.target.closest(".sortable-th");
+    if (!th) return;
+    const tableType = th.dataset.table;
+    const sortKey = th.dataset.sort;
+    if (!tableType || !sortKey) return;
+
+    if (tableType === "files") {
+      if (filesStatusSort.key === sortKey) {
+        filesStatusSort.order = filesStatusSort.order === "asc" ? "desc" : "asc";
+      } else {
+        filesStatusSort.key = sortKey;
+        filesStatusSort.order = (sortKey === "grade") ? "asc" : "desc";
+      }
+      renderFilesStatusTable();
+    } else if (tableType === "manage") {
+      if (manageExamsSort.key === sortKey) {
+        manageExamsSort.order = manageExamsSort.order === "asc" ? "desc" : "asc";
+      } else {
+        manageExamsSort.key = sortKey;
+        manageExamsSort.order = (sortKey === "grade") ? "asc" : "desc";
+      }
+      renderManageExamsTable();
+    }
+  });
 
   // 필터 토글 및 새로고침 이벤트 바인딩
   if (chkFilterMissingFiles) {
