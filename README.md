@@ -793,5 +793,28 @@ CREATE TABLE user_sentence_status (
   - `[고2-2026년-03월]` 정답표 PNG 업로드 API 실증 테스트 통과: 전 문항 정답 추출 및 Q18(1,998개), Q19(2,076개), Q20(2,045개), Q43~45(6,111개) 파스텔톤 노란색 형광펜 픽셀 검출 확인 완료
   - DB 전체 30개 시험지 지문/해설 무결성 재검사 결과: **`Summary of Anomalous Exams: 0 / 30 (100% 정상 달성)`**
 
-
-
+### [2026-09-21 13:20] 업데이트 이력 (Commit ID: TBD)
+- **수정 내용**:
+  - **OpenRouter 3개 모델 앙상블(자동 교차 검토) 사용자 자유 선택 및 446개 실시간 모델 연동 구축 (`grammar_analyzer.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - **OpenRouter 실시간 모델 정보 조회 API 신설 (`GET /api/openrouter/models`)**: OpenRouter 공식 API(`https://openrouter.ai/api/v1/models`)와 연동하여 446개 전체 텍스트 모델의 최신 가격, 문맥 길이, 제공사 정보를 실시간 파싱하고 30분 캐시 및 강제 새로고침(`force_refresh=true`) 지원
+    - **앙상블 1·2·3번 모델 슬롯별 자유 선택 UI**: 고정된 모델 대신 🥇 1번 모델, 🥈 2번 모델, 🥉 3번 모델 각각 드롭다운(인기/추천, DeepSeek, OpenAI, Anthropic, Google Gemini, Meta Llama, Mistral, Qwen 등) 및 `✏️ 직접 모델 ID 입력...` 지원
+    - **원클릭 빠른 추천 조합(프리셋)**: `✨ 추천 기본 (DeepSeek V3 + GPT-4o-mini + Claude Sonnet 4.5)`, `💸 초가성비 (DeepSeek V3 + GPT-4o-mini + Llama 3.3 70B)`, `🏆 최고정밀 (Claude Sonnet 4.5 + GPT-4o + Gemini 2.5 Flash)` 프리셋 버튼 지원
+    - **실시간 단가 표시 및 DB 영구 저장**: 각 슬롯 우측에 입력/출력 토큰 단가 배지 표시 및 `openrouter_ensemble_models` 설정을 DB에 영구 저장하여 다수결 합의 분석 시 지정된 3개 모델 병렬 호출
+    - **OpenRouter 인증 헤더 누락(HTTP 401) 해결**: `_call_openrouter_single` 호출 시 활성 프로바이더 개별 API 키 폴백 전달 로직 보강
+  - **개별 AI 연결 테스트 실시간 피드백 카드 UI 전면 개선 (`templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
+    - `[🧪 개별 연결 테스트]` 버튼 하단에 상태별 전용 카드 박스 신설
+    - 대기/안내(`info`), 핑 테스트 전송 중 회전 스피너(`loading`), 성공 시 응답 모델명 배지 및 앙상블 준비 상태 안내(`success`), 실패 시 구체적 에러 메시지 및 자가 해결 가이드(`error`) 제공
+    - 키나 모델명 수정 시 `✏️ 설정 변경됨` 알림으로 즉각 전환되어 재검증 유도
+  - **전체 7,913개 문장 무제한 조회 및 대용량 렌더링 최적화 (`database.py`, `app.py`, `static/js/main.js`)**:
+    - 기존의 쿼리 상한선 `limit=5000`을 해제(`limit=0`, 무제한)하여 DB 내 7,913개 전체 문장이 잘림 없이 완벽 반환되도록 개선
+    - 7,913개 대량 문장 렌더링 시 브라우저 렉을 방지하기 위해 `DocumentFragment` 기반 단일 배치 DOM 삽입 최적화 적용
+  - **문장 결과 화면 인라인 복사 시 출처 식별자 포함 복사 기능 강화 (`static/js/main.js`)**:
+    - `[📋 복사]` 클릭 시 문장 본문뿐 아니라 출처 식별자(예: `[고3-2026년-07월-33번-8번째 문장]`)가 본문 앞에 결합되어 복사되도록 개선
+  - **빈칸 추론 문항 정답 선지 온전한 결합 및 데이터베이스 동기화 (`grammar_analyzer.py`, `database.py`)**:
+    - 31~34번 등 밑줄(`_______`)이 있는 빈칸 문장에 실제 정답 선지를 채워 온전한 문장으로 분석하도록 전처리 및 저장 보강
+- **검증 결과**:
+  - `python -m py_compile app.py database.py grammar_analyzer.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - `GET /api/openrouter/models` 실시간 446개 모델 조회 및 커스텀 앙상블 3개 모델 DB 저장/복원 검증 완료
+  - `GET /api/search/sentences` 호출 시 7,913개 문장 전체 누락 없이 1.2초 내 완전 응답 확인
+  - AI 프로바이더별 개별 연결 핑 테스트(`/api/settings/ai/test`) 정상 작동 확인 (OpenRouter 200, OpenAI 200, Claude 400 키 요구)

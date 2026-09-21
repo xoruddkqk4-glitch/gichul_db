@@ -106,6 +106,62 @@ RETIRED_GEMINI_MODELS = {
     "gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-2.5-flash"
 }
 
+# OpenRouter 3개 모델 앙상블 기본 설정
+DEFAULT_OPENROUTER_ENSEMBLE_MODELS: List[str] = [
+    "deepseek/deepseek-chat",
+    "openai/gpt-4o-mini",
+    "anthropic/claude-sonnet-4.5"
+]
+
+OPENROUTER_MODEL_SHORT_NAMES: Dict[str, str] = {
+    "deepseek/deepseek-chat": "DeepSeek V3",
+    "openai/gpt-4o-mini": "GPT-4o-mini",
+    "anthropic/claude-sonnet-4.5": "Claude Sonnet 4.5",
+    "openai/gpt-4o": "GPT-4o",
+    "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B",
+    "google/gemini-2.5-flash": "Gemini 2.5 Flash",
+    "anthropic/claude-3-5-haiku-20241022": "Claude 3.5 Haiku",
+}
+
+
+def get_model_short_name(model_id: str) -> str:
+    """OpenRouter 모델 ID의 가독성 높은 짧은 이름 반환"""
+    if model_id in OPENROUTER_MODEL_SHORT_NAMES:
+        return OPENROUTER_MODEL_SHORT_NAMES[model_id]
+    if "/" in model_id:
+        return model_id.split("/")[-1]
+    return model_id
+
+
+def is_openrouter_ensemble_enabled() -> bool:
+    """OpenRouter 3개 모델 앙상블(교차 검토) 모드 활성화 여부"""
+    return database.get_setting("openrouter_ensemble", "0") == "1"
+
+
+def set_openrouter_ensemble(enabled: bool):
+    """OpenRouter 3개 모델 앙상블(교차 검토) 모드 설정 저장"""
+    database.set_setting("openrouter_ensemble", "1" if enabled else "0")
+
+
+def get_openrouter_ensemble_models() -> List[str]:
+    """OpenRouter 앙상블에 사용될 3개 모델 ID 목록 반환"""
+    raw = database.get_setting("openrouter_ensemble_models", "")
+    if raw:
+        try:
+            arr = json.loads(raw)
+            if isinstance(arr, list) and len(arr) == 3:
+                return arr
+        except Exception:
+            pass
+    return list(DEFAULT_OPENROUTER_ENSEMBLE_MODELS)
+
+
+def set_openrouter_ensemble_models(models: List[str]):
+    """OpenRouter 앙상블 모델 목록 저장"""
+    if isinstance(models, list) and len(models) >= 2:
+        database.set_setting("openrouter_ensemble_models", json.dumps(models[:3]))
+
+
 
 def get_available_gemini_models(api_key: str) -> List[str]:
     """API Key로 generateContent가 가능한 실제 Gemini 모델 목록 실시간 조회"""
@@ -159,25 +215,52 @@ def resolve_gemini_model(api_key: str, requested_model: str = "") -> str:
     return "gemini-3.6-flash"
 
 
+def is_valid_api_key_format(provider: str, key: str) -> bool:
+    """API 키가 더미 문자열이 아닌 실제 유효한 형식인지 검증"""
+    if not key or not isinstance(key, str):
+        return False
+    k = key.strip()
+    if "test-key" in k.lower() or k.endswith("...") or len(k) < 15:
+        return False
+    p = provider.lower()
+    if p == "openrouter":
+        return k.startswith("sk-or-") and len(k) >= 30
+    elif p == "openai":
+        return k.startswith("sk-") and len(k) >= 25
+    elif p == "claude":
+        return k.startswith("sk-ant-") and len(k) >= 25
+    elif p == "gemini":
+        return len(k) >= 20
+    return len(k) >= 15
+
+
 def get_provider_config(provider: str) -> Tuple[str, str]:
-    """특정 Provider의 (api_key, model) 조회 (DB 설정 -> 레거시 설정 -> 환경변수 -> 기본값 폴백)"""
+    """특정 Provider의 (api_key, model) 조회 (DB 설정 -> 유효성 검증 레거시 폴백 -> 환경변수 -> 기본값 폴백)"""
     p = provider.lower()
     # 1. 개별 키 설정 조회
-    api_key = database.get_setting(f"ai_key_{p}", "")
-    model = database.get_setting(f"ai_model_{p}", "")
+    api_key = database.get_setting(f"ai_key_{p}", "").strip()
+    model = database.get_setting(f"ai_model_{p}", "").strip()
 
-    # 2. 레거시 단일 설정 폴백 (기존에 단일로 저장해둔 경우)
-    legacy_p = database.get_setting("ai_provider", "gemini").lower()
-    if not api_key and legacy_p == p:
-        api_key = database.get_setting("ai_api_key", "")
-    if not model and legacy_p == p:
-        model = database.get_setting("ai_model", "")
+    # 2. 개별 키가 유효하지 않은 경우 레거시 단일 설정(ai_api_key) 자동 폴백 및 복구
+    if not is_valid_api_key_format(p, api_key):
+        legacy_key = database.get_setting("ai_api_key", "").strip()
+        if is_valid_api_key_format(p, legacy_key):
+            api_key = legacy_key
+            try:
+                database.set_setting(f"ai_key_{p}", legacy_key)
+            except Exception:
+                pass
+
+    if not model:
+        legacy_p = database.get_setting("ai_provider", "gemini").lower()
+        if legacy_p == p:
+            model = database.get_setting("ai_model", "").strip()
 
     # 3. 환경변수 폴백
     if not api_key:
         env_var = PROVIDER_ENV_VARS.get(p)
         if env_var:
-            api_key = os.getenv(env_var, "")
+            api_key = os.getenv(env_var, "").strip()
 
     # 4. 기본 모델 폴백
     if not model:
@@ -245,26 +328,48 @@ def get_all_ai_configs() -> Dict[str, Any]:
             "default_model": PROVIDER_DEFAULT_MODELS.get(p, "")
         }
 
+    is_or_ensemble = is_openrouter_ensemble_enabled()
+    is_ensemble = (len(active_providers) > 1) or ("openrouter" in active_providers and is_or_ensemble)
+
     return {
         "active_providers": active_providers,
-        "mode": "ensemble" if len(active_providers) > 1 else "single",
+        "mode": "ensemble" if is_ensemble else "single",
         "consensus_mode": get_consensus_mode(),
-        "providers": providers_info
+        "providers": providers_info,
+        "openrouter_ensemble": is_or_ensemble,
+        "openrouter_ensemble_models": get_openrouter_ensemble_models()
     }
 
 
-def get_active_ai_configs() -> List[Dict[str, str]]:
-    """현재 활성화되어 실제 분석에 사용될 Provider 설정 목록 반환"""
+def get_active_ai_configs() -> List[Dict[str, Any]]:
+    """현재 활성화되어 실제 분석에 사용될 Provider/Model 설정 목록 반환"""
     active_names = get_active_providers()
     configs = []
     for p in active_names:
         key, model = get_provider_config(p)
-        configs.append({
-            "provider": p,
-            "name": PROVIDER_NAMES.get(p, p),
-            "api_key": key,
-            "model": model
-        })
+        if p == "openrouter" and is_openrouter_ensemble_enabled():
+            ensemble_models = get_openrouter_ensemble_models()
+            for em in ensemble_models:
+                s_name = get_model_short_name(em)
+                configs.append({
+                    "provider": "openrouter",
+                    "name": f"OpenRouter ({s_name})",
+                    "label": f"OpenRouter: {s_name}",
+                    "short_label": s_name,
+                    "api_key": key,
+                    "model": em,
+                    "is_openrouter_ensemble": True
+                })
+        else:
+            configs.append({
+                "provider": p,
+                "name": PROVIDER_NAMES.get(p, p),
+                "label": PROVIDER_NAMES.get(p, p),
+                "short_label": PROVIDER_NAMES.get(p, p),
+                "api_key": key,
+                "model": model,
+                "is_openrouter_ensemble": False
+            })
     return configs
 
 
@@ -527,8 +632,11 @@ def prepare_sentence_for_analysis(
 ) -> str:
     """
     문장 분석(어법/문법 분석)을 위한 정밀 전처리:
-    1. 선지 식별 기호(1, 2, 3, 4, 5, ①~⑤, (1)~(5), (a)~(e) 등) 제거
-    2. 지문에 밑줄/빈칸(____)이 있는 경우 정답 선지 텍스트를 밑줄에 채워 완성된 문장으로 변환
+    1. 깨진 HWP 특수문자 엔티티(&#56192;&#56379;, &#61440; 등) 및 불릿 기호 제거
+    2. 선지 식별 기호(1, 2, 3, 4, 5, ①~⑤, (1)~(5), (a)~(e) 등) 제거
+    3. 단일 밑줄/빈칸(____)은 정답 선지 텍스트로 치환
+    4. 40번 요약문 등 2개 이상의 빈칸(A/B)은 선지 구분자(……, ..., ~ 등)로 분할하여 각각의 빈칸에 1:1 순서대로 치환
+    5. 구두점 및 불필요한 공백 정리하여 완전한 자연어 문장 완성
     """
     if not sentence_text:
         return ""
@@ -556,19 +664,46 @@ def prepare_sentence_for_analysis(
             except Exception:
                 pass
 
-    # 1차: 선지 기호 정리
-    cleaned = clean_choice_markers(sentence_text)
+    # 1. HWP HTML 엔티티 제거 (&#56192;&#56379;, &#61440; 등)
+    cleaned = re.sub(r'&#\d+;', ' ', sentence_text)
+    # 2. 선지 기호 정리
+    cleaned = clean_choice_markers(cleaned)
+    # 3. 특수 유니코드 박스/불릿 기호 정리
+    cleaned = re.sub(r'[\uF000-\uFFFF]', ' ', cleaned)
 
-    # 2차: 밑줄 / 빈칸 패턴 탐색 및 정답 선지 삽입
+    # 4. 밑줄 / 빈칸 패턴 탐색 및 정답 선지 삽입
     blank_pattern = re.compile(r'_{2,}|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>')
-    if blank_pattern.search(cleaned):
+    blank_matches = list(blank_pattern.finditer(cleaned))
+
+    if blank_matches:
         choices = extract_choices(passage_text, explanation_text)
         ans_num = extract_answer_num(answer_text)
         if ans_num and ans_num in choices:
-            correct_choice = clean_choice_markers(choices[ans_num])
-            if correct_choice:
-                cleaned = blank_pattern.sub(correct_choice, cleaned)
-                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            raw_choice = clean_choice_markers(choices[ans_num])
+            # 배점 제거 ([3점] 등)
+            raw_choice = re.sub(r'\[\d+점\]', '', raw_choice).strip()
+
+            # 빈칸이 2개 이상이고, 선지에 구분자(……, ..., ~, \t, 3칸 이상 공백)가 있는 경우 (40번 요약문 등)
+            split_parts = re.split(r'\s*(?:[\u2025\u2026\u22EF]+|\.{2,}|~|\t|\s{3,})\s*', raw_choice)
+            if len(blank_matches) >= 2 and len(split_parts) >= 2:
+                # 복수 빈칸에 각각 순서대로 선지 부분 치환
+                res = []
+                last_idx = 0
+                for i, m in enumerate(blank_matches):
+                    res.append(cleaned[last_idx:m.start()])
+                    replacement = split_parts[i] if i < len(split_parts) else split_parts[-1]
+                    res.append(replacement.strip())
+                    last_idx = m.end()
+                res.append(cleaned[last_idx:])
+                cleaned = "".join(res)
+            else:
+                # 단일 빈칸 또는 전체 치환
+                cleaned = blank_pattern.sub(raw_choice, cleaned)
+
+            # 구두점 앞 불필요한 공백 제거 (예: "create state authority : " -> "create state authority:")
+            cleaned = re.sub(r'\s+([,.:;?!])', r'\1', cleaned)
+            # 중복 공백 정리
+            cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned).strip()
 
     return cleaned
 
@@ -779,11 +914,15 @@ def analyze_sentence(
     # 1. 특정 Provider 명시 호출 (테스트 또는 단일 지정 시)
     if provider:
         p = provider.lower()
-        k = api_key or get_provider_config(p)[0]
-        m = model or get_provider_config(p)[1]
-        if not k:
-            raise ValueError(f"{PROVIDER_NAMES.get(p, p.upper())} API Key가 설정되지 않았습니다.")
-        return _call_llm(clean_text, p, k, m)
+        if p == "openrouter" and is_openrouter_ensemble_enabled() and not model:
+            # 모델 미지정 OpenRouter 호출 시 앙상블 모드로 자동 처리
+            pass
+        else:
+            k = api_key or get_provider_config(p)[0]
+            m = model or get_provider_config(p)[1]
+            if not k:
+                raise ValueError(f"{PROVIDER_NAMES.get(p, p.upper())} API Key가 설정되지 않았습니다.")
+            return _call_llm(clean_text, p, k, m)
 
     # 2. 복수 활성 모델 설정 조회
     active_configs = get_active_ai_configs()
@@ -797,29 +936,31 @@ def analyze_sentence(
         c = valid_configs[0]
         return _call_llm(clean_text, c["provider"], c["api_key"], c["model"])
 
-    # 4. 2개 이상 모델 활성화 시: ThreadPoolExecutor로 병렬 비동기 호출 & 다수결 합의(Majority Vote) 산출
-    results_by_provider: Dict[str, List[Dict[str, Any]]] = {}
+    # 4. 2개 이상 모델 활성화 시 (복수 프로바이더 또는 OpenRouter 3개 모델 앙상블):
+    #    ThreadPoolExecutor로 병렬 비동기 호출 & 다수결 합의(Majority Vote) 산출
+    results_by_worker: Dict[str, List[Dict[str, Any]]] = {}
     errors: List[str] = []
 
     def _worker(cfg):
         try:
             annos = _call_llm(clean_text, cfg["provider"], cfg["api_key"], cfg["model"])
-            return cfg["provider"], annos, None
+            w_label = cfg.get("short_label") or cfg.get("label") or cfg.get("name") or cfg["provider"]
+            return w_label, annos, None
         except Exception as ex:
-            return cfg["provider"], [], str(ex)
+            w_label = cfg.get("short_label") or cfg.get("label") or cfg.get("name") or cfg["provider"]
+            return w_label, [], str(ex)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(valid_configs)) as executor:
         future_map = {executor.submit(_worker, c): c for c in valid_configs}
         for future in concurrent.futures.as_completed(future_map):
-            prov, annos, err = future.result()
+            w_label, annos, err = future.result()
             if err:
-                prov_label = PROVIDER_NAMES.get(prov, prov.upper())
-                errors.append(f"{prov_label}: {err}")
+                errors.append(f"{w_label}: {err}")
             else:
-                results_by_provider[prov] = annos
+                results_by_worker[w_label] = annos
 
     # 모든 활성화된 모델이 전원 실패한 경우에만 최종 예외 발생
-    if len(results_by_provider) == 0:
+    if len(results_by_worker) == 0:
         raise ValueError(f"활성화된 모든 AI 모델 호출 실패: {'; '.join(errors)}")
 
     # 실패한 모델이 일부 있지만 1개 이상의 모델이 성공한 경우: 성공한 모델들로 무중단 분석 진행
@@ -828,7 +969,7 @@ def analyze_sentence(
         failed_labels = [prov_err.split(":")[0].strip() for prov_err in errors]
 
     # 살아남은 성공 모델 수 기준으로 모수(surviving_N) 동적 조정
-    surviving_N = len(results_by_provider)
+    surviving_N = len(results_by_worker)
     consensus_mode = get_consensus_mode()
 
     if surviving_N == 1:
@@ -844,15 +985,15 @@ def analyze_sentence(
     cat_votes: Dict[int, List[str]] = {}
     cat_annos: Dict[int, List[Dict[str, Any]]] = {}
 
-    for prov, annos in results_by_provider.items():
+    for w_label, annos in results_by_worker.items():
         for a in annos:
             cid = a.get("category_id")
             if cid:
                 if cid not in cat_votes:
                     cat_votes[cid] = []
                     cat_annos[cid] = []
-                if prov not in cat_votes[cid]:
-                    cat_votes[cid].append(prov)
+                if w_label not in cat_votes[cid]:
+                    cat_votes[cid].append(w_label)
                 cat_annos[cid].append(a)
 
     # 찬성 모델 수가 기준(min_votes) 이상인 범주만 채택
@@ -865,19 +1006,21 @@ def analyze_sentence(
     consensus_annos: List[Dict[str, Any]] = []
     fallback_note = f" ({', '.join(failed_labels)} 일시 실패로 제외)" if failed_labels else ""
 
+    is_pure_openrouter_ensemble = all(c.get("provider") == "openrouter" for c in valid_configs)
+
     for cid in sorted(accepted_cat_ids):
         cat_meta = _CATEGORY_ID_MAP.get(cid, {})
         voters = cat_votes[cid]
-        voter_labels = [PROVIDER_NAMES.get(p, p) for p in voters]
         num_votes = len(voters)
 
         # 다수결 합의 태그 구성 (전원 일치 vs 다수결 찬성 vs 단독 반영)
+        prefix = "OpenRouter 앙상블" if is_pure_openrouter_ensemble else "다수결 합의"
         if surviving_N == 1:
-            consensus_tag = f"[단독 채택: {', '.join(voter_labels)}]{fallback_note}"
+            consensus_tag = f"[{prefix} 단독 채택: {', '.join(voters)}]{fallback_note}"
         elif num_votes == surviving_N:
-            consensus_tag = f"[다수결 합의: {', '.join(voter_labels)} 전원 일치 ({num_votes}/{surviving_N})]{fallback_note}"
+            consensus_tag = f"[{prefix} 전원 일치 ({num_votes}/{surviving_N}): {', '.join(voters)}]{fallback_note}"
         else:
-            consensus_tag = f"[다수결 합의: {', '.join(voter_labels)} 찬성 ({num_votes}/{surviving_N})]{fallback_note}"
+            consensus_tag = f"[{prefix} 찬성 ({num_votes}/{surviving_N}): {', '.join(voters)}]{fallback_note}"
 
         matching_annos = cat_annos[cid]
 
@@ -1016,3 +1159,89 @@ def get_openrouter_top_models(force_refresh: bool = False) -> List[Dict[str, Any
     except Exception as e:
         print(f"[OpenRouter Models API 경고] 실시간 정보 로드 실패, 기본 캐시 사용: {e}")
         return DEFAULT_OPENROUTER_TOP_MODELS
+
+
+_ALL_OPENROUTER_CACHE: Dict[str, Any] = {
+    "timestamp": 0,
+    "models": []
+}
+
+
+def get_all_openrouter_models(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """OpenRouter의 실시간 모델 API(https://openrouter.ai/api/v1/models)에서 전체 텍스트 모델 목록 조회 및 캐시"""
+    import time
+    global _ALL_OPENROUTER_CACHE
+
+    now = time.time()
+    if not force_refresh and _ALL_OPENROUTER_CACHE.get("models") and (now - _ALL_OPENROUTER_CACHE.get("timestamp", 0) < 1800):
+        return _ALL_OPENROUTER_CACHE["models"]
+
+    try:
+        url = "https://openrouter.ai/api/v1/models"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GichulDB/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            all_raw = data.get("data", [])
+
+        clean_models = []
+        for m in all_raw:
+            mid = m.get("id", "")
+            if not mid:
+                continue
+            pricing = m.get("pricing", {}) or {}
+            try:
+                prompt_p = float(pricing.get("prompt", 0) or 0) * 1_000_000
+            except Exception:
+                prompt_p = 0.0
+            try:
+                comp_p = float(pricing.get("completion", 0) or 0) * 1_000_000
+            except Exception:
+                comp_p = 0.0
+
+            ctx = (m.get("context_length", 0) or 0) // 1024
+            ctx_str = f"{ctx}k" if ctx > 0 else "-"
+            prov = mid.split("/")[0] if "/" in mid else "other"
+
+            clean_models.append({
+                "id": mid,
+                "name": m.get("name") or mid,
+                "provider": prov,
+                "prompt_price": f"${prompt_p:.2f}/1M" if prompt_p > 0 else "무료",
+                "completion_price": f"${comp_p:.2f}/1M" if comp_p > 0 else "무료",
+                "context_length": ctx_str,
+                "description": (m.get("description") or "")[:120]
+            })
+
+        priority_providers = ["deepseek", "openai", "anthropic", "google", "meta-llama", "mistralai", "qwen"]
+        def sort_key(item):
+            p = item["provider"].lower()
+            try:
+                idx = priority_providers.index(p)
+            except ValueError:
+                idx = 999
+            return (idx, item["name"].lower())
+
+        clean_models.sort(key=sort_key)
+
+        _ALL_OPENROUTER_CACHE = {
+            "timestamp": now,
+            "models": clean_models
+        }
+        return clean_models
+    except Exception as e:
+        print(f"[OpenRouter All Models API 오류] {e}")
+        if _ALL_OPENROUTER_CACHE.get("models"):
+            return _ALL_OPENROUTER_CACHE["models"]
+        return [
+            {
+                "id": m["id"],
+                "name": m["name"],
+                "provider": m["id"].split("/")[0],
+                "prompt_price": m["prompt_price"],
+                "completion_price": m["completion_price"],
+                "context_length": m["context_length"],
+                "description": m["description"]
+            }
+            for m in DEFAULT_OPENROUTER_TOP_MODELS
+        ]
+

@@ -113,6 +113,37 @@ def init_db():
         except Exception:
             pass
 
+        # sentences 테이블에 빈칸(____)이 남아있는 기존 문장들 정답 선지 자동 완성 동기화
+        try:
+            cursor.execute("SELECT id, passage_id, sentence_text FROM sentences WHERE sentence_text LIKE '%\\_\\_%' ESCAPE '\\'")
+            unfilled_rows = cursor.fetchall()
+            if unfilled_rows:
+                from grammar_analyzer import prepare_sentence_for_analysis
+                for ur in unfilled_rows:
+                    cur_p = None
+                    pid = ur["passage_id"]
+                    if pid:
+                        cursor.execute("SELECT passage_text, answer_text, explanation_text FROM passages WHERE id = ?", (pid,))
+                        p_row = cursor.fetchone()
+                        if p_row:
+                            cur_p = dict(p_row)
+                    
+                    prep_text = prepare_sentence_for_analysis(
+                        ur["sentence_text"],
+                        passage_id=pid,
+                        passage_text=cur_p.get("passage_text", "") if cur_p else "",
+                        answer_text=cur_p.get("answer_text", "") if cur_p else "",
+                        explanation_text=cur_p.get("explanation_text", "") if cur_p else ""
+                    )
+                    if prep_text and prep_text != ur["sentence_text"]:
+                        words = re.findall(r"\b[\w'-]+\b", prep_text)
+                        cursor.execute(
+                            "UPDATE sentences SET sentence_text = ?, word_count = ? WHERE id = ?",
+                            (prep_text.strip(), len(words), ur["id"])
+                        )
+        except Exception as mig_err:
+            print(f"[Init DB Blank Sentence Migration Error] {mig_err}")
+
 
         # 4. 지문 태그 테이블
         cursor.execute("""
@@ -623,7 +654,7 @@ def search_passages(
     question_type: str = "",
     tag: str = "",
     whole_word: bool = False,
-    limit: int = 50
+    limit: int = 0
 ) -> List[Dict[str, Any]]:
     """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분 - 온전한 단어 검색 지원)"""
     query = """
@@ -682,8 +713,11 @@ def search_passages(
         """
         params.append(f"%{tag.strip()}%")
 
-    query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC LIMIT ?"
-    params.append(limit)
+    if limit and limit > 0:
+        query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC LIMIT ?"
+        params.append(limit)
+    else:
+        query += " ORDER BY e.year DESC, e.month DESC, p.q_num ASC"
 
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -928,7 +962,7 @@ def search_sentences(
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
     whole_word: bool = False,
-    limit: int = 5000
+    limit: int = 0
 ) -> List[Dict[str, Any]]:
     """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
     query = """
@@ -1040,6 +1074,17 @@ def search_sentences(
             s_dict["grammar_analyzed"] = 1 if r["grammar_analyzed"] == 1 else 0
             s_dict["tags"] = tags_by_sent.get(r["id"], [])
             s_dict["grammar_annotations"] = annos_by_sent.get(r["id"], [])
+
+            # 만약 문장에 아직 밑줄/빈칸이 남아있는 경우 온전한 정답 선지 문장으로 실시간 변환
+            if "__" in s_dict.get("sentence_text", ""):
+                try:
+                    from grammar_analyzer import prepare_sentence_for_analysis
+                    prep = prepare_sentence_for_analysis(s_dict["sentence_text"], passage_id=s_dict.get("passage_id"))
+                    if prep and prep != s_dict["sentence_text"]:
+                        s_dict["sentence_text"] = prep
+                except Exception:
+                    pass
+
             results.append(s_dict)
         return results
 

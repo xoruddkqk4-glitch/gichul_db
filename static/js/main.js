@@ -159,6 +159,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const infoModelContext = document.getElementById("infoModelContext");
   const infoModelDesc = document.getElementById("infoModelDesc");
   let openrouterTopModelsData = [];
+  let openrouterAllModelsData = [];
+  let currentEnsembleModels = [
+    "deepseek/deepseek-chat",
+    "openai/gpt-4o-mini",
+    "anthropic/claude-sonnet-4.5"
+  ];
   const aiModelInput = document.getElementById("aiModelInput");
   const aiModelHelp = document.getElementById("aiModelHelp");
   const aiApiKeyInput = document.getElementById("aiApiKeyInput");
@@ -541,7 +547,7 @@ document.addEventListener("DOMContentLoaded", () => {
       params.append("is_starred", "true");
     }
 
-    params.append("limit", "5000");
+    params.append("limit", "0");
 
     try {
       if (currentMode === "passage") {
@@ -2061,6 +2067,7 @@ document.addEventListener("DOMContentLoaded", () => {
     sentenceViewContainer.style.display = "block";
     sentenceMatchCount.textContent = items.length;
     sentenceTableBody.innerHTML = "";
+    const fragment = document.createDocumentFragment();
     setTimeout(updateResultsNavHeight, 30);
 
     // 현재 검색창에 입력된 검색 키워드 확인
@@ -2130,7 +2137,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </td>
         <td class="col-action">
           <div class="action-btn-group">
-            <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml(s.sentence_text)}" title="문장 복사">
+            <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml((s.id ? (s.id.startsWith('[') && s.id.endsWith(']') ? s.id : `[${s.id}]`) + ' ' : '') + s.sentence_text)}" title="문장 및 출처 복사">
               📋 복사
             </button>
             <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
@@ -2323,10 +2330,20 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
 
-      // 인라인 복사 이벤트
+      // 인라인 복사 이벤트 (출처 식별자 + 문장 본문 결합 복사)
       const copyBtn = tr.querySelector(".btn-copy-sentence");
-      copyBtn.addEventListener("click", () => {
-        copyToClipboard(s.sentence_text, "문장이 복사되었습니다! (Ctrl+V)");
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const sentId = (s.id || copyBtn.dataset.id || "").trim();
+        let sourceText = "";
+        if (sentId) {
+          sourceText = sentId.startsWith("[") && sentId.endsWith("]") ? sentId : `[${sentId}]`;
+        } else if (targetPassageId && s.order_index) {
+          sourceText = `[${targetPassageId}-${s.order_index}번째 문장]`;
+        }
+        const cleanSent = (s.sentence_text || "").trim();
+        const textToCopy = sourceText ? `${sourceText} ${cleanSent}` : cleanSent;
+        copyToClipboard(textToCopy, `${sourceText ? sourceText + ' ' : ''}문장과 출처가 클립보드에 복사되었습니다! (Ctrl+V)`);
         copyBtn.textContent = "✔ 복사됨";
         copyBtn.classList.add("copied");
         setTimeout(() => {
@@ -2411,8 +2428,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       bindTagRemoveBtns();
 
-      sentenceTableBody.appendChild(tr);
+      fragment.appendChild(tr);
     });
+    sentenceTableBody.appendChild(fragment);
   }
 
   // =========================================================================
@@ -4847,6 +4865,216 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function getModelDisplayShortName(id) {
+    if (!id) return "";
+    const map = {
+      "deepseek/deepseek-chat": "DeepSeek V3",
+      "deepseek/deepseek-r1": "DeepSeek R1",
+      "openai/gpt-4o-mini": "GPT-4o-mini",
+      "openai/gpt-4o": "GPT-4o",
+      "anthropic/claude-sonnet-4.5": "Claude Sonnet 4.5",
+      "anthropic/claude-3-5-haiku-20241022": "Claude 3.5 Haiku",
+      "google/gemini-2.5-flash": "Gemini 2.5 Flash",
+      "google/gemini-2.5-pro": "Gemini 2.5 Pro",
+      "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B",
+      "mistralai/mistral-large-2411": "Mistral Large",
+      "qwen/qwen-2.5-72b-instruct": "Qwen 2.5 72B"
+    };
+    if (map[id]) return map[id];
+    const found = openrouterAllModelsData.find((m) => m.id === id);
+    if (found && found.name) return found.name;
+    return id.includes("/") ? id.split("/")[1] : id;
+  }
+
+  /** OpenRouter 전체 440+ 실시간 모델 목록 서버 조회 */
+  async function loadOpenRouterAllModels(force = false) {
+    const btn = document.getElementById("btnRefreshOpenRouterAllModels");
+    const countBadge = document.getElementById("ensembleModelsCountBadge");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ 갱신 중...";
+    }
+    if (countBadge) {
+      countBadge.textContent = "실시간 로딩 중...";
+    }
+
+    try {
+      const res = await fetch(`/api/openrouter/models${force ? "?force_refresh=true" : ""}`);
+      const data = await res.json();
+      if (res.ok && data.models && data.models.length > 0) {
+        openrouterAllModelsData = data.models;
+        if (data.current_ensemble && data.current_ensemble.length >= 3 && !force) {
+          currentEnsembleModels = data.current_ensemble.slice(0, 3);
+        }
+        if (countBadge) {
+          countBadge.textContent = `${openrouterAllModelsData.length}개 모델 로드됨`;
+        }
+        renderOpenRouterEnsembleSlots();
+        if (force) {
+          showToast(`OpenRouter 전체 ${openrouterAllModelsData.length}개 모델 목록이 갱신되었습니다.`, "success");
+        }
+      }
+    } catch (err) {
+      console.error("OpenRouter 전체 모델 목록 로드 실패:", err);
+      if (countBadge) {
+        countBadge.textContent = "목록 로드 실패 (기본값 사용)";
+      }
+      if (force) {
+        showToast("OpenRouter 모델 목록을 불러오지 못했습니다.", "warning");
+      }
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "🔄 모델 갱신";
+      }
+    }
+  }
+
+  /** OpenRouter 앙상블 3개 슬롯 옵션 및 선택값 렌더링 */
+  function renderOpenRouterEnsembleSlots() {
+    const defaultModels = [
+      "deepseek/deepseek-chat",
+      "openai/gpt-4o-mini",
+      "anthropic/claude-sonnet-4.5"
+    ];
+
+    const popularIds = [
+      "deepseek/deepseek-chat",
+      "openai/gpt-4o-mini",
+      "anthropic/claude-sonnet-4.5",
+      "openai/gpt-4o",
+      "google/gemini-2.5-flash",
+      "meta-llama/llama-3.3-70b-instruct",
+      "mistralai/mistral-large-2411",
+      "qwen/qwen-2.5-72b-instruct",
+      "anthropic/claude-3-5-haiku-20241022",
+      "deepseek/deepseek-r1"
+    ];
+
+    for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
+      const select = document.getElementById(`openrouterSlotSelect${slotIdx}`);
+      const customInput = document.getElementById(`openrouterSlotCustom${slotIdx}`);
+      if (!select) continue;
+
+      select.innerHTML = "";
+      const curVal = currentEnsembleModels[slotIdx] || defaultModels[slotIdx];
+      let isMatchedInList = false;
+
+      // 1. 추천/인기 모델 optgroup
+      const grpPopular = document.createElement("optgroup");
+      grpPopular.label = "⭐ 인기 & 추천 모델";
+
+      // 2. 공급사별 optgroup
+      const groups = {
+        deepseek: document.createElement("optgroup"),
+        openai: document.createElement("optgroup"),
+        anthropic: document.createElement("optgroup"),
+        google: document.createElement("optgroup"),
+        "meta-llama": document.createElement("optgroup"),
+        mistralai: document.createElement("optgroup"),
+        qwen: document.createElement("optgroup"),
+        other: document.createElement("optgroup")
+      };
+      groups.deepseek.label = "DeepSeek";
+      groups.openai.label = "OpenAI";
+      groups.anthropic.label = "Anthropic Claude";
+      groups.google.label = "Google Gemini";
+      groups["meta-llama"].label = "Meta Llama";
+      groups.mistralai.label = "Mistral AI";
+      groups.qwen.label = "Qwen";
+      groups.other.label = "기타 제공사 모델";
+
+      const sourceList = openrouterAllModelsData.length > 0 ? openrouterAllModelsData : [
+        { id: "deepseek/deepseek-chat", name: "DeepSeek: DeepSeek V3", prompt_price: "$0.32/1M", provider: "deepseek", context_length: "160k" },
+        { id: "openai/gpt-4o-mini", name: "OpenAI: GPT-4o-mini", prompt_price: "$0.15/1M", provider: "openai", context_length: "128k" },
+        { id: "anthropic/claude-sonnet-4.5", name: "Anthropic: Claude Sonnet 4.5", prompt_price: "$3.00/1M", provider: "anthropic", context_length: "976k" },
+        { id: "openai/gpt-4o", name: "OpenAI: GPT-4o", prompt_price: "$2.50/1M", provider: "openai", context_length: "128k" },
+        { id: "google/gemini-2.5-flash", name: "Google: Gemini 2.5 Flash", prompt_price: "$0.07/1M", provider: "google", context_length: "1000k" },
+        { id: "meta-llama/llama-3.3-70b-instruct", name: "Meta: Llama 3.3 70B Instruct", prompt_price: "$0.10/1M", provider: "meta-llama", context_length: "128k" }
+      ];
+
+      sourceList.forEach((m) => {
+        if (popularIds.includes(m.id)) {
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = `${m.name} (${m.prompt_price || ""})`;
+          if (m.id === curVal) {
+            opt.selected = true;
+            isMatchedInList = true;
+          }
+          grpPopular.appendChild(opt);
+        }
+      });
+      if (grpPopular.children.length > 0) {
+        select.appendChild(grpPopular);
+      }
+
+      sourceList.forEach((m) => {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = `${m.name} (${m.prompt_price || ""})`;
+        if (m.id === curVal && !isMatchedInList) {
+          opt.selected = true;
+          isMatchedInList = true;
+        }
+        const prov = m.provider ? m.provider.toLowerCase() : "other";
+        const targetGrp = groups[prov] || groups.other;
+        targetGrp.appendChild(opt);
+      });
+
+      Object.values(groups).forEach((grp) => {
+        if (grp.children.length > 0) {
+          select.appendChild(grp);
+        }
+      });
+
+      const optCustom = document.createElement("option");
+      optCustom.value = "__custom__";
+      optCustom.textContent = "✏️ 직접 모델 ID 입력...";
+      if (!isMatchedInList && curVal) {
+        optCustom.selected = true;
+      }
+      select.appendChild(optCustom);
+
+      if (customInput) {
+        customInput.value = curVal;
+        customInput.style.display = (!isMatchedInList && curVal) || select.value === "__custom__" ? "block" : "none";
+      }
+      updateSlotBadge(slotIdx, curVal);
+    }
+  }
+
+  function updateSlotBadge(slotIdx, modelId) {
+    const badge = document.getElementById(`openrouterSlotBadge${slotIdx}`);
+    if (!badge) return;
+    const found = openrouterAllModelsData.find((m) => m.id === modelId);
+    if (found) {
+      badge.textContent = `${found.prompt_price || ""} • ${found.context_length || ""}`;
+    } else {
+      badge.textContent = modelId.includes("/") ? modelId.split("/")[1] : modelId;
+    }
+  }
+
+  function getSelectedOpenRouterEnsembleModels() {
+    const res = [];
+    const fallbacks = ["deepseek/deepseek-chat", "openai/gpt-4o-mini", "anthropic/claude-sonnet-4.5"];
+    for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
+      const select = document.getElementById(`openrouterSlotSelect${slotIdx}`);
+      const customInput = document.getElementById(`openrouterSlotCustom${slotIdx}`);
+      let val = "";
+      if (select && select.value !== "__custom__") {
+        val = select.value;
+      } else if (customInput) {
+        val = customInput.value.trim();
+      }
+      if (!val) {
+        val = currentEnsembleModels[slotIdx] || fallbacks[slotIdx];
+      }
+      res.push(val);
+    }
+    return res;
+  }
+
   // AI 설정 상태 헤더 버튼 반영 (단일 모델 vs 복수 모델 교차 검증 디자인)
   function updateAiHeaderButton(data) {
     if (!btnOpenAiSettingsModal) return;
@@ -4873,8 +5101,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const p = activeWithKeys[0];
       const name = providerShortNames[p] || p;
       btnOpenAiSettingsModal.classList.add("api-active");
-      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 연결됨 <span class="ai-active-badge">${escapeHtml(name)}</span>`;
-      btnOpenAiSettingsModal.title = `AI 어법 분석기 활성화됨 (${name}: 단독 실행) - 클릭하여 설정 변경`;
+      if (p === "openrouter" && data.openrouter_ensemble) {
+        const mNames = (data.openrouter_ensemble_models || currentEnsembleModels || []).map(m => getModelDisplayShortName(m)).join(", ");
+        btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ OpenRouter 앙상블 <span class="ai-active-badge">3개 모델 합의</span>`;
+        btnOpenAiSettingsModal.title = `OpenRouter 3개 모델(${mNames}) 교차 검증 활성화됨 - 클릭하여 설정 변경`;
+      } else {
+        btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 연결됨 <span class="ai-active-badge">${escapeHtml(name)}</span>`;
+        btnOpenAiSettingsModal.title = `AI 어법 분석기 활성화됨 (${name}: 단독 실행) - 클릭하여 설정 변경`;
+      }
     } else {
       const names = activeWithKeys.map((p) => providerShortNames[p] || p).join(" + ");
       btnOpenAiSettingsModal.classList.add("api-active");
@@ -4922,16 +5156,32 @@ document.addEventListener("DOMContentLoaded", () => {
       badgeText = `🗳️ 다수결 합의 (${count}개 중 ${needed}개+ 찬성)`;
     }
 
+    const cbOREnsemble = document.getElementById("cbOpenRouterEnsemble");
+    const isOREnsemble = cbOREnsemble && cbOREnsemble.checked;
+
     if (count === 0) {
       summary.innerHTML = `<span style="color: #dc2626;">⚠️ 선택된 모델이 없습니다. 최소 1개 이상 선택해 주세요.</span>`;
       if (badge) badge.textContent = "비활성";
     } else if (count === 1) {
       const p = checkedBoxes[0].dataset.provider;
       const name = providerDisplayNames[p] || p;
-      summary.innerHTML = `선택된 모델: <strong>${escapeHtml(name)}</strong> (단독 분석 모드)`;
-      if (badge) badge.textContent = "단독 실행 모드";
+      if (p === "openrouter" && isOREnsemble) {
+        const shortNames = currentEnsembleModels.map(m => getModelDisplayShortName(m)).join(" + ");
+        summary.innerHTML = `선택된 모델: <strong>OpenRouter 3개 모델 앙상블</strong> (${escapeHtml(shortNames)} 교차 검증)`;
+        if (badge) {
+          badge.textContent = "🔄 OpenRouter 3모델 합의";
+          badge.className = "ai-ensemble-badge";
+        }
+      } else {
+        summary.innerHTML = `선택된 모델: <strong>${escapeHtml(name)}</strong> (단독 분석 모드)`;
+        if (badge) badge.textContent = "단독 실행 모드";
+      }
     } else {
-      const names = checkedBoxes.map((cb) => providerShortNames[cb.dataset.provider] || cb.dataset.provider).join(", ");
+      const names = checkedBoxes.map((cb) => {
+        const p = cb.dataset.provider;
+        if (p === "openrouter" && isOREnsemble) return "OpenRouter(3모델)";
+        return providerShortNames[p] || p;
+      }).join(", ");
       summary.innerHTML = `선택된 모델: <strong>${escapeHtml(names)}</strong> (${count}개 모델 ${modeDesc})`;
       if (badge) badge.textContent = badgeText;
     }
@@ -4988,8 +5238,13 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
           if (testRes) {
-            testRes.textContent = "";
-            testRes.className = "provider-test-result";
+            if (pData.has_key) {
+              testRes.className = "provider-test-result info visible";
+              testRes.innerHTML = `<span>ℹ️ <strong>키 등록됨:</strong> [🧪 개별 연결 테스트]를 클릭하여 실시간 API 통신을 확인해 보세요.</span>`;
+            } else {
+              testRes.className = "provider-test-result info visible";
+              testRes.innerHTML = `<span>⚠️ <strong>키 미등록:</strong> API Key를 입력한 후 [🧪 개별 연결 테스트]를 진행해 주세요.</span>`;
+            }
           }
         });
 
@@ -4997,6 +5252,19 @@ document.addEventListener("DOMContentLoaded", () => {
         const selectConsensusMode = document.getElementById("selectConsensusMode");
         if (selectConsensusMode && data.consensus_mode) {
           selectConsensusMode.value = data.consensus_mode;
+        }
+
+        // OpenRouter 앙상블 상태 및 단일 모델 잠금 UI 동기화
+        if (data.openrouter_ensemble_models && data.openrouter_ensemble_models.length >= 3) {
+          currentEnsembleModels = data.openrouter_ensemble_models.slice(0, 3);
+        }
+        applyOpenRouterEnsembleUI(Boolean(data.openrouter_ensemble));
+
+        // OpenRouter 전체 모델 및 앙상블 슬롯 동기화
+        if (openrouterAllModelsData.length === 0) {
+          loadOpenRouterAllModels(false);
+        } else {
+          renderOpenRouterEnsembleSlots();
         }
 
         // OpenRouter Top 5 모델 동기화
@@ -5065,6 +5333,111 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // OpenRouter 앙상블 모드 UI 반영 공통 함수 (3개 모델 앙상블 활성화 시 단일 모델 선택/직접입력 잠금)
+  function applyOpenRouterEnsembleUI(isEnabled) {
+    const cbOREnsemble = document.getElementById("cbOpenRouterEnsemble");
+    const containerOREnsemble = document.getElementById("openrouterEnsembleModelsContainer");
+    const singleModelGroup = document.getElementById("openrouterSingleModelGroup");
+    const lockNotice = document.getElementById("ensembleLockNotice");
+    const modelInput = document.getElementById("modelInputOpenrouter");
+    const modelSelect = document.getElementById("openrouterModelSelect");
+    const btnRefresh = document.getElementById("btnRefreshOpenRouterModels");
+
+    if (cbOREnsemble) cbOREnsemble.checked = Boolean(isEnabled);
+    if (containerOREnsemble) {
+      containerOREnsemble.style.display = isEnabled ? "block" : "none";
+    }
+    if (lockNotice) {
+      lockNotice.style.display = isEnabled ? "flex" : "none";
+    }
+    if (singleModelGroup) {
+      singleModelGroup.classList.toggle("is-disabled", Boolean(isEnabled));
+    }
+    if (modelInput) modelInput.disabled = Boolean(isEnabled);
+    if (modelSelect) modelSelect.disabled = Boolean(isEnabled);
+    if (btnRefresh) btnRefresh.disabled = Boolean(isEnabled);
+
+    updateAiModalSelectionSummary();
+  }
+
+  // OpenRouter 앙상블 토글 이벤트 바인딩
+  const cbOREnsembleEl = document.getElementById("cbOpenRouterEnsemble");
+  if (cbOREnsembleEl) {
+    cbOREnsembleEl.addEventListener("change", () => {
+      applyOpenRouterEnsembleUI(cbOREnsembleEl.checked);
+      if (cbOREnsembleEl.checked && openrouterAllModelsData.length === 0) {
+        loadOpenRouterAllModels(false);
+      }
+    });
+  }
+
+  // 앙상블 3개 슬롯 변경 및 커스텀 입력 이벤트 바인딩
+  for (let slotIdx = 0; slotIdx < 3; slotIdx++) {
+    const select = document.getElementById(`openrouterSlotSelect${slotIdx}`);
+    const customInput = document.getElementById(`openrouterSlotCustom${slotIdx}`);
+    if (select) {
+      select.addEventListener("change", () => {
+        if (select.value === "__custom__") {
+          if (customInput) {
+            customInput.style.display = "block";
+            customInput.focus();
+          }
+        } else {
+          if (customInput) {
+            customInput.style.display = "none";
+            customInput.value = select.value;
+          }
+          currentEnsembleModels[slotIdx] = select.value;
+          updateSlotBadge(slotIdx, select.value);
+          updateAiModalSelectionSummary();
+        }
+      });
+    }
+    if (customInput) {
+      customInput.addEventListener("input", () => {
+        const val = customInput.value.trim();
+        if (val) {
+          currentEnsembleModels[slotIdx] = val;
+          updateSlotBadge(slotIdx, val);
+          updateAiModalSelectionSummary();
+        }
+      });
+    }
+  }
+
+  // 앙상블 빠른 프리셋 버튼 이벤트
+  document.querySelectorAll(".btn-preset-ensemble").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const preset = btn.dataset.preset;
+      let targetModels = [];
+      let label = "";
+      if (preset === "default") {
+        targetModels = ["deepseek/deepseek-chat", "openai/gpt-4o-mini", "anthropic/claude-sonnet-4.5"];
+        label = "추천 기본 (DeepSeek V3 + GPT-4o-mini + Claude Sonnet 4.5)";
+      } else if (preset === "budget") {
+        targetModels = ["deepseek/deepseek-chat", "openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"];
+        label = "초가성비 (DeepSeek V3 + GPT-4o-mini + Llama 3.3 70B)";
+      } else if (preset === "quality") {
+        targetModels = ["anthropic/claude-sonnet-4.5", "openai/gpt-4o", "google/gemini-2.5-flash"];
+        label = "최고정밀 (Claude Sonnet 4.5 + GPT-4o + Gemini 2.5 Flash)";
+      }
+      if (targetModels.length === 3) {
+        currentEnsembleModels = [...targetModels];
+        renderOpenRouterEnsembleSlots();
+        showToast(`${label} 프리셋이 적용되었습니다.`, "info");
+      }
+    });
+  });
+
+  // 앙상블 전체 실시간 모델 목록 갱신 버튼
+  const btnRefreshAllOR = document.getElementById("btnRefreshOpenRouterAllModels");
+  if (btnRefreshAllOR) {
+    btnRefreshAllOR.addEventListener("click", () => {
+      loadOpenRouterAllModels(true);
+    });
+  }
+
+
   // 체크박스 클릭 시 카드 스타일 및 요약 업데이트
   document.querySelectorAll(".provider-checkbox").forEach((cb) => {
     cb.addEventListener("change", () => {
@@ -5108,8 +5481,14 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.disabled = true;
       btn.textContent = "⏳ 테스트 중...";
       if (testRes) {
-        testRes.textContent = "연결 확인 중...";
-        testRes.className = "provider-test-result";
+        testRes.className = "provider-test-result loading visible";
+        testRes.innerHTML = `
+          <div class="test-loading-spinner"></div>
+          <div>
+            <strong>${providerDisplayNames[p]} 연결 확인 중...</strong>
+            <div style="font-size: 0.71rem; color: #64748b; margin-top: 1px;">AI 서버로 핑 테스트 요청을 전송하고 있습니다. (약 2~5초 소요)</div>
+          </div>
+        `;
       }
 
       try {
@@ -5123,15 +5502,30 @@ document.addEventListener("DOMContentLoaded", () => {
           }),
         });
         const resData = await res.json();
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+
         if (res.ok && resData.success) {
           if (resData.model && modelInput) {
             modelInput.value = resData.model;
           }
           if (testRes) {
-            testRes.textContent = `✔ 연결 정상 (${resData.model || "성공"})`;
-            testRes.className = "provider-test-result success";
+            testRes.className = "provider-test-result success visible";
+            const isOREnsemble = (p === "openrouter" && document.getElementById("cbOpenRouterEnsemble")?.checked);
+            const modelUsed = resData.model || model || "확인됨";
+            testRes.innerHTML = `
+              <div class="result-header">
+                <span>✔ <strong>${providerDisplayNames[p]} 연결 성공!</strong></span>
+                <span style="font-size: 0.7rem; font-weight: 600; opacity: 0.85;">${timeStr}</span>
+              </div>
+              <div class="result-body">
+                <div>• <strong>응답 모델:</strong> <span class="result-model-badge">${escapeHtml(modelUsed)}</span></div>
+                <div style="margin-top: 3px;">• <strong>상태:</strong> API Key 인증 완료 및 문법 분석 JSON 정상 통신 확인</div>
+                ${isOREnsemble ? `<div style="margin-top: 4px; color: #4338ca; font-weight: 700; background: #e0e7ff; padding: 3px 6px; border-radius: 4px; border: 1px solid #c7d2fe;">🔄 3개 모델 앙상블(${escapeHtml(currentEnsembleModels.map(m => getModelDisplayShortName(m)).join(', '))}) 교차 검증 준비 완료</div>` : ""}
+              </div>
+            `;
           }
-          showToast(`${providerDisplayNames[p]} 연결 성공!`, "success");
+          showToast(`${providerDisplayNames[p]} 연결 성공! (${resData.model || '정상'})`, "success");
           const keyStatus = document.getElementById(`keyStatus${pCap}`);
           if (keyStatus && apiKey) {
             keyStatus.textContent = "현재 키: 새로 입력됨 (저장 필요)";
@@ -5139,19 +5533,59 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         } else {
           if (testRes) {
-            testRes.textContent = `❌ ${resData.message || "연결 실패"}`;
-            testRes.className = "provider-test-result error";
+            testRes.className = "provider-test-result error visible";
+            const errMsg = resData.message || resData.detail || "알 수 없는 오류가 발생했습니다.";
+            testRes.innerHTML = `
+              <div class="result-header">
+                <span>❌ <strong>${providerDisplayNames[p]} 연결 실패</strong></span>
+                <span style="font-size: 0.7rem; font-weight: 600; opacity: 0.85;">${timeStr}</span>
+              </div>
+              <div class="result-body">
+                <div>• <strong>오류 내용:</strong> <span style="font-weight: 600;">${escapeHtml(errMsg)}</span></div>
+                <div class="result-guide">
+                  💡 <strong>확인 사항:</strong> API Key 철자가 올바른지, 사용량 잔액(Credit/Quota)이 남아 있는지, 모델명이 맞는지 확인해 주세요.
+                </div>
+              </div>
+            `;
           }
-          showToast(`${providerDisplayNames[p]} 연결 실패: ${resData.message}`, "error");
+          showToast(`${providerDisplayNames[p]} 연결 실패: ${resData.message || '오류'}`, "error");
         }
       } catch (err) {
         if (testRes) {
-          testRes.textContent = "❌ 통신 오류";
-          testRes.className = "provider-test-result error";
+          testRes.className = "provider-test-result error visible";
+          testRes.innerHTML = `
+            <div class="result-header">
+              <span>❌ <strong>통신 오류 (서버 응답 없음)</strong></span>
+            </div>
+            <div class="result-body">
+              <div>• <strong>오류 내용:</strong> 네트워크 요청 타임아웃 또는 로컬 서버 응답 지연이 발생했습니다.</div>
+              <div class="result-guide">💡 인터넷 연결을 확인하거나 잠시 후 다시 테스트해 주세요.</div>
+            </div>
+          `;
         }
+        showToast(`${providerDisplayNames[p]} 연결 테스트 중 통신 오류가 발생했습니다.`, "error");
       } finally {
         btn.disabled = false;
         btn.textContent = "🧪 개별 연결 테스트";
+      }
+    });
+  });
+
+  // 키 또는 모델 입력 변경 시 테스트 안내 갱신
+  ALL_PROVIDERS.forEach((p) => {
+    const pCap = capitalize(p);
+    const keyInput = document.getElementById(`keyInput${pCap}`);
+    const modelInput = document.getElementById(`modelInput${pCap}`);
+    const testRes = document.getElementById(`testResult${pCap}`);
+
+    [keyInput, modelInput].forEach((inputEl) => {
+      if (inputEl) {
+        inputEl.addEventListener("input", () => {
+          if (testRes && !testRes.classList.contains("loading")) {
+            testRes.className = "provider-test-result info visible";
+            testRes.innerHTML = `<span>✏️ <strong>설정 변경됨:</strong> [🧪 개별 연결 테스트]를 클릭하여 변경된 값의 유효성을 검증하세요.</span>`;
+          }
+        });
       }
     });
   });
@@ -5207,6 +5641,7 @@ document.addEventListener("DOMContentLoaded", () => {
       btnSaveAiSettings.textContent = "⏳ 저장 중...";
 
       try {
+        const cbOREnsemble = document.getElementById("cbOpenRouterEnsemble");
         const res = await fetch("/api/settings/ai", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -5214,6 +5649,8 @@ document.addEventListener("DOMContentLoaded", () => {
             active_providers: checkedProviders,
             consensus_mode: consensusMode,
             providers: providersPayload,
+            openrouter_ensemble: cbOREnsemble ? cbOREnsemble.checked : false,
+            openrouter_ensemble_models: getSelectedOpenRouterEnsembleModels(),
           }),
         });
         const data = await res.json();

@@ -1,12 +1,14 @@
 # Agent Execution Rules: Terminal-Only Fast Verification
 
-## 1. Browser & Scratchpad Policy
+에이전트 실행 규칙: 터미널 전용 고속 검증 (`.agents/rules/rules.md`)
+
+## 1. Browser & Scratchpad Policy (브라우저 및 시각 검증 정책)
 - **STRICT REQUIREMENT:** Do NOT launch Chrome, Scratchpad, or any browser instance for visual verification during standard code editing tasks.
 - **NO AUTOMATIC SCREENSHOTS:** Never take screenshots or perform visual inspection automatically after editing code.
 - Trust Hot Module Replacement (HMR) on the user's browser for UI updates.
 - **EXCEPTIONS (명시적 예외 조건):** 오직 사용자가 `/scratchpad`, `/action scratchpad` 명령어를 명시적으로 입력하거나 "scratchpad로 검증해줘"라고 직접 요청한 경우에 한해 본 정책의 예외가 적용되어 Scratchpad / 브라우저 시각 검증 도구를 구동할 수 있습니다.
 
-## 2. Terminal-Based Error Verification
+## 2. Terminal-Based Error Verification (터미널 기반 정적 오류 검증)
 - After making code changes, perform quick static verification via terminal commands instead of browser checks.
 - Runs fast type checking or linting depending on the project setup:
   - TypeScript project: Run `npx tsc --noEmit` (or `npm run type-check`)

@@ -63,6 +63,8 @@ class AISettingsRequest(BaseModel):
     active_providers: Optional[List[str]] = None
     consensus_mode: Optional[str] = None
     providers: Optional[Dict[str, Dict[str, str]]] = None
+    openrouter_ensemble: Optional[bool] = None
+    openrouter_ensemble_models: Optional[List[str]] = None
 
 
 class BatchAnalyzeRequest(BaseModel):
@@ -115,7 +117,7 @@ async def api_search_passages(
     question_type: str = "",
     tag: str = "",
     whole_word: bool = False,
-    limit: int = 1000
+    limit: int = 0
 ):
     """지문 검색 API (2x2 화면용 - 온전한 단어 검색 지원)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
@@ -152,7 +154,7 @@ async def api_search_sentences(
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
     whole_word: bool = False,
-    limit: int = 5000
+    limit: int = 0
 ):
     """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
     # 검색어 내 #태그 자동 파싱
@@ -281,6 +283,22 @@ async def api_get_openrouter_top_models(force_refresh: bool = False):
     return {"success": True, "models": models}
 
 
+@app.get("/api/openrouter/models")
+async def api_get_openrouter_all_models(force_refresh: bool = False):
+    """OpenRouter 전체 실시간 모델 목록 및 현재 설정된 앙상블 3개 모델 반환"""
+    models = grammar_analyzer.get_all_openrouter_models(force_refresh=force_refresh)
+    top_models = grammar_analyzer.get_openrouter_top_models(force_refresh=force_refresh)
+    ensemble = grammar_analyzer.get_openrouter_ensemble_models()
+    return {
+        "success": True,
+        "total": len(models),
+        "models": models,
+        "top_models": top_models,
+        "current_ensemble": ensemble
+    }
+
+
+
 @app.post("/api/settings/ai/test")
 async def api_test_single_ai_provider(req: SingleProviderTestRequest):
     """특정 AI Provider 개별 연결 핑 테스트"""
@@ -348,7 +366,13 @@ async def api_save_ai_settings(req: AISettingsRequest):
             db.set_setting(f"ai_model_{p}", m)
             db.set_setting("ai_model", m)
 
-    # 4. test_now인 경우 첫 번째 활성 프로바이더 연결 테스트
+    # 4. OpenRouter 3개 모델 앙상블(교차 검토) 모드 설정 저장
+    if req.openrouter_ensemble is not None:
+        grammar_analyzer.set_openrouter_ensemble(req.openrouter_ensemble)
+    if req.openrouter_ensemble_models is not None:
+        grammar_analyzer.set_openrouter_ensemble_models(req.openrouter_ensemble_models)
+
+    # 5. test_now인 경우 첫 번째 활성 프로바이더 연결 테스트
     test_msg = ""
     if req.test_now:
         active = grammar_analyzer.get_active_providers()
@@ -518,10 +542,10 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
 
     if req.sentence_ids:
         target_ids = set(req.sentence_ids)
-        all_sentences = db.search_sentences(limit=5000)
+        all_sentences = db.search_sentences(limit=0)
         sentences = [s for s in all_sentences if s["id"] in target_ids]
     else:
-        limit_val = req.limit or 5000
+        limit_val = req.limit or 0
         sentences = db.search_sentences(is_starred=True if req.starred_only else None, limit=limit_val)
 
     # 이미 어법 분석이 완료된 문장 필터링 (토큰 절약 및 중복 분석 방지: 어법 배지가 있거나 특이 어법 없음으로 분석된 문장 제외)
