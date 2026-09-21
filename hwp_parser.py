@@ -105,7 +105,7 @@ def extract_hwp_text_pyhwpx(file_path: str) -> str:
             except Exception:
                 pass
             try:
-                hwp.SetMessageBoxMode(0x00020000)
+                hwp.SetMessageBoxMode(0x00070000)
             except Exception:
                 pass
 

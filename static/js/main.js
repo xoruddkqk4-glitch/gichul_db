@@ -227,33 +227,39 @@ document.addEventListener("DOMContentLoaded", () => {
   function setHeaderSlotState(state) {
     if (!statsBadge || !btnHeaderFlow) return;
 
-    // 절대 규칙: 홈 검색 화면(homeSearchView)이 노출되어 있거나 상태가 'home'인 경우
-    // '해당 지문의 전체 문장' 버튼을 무조건 숨기고 통계 배지만 표시
-    const isHomeVisible = (homeSearchView && homeSearchView.style.display !== "none");
-    if (state === "home" || isHomeVisible) {
+    const isResultsVisible = (resultsView && resultsView.style.display !== "none");
+    const isHomeVisible = (homeSearchView && homeSearchView.style.display !== "none" && !isResultsVisible);
+
+    // 1) 홈 검색 화면이 표시 중이거나 결과창이 숨겨진 경우 -> 통계 배지 표시
+    if (state === "home" || isHomeVisible || !isResultsVisible) {
       statsBadge.style.display = "flex";
       btnHeaderFlow.style.display = "none";
       return;
     }
 
-    if (state === "passage") {
-      // 선택된 지문이 없으면 노출하지 않음
-      if (!currentPassageId) {
-        statsBadge.style.display = "flex";
-        btnHeaderFlow.style.display = "none";
-        return;
-      }
-      statsBadge.style.display = "none";
-      btnHeaderFlow.style.display = "inline-flex";
-      btnHeaderFlow.textContent = "📝 해당 지문의 전체 문장";
-      btnHeaderFlow.title = "해당 지문의 전체 문장 결과창 보기";
-      btnHeaderFlow.classList.remove("mode-back");
-    } else if (state === "sentence") {
+    // 2) 문장 결과창 모드 -> '지문 결과창으로 돌아가기' 버튼
+    if (state === "sentence" || currentMode === "sentence") {
       statsBadge.style.display = "none";
       btnHeaderFlow.style.display = "inline-flex";
       btnHeaderFlow.textContent = "🔙 지문 결과창으로 돌아가기";
       btnHeaderFlow.title = "이전 지문 상세 화면으로 복귀";
       btnHeaderFlow.classList.add("mode-back");
+      return;
+    }
+
+    // 3) 지문 결과창 모드
+    if (state === "passage" || currentMode === "passage") {
+      if (currentPassageId) {
+        statsBadge.style.display = "none";
+        btnHeaderFlow.style.display = "inline-flex";
+        btnHeaderFlow.textContent = "📝 해당 지문의 전체 문장";
+        btnHeaderFlow.title = "해당 지문의 전체 문장 결과창 보기";
+        btnHeaderFlow.classList.remove("mode-back");
+      } else {
+        statsBadge.style.display = "flex";
+        btnHeaderFlow.style.display = "none";
+      }
+      return;
     }
   }
 
@@ -312,6 +318,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateGrammarFiltersVisibility();
     if (typeof updateClearButtons === "function") updateClearButtons();
     setTimeout(updateResultsNavHeight, 30);
+    setHeaderSlotState(currentMode);
   }
 
   // 홈으로 이동 버튼 이벤트 연결
@@ -1218,6 +1225,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!treeNavState.grade || !tree[treeNavState.grade]) {
       treeStepSelector.style.display = "flex";
       passageTabBar.style.display = "none";
+      reset2x2ContentPanels();
 
       let html = `<span class="tree-step-title">📁 학년 선택:</span><div class="tree-step-buttons">`;
       grades.forEach((g) => {
@@ -1256,6 +1264,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!treeNavState.year || !tree[treeNavState.grade][treeNavState.year]) {
       treeStepSelector.style.display = "flex";
       passageTabBar.style.display = "none";
+      reset2x2ContentPanels();
 
       let html = `<span class="tree-step-title">📅 [${escapeHtml(treeNavState.grade)}] 년도 선택:</span><div class="tree-step-buttons">`;
       years.forEach((y) => {
@@ -1287,6 +1296,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!treeNavState.month || !tree[treeNavState.grade][treeNavState.year][treeNavState.month]) {
       treeStepSelector.style.display = "flex";
       passageTabBar.style.display = "none";
+      reset2x2ContentPanels();
 
       let html = `<span class="tree-step-title">📆 [${escapeHtml(treeNavState.grade)} ${escapeHtml(treeNavState.year)}] 월/시험 선택:</span><div class="tree-step-buttons">`;
       months.forEach((m) => {
@@ -1403,6 +1413,7 @@ document.addEventListener("DOMContentLoaded", () => {
             treeNavState.grade = null;
             treeNavState.year = null;
             treeNavState.month = null;
+            reset2x2ContentPanels();
             updateTreeUI(tree, allItems, totalExamsCount);
             showToast("선택 단계가 초기화되었습니다.", "info");
           }
@@ -1423,6 +1434,7 @@ document.addEventListener("DOMContentLoaded", () => {
           treeNavState.grade = null;
           treeNavState.year = null;
           treeNavState.month = null;
+          reset2x2ContentPanels();
           updateTreeUI(tree, allItems, totalExamsCount);
           showToast("선택 단계가 초기화되었습니다.", "info");
         }
@@ -1440,6 +1452,7 @@ document.addEventListener("DOMContentLoaded", () => {
             treeNavState.grade = null;
             treeNavState.year = null;
           }
+          reset2x2ContentPanels();
           updateTreeUI(tree, allItems, totalExamsCount);
         };
       } else {
@@ -1496,6 +1509,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     loadPassageDetail(items[idx]);
+    setHeaderSlotState("passage");
   }
 
   // 상단 탭 스크롤 버튼
@@ -1532,7 +1546,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /** 2x2 패널에 특정 지문 상세 정보 로드 */
   function loadPassageDetail(p) {
+    if (!p) return;
     currentPassageId = p.id;
+    setHeaderSlotState("passage");
 
     // [좌측 상단]: PDF 문항 캡처 이미지 (단일 또는 그룹 이미지들)
     const rawImages = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
@@ -1767,8 +1783,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function clear2x2Panels() {
-    panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">지문을 선택하세요.</div>`;
+  function reset2x2ContentPanels() {
+    panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">탐색할 시험 및 문항을 선택하세요.</div>`;
     panelPassageText.textContent = "-";
     panelPassageText.dataset.rawText = "";
     panelExplanation.textContent = "-";
@@ -1786,6 +1802,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (choiceRatesStatsSub) choiceRatesStatsSub.textContent = "-";
     if (choiceRatesEmpty) choiceRatesEmpty.style.display = "none";
     passageTagsList.innerHTML = "";
+    currentPassageId = null;
+    setHeaderSlotState("passage");
+  }
+
+  function clear2x2Panels() {
+    reset2x2ContentPanels();
     passageTabBar.innerHTML = "";
     if (treeStepSelector) treeStepSelector.innerHTML = "";
     if (breadcrumbTrail) breadcrumbTrail.innerHTML = "";
@@ -3016,18 +3038,26 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const pct = Math.round(((i + 1) / sets.length) * 100);
-        if (batchProgressBarFill) batchProgressBarFill.style.width = `${pct}%`;
+        if (batchProgressBarFill) {
+          batchProgressBarFill.style.width = `${pct}%`;
+          batchProgressBarFill.classList.add("progress-bar-animated");
+        }
         if (batchProgressCount) batchProgressCount.textContent = `${i + 1} / ${sets.length}`;
-        if (batchProgressTitle) batchProgressTitle.textContent = `[${set.set_key}] 처리 중...`;
+        if (batchProgressTitle) {
+          batchProgressTitle.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> [${escapeHtml(set.set_key)}] 처리 중...`;
+        }
         if (batchProgressSubtext) {
           if (set.mode === "ans_only") {
-            batchProgressSubtext.textContent = `정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`;
+            batchProgressSubtext.textContent = `🖼️ 정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`;
           } else if (set.mode === "csv_only") {
-            batchProgressSubtext.textContent = `정답률 CSV 파싱 및 문항별 선택률 반영 중 (${i + 1}/${sets.length})`;
+            batchProgressSubtext.textContent = `📊 정답률 CSV 파싱 및 문항별 선택률 반영 중 (${i + 1}/${sets.length})`;
           } else if (set.mode === "ans_and_csv") {
-            batchProgressSubtext.textContent = `정답표 분석 및 정답률 CSV 동시 반영 중 (${i + 1}/${sets.length})`;
+            batchProgressSubtext.textContent = `🖼️ 정답표 AI 분석 및 📊 정답률 CSV 동시 반영 중 (${i + 1}/${sets.length})`;
           } else {
-            batchProgressSubtext.textContent = `PDF 2단 분할 파싱 및 HWP 교차 검증 진행 중 (${i + 1}/${sets.length})`;
+            const hasAns = !!set.ansFile;
+            const hasCsv = !!set.csvFile;
+            const extra = (hasAns && hasCsv) ? " + 🖼️정답표AI + 📊정답률" : (hasAns ? " + 🖼️정답표AI" : (hasCsv ? " + 📊정답률" : ""));
+            batchProgressSubtext.textContent = `📄 PDF 2단 분할 & HWP 교차 검증${extra} 진행 중 (약 10~25초)... (${i + 1}/${sets.length})`;
           }
         }
 
@@ -3150,7 +3180,11 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      if (batchProgressTitle) batchProgressTitle.textContent = "🎉 일괄 처리 완료!";
+      if (batchProgressBarFill) {
+        batchProgressBarFill.style.width = "100%";
+        batchProgressBarFill.classList.remove("progress-bar-animated");
+      }
+      if (batchProgressTitle) batchProgressTitle.innerHTML = "🎉 일괄 처리 완료!";
       if (batchProgressSubtext) {
         batchProgressSubtext.textContent = `총 ${sets.length}개 세트 중 ${successCount}개 성공, ${failCount}개 실패`;
       }

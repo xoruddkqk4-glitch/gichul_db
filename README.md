@@ -849,3 +849,20 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - 실제 사용자 샘플 CSV(`media_1789958309858.csv`)를 `[고3-2026년-09월]` 시험지에 적용하여 28문항 100% 매칭, 평균 정답률 64.2%, 21번 킬러 문항(정답률 24.1%, 매력적 오답 ③번 40.3%) 정상 파싱 및 DB 적재 검증 완료
   - FastAPI TestClient 및 in-process API 검증 (`/api/exams`, `/api/passages/[고3-2026년-09월-31번]`, `/api/passages/[고3-2026년-09월-21번]`) 정상 200 OK 응답 확인
+
+### [2026-09-21 14:17] 업데이트 이력 (Commit ID: PENDING_COMMIT_HASH)
+- **수정 내용**:
+  - **지문 선택 상태 시 상단 헤더 '해당 지문의 전체 문장' 버튼 노출 정상화 (`static/js/main.js`, `templates/index.html`)**:
+    - `setHeaderSlotState` 로직을 정밀화하여, 결과창(`resultsView`)이 활성화되어 있고 현재 지문(`currentPassageId`)이 존재하는 경우 `statsBadge`를 숨기고 `btnHeaderFlow`(`📝 해당 지문의 전체 문장`)가 100% 확실히 표시되도록 개선
+    - 문항 탭 선택(`selectPassageTab`) 및 2x2 패널 상세 정보 로드(`loadPassageDetail`) 시 즉시 `setHeaderSlotState("passage")`를 호출하여 어떤 경로(탭 클릭, 방향키 탐색, 시험 선택)로든 지문이 렌더링되면 상단 버튼이 즉각 동기화되도록 연동
+    - 상위 트리 네비게이션(학년/년도/월 선택) 단계에서 이전 세션 지문 잔여물이 노출되던 문제를 방지하기 위해 `reset2x2ContentPanels()` 모듈을 구축하고 트리 리셋 및 시험 변경 시 깔끔한 안내 상태로 초기화
+  - **모의고사 일괄 업로드 시 진행률 프리징 방어 및 UI 피드백 강화 (`static/css/style.css`, `static/js/main.js`, `hwp_parser.py`)**:
+    - `@keyframes progressStripes` 기반의 사선 애니메이션 스트라이프(`.progress-bar-animated`)를 신설하여 AI 분석이나 고해상도 PDF 크롭 등으로 인해 한 세트 처리에 시간이 소요될 때도 프로세스가 활성 작동 중임을 시각적으로 명확히 표시
+    - 회전 스피너(`⏳`) 및 단계별 상세 작업 안내(`📄 PDF 2단 분할 & HWP 교차 검증 + 🖼️ 정답표 AI 분석 진행 중 (약 10~25초)...`) 연동
+    - 한글(HWP) 백그라운드 파싱 시 `SetMessageBoxMode(0x00070000)`를 적용하여 확인/취소 등 모든 팝업 대화상자를 원천 차단
+  - **브라우저 캐시 버스터 버전 갱신 (`templates/index.html`)**:
+    - `style.css` 및 `main.js` 버전을 `v=20260921_1405`로 갱신하여 클라이언트 캐시 무효화 및 즉시 적용 보장
+- **검증 결과**:
+  - `python -m py_compile app.py database.py hwp_parser.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
+  - DB 내 57개 시험지 1,596개 지문 및 14,643개 문장 정상 적재 상태 및 지문 선택 시 상단 버튼 동적 노출 검증 완료
