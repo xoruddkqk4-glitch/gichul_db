@@ -866,7 +866,6 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py hwp_parser.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
   - `node -c static/js/main.js` 자바스크립트 문법 검사 통과 (오류 0건)
   - DB 내 57개 시험지 1,596개 지문 및 14,643개 문장 정상 적재 상태 및 지문 선택 시 상단 버튼 동적 노출 검증 완료
-
 ### [2026-09-21 15:00] 업데이트 이력 (Commit ID: 228b98c)
 - **수정 내용**:
   - **'등록된 시험지 관리 / 삭제' 탭 기능 고도화 (`templates/index.html`, `static/js/main.js`, `static/css/style.css`)**:
@@ -884,4 +883,35 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/main.js` 자바스크립트 구문 검사 통과 (오류 0건)
   - `python -m py_compile app.py database.py rate_parser.py` 파이썬 구문 검증 완료 (통과, 오류 0건)
   - 모달 내 두 탭 모두 테이블 정렬 및 4대 파일 칩 버튼 연동 정상 확인
+
+### [2026-09-21 18:56] 업데이트 이력 (Commit ID: PENDING_COMMIT_ID)
+- **수정 내용**:
+  - **정답률 검색 필터 10% 단위 세분화 체계 개편 (`templates/index.html`, `database.py`, `static/js/main.js`)**:
+    - 중복되고 모호했던 `50% 이하` 및 `60% 이하` 구간을 제거하고, 10% 단위의 표준 구간 체계로 재정비:
+      - `under20`: 20% 미만 (극악 킬러)
+      - `20to30`: 20% ~ 30% (초고난도)
+      - `30to40`: 30% ~ 40% (고난도)
+      - `40to50`: 40% ~ 50% (중고난도)
+      - `50to60`: 50% ~ 60% (중난도)
+      - `60to70`: 60% ~ 70% (중평이)
+      - `70to80`: 70% ~ 80% (평이 문항)
+      - `over80`: 80% 이상 (기본 문항)
+    - 홈 검색창, 지문 결과창, 문장 결과창 상단 필터바 전체에 동일하게 연동 및 양방향 동기화, 초기화 버튼 완벽 연계
+  - **2026년도 모의고사 11개 세트 공인 정답표 원본 전수 대조, DB 정답·해설 동기화 및 PDF 하이라이트 크롭 일괄 재생성 (`hwp_parser.py`, `database.py`, `pdf_parser.py`, `static/captures/`)**:
+    - 과거 학년 구분 없이 등록되었던 하드코딩 기록에 의한 정답 왜곡을 원천 해소하기 위해 2026년도 전체 11개 세트의 정답표 원본 이미지(PNG)를 전수 대조
+    - 고3 6월/9월, 고1 3월/6월/9월, 고3 5월 등 총 38개 문항 정답 및 해설 `[정답] ○` 라벨 완전 교정 (`gichul.db`)
+    - 올바른 정답 선지에 파스텔 노란색 형광펜 하이라이트가 적용된 고화질 PDF 크롭 이미지 306개 일괄 재생성 (`static/captures/`)
+    - `hwp_parser.py`의 `KNOWN_EXAM_ANSWERS` 백업 사전을 학년 명시 표준 키(`고1_...`, `고2_...`, `고3_...`)로 정규화하여 재업로드 시 오염 가능성 원천 차단
+  - **문장 결과 화면 출처 링크 및 정답률 배지 겹침 UI 버그 해결 (`static/js/main.js`, `static/css/style.css`, `templates/index.html`)**:
+    - 출처 열(`td.col-source`)에 수직 레이아웃 컨테이너(`.source-cell-wrapper`)를 도입하여 1행에 출처 링크, 2행에 정답률 배지가 단정하게 분리되도록 개선
+    - 정답률 배지가 우측 문장 본문 열(`td.col-sentence`)을 침범하던 텍스트 겹침 현상 원천 해결
+    - 정답률 배지에 난이도 등급별 컬러 아이콘(`🔴`, `🟠`, `🟡`, `🟢`) 추가 및 `v=20260921_1855` 캐시 무효화 적용
+  - **SQLite WAL 임시 파일 무시 규칙 보강 (`.gitignore`)**:
+    - `gichul.db*` 패턴 적용으로 `gichul.db-wal`, `gichul.db-shm` 등 SQLite WAL 임시 파일의 Git 추적 원천 방지
+- **검증 결과**:
+  - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py rate_parser.py`: 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/main.js`: 자바스크립트 문법 검사 통과 (오류 0건)
+  - 10% 정답률 구간별 쿼리 테스트 8개 구간 정상 반환 확인
+  - 2026년 전체 11개 세트 308개 전 문항 정답, 해설, PDF 크롭 무결성 전수 검사 결과 100% 정상 판정 (불일치 0건)
+
 

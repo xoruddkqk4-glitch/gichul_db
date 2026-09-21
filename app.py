@@ -3,17 +3,19 @@
 - 구글 스타일 클린 검색 API (지문 검색 / 문장 검색)
 - 2x2 지문 뷰어용 상세 데이터 및 실시간 태그 API
 - 1행 테이블 문장 뷰어용 데이터 및 클립보드 복사 친화 API
-- PDF + HWP 상호 검증 업로드 파이프라인
+- PDF + HWP 상호 검증 업로드 파이프라인 (초고속 배치 쿼리 최적화)
 """
 
 import os
 import re
+import json
 import shutil
 import glob
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 import database as db
@@ -116,6 +118,7 @@ async def api_search_passages(
     month: Optional[int] = None,
     exam_type: str = "",
     question_type: str = "",
+    correct_rate_range: str = "",
     tag: str = "",
     whole_word: bool = False,
     limit: int = 0
@@ -135,11 +138,13 @@ async def api_search_passages(
         month=month,
         exam_type=exam_type,
         question_type=question_type,
+        correct_rate_range=correct_rate_range,
         tag=tag,
         whole_word=whole_word,
         limit=limit
     )
-    return {"count": len(results), "items": results}
+    payload = json.dumps({"count": len(results), "items": results}, ensure_ascii=False)
+    return Response(content=payload, media_type="application/json")
 
 
 @app.get("/api/search/sentences")
@@ -150,6 +155,8 @@ async def api_search_sentences(
     year: Optional[int] = None,
     month: Optional[int] = None,
     exam_type: str = "",
+    question_type: str = "",
+    correct_rate_range: str = "",
     tag: str = "",
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
@@ -172,6 +179,8 @@ async def api_search_sentences(
         year=year,
         month=month,
         exam_type=exam_type,
+        question_type=question_type,
+        correct_rate_range=correct_rate_range,
         tag=tag,
         is_starred=is_starred,
         grammar_cat_id=grammar_cat_id,
@@ -179,7 +188,8 @@ async def api_search_sentences(
         whole_word=whole_word,
         limit=limit
     )
-    return {"count": len(results), "items": results}
+    payload = json.dumps({"count": len(results), "items": results}, ensure_ascii=False)
+    return Response(content=payload, media_type="application/json")
 
 
 # --- 단일 지문 상세 API (2x2 그리드 뷰용) ---
@@ -743,9 +753,18 @@ async def api_upload_exam(
                     if q_num not in explanations or not explanations[q_num].get("explanation"):
                         explanations[q_num] = exp_info
 
-        # (3) 정답 딕셔너리 최종 결합: HWP 해설 -> 정답표 이미지(최우선) -> 기출 정답 사전
+        # (3) 정답 딕셔너리 최종 결합:
+        # 우선순위: 정답표 이미지(image_answers) [절대 최우선] > 정답률 CSV(rates_dict) > HWP 해설 > 기출 백업 사전
+        rates_dict = {}
+        if csv_save_path and os.path.exists(csv_save_path):
+            try:
+                rates_dict = parse_correct_rate_csv(csv_save_path)
+            except Exception as e:
+                print(f"[Upload] 정답률 CSV 파싱 실패: {e}")
+
         answers_dict = {}
-        # HWP 정답 반영
+
+        # 1. HWP 해설에서 기본 정답 수집
         for q_num, exp_data in explanations.items():
             ans = exp_data.get("answer", "").strip()
             if ans in CIRCLED_MAP:
@@ -753,43 +772,47 @@ async def api_upload_exam(
             if ans:
                 answers_dict[q_num] = ans
 
-        # 정답표 이미지 분석 결과가 있으면 최우선 반영 및 해설에 [정답] 표기 주입
-        if image_answers:
-            for q_num, ans in image_answers.items():
-                answers_dict[q_num] = ans
-                if q_num in explanations:
-                    explanations[q_num]["answer"] = ans
-                    exp_body = explanations[q_num].get("explanation", "").strip()
-                    if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
-                        explanations[q_num]["explanation"] = f"[정답] {ans}\n\n{exp_body}"
-                else:
-                    explanations[q_num] = {"answer": ans, "explanation": f"[정답] {ans}"}
-
-        # 기출 정답 백업 사전 참조 보강
-        exam_keys = [(grade, year, month), f"{year}_{month:02d}", f"{year}_{month}"]
+        # 2. 기출 정답 백업 사전 (정확한 학년 일치 시 미등록 문항 보강)
+        exam_keys = [f"{grade}_{year}_{month:02d}", (grade, year, month)]
         for ek in exam_keys:
             if ek in KNOWN_EXAM_ANSWERS:
                 backup_answers = KNOWN_EXAM_ANSWERS[ek]
                 for q_num, ans in backup_answers.items():
                     if q_num not in answers_dict or not answers_dict[q_num]:
                         answers_dict[q_num] = ans
-                        if q_num in explanations and not explanations[q_num].get("answer"):
-                            explanations[q_num]["answer"] = ans
                 break
 
-        # (4) 정답률 CSV 파일이 제공된 경우 정답률/선지 선택률 파싱 및 정답 사전 보강
-        rates_dict = {}
-        if csv_save_path and os.path.exists(csv_save_path):
-            try:
-                rates_dict = parse_correct_rate_csv(csv_save_path)
-                for q_num, item in rates_dict.items():
-                    c_circle = item.get("correct_ans_circle")
-                    if c_circle and (q_num not in answers_dict or not answers_dict[q_num]):
-                        answers_dict[q_num] = c_circle
-                        if q_num in explanations and not explanations[q_num].get("answer"):
-                            explanations[q_num]["answer"] = c_circle
-            except Exception as e:
-                print(f"[Upload] 정답률 CSV 파싱 실패: {e}")
+        # 3. 정답률 CSV의 정답 반영 (HWP 오답보다 우선)
+        if rates_dict:
+            for q_num, item in rates_dict.items():
+                c_circle = item.get("correct_ans_circle")
+                if c_circle:
+                    answers_dict[q_num] = c_circle
+
+        # 4. 정답표 이미지 분석 결과 반영 (★ 절대 최우선 기준: HWP 해설/CSV/백업의 어떤 값도 덮어씀)
+        if image_answers:
+            for q_num, ans in image_answers.items():
+                if ans in CIRCLED_MAP:
+                    ans = CIRCLED_MAP[ans]
+                if ans:
+                    answers_dict[q_num] = ans
+
+        # 5. 최종 확정된 정답(정답표 이미지 최우선)을 explanations 해설 텍스트 헤더 및 answer 필드에 강제 동기화
+        for q_num, final_ans in answers_dict.items():
+            if q_num in explanations:
+                explanations[q_num]["answer"] = final_ans
+                exp_body = explanations[q_num].get("explanation", "").strip()
+                # 기존 [정답] 라벨이 오기입되어 있더라도 정규식 치환으로 최우선 정답 번호로 교체
+                if re.search(r"^\s*\[\s*정답\s*\]", exp_body):
+                    explanations[q_num]["explanation"] = re.sub(
+                        r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?",
+                        f"[정답] {final_ans}",
+                        exp_body
+                    )
+                else:
+                    explanations[q_num]["explanation"] = f"[정답] {final_ans}\n\n{exp_body}".strip()
+            else:
+                explanations[q_num] = {"answer": final_ans, "explanation": f"[정답] {final_ans}"}
 
         # 4. PDF 문제지 파싱 및 캡처 (정답 선지 형광펜 하이라이트 연동)
         pdf_questions = extract_pdf_columns_and_questions(
@@ -1063,12 +1086,13 @@ class SelectiveDeleteRequest(BaseModel):
     delete_raw_files: bool = True
     delete_core_corpus: bool = True
     delete_metadata: bool = True
+    delete_rate_data: bool = False
 
 
 @app.post("/api/exams/selective-delete")
 async def api_selective_delete_exams(req: SelectiveDeleteRequest):
     """
-    모의고사 데이터를 3개 영역(원본 파일, 코어 본문, 메타데이터)으로 구분하여 선택적 삭제
+    모의고사 데이터를 4개 영역(원본 파일, 코어 본문, 메타데이터, 정답률 데이터)으로 구분하여 선택적 삭제
     """
     try:
         results = []
@@ -1077,7 +1101,8 @@ async def api_selective_delete_exams(req: SelectiveDeleteRequest):
                 exam_id=eid,
                 delete_raw=req.delete_raw_files,
                 delete_core=req.delete_core_corpus,
-                delete_metadata=req.delete_metadata
+                delete_metadata=req.delete_metadata,
+                delete_rate=req.delete_rate_data
             )
             results.append(r)
 
@@ -1086,6 +1111,7 @@ async def api_selective_delete_exams(req: SelectiveDeleteRequest):
         deleted_passages = sum(r.get("deleted_passages_count", 0) for r in results)
         deleted_sentences = sum(r.get("deleted_sentences_count", 0) for r in results)
         deleted_grammar = sum(r.get("deleted_grammar_count", 0) for r in results)
+        deleted_rates = sum(r.get("deleted_rate_count", 0) for r in results)
 
         return {
             "status": "success",
@@ -1095,6 +1121,7 @@ async def api_selective_delete_exams(req: SelectiveDeleteRequest):
             "deleted_passages": deleted_passages,
             "deleted_sentences": deleted_sentences,
             "deleted_grammar": deleted_grammar,
+            "deleted_rates": deleted_rates,
             "details": results
         }
     except Exception as e:

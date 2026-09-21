@@ -1292,13 +1292,25 @@ body {
 }
 
 .col-source {
-  width: 185px;
-  min-width: 175px;
-  max-width: 200px;
-  padding: 0.6rem 0.35rem !important;
+  width: 190px;
+  min-width: 180px;
+  max-width: 210px;
+  padding: 0.6rem 0.5rem !important;
   font-weight: 700;
   color: var(--primary);
+  vertical-align: top;
+}
+
+.source-cell-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.28rem;
+}
+
+.source-cell-wrapper .choice-rates-difficulty-badge {
   white-space: nowrap !important;
+  margin-top: 0 !important;
 }
 
 .btn-source-link {

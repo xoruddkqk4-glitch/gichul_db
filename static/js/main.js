@@ -48,6 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const filterMonth = document.getElementById("filterMonth");
   const filterExamType = document.getElementById("filterExamType");
   const filterQuestionType = document.getElementById("filterQuestionType");
+  const filterCorrectRate = document.getElementById("filterCorrectRate");
   const filterTag = document.getElementById("filterTag");
 
   // 화면 2: 결과창 화면
@@ -69,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultsFilterMonth = document.getElementById("resultsFilterMonth");
   const resultsFilterExamType = document.getElementById("resultsFilterExamType");
   const resultsFilterQuestionType = document.getElementById("resultsFilterQuestionType");
+  const resultsFilterCorrectRate = document.getElementById("resultsFilterCorrectRate");
   const btnResetResultsFilters = document.getElementById("btnResetResultsFilters");
   const btnResetHomeFilters = document.getElementById("btnResetHomeFilters");
   const resultsTotalCount = document.getElementById("resultsTotalCount");
@@ -292,6 +294,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultsFilterMonth) filterMonth.value = resultsFilterMonth.value;
     if (resultsFilterExamType) filterExamType.value = resultsFilterExamType.value;
     if (resultsFilterQuestionType) filterQuestionType.value = resultsFilterQuestionType.value;
+    if (resultsFilterCorrectRate) filterCorrectRate.value = resultsFilterCorrectRate.value;
 
     window.scrollTo({ top: 0, behavior: "smooth" });
     mainSearchInput.focus();
@@ -417,6 +420,7 @@ document.addEventListener("DOMContentLoaded", () => {
       filterMonth.value = "";
       filterExamType.value = "";
       filterQuestionType.value = "";
+      if (filterCorrectRate) filterCorrectRate.value = "";
       if (filterTag) filterTag.value = "";
 
       if (resultsFilterGrade) resultsFilterGrade.value = "";
@@ -424,6 +428,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (resultsFilterMonth) resultsFilterMonth.value = "";
       if (resultsFilterExamType) resultsFilterExamType.value = "";
       if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+      if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
 
       setMode("passage");
       updateClearButtons();
@@ -499,6 +504,7 @@ document.addEventListener("DOMContentLoaded", () => {
       month = "";
       examType = "";
       questionType = "";
+      correctRateRange = "";
       tag = "";
     } else if (source === "home") {
       const parsed = parseSearchQuery(mainSearchInput.value);
@@ -509,6 +515,7 @@ document.addEventListener("DOMContentLoaded", () => {
       month = filterMonth.value;
       examType = filterExamType ? filterExamType.value : "";
       questionType = filterQuestionType ? filterQuestionType.value : "";
+      correctRateRange = filterCorrectRate ? filterCorrectRate.value : "";
 
       // 결과창 바에 동기화
       if (resultsSearchInput) resultsSearchInput.value = mainSearchInput.value.trim();
@@ -517,6 +524,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (resultsFilterMonth) resultsFilterMonth.value = month;
       if (resultsFilterExamType) resultsFilterExamType.value = examType;
       if (resultsFilterQuestionType) resultsFilterQuestionType.value = questionType;
+      if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = correctRateRange;
       if (resultsFilterGrammarPos && filterGrammarPos) resultsFilterGrammarPos.value = filterGrammarPos.value;
       if (resultsFilterGrammarCategory && filterGrammarCategory) resultsFilterGrammarCategory.value = filterGrammarCategory.value;
     } else {
@@ -528,6 +536,7 @@ document.addEventListener("DOMContentLoaded", () => {
       month = resultsFilterMonth.value;
       examType = resultsFilterExamType.value;
       questionType = resultsFilterQuestionType.value;
+      correctRateRange = resultsFilterCorrectRate ? resultsFilterCorrectRate.value : "";
 
       // 홈 바에 역동기화
       mainSearchInput.value = resultsSearchInput.value.trim();
@@ -536,6 +545,7 @@ document.addEventListener("DOMContentLoaded", () => {
       filterMonth.value = month;
       filterExamType.value = examType;
       filterQuestionType.value = questionType;
+      if (filterCorrectRate) filterCorrectRate.value = correctRateRange;
       if (filterGrammarPos && resultsFilterGrammarPos) filterGrammarPos.value = resultsFilterGrammarPos.value;
       if (filterGrammarCategory && resultsFilterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
     }
@@ -562,6 +572,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (month) params.append("month", month);
     if (examType) params.append("exam_type", examType);
     if (questionType) params.append("question_type", questionType);
+    if (correctRateRange) params.append("correct_rate_range", correctRateRange);
     if (tag) params.append("tag", tag);
 
     const activeGrammarPos = (resultsFilterGrammarPos && resultsFilterGrammarPos.value) || (filterGrammarPos && filterGrammarPos.value) || "";
@@ -874,9 +885,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const hasMonth = !!((resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value));
     const hasExamType = !!((resultsFilterExamType && resultsFilterExamType.value) || (filterExamType && filterExamType.value));
     const hasQuestionType = !!((resultsFilterQuestionType && resultsFilterQuestionType.value) || (filterQuestionType && filterQuestionType.value));
+    const hasCorrectRate = !!((resultsFilterCorrectRate && resultsFilterCorrectRate.value) || (filterCorrectRate && filterCorrectRate.value));
     const hasGrammarPos = !!((resultsFilterGrammarPos && resultsFilterGrammarPos.value) || (filterGrammarPos && filterGrammarPos.value));
     const hasGrammarCat = !!((resultsFilterGrammarCategory && resultsFilterGrammarCategory.value) || (filterGrammarCategory && filterGrammarCategory.value));
-    return hasKeyword || hasGrade || hasYear || hasMonth || hasExamType || hasQuestionType || hasGrammarPos || hasGrammarCat || !!isStarredFilterActive || !!isSearchWithinActive;
+    return hasKeyword || hasGrade || hasYear || hasMonth || hasExamType || hasQuestionType || hasCorrectRate || hasGrammarPos || hasGrammarCat || !!isStarredFilterActive || !!isSearchWithinActive;
   }
 
   /** 검색 조건 초기화 버튼 가시성 및 필터 드롭다운 active 스타일 업데이트 */
@@ -890,6 +902,7 @@ document.addEventListener("DOMContentLoaded", () => {
       [filterMonth, resultsFilterMonth],
       [filterExamType, resultsFilterExamType],
       [filterQuestionType, resultsFilterQuestionType],
+      [filterCorrectRate, resultsFilterCorrectRate],
     ];
     pairs.forEach(([homeEl, resEl]) => {
       if (homeEl) homeEl.classList.toggle("active", !!homeEl.value);
@@ -926,6 +939,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultsFilterExamType) resultsFilterExamType.value = "";
     if (filterQuestionType) filterQuestionType.value = "";
     if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+    if (filterCorrectRate) filterCorrectRate.value = "";
+    if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
     if (filterTag) filterTag.value = "";
 
     // 3. 어법 필터 초기화
@@ -967,14 +982,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 홈 필터 드롭다운 변경 시 초기화 버튼 상태 업데이트
-  [filterGrade, filterYear, filterMonth, filterExamType, filterQuestionType].forEach((el) => {
+  [filterGrade, filterYear, filterMonth, filterExamType, filterQuestionType, filterCorrectRate].forEach((el) => {
     if (el) {
       el.addEventListener("change", updateFilterResetButtonsUI);
     }
   });
 
   // 결과창 필터 변경 시 자동 재검색 (필터 변경은 항상 DB 전체 기반으로 재검색)
-  [resultsFilterGrade, resultsFilterYear, resultsFilterMonth, resultsFilterExamType, resultsFilterQuestionType].forEach((el) => {
+  [resultsFilterGrade, resultsFilterYear, resultsFilterMonth, resultsFilterExamType, resultsFilterQuestionType, resultsFilterCorrectRate].forEach((el) => {
     if (el) {
       el.addEventListener("change", () => {
         setSearchWithinState(false);
@@ -988,12 +1003,21 @@ document.addEventListener("DOMContentLoaded", () => {
   // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
   // =========================================================================
 
-  /** 41~42번(1지문2문항), 43~45번(1지문3문항)을 단일 탭으로 병합 */
+  /** 41~42번(1지문2문항), 43~45번(1지문3문항)을 단일 탭으로 병합 (O(1) Map 색인 최적화) */
   function groupPassageItems(rawItems) {
     if (!rawItems || rawItems.length === 0) return [];
 
     const result = [];
     const handledIds = new Set();
+
+    // 대량 데이터 고속 처리를 위해 exam_id + q_num 인덱스 Map 사전 구축
+    const itemMap = new Map();
+    for (let i = 0; i < rawItems.length; i++) {
+      const it = rawItems[i];
+      if (it.exam_id && it.q_num !== undefined) {
+        itemMap.set(`${it.exam_id}_${it.q_num}`, it);
+      }
+    }
 
     for (let i = 0; i < rawItems.length; i++) {
       const p = rawItems[i];
@@ -1001,7 +1025,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // 41~42번 (1지문 2문항) 통합
       if (p.q_num === 41 || (p.question_type === "1지문2문항" && p.q_num === 41)) {
-        const p42 = rawItems.find(item => item.q_num === 42 && item.exam_id === p.exam_id);
+        const p42 = itemMap.get(`${p.exam_id}_42`);
         if (p42) {
           handledIds.add(p.id);
           handledIds.add(p42.id);
@@ -1033,8 +1057,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // 43~45번 (1지문 3문항) 통합
       if (p.q_num === 43 || (p.question_type === "1지문3문항" && p.q_num === 43)) {
-        const p44 = rawItems.find(item => item.q_num === 44 && item.exam_id === p.exam_id);
-        const p45 = rawItems.find(item => item.q_num === 45 && item.exam_id === p.exam_id);
+        const p44 = itemMap.get(`${p.exam_id}_44`);
+        const p45 = itemMap.get(`${p.exam_id}_45`);
         if (p44 && p45) {
           handledIds.add(p.id);
           handledIds.add(p44.id);
@@ -1079,6 +1103,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     return result;
   }
+
 
   /** 42번, 44번, 45번 등 복합 지문 하위 문항에서 지문 본문 반복을 제외하고 발문+선지만 추출 */
   function extractQuestionChoicesOnly(text, questionTitle) {
@@ -1133,6 +1158,42 @@ document.addEventListener("DOMContentLoaded", () => {
     return tree;
   }
 
+  /** 학년 정렬 헬퍼: 3학년 -> 2학년 -> 1학년 내림차순 정렬 (고3 -> 고2 -> 고1) */
+  function sortGradesDescending(gradesList) {
+    return [...gradesList].sort((a, b) => {
+      const numA = parseInt(String(a).replace(/[^0-9]/g, ""), 10) || 0;
+      const numB = parseInt(String(b).replace(/[^0-9]/g, ""), 10) || 0;
+      if (numB !== numA) {
+        return numB - numA; // 내림차순: 3 -> 2 -> 1
+      }
+      return String(b).localeCompare(String(a));
+    });
+  }
+
+  /** 년도 정렬 헬퍼: 최신 년도 내림차순 (2026 -> 2025 -> 2024 ...) */
+  function sortYearsDescending(yearsList) {
+    return [...yearsList].sort((a, b) => {
+      const numA = parseInt(String(a).replace(/[^0-9]/g, ""), 10) || 0;
+      const numB = parseInt(String(b).replace(/[^0-9]/g, ""), 10) || 0;
+      if (numB !== numA) {
+        return numB - numA;
+      }
+      return String(b).localeCompare(String(a));
+    });
+  }
+
+  /** 월 정렬 헬퍼: 최신 월 내림차순 (11월 -> 9월 -> 6월 -> 3월 ...) */
+  function sortMonthsDescending(monthsList) {
+    return [...monthsList].sort((a, b) => {
+      const numA = parseInt(String(a).replace(/[^0-9]/g, ""), 10) || 0;
+      const numB = parseInt(String(b).replace(/[^0-9]/g, ""), 10) || 0;
+      if (numB !== numA) {
+        return numB - numA;
+      }
+      return String(b).localeCompare(String(a));
+    });
+  }
+
   /** 지문 결과 화면 렌더링 (트리 계층 기반) */
   function renderPassageView(items, targetPassageId = null) {
     if (!items || items.length === 0) {
@@ -1146,14 +1207,14 @@ document.addEventListener("DOMContentLoaded", () => {
     passageViewContainer.style.display = "flex";
 
     const tree = buildExamTree(items);
-    const grades = Object.keys(tree);
+    const grades = sortGradesDescending(Object.keys(tree));
 
     // 단일 시험인지 확인: 총 고유 (grade, year, month) 조합 개수 계산
     let totalExamsCount = 0;
     let singleExamCombo = null;
     grades.forEach((g) => {
-      Object.keys(tree[g]).forEach((y) => {
-        Object.keys(tree[g][y]).forEach((m) => {
+      sortYearsDescending(Object.keys(tree[g])).forEach((y) => {
+        sortMonthsDescending(Object.keys(tree[g][y])).forEach((m) => {
           totalExamsCount++;
           singleExamCombo = { grade: g, year: y, month: m };
         });
@@ -1187,7 +1248,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (treeNavState.grade && tree[treeNavState.grade]) {
-        const years = Object.keys(tree[treeNavState.grade]);
+        const years = sortYearsDescending(Object.keys(tree[treeNavState.grade]));
         if (!treeNavState.year || !tree[treeNavState.grade][treeNavState.year]) {
           if (years.length === 1) {
             treeNavState.year = years[0];
@@ -1199,7 +1260,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (treeNavState.grade && treeNavState.year && tree[treeNavState.grade]?.[treeNavState.year]) {
-        const months = Object.keys(tree[treeNavState.grade][treeNavState.year]);
+        const months = sortMonthsDescending(Object.keys(tree[treeNavState.grade][treeNavState.year]));
         if (!treeNavState.month || !tree[treeNavState.grade][treeNavState.year][treeNavState.month]) {
           if (months.length === 1) {
             treeNavState.month = months[0];
@@ -1216,12 +1277,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /** 트리 단계에 따라 상위 선택기 / 최하위 문항 1행 10개 탭 전환 */
   function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
-    const grades = Object.keys(tree);
+    const grades = sortGradesDescending(Object.keys(tree));
 
     // 상단 브레드크럼 갱신
     renderBreadcrumb(tree, allItems, totalExamsCount);
 
-    // Case 1: 학년 미선택 상태 -> 학년 선택 버튼들 표시
+    // Case 1: 학년 미선택 상태 -> 학년 선택 버튼들 표시 (3학년 -> 2학년 -> 1학년 내림차순 정렬)
     if (!treeNavState.grade || !tree[treeNavState.grade]) {
       treeStepSelector.style.display = "flex";
       passageTabBar.style.display = "none";
@@ -1230,8 +1291,8 @@ document.addEventListener("DOMContentLoaded", () => {
       let html = `<span class="tree-step-title">📁 학년 선택:</span><div class="tree-step-buttons">`;
       grades.forEach((g) => {
         let count = 0;
-        Object.keys(tree[g]).forEach((y) => {
-          Object.keys(tree[g][y]).forEach((m) => {
+        sortYearsDescending(Object.keys(tree[g])).forEach((y) => {
+          sortMonthsDescending(Object.keys(tree[g][y])).forEach((m) => {
             count += tree[g][y][m].items.length;
           });
         });
@@ -1245,10 +1306,10 @@ document.addEventListener("DOMContentLoaded", () => {
           treeNavState.grade = btn.dataset.grade;
           treeNavState.year = null;
           treeNavState.month = null;
-          const years = Object.keys(tree[treeNavState.grade] || {});
+          const years = sortYearsDescending(Object.keys(tree[treeNavState.grade] || {}));
           if (years.length === 1) {
             treeNavState.year = years[0];
-            const months = Object.keys(tree[treeNavState.grade][treeNavState.year] || {});
+            const months = sortMonthsDescending(Object.keys(tree[treeNavState.grade][treeNavState.year] || {}));
             if (months.length === 1) {
               treeNavState.month = months[0];
             }
@@ -1259,8 +1320,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Case 2: 학년 선택됨, 년도 미선택 상태 -> 년도 선택 버튼들 표시
-    const years = Object.keys(tree[treeNavState.grade] || {});
+    // Case 2: 학년 선택됨, 년도 미선택 상태 -> 년도 선택 버튼들 표시 (최신 년도 내림차순 정렬)
+    const years = sortYearsDescending(Object.keys(tree[treeNavState.grade] || {}));
     if (!treeNavState.year || !tree[treeNavState.grade][treeNavState.year]) {
       treeStepSelector.style.display = "flex";
       passageTabBar.style.display = "none";
@@ -1269,7 +1330,7 @@ document.addEventListener("DOMContentLoaded", () => {
       let html = `<span class="tree-step-title">📅 [${escapeHtml(treeNavState.grade)}] 년도 선택:</span><div class="tree-step-buttons">`;
       years.forEach((y) => {
         let count = 0;
-        Object.keys(tree[treeNavState.grade][y]).forEach((m) => {
+        sortMonthsDescending(Object.keys(tree[treeNavState.grade][y])).forEach((m) => {
           count += tree[treeNavState.grade][y][m].items.length;
         });
         html += `<button type="button" class="btn-tree-chip" data-year="${escapeHtml(y)}">${escapeHtml(y)} <span class="chip-count">${count}</span></button>`;
@@ -1281,7 +1342,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", () => {
           treeNavState.year = btn.dataset.year;
           treeNavState.month = null;
-          const months = Object.keys(tree[treeNavState.grade][treeNavState.year] || {});
+          const months = sortMonthsDescending(Object.keys(tree[treeNavState.grade][treeNavState.year] || {}));
           if (months.length === 1) {
             treeNavState.month = months[0];
           }
@@ -1291,8 +1352,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Case 3: 학년과 년도 선택됨, 월 미선택 상태 -> 월 선택 버튼들 표시
-    const months = Object.keys(tree[treeNavState.grade][treeNavState.year] || {});
+    // Case 3: 학년과 년도 선택됨, 월 미선택 상태 -> 월 선택 버튼들 표시 (최신 월 내림차순 정렬)
+    const months = sortMonthsDescending(Object.keys(tree[treeNavState.grade][treeNavState.year] || {}));
     if (!treeNavState.month || !tree[treeNavState.grade][treeNavState.year][treeNavState.month]) {
       treeStepSelector.style.display = "flex";
       passageTabBar.style.display = "none";
@@ -1316,6 +1377,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       return;
     }
+
 
     // Case 4: 학년, 년도, 월 모두 선택 완료! -> 상위 선택 버튼들은 숨기고, 최하위 문항 탭만 1행 10개로 표시!
     treeStepSelector.style.display = "none";
@@ -2277,6 +2339,20 @@ document.addEventListener("DOMContentLoaded", () => {
       // 출처 ID에서 문항 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번])
       const targetPassageId = s.passage_id || extractPassageId(s.id);
 
+      // 문항 정답률 배지 생성 (문장 결과 테이블에서도 직관적 확인 지원)
+      let rateBadgeHtml = "";
+      if (s.correct_rate !== null && s.correct_rate !== undefined && s.correct_rate !== "") {
+        const rVal = parseFloat(s.correct_rate);
+        if (!isNaN(rVal)) {
+          let badgeCls = "badge-rate-easy";
+          let badgeIcon = "🟢";
+          if (rVal < 40.0) { badgeCls = "badge-rate-killer"; badgeIcon = "🔴"; }
+          else if (rVal < 60.0) { badgeCls = "badge-rate-hard"; badgeIcon = "🟠"; }
+          else if (rVal < 80.0) { badgeCls = "badge-rate-medium"; badgeIcon = "🟡"; }
+          rateBadgeHtml = `<span class="choice-rates-difficulty-badge ${badgeCls}" style="font-size: 0.72rem; padding: 0.12rem 0.45rem; line-height: 1.2; display: inline-flex; align-items: center; gap: 3px;" title="문항 정답률: ${rVal.toFixed(1)}%">${badgeIcon} 정답률 ${rVal.toFixed(1)}%</span>`;
+        }
+      }
+
       // 검색 표현 형광펜 하이라이트 적용
       const highlightedSentence = highlightSentenceKeyword(s.sentence_text, currentQuery);
       const isStarred = s.is_starred === 1 || s.is_starred === true;
@@ -2289,9 +2365,12 @@ document.addEventListener("DOMContentLoaded", () => {
         </td>
         <td class="col-num">${s.row_num}</td>
         <td class="col-source">
-          <button type="button" class="btn-source-link" data-passage-id="${escapeHtml(targetPassageId)}" title="클릭하여 ${escapeHtml(targetPassageId)} 지문 결과 화면으로 이동">
-            🔗 ${escapeHtml(s.id)}
-          </button>
+          <div class="source-cell-wrapper">
+            <button type="button" class="btn-source-link" data-passage-id="${escapeHtml(targetPassageId)}" title="클릭하여 ${escapeHtml(targetPassageId)} 지문 결과 화면으로 이동">
+              🔗 ${escapeHtml(s.id)}
+            </button>
+            ${rateBadgeHtml}
+          </div>
         </td>
         <td class="col-sentence">
           <div>${highlightedSentence}</div>
@@ -3288,10 +3367,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const chkDelRawFiles = document.getElementById("chkDelRawFiles");
   const chkDelCoreCorpus = document.getElementById("chkDelCoreCorpus");
   const chkDelMetadata = document.getElementById("chkDelMetadata");
+  const chkDelRateData = document.getElementById("chkDelRateData");
+  const selDelRateBadge = document.getElementById("selDelRateBadge");
   const selDelWarningMsg = document.getElementById("selDelWarningMsg");
   const btnPresetFullWipe = document.getElementById("btnPresetFullWipe");
   const btnPresetRawOnly = document.getElementById("btnPresetRawOnly");
   const btnPresetMetaOnly = document.getElementById("btnPresetMetaOnly");
+  const btnPresetRateOnly = document.getElementById("btnPresetRateOnly");
 
   let loadedExamsCache = [];
   let pendingDeleteExamIds = [];
@@ -3885,12 +3967,13 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // 대상들의 3대 영역 통계 집계
+    // 대상들의 4대 영역 통계 집계
     let totalRawMb = 0;
     let totalRawCount = 0;
     let totalPassages = 0;
     let totalSentences = 0;
     let totalGrammar = 0;
+    let totalRated = 0;
 
     targetExams.forEach(ex => {
       totalRawMb += (ex.raw_file_size_mb || 0);
@@ -3898,6 +3981,9 @@ document.addEventListener("DOMContentLoaded", () => {
       totalPassages += (ex.passage_count || 0);
       totalSentences += (ex.sentence_count || 0);
       totalGrammar += (ex.grammar_count || 0);
+      if (ex.file_status && ex.file_status.csv) {
+        totalRated += (ex.file_status.csv.rated_count || 0);
+      }
     });
 
     if (selDelRawSizeBadge) {
@@ -3910,6 +3996,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (selDelMetaBadge) {
       selDelMetaBadge.textContent = `총 어법 ${totalGrammar}개 등록됨`;
+    }
+    if (selDelRateBadge) {
+      selDelRateBadge.textContent = (totalRated > 0)
+        ? `총 ${totalRated}문항 정답률 등록됨`
+        : "정답률 데이터 없음";
     }
 
     // 기본값: 전체 완전 삭제 프리셋 적용
@@ -3940,18 +4031,40 @@ document.addEventListener("DOMContentLoaded", () => {
       chkDelCoreCorpus.checked = true;
       chkDelMetadata.checked = true;
       chkDelMetadata.disabled = true; // 코어 삭제 시 메타도 종속 삭제
+      if (chkDelRateData) {
+        chkDelRateData.checked = true;
+        chkDelRateData.disabled = true; // 코어 삭제 시 정답률도 종속 삭제
+      }
     } else if (preset === "raw_only") {
       // 2) 원본 파일만 삭제
       chkDelRawFiles.checked = true;
       chkDelCoreCorpus.checked = false;
       chkDelMetadata.checked = false;
       chkDelMetadata.disabled = false;
+      if (chkDelRateData) {
+        chkDelRateData.checked = false;
+        chkDelRateData.disabled = false;
+      }
     } else if (preset === "meta_only") {
       // 3) 메타데이터만 초기화
       chkDelRawFiles.checked = false;
       chkDelCoreCorpus.checked = false;
       chkDelMetadata.checked = true;
       chkDelMetadata.disabled = false;
+      if (chkDelRateData) {
+        chkDelRateData.checked = false;
+        chkDelRateData.disabled = false;
+      }
+    } else if (preset === "rate_only") {
+      // 4) 정답률 데이터만 초기화
+      chkDelRawFiles.checked = false;
+      chkDelCoreCorpus.checked = false;
+      chkDelMetadata.checked = false;
+      chkDelMetadata.disabled = false;
+      if (chkDelRateData) {
+        chkDelRateData.checked = true;
+        chkDelRateData.disabled = false;
+      }
     }
 
     validateSelectiveDeleteOptions();
@@ -3966,15 +4079,25 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnPresetMetaOnly) {
     btnPresetMetaOnly.addEventListener("click", () => applySelectiveDeletePreset("meta_only"));
   }
+  if (btnPresetRateOnly) {
+    btnPresetRateOnly.addEventListener("click", () => applySelectiveDeletePreset("rate_only"));
+  }
 
-  // 코어 본문 체크 시 메타데이터 자동 체크 및 disabled 처리 (종속 관계)
+  // 코어 본문 체크 시 메타데이터/정답률 자동 체크 및 disabled 처리 (종속 관계)
   if (chkDelCoreCorpus) {
     chkDelCoreCorpus.addEventListener("change", () => {
       if (chkDelCoreCorpus.checked) {
         chkDelMetadata.checked = true;
         chkDelMetadata.disabled = true;
+        if (chkDelRateData) {
+          chkDelRateData.checked = true;
+          chkDelRateData.disabled = true;
+        }
       } else {
         chkDelMetadata.disabled = false;
+        if (chkDelRateData) {
+          chkDelRateData.disabled = false;
+        }
       }
       validateSelectiveDeleteOptions();
     });
@@ -3986,13 +4109,17 @@ document.addEventListener("DOMContentLoaded", () => {
   if (chkDelMetadata) {
     chkDelMetadata.addEventListener("change", validateSelectiveDeleteOptions);
   }
+  if (chkDelRateData) {
+    chkDelRateData.addEventListener("change", validateSelectiveDeleteOptions);
+  }
 
   function validateSelectiveDeleteOptions() {
     const hasRaw = chkDelRawFiles && chkDelRawFiles.checked;
     const hasCore = chkDelCoreCorpus && chkDelCoreCorpus.checked;
     const hasMeta = chkDelMetadata && chkDelMetadata.checked;
+    const hasRate = chkDelRateData && chkDelRateData.checked;
 
-    const anySelected = hasRaw || hasCore || hasMeta;
+    const anySelected = hasRaw || hasCore || hasMeta || hasRate;
 
     if (selDelWarningMsg) {
       selDelWarningMsg.style.display = anySelected ? "none" : "block";
@@ -4007,19 +4134,24 @@ document.addEventListener("DOMContentLoaded", () => {
     btnExecuteSelectiveDelete.addEventListener("click", async () => {
       if (!pendingDeleteExamIds || pendingDeleteExamIds.length === 0) return;
 
-      const deleteRaw = chkDelRawFiles.checked;
-      const deleteCore = chkDelCoreCorpus.checked;
-      const deleteMeta = chkDelMetadata.checked;
+      const deleteRaw = chkDelRawFiles ? chkDelRawFiles.checked : false;
+      const deleteCore = chkDelCoreCorpus ? chkDelCoreCorpus.checked : false;
+      const deleteMeta = chkDelMetadata ? chkDelMetadata.checked : false;
+      const deleteRate = chkDelRateData ? chkDelRateData.checked : false;
 
-      if (!deleteRaw && !deleteCore && !deleteMeta) {
+      if (!deleteRaw && !deleteCore && !deleteMeta && !deleteRate) {
         alert("최소 1개 이상의 데이터 영역을 선택해 주세요.");
         return;
       }
 
       const actions = [];
       if (deleteRaw) actions.push("📁 원본 파일");
-      if (deleteCore) actions.push("📄 코어 본문 데이터(지문·문장)");
-      else if (deleteMeta) actions.push("🏷️ 부가 메타데이터(어법/태그)");
+      if (deleteCore) {
+        actions.push("📄 코어 본문 데이터(지문·문장)");
+      } else {
+        if (deleteMeta) actions.push("🏷️ 부가 메타데이터(어법/태그)");
+        if (deleteRate) actions.push("📊 정답률 데이터");
+      }
 
       const msg = `선택한 ${pendingDeleteExamIds.length}개 시험지에서 [${actions.join(", ")}] 영역을 삭제하시겠습니까?`;
       if (!confirm(msg)) return;
@@ -4035,7 +4167,8 @@ document.addEventListener("DOMContentLoaded", () => {
             exam_ids: pendingDeleteExamIds,
             delete_raw_files: deleteRaw,
             delete_core_corpus: deleteCore,
-            delete_metadata: deleteMeta
+            delete_metadata: deleteMeta,
+            delete_rate_data: deleteRate
           })
         });
         const data = await res.json();
@@ -4044,12 +4177,27 @@ document.addEventListener("DOMContentLoaded", () => {
           showToast(`선택한 ${data.processed_count || pendingDeleteExamIds.length}개 시험지의 지정된 데이터가 안전하게 처리되었습니다.`, "success");
           closeSelectiveDeleteModal();
           loadExamsManagerList();
+          loadFilesStatusList();
           loadStats();
 
-          // 코어 본문이 삭제되었고 현재 보고 있던 지문이 해당 시험지인 경우 홈으로 이동
-          if (deleteCore && currentPassageId) {
+          // 코어 본문이 삭제되었거나 정답률이 삭제되었고 현재 보고 있던 지문이 해당 시험지인 경우
+          if (currentPassageId) {
             const affected = pendingDeleteExamIds.some(id => currentPassageId.includes(id.replace(/[\[\]]/g, "")));
-            if (affected) showHomeScreen();
+            if (affected) {
+              if (deleteCore) {
+                showHomeScreen();
+              } else if (deleteRate) {
+                try {
+                  const pRes = await fetch(`/api/passages/${currentPassageId}`);
+                  if (pRes.ok) {
+                    const updatedP = await pRes.json();
+                    renderChoiceRates(updatedP);
+                  }
+                } catch (pErr) {
+                  console.error("정답률 패널 갱신 오류:", pErr);
+                }
+              }
+            }
           }
         } else {
           alert(`삭제 실패: ${data.detail || "오류가 발생했습니다."}`);

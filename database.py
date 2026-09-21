@@ -11,6 +11,7 @@ import json
 import re
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+from collections import defaultdict
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gichul.db")
 
@@ -30,6 +31,11 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA cache_size = -64000;")
+    conn.execute("PRAGMA mmap_size = 268435456;")
+    conn.execute("PRAGMA temp_store = MEMORY;")
     conn.create_function("REGEXP", 2, _regexp_func)
     return conn
 
@@ -155,6 +161,27 @@ def init_db():
         except Exception as mig_err:
             print(f"[Init DB Blank Sentence Migration Error] {mig_err}")
 
+        # passages 테이블의 해설(explanation_text) 상단 [정답] 표기를 정답표 이미지/검증 정답(answer_text)과 자동 동기화
+        try:
+            cursor.execute("SELECT id, answer_text, explanation_text FROM passages WHERE answer_text IS NOT NULL AND TRIM(answer_text) != '' AND explanation_text IS NOT NULL")
+            p_rows = cursor.fetchall()
+            for pr in p_rows:
+                ans = pr["answer_text"].strip()
+                exp = pr["explanation_text"] or ""
+                if not exp:
+                    continue
+                m = re.search(r"^\s*\[\s*정답\s*\]\s*([①②③④⑤1-5]?)", exp)
+                if m:
+                    cur_ans = m.group(1)
+                    if cur_ans != ans:
+                        new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp)
+                        cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
+                else:
+                    new_exp = f"[정답] {ans}\n\n{exp.strip()}".strip()
+                    cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
+        except Exception as sync_err:
+            print(f"[Init DB Answer Sync Error] {sync_err}")
+
 
         # 4. 지문 태그 테이블
         cursor.execute("""
@@ -208,13 +235,17 @@ def init_db():
 
         # 인덱스 생성
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam ON passages(exam_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam_qnum ON passages(exam_id, q_num);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_passage ON sentences(passage_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_pid ON passage_tags(passage_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_tag ON passage_tags(tag_name);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_sid ON sentence_tags(sentence_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_tag ON sentence_tags(tag_name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_cat ON sentence_grammar_annotations(category_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_pos ON sentence_grammar_annotations(pos);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_starred ON sentences(is_starred);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_analyzed ON sentences(grammar_analyzed);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_correct_rate ON passages(correct_rate);")
 
         conn.commit()
 
@@ -361,13 +392,15 @@ def selective_delete_exam(
     exam_id: str,
     delete_raw: bool = True,
     delete_core: bool = True,
-    delete_metadata: bool = True
+    delete_metadata: bool = True,
+    delete_rate: bool = False
 ) -> Dict[str, Any]:
     """
-    모의고사 데이터를 3개 영역(원본 파일, 코어 본문, 메타데이터)으로 구분하여 선택적으로 삭제
+    모의고사 데이터를 4개 영역(원본 파일, 코어 본문, 메타데이터, 정답률 데이터)으로 구분하여 선택적으로 삭제
     - delete_raw: uploads/ 폴더의 원본 PDF/HWP 파일 삭제
     - delete_core: gichul.db의 exams/passages/sentences 및 static/captures/ 크롭 이미지 삭제 (FK Cascade)
     - delete_metadata: 코어 본문은 유지하고 어법 분석(annotations) 및 태그(tags)만 초기화
+    - delete_rate: 코어 본문은 유지하고 문항별 정답률/선지선택률(correct_rate, choice_rates) 및 uploads/ 정답률 CSV 삭제
     """
     import glob
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -397,8 +430,10 @@ def selective_delete_exam(
             "deleted_captures_count": 0,
             "deleted_grammar_count": 0,
             "deleted_tags_count": 0,
+            "deleted_rate_count": 0,
             "core_deleted": False,
             "metadata_reset": False,
+            "rate_data_deleted": False,
             "raw_files_deleted": False,
             "message": ""
         }
@@ -458,7 +493,32 @@ def selective_delete_exam(
             conn.commit()
             del_res["metadata_reset"] = True
 
-        # 3. 코어 본문 데이터 삭제 (exams, passages, sentences, captures)
+        # 3. 정답률 데이터 단독 초기화 (코어 본문은 유지하고 passages의 correct_rate/choice_rates 및 uploads/의 CSV 삭제)
+        if delete_rate and not delete_core:
+            cursor.execute("""
+                SELECT COUNT(*) FROM passages
+                WHERE exam_id = ? AND (correct_rate IS NOT NULL OR choice_rates IS NOT NULL)
+            """, (exam_id,))
+            del_res["deleted_rate_count"] = cursor.fetchone()[0]
+
+            cursor.execute("""
+                UPDATE passages
+                SET correct_rate = NULL, choice_rates = NULL
+                WHERE exam_id = ?
+            """, (exam_id,))
+
+            # uploads/ 내 해당 시험지의 원본 정답률 CSV 파일 삭제
+            csv_pattern = os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.csv")
+            for f in glob.glob(csv_pattern):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+
+            conn.commit()
+            del_res["rate_data_deleted"] = True
+
+        # 4. 코어 본문 데이터 삭제 (exams, passages, sentences, captures)
         if delete_core:
             cursor.execute("SELECT COUNT(*) FROM passages WHERE exam_id = ?", (exam_id,))
             del_res["deleted_passages_count"] = cursor.fetchone()[0]
@@ -479,7 +539,7 @@ def selective_delete_exam(
                 except Exception:
                     pass
 
-        # 4. 원본 파일(uploads/) 삭제
+        # 5. 원본 파일(uploads/) 삭제
         if delete_raw:
             raw_pattern = os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*")
             for f in glob.glob(raw_pattern):
@@ -499,16 +559,19 @@ def selective_delete_exam(
             actions.append(f"원본 파일 {del_res['deleted_raw_count']}개({mb}MB) 삭제")
         if del_res["core_deleted"]:
             actions.append(f"코어 지문 {del_res['deleted_passages_count']}개·문장 {del_res['deleted_sentences_count']}개 및 캡처 {del_res['deleted_captures_count']}개 삭제")
-        elif del_res["metadata_reset"]:
-            actions.append(f"어법 메타데이터 {del_res['deleted_grammar_count']}개 및 태그 {del_res['deleted_tags_count']}개 초기화")
+        else:
+            if del_res["metadata_reset"]:
+                actions.append(f"어법 메타데이터 {del_res['deleted_grammar_count']}개 및 태그 {del_res['deleted_tags_count']}개 초기화")
+            if del_res["rate_data_deleted"]:
+                actions.append(f"정답률 데이터 {del_res['deleted_rate_count']}문항 초기화")
 
         del_res["message"] = f"'{exam_id}': " + (", ".join(actions) if actions else "선택된 삭제 작업 없음")
         return del_res
 
 
 def delete_exam(exam_id: str) -> Dict[str, Any]:
-    """하위 호환성을 위한 완전 삭제 함수 (3대 영역 모두 삭제)"""
-    return selective_delete_exam(exam_id, delete_raw=True, delete_core=True, delete_metadata=True)
+    """하위 호환성을 위한 완전 삭제 함수 (4대 영역 모두 삭제)"""
+    return selective_delete_exam(exam_id, delete_raw=True, delete_core=True, delete_metadata=True, delete_rate=True)
 
 
 def save_passage(passage_data: dict) -> str:
@@ -725,6 +788,45 @@ def get_sentence_tags(sentence_id: str) -> List[str]:
         return [row["tag_name"] for row in cursor.fetchall()]
 
 
+def _apply_correct_rate_filter(range_key: str, table_alias: str = "p") -> str:
+    """정답률 구간 필터링 SQL 조건문 생성 (10% 단위 세분화 체계)"""
+    if not range_key:
+        return ""
+    col = f"{table_alias}.correct_rate"
+    rk = range_key.strip().lower()
+
+    # 10% 단위 세분화 체계
+    if rk == "under20":
+        return f" AND {col} IS NOT NULL AND {col} < 20.0"
+    elif rk == "20to30":
+        return f" AND {col} IS NOT NULL AND {col} >= 20.0 AND {col} < 30.0"
+    elif rk == "30to40":
+        return f" AND {col} IS NOT NULL AND {col} >= 30.0 AND {col} < 40.0"
+    elif rk == "40to50":
+        return f" AND {col} IS NOT NULL AND {col} >= 40.0 AND {col} < 50.0"
+    elif rk == "50to60":
+        return f" AND {col} IS NOT NULL AND {col} >= 50.0 AND {col} < 60.0"
+    elif rk == "60to70":
+        return f" AND {col} IS NOT NULL AND {col} >= 60.0 AND {col} < 70.0"
+    elif rk == "70to80":
+        return f" AND {col} IS NOT NULL AND {col} >= 70.0 AND {col} < 80.0"
+    elif rk == "over80":
+        return f" AND {col} IS NOT NULL AND {col} >= 80.0"
+
+    # 기존 옵션 하위 호환성 유지
+    elif rk == "under40":
+        return f" AND {col} IS NOT NULL AND {col} < 40.0"
+    elif rk == "40to60":
+        return f" AND {col} IS NOT NULL AND {col} >= 40.0 AND {col} < 60.0"
+    elif rk == "60to80":
+        return f" AND {col} IS NOT NULL AND {col} >= 60.0 AND {col} < 80.0"
+    elif rk == "under50":
+        return f" AND {col} IS NOT NULL AND {col} <= 50.0"
+    elif rk == "under60":
+        return f" AND {col} IS NOT NULL AND {col} < 60.0"
+    return ""
+
+
 def search_passages(
     keyword: str = "",
     grade: str = "",
@@ -732,6 +834,7 @@ def search_passages(
     month: Optional[int] = None,
     exam_type: str = "",
     question_type: str = "",
+    correct_rate_range: str = "",
     tag: str = "",
     whole_word: bool = False,
     limit: int = 0
@@ -787,6 +890,9 @@ def search_passages(
         query += " AND p.question_type = ?"
         params.append(question_type)
 
+    if correct_rate_range:
+        query += _apply_correct_rate_filter(correct_rate_range, "p")
+
     if tag:
         query += """
             AND p.id IN (SELECT passage_id FROM passage_tags WHERE tag_name LIKE ?)
@@ -803,10 +909,26 @@ def search_passages(
         cursor = conn.cursor()
         cursor.execute(query, params)
         rows = cursor.fetchall()
+        if not rows:
+            return []
+
+        passage_ids = [r["id"] for r in rows]
+        tags_by_passage = defaultdict(list)
+        chunk_size = 900
+        for i in range(0, len(passage_ids), chunk_size):
+            chunk = passage_ids[i:i + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor.execute(
+                f"SELECT passage_id, tag_name FROM passage_tags WHERE passage_id IN ({placeholders}) ORDER BY id ASC",
+                chunk
+            )
+            for tr in cursor.fetchall():
+                tags_by_passage[tr["passage_id"]].append(tr["tag_name"])
+
         results = []
         for r in rows:
             p_dict = dict(r)
-            p_dict["tags"] = get_passage_tags(r["id"])
+            p_dict["tags"] = tags_by_passage.get(r["id"], [])
             if p_dict.get("choice_rates") and isinstance(p_dict["choice_rates"], str):
                 try:
                     p_dict["choice_rates_obj"] = json.loads(p_dict["choice_rates"])
@@ -1047,6 +1169,8 @@ def search_sentences(
     year: Optional[int] = None,
     month: Optional[int] = None,
     exam_type: str = "",
+    question_type: str = "",
+    correct_rate_range: str = "",
     tag: str = "",
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
@@ -1056,7 +1180,7 @@ def search_sentences(
 ) -> List[Dict[str, Any]]:
     """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
     query = """
-        SELECT s.*, p.q_num, e.grade, e.year, e.month, e.exam_type
+        SELECT s.*, p.q_num, p.correct_rate, p.question_type, e.grade, e.year, e.month, e.exam_type
         FROM sentences s
         JOIN passages p ON s.passage_id = p.id
         JOIN exams e ON p.exam_id = e.id
@@ -1095,6 +1219,11 @@ def search_sentences(
     if exam_type:
         query += " AND e.exam_type = ?"
         params.append(exam_type)
+    if question_type:
+        query += " AND p.question_type = ?"
+        params.append(question_type)
+    if correct_rate_range:
+        query += _apply_correct_rate_filter(correct_rate_range, "p")
 
     if is_starred is True:
         query += " AND s.is_starred = 1"
