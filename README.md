@@ -825,7 +825,7 @@ CREATE TABLE user_sentence_status (
   - `GET /api/search/sentences` 호출 시 7,913개 문장 전체 누락 없이 1.2초 내 완전 응답 확인
   - AI 프로바이더별 개별 연결 핑 테스트(`/api/settings/ai/test`) 정상 작동 확인 (OpenRouter 200, OpenAI 200, Claude 400 키 요구)
 
-### [2026-09-21 13:50] 업데이트 이력 (Commit ID: 1536910)
+### [2026-09-21 13:50] 업데이트 이력 (Commit ID: f413f7d)
 - **수정 내용**:
   - **정답률 CSV 파일 업로드 및 문항별 2x2 지문 뷰어 선지 선택률 시각화 엔진 구축 (`rate_parser.py`, `database.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
     - **정답률 CSV 파서 모듈 신설 (`rate_parser.py`)**: OMR/채점 통계 프로그램의 `CP949`/`EUC-KR`/`UTF-8` 인코딩 자동 판별, 문항 번호(18~45), 정답률(%), 선지별(1~5번) 응시자 수 및 선택 비율, 무응답/중복답 및 15% 이상 선택된 매력적 오답(`🚨 매력적 오답`) 자동 추출 알고리즘 구현
