@@ -793,7 +793,7 @@ CREATE TABLE user_sentence_status (
   - `[고2-2026년-03월]` 정답표 PNG 업로드 API 실증 테스트 통과: 전 문항 정답 추출 및 Q18(1,998개), Q19(2,076개), Q20(2,045개), Q43~45(6,111개) 파스텔톤 노란색 형광펜 픽셀 검출 확인 완료
   - DB 전체 30개 시험지 지문/해설 무결성 재검사 결과: **`Summary of Anomalous Exams: 0 / 30 (100% 정상 달성)`**
 
-### [2026-09-21 13:20] 업데이트 이력 (Commit ID: TBD)
+### [2026-09-21 13:20] 업데이트 이력 (Commit ID: 71623bc)
 - **수정 내용**:
   - **OpenRouter 3개 모델 앙상블(자동 교차 검토) 사용자 자유 선택 및 446개 실시간 모델 연동 구축 (`grammar_analyzer.py`, `app.py`, `templates/index.html`, `static/css/style.css`, `static/js/main.js`)**:
     - **OpenRouter 실시간 모델 정보 조회 API 신설 (`GET /api/openrouter/models`)**: OpenRouter 공식 API(`https://openrouter.ai/api/v1/models`)와 연동하여 446개 전체 텍스트 모델의 최신 가격, 문맥 길이, 제공사 정보를 실시간 파싱하고 30분 캐시 및 강제 새로고침(`force_refresh=true`) 지원
