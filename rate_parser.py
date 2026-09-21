@@ -73,20 +73,26 @@ def parse_correct_rate_csv(file_input: Union[str, bytes]) -> Dict[int, Dict[str,
         c_clean = col.strip().replace(" ", "").replace("(", "").replace(")", "")
         col_map[c_clean] = idx
 
-    def find_col(*candidates: str) -> Optional[int]:
+    def find_col(*candidates: str, exclude_terms: tuple = ()) -> Optional[int]:
+        # 1. 완전 일치 우선
         for c in candidates:
             if c in col_map:
                 return col_map[c]
-        # 부분 일치 탐색
+        # 2. 부분 일치 탐색 (제외 검색어가 포함된 컬럼은 배제)
         for k, idx in col_map.items():
+            if any(ex in k for ex in exclude_terms):
+                continue
             for c in candidates:
                 if c in k:
                     return idx
         return None
 
     col_q = find_col("번호", "문항", "문항번호", "q_num", "Q")
-    col_ans = find_col("정답", "정답번호", "답", "ans", "answer")
     col_rate = find_col("정답률", "정답율", "정답률%", "rate")
+    # '정답' 컬럼은 '정답률', '중복답', '배점', '평균' 등과 혼동되지 않도록 엄격 배제
+    col_ans = find_col("정답", "정답번호", "답", "ans", "answer", exclude_terms=("정답률", "정답율", "중복답", "중복", "배점", "평균", "비율"))
+    if col_ans == col_rate:
+        col_ans = None
     
     col_c1 = find_col("1번", "①", "1선지", "선지1")
     col_c2 = find_col("2번", "②", "2선지", "선지2")
@@ -98,6 +104,27 @@ def parse_correct_rate_csv(file_input: Union[str, bytes]) -> Dict[int, Dict[str,
     col_dup = find_col("중복답", "중복", "dup_resp")
 
     if col_q is None:
+        # 헤더가 없는 단순 통계 CSV 지원 (예: 45행 순수 정답률 구조: 1열 정답률%, 2열 배점...)
+        if len(lines) >= 40 and header_row and "%" in header_row[0]:
+            results: Dict[int, Dict[str, Any]] = {}
+            all_rows = [header_row] + list(reader)
+            for idx, row in enumerate(all_rows, start=1):
+                if not row:
+                    continue
+                q_num = idx
+                rate_val = None
+                try:
+                    rate_val = round(float(row[0].replace("%", "").strip()), 2)
+                except ValueError:
+                    pass
+                results[q_num] = {
+                    "q_num": q_num,
+                    "correct_ans": "",
+                    "correct_ans_circle": "",
+                    "correct_rate": rate_val,
+                    "choice_rates": {}
+                }
+            return results
         raise ValueError("CSV 파일에서 '번호' 또는 '문항' 컬럼을 찾을 수 없습니다.")
 
     results: Dict[int, Dict[str, Any]] = {}
@@ -115,16 +142,20 @@ def parse_correct_rate_csv(file_input: Union[str, bytes]) -> Dict[int, Dict[str,
 
         # 정답 추출
         ans_raw = row[col_ans].strip() if (col_ans is not None and len(row) > col_ans) else ""
-        # 1~5 정수형으로 정규화
+        if "%" in ans_raw:
+            ans_raw = ""
+
+        # 1~5 정수형으로 엄격 정규화 (문자열 내 부분 포함 오탐 방지)
         ans_num = ""
+        clean_ans = ans_raw.replace("번", "").strip()
         for k, v in circle_symbols.items():
-            if k in ans_raw or v in ans_raw:
+            if clean_ans == k or clean_ans == v:
                 ans_num = k
                 break
-        if not ans_num and ans_raw.isdigit() and 1 <= int(ans_raw) <= 5:
-            ans_num = str(int(ans_raw))
+        if not ans_num and clean_ans.isdigit() and 1 <= int(clean_ans) <= 5:
+            ans_num = str(int(clean_ans))
 
-        circle_ans = circle_symbols.get(ans_num, ans_raw)
+        circle_ans = circle_symbols.get(ans_num, "")
 
         # 정답률 추출
         rate_val = None

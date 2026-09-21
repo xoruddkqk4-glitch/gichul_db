@@ -625,7 +625,7 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]])
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, q_num, answer_text FROM passages WHERE exam_id = ?", (clean_id,))
+        cursor.execute("SELECT id, q_num, answer_text, explanation_text FROM passages WHERE exam_id = ?", (clean_id,))
         passages = cursor.fetchall()
 
         for p in passages:
@@ -639,13 +639,25 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]])
                 c_ans = target_data.get("correct_ans_circle")
 
                 old_ans = p["answer_text"] or ""
-                new_ans = old_ans if old_ans.strip() else (c_ans or "")
+                old_exp = p["explanation_text"] or ""
+
+                # CSV의 공인 정답 기호(①~⑤)가 존재하면 정답 우선 동기화
+                new_ans = c_ans if (c_ans and c_ans in ("①", "②", "③", "④", "⑤")) else (old_ans or "")
+
+                # 해설 상단 [정답] 표기도 정답에 맞추어 자동 동기화
+                if new_ans and old_exp:
+                    if re.search(r"^\s*\[\s*정답\s*\]", old_exp):
+                        new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {new_ans}", old_exp)
+                    else:
+                        new_exp = f"[정답] {new_ans}\n\n{old_exp.strip()}".strip()
+                else:
+                    new_exp = old_exp
 
                 cursor.execute("""
                     UPDATE passages 
-                    SET correct_rate = ?, choice_rates = ?, answer_text = ?
+                    SET correct_rate = ?, choice_rates = ?, answer_text = ?, explanation_text = ?
                     WHERE id = ?
-                """, (c_rate, ch_rates_json, new_ans if new_ans else old_ans, p["id"]))
+                """, (c_rate, ch_rates_json, new_ans if new_ans else old_ans, new_exp, p["id"]))
                 updated_count += 1
                 if c_rate is not None:
                     rates_collected.append(c_rate)
