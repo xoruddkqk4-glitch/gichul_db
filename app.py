@@ -127,8 +127,31 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
     try:
         if (reading_end is None or reading_end == 45) and (2006 <= year <= 2011):
             reading_end = 50
+
+        # 스캔본 PDF(텍스트 0자) 감지 시 동명 HWP 원본으로부터 고화질 디지털 PDF 자동 생성
+        target_pdf = pdf_candidates[0]
+        try:
+            test_doc = fitz.open(target_pdf)
+            is_empty_pdf = sum(len(p.get_text()) for p in test_doc) < 50
+            test_doc.close()
+            if is_empty_pdf:
+                hwp_pat = os.path.splitext(target_pdf)[0] + ".hwp"
+                if not os.path.exists(hwp_pat):
+                    hwp_pat = os.path.splitext(target_pdf)[0] + ".hwpx"
+                if os.path.exists(hwp_pat):
+                    import pyhwpx
+                    hwp_app = pyhwpx.Hwp(visible=False)
+                    try:
+                        hwp_app.Open(os.path.abspath(hwp_pat))
+                        hwp_app.SaveAs(os.path.abspath(target_pdf), "PDF")
+                        print(f"[Crops] 스캔본 PDF를 HWP 원본({hwp_pat})으로부터 디지털 PDF로 자동 재변환 완료")
+                    finally:
+                        hwp_app.Quit()
+        except Exception as scan_err:
+            print(f"[Crops] 스캔본 PDF 자동 치환 검사 중 경고: {scan_err}")
+
         crop_results = extract_pdf_columns_and_questions(
-            pdf_path=pdf_candidates[0], grade=grade, year=year, month=month,
+            pdf_path=target_pdf, grade=grade, year=year, month=month,
             start_q=reading_start, end_q=reading_end, answers_dict=answers_dict
         )
         with db.get_connection() as conn:

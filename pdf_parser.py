@@ -212,6 +212,72 @@ def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[
     return 18, default_end
 
 
+def find_group_header(b_text: str, start_q: int, end_q: int) -> Optional[Tuple[int, int]]:
+    """
+    [41~42], [43~45], [46~48], [49~50], [41-42], [41 42],
+    [46 ~ 다음 글을 읽고... 48], [3점] [43~45], 【46 - 48】, [46\\n48] 등
+    다양한 괄호 기호 및 번호 중복 포맷의 1지문 다문항 헤더 번호 범위를 정밀 감지
+    """
+    # 1. 닫힌 괄호 쌍 내부 먼저 전수 검사
+    bracket_iter = re.finditer(r"[\[［【〔〖〘]([\s\S]{1,80}?)[\]］】〕〗〙]", b_text)
+    for m in bracket_iter:
+        nums = [int(n) for n in re.findall(r"\b\d{1,2}\b", m.group(1))]
+        valid_nums = [n for n in nums if start_q <= n <= end_q]
+        if valid_nums:
+            g_s = min(valid_nums)
+            g_e = max(valid_nums)
+            if g_s < g_e and (g_e - g_s) in (1, 2, 3):
+                return g_s, g_e
+
+    # 2. 닫는 괄호가 누락되거나 인코딩이 손상된 열린 괄호 구간 검사
+    m_open = re.search(r"[\[［【〔〖〘]([\s\S]{1,80})", b_text)
+    if m_open:
+        nums = [int(n) for n in re.findall(r"\b\d{1,2}\b", m_open.group(1))]
+        valid_nums = [n for n in nums if start_q <= n <= end_q]
+        if valid_nums:
+            g_s = min(valid_nums)
+            g_e = max(valid_nums)
+            if g_s < g_e and (g_e - g_s) in (1, 2, 3):
+                return g_s, g_e
+
+    return None
+
+
+def find_notice_box_top(page: fitz.Page, min_x: float = 0.0, min_y: float = 0.0) -> Optional[float]:
+    """
+    시험지 마지막 페이지/칼럼 하단에 위치한 '※ 확인사항' (답안지 기입/표기 안내) 박스의 상단 Y 좌표 탐색
+    문항 캡처 이미지에 불필요한 시험 안내문 및 테두리선이 침범하지 않도록 제외 기준선 제공
+    """
+    keywords = ["확인사항", "답안지의 해당란", "기입(표기)", "해당란을 정확히", "답안지의", "문제지와 답안지"]
+    found_rects = []
+    for kw in keywords:
+        for r in page.search_for(kw):
+            if r.x0 >= min_x - 40 and r.y0 >= min_y:
+                found_rects.append(r)
+
+    if not found_rects:
+        return None
+
+    notice_text_y0 = min(r.y0 for r in found_rects)
+    box_top_y = notice_text_y0 - 10
+
+    # 텍스트 위 50pt 이내에 위치한 박스 테두리선(벡터 드로잉) 탐색
+    try:
+        drawings = page.get_drawings()
+        candidate_lines = []
+        for d in drawings:
+            dr = d.get("rect")
+            if dr and dr.x0 >= min_x - 40:
+                if notice_text_y0 - 45 <= dr.y0 <= notice_text_y0:
+                    candidate_lines.append(dr.y0)
+        if candidate_lines:
+            box_top_y = min(candidate_lines) - 4
+    except Exception:
+        pass
+
+    return box_top_y
+
+
 def extract_pdf_columns_and_questions(
     pdf_path: str,
     grade: str = "고3",
@@ -246,8 +312,6 @@ def extract_pdf_columns_and_questions(
 
     # 문항 번호 감지 정규식 (예: "18. 다음 글의", "36.", "37. ")
     q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?")
-    # 복합 지문 헤더 감지 정규식 (예: "[41~42] 다음 글을 읽고...", "[46\n48]", "[49-50]")
-    group_header_pattern = re.compile(r"^\s*\[\s*(\d{1,2})\s*[\s~～\-_]*\s*(\d{1,2})\s*\](?:\s*(.*))?")
 
     questions_data = {}
     shared_group_cache = {}  # (g_start, g_end): {'rects': [...], 'text': [...], 'page_num': int}
@@ -258,9 +322,9 @@ def extract_pdf_columns_and_questions(
         width, height = rect.width, rect.height
         mid_x = width / 2.0
 
-        # 헤더(상단 105pt)와 푸터(하단 50pt)를 제외한 칼럼 클립 영역
-        left_clip = fitz.Rect(35, 105, mid_x - 5, height - 50)
-        right_clip = fitz.Rect(mid_x + 5, 105, width - 35, height - 50)
+        # 헤더(상단 50pt)와 푸터(하단 40pt)를 제외한 칼럼 클립 영역 (HWP 변환 문서 및 상단 발문 지원)
+        left_clip = fitz.Rect(35, 50, mid_x - 5, height - 40)
+        right_clip = fitz.Rect(mid_x + 5, 50, width - 35, height - 40)
 
         for col_idx, col_clip in [("L", left_clip), ("R", right_clip)]:
             raw_blocks = page.get_text("blocks", clip=col_clip)
@@ -283,21 +347,24 @@ def extract_pdf_columns_and_questions(
                     continue
 
                 # 헤더/푸터/페이지 번호 단독 블록 필터링
-                if b_rect.y1 < 105 or b_rect.y0 > height - 50:
+                if b_rect.y0 > height - 40:
+                    continue
+                if b_rect.y1 < 65 and any(h in b_text for h in ("문제지", "영어 영역", "홀수형", "짝수형", "전국연합", "학력평가", "제 3 교시", "제 1 교시")):
                     continue
                 if b_text in ("영어 영역", "홀수형", "짝수형") or re.match(r"^\d{1,2}$", b_text):
                     continue
 
-                lines = b_text.split("\n")
-                first_line = lines[0].strip()
+                # 시험지 하단 '확인사항'(답안지 기입/표기 안내문) 블록 필터링
+                if any(kw in b_text for kw in ("확인사항", "답안지의 해당란", "기입(표기)했는지", "기입(표기)")):
+                    continue
 
-                # 복합 지문 헤더 확인 (예: [41~42], [43~45], [46~48], [49~50])
-                # 줄바꿈으로 인해 "[46\n48]" 처럼 나뉜 블록도 첫 40자 공백 정규화 후 매칭
-                header_candidate = re.sub(r"\s+", " ", b_text[:40]).strip()
-                grp_match = group_header_pattern.match(first_line) or group_header_pattern.match(header_candidate)
-                if grp_match:
-                    g_s = int(grp_match.group(1))
-                    g_e = int(grp_match.group(2))
+                non_empty_lines = [l.strip() for l in b_text.split("\n") if l.strip()]
+                first_line = non_empty_lines[0] if non_empty_lines else ""
+
+                # 복합 지문 헤더 확인 (예: [41~42], [43~45], [46~48], [49~50], [46 ~ 읽고 답하시오 48] 등)
+                grp_res = find_group_header(b_text, start_q, end_q)
+                if grp_res:
+                    g_s, g_e = grp_res
                     # 50문항 체제에서는 [41~42]가 공유 지문이 아니므로 안내 블록만 건너뜀
                     if is_50 and (g_s, g_e) == (41, 42):
                         continue
@@ -319,8 +386,13 @@ def extract_pdf_columns_and_questions(
                     group_rects = [(page_num, b_rect)]
                     continue
 
-                # 문항 번호 시작 확인
-                q_match = q_pattern.match(first_line)
+                # 문항 번호 시작 확인 (첫 줄 또는 블록 내 라인)
+                q_match = None
+                for l in non_empty_lines:
+                    m = q_pattern.match(l)
+                    if m:
+                        q_match = m
+                        break
                 if q_match:
                     q_num = int(q_match.group(1))
                     if start_q <= q_num <= end_q:
@@ -458,6 +530,12 @@ def save_extracted_question(
                 min(page.rect.height, max_y)
             )
 
+            # 마지막 문항(45번, 50번 등) 또는 마지막 페이지 문항의 하단 확인사항(답안지 기입/표기 안내 박스) 침범 차단
+            if q_num in (45, 50) or page_num == len(doc) - 1:
+                notice_top = find_notice_box_top(page, min_x=crop_rect.x0, min_y=crop_rect.y0)
+                if notice_top and notice_top > crop_rect.y0 + 30:
+                    crop_rect.y1 = min(crop_rect.y1, notice_top)
+
             # 정답 선지 형광펜 하이라이트 주석 적용
             added_annots = []
             if answer_symbol:
@@ -559,13 +637,16 @@ def crop_and_merge_43_45(
         if r_45_right:
             y_45_start = r_45_right[0].y0 - 6
 
+    y_45_end = height - 60
+    notice_top = find_notice_box_top(page, min_x=mid_x + 5, min_y=y_45_start)
+    if notice_top and notice_top > y_45_start + 30:
+        y_45_end = min(y_45_end, notice_top)
+
     rect_bcd = fitz.Rect(mid_x + 5, y_start_right, width - 35, y_43_start)
     rect_43 = fitz.Rect(mid_x + 5, y_43_start, width - 35, y_44_start)
     rect_44 = fitz.Rect(mid_x + 5, y_44_start, width - 35, y_45_start)
-    rect_45 = fitz.Rect(mid_x + 5, y_45_start, width - 35, height - 60)
+    rect_45 = fitz.Rect(mid_x + 5, y_45_start, width - 35, y_45_end)
 
-    # 정답 선지 형광펜 하이라이트 주석 적용
-    annots = []
     # 정답 선지 형광펜 하이라이트 주석 적용 (엄격한 기하학적 매칭 적용)
     annots = []
     for r_clip, q_idx in [(rect_43, 43), (rect_44, 44), (rect_45, 45)]:

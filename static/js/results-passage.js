@@ -60,7 +60,72 @@ const ANSWER_SOURCE_LABELS = { uploaded_json: "정답 JSON", verified_key: "검�
 // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
 // =========================================================================
 
-/** 41~42번/43~45번(45문항 체제) 또는 46~48번/49~50번(50문항 체제) 복합 지문을 단일 탭으로 병합 */
+/**
+ * 50문항 체제 시험지에서 발문 및 본문 텍스트를 분석하여 40~50번 복합 지문 그룹을 동적으로 판별
+ * 예: [[46, 47], [48, 50]] 또는 [[46, 48], [49, 50]] 또는 [[46, 47], [48, 49]] 또는 [[47, 48], [49, 50]]
+ */
+function resolveCompoundGroupsFor50(examId, itemMap) {
+  const p46 = itemMap.get(`${examId}_46`);
+  const p47 = itemMap.get(`${examId}_47`);
+  const p48 = itemMap.get(`${examId}_48`);
+  const p49 = itemMap.get(`${examId}_49`);
+  const p50 = itemMap.get(`${examId}_50`);
+
+  const t46 = p46 ? `${p46.question_title || ""} ${p46.passage_text || ""}` : "";
+  const t47 = p47 ? `${p47.question_title || ""} ${p47.passage_text || ""}` : "";
+  const t48 = p48 ? `${p48.question_title || ""} ${p48.passage_text || ""}` : "";
+  const t49 = p49 ? `${p49.question_title || ""} ${p49.passage_text || ""}` : "";
+  const t50 = p50 ? `${p50.question_title || ""} ${p50.passage_text || ""}` : "";
+
+  const allText = `${t46}\n${t47}\n${t48}\n${t49}\n${t50}`;
+
+  // 1. 발문 및 본문 내 명시적 헤더 [X~Y] 탐색
+  const has46_47 = /\[?\s*46\s*[~～\-]\s*47\s*\]?/.test(t46) || /\[?\s*46\s*[~～\-]\s*47\s*\]?/.test(allText);
+  const has48_50 = /\[?\s*48\s*[~～\-]\s*50\s*\]?/.test(t48) || /\[?\s*48\s*[~～\-]\s*50\s*\]?/.test(allText);
+  const has48_49 = /\[?\s*48\s*[~～\-]\s*49\s*\]?/.test(t48) || /\[?\s*48\s*[~～\-]\s*49\s*\]?/.test(allText);
+  const has46_48 = /\[?\s*46\s*[~～\-]\s*48\s*\]?/.test(t46) || /\[?\s*46\s*[~～\-]\s*48\s*\]?/.test(allText);
+  const has47_48 = /\[?\s*47\s*[~～\-]\s*48\s*\]?/.test(t47) || /\[?\s*47\s*[~～\-]\s*48\s*\]?/.test(allText);
+
+  if (has46_47 && has48_50) {
+    return [[46, 47], [48, 50]];
+  }
+  if (has46_47 && has48_49) {
+    return [[46, 47], [48, 49]];
+  }
+  if (has47_48) {
+    return [[47, 48], [49, 50]];
+  }
+  if (has46_48) {
+    return [[46, 48], [49, 50]];
+  }
+
+  // 2. 발문 키워드 기반 판별: 1지문 3문항(장문 독해 순서 배열 A~D) 시작점 확인
+  const is3QOrderStart = (txt) =>
+    /\(A\)\s*에\s*이어질|주어진\s*글\s*\(A\)|순서대로\s*바르게\s*배열|순서에\s*맞게\s*배열/i.test(txt);
+
+  if (is3QOrderStart(t48)) {
+    // 48번이 장문 독해(A~D) 순서 배열 시작점 -> [46~47] 2문항 + [48~50] 3문항
+    return [[46, 47], [48, 50]];
+  }
+  if (is3QOrderStart(t46)) {
+    // 46번이 장문 독해(A~D) 순서 배열 시작점 -> [46~48] 3문항 + [49~50] 2문항
+    return [[46, 47, 48], [49, 50]];
+  }
+
+  // 46번이 단독 어법/요약이고 47번이 '위 글'인 경우
+  if (/빈칸\s*\(A\)[,\s]*\(B\)/.test(t46) && /위\s*글/.test(t47)) {
+    return [[47, 48], [49, 50]];
+  }
+
+  if (has48_49) {
+    return [[46, 47], [48, 49]];
+  }
+
+  // 기본값: 표준 46~48번(3문항) + 49~50번(2문항)
+  return [[46, 48], [49, 50]];
+}
+
+/** 41~42번/43~45번(45문항 체제) 또는 46~48번/49~50번/46~47번/48~50번 등(50문항 체제) 복합 지문을 발문 분석을 통해 동적으로 단일 탭으로 병합 */
 export function groupPassageItems(rawItems) {
   if (!rawItems || rawItems.length === 0) return [];
 
@@ -89,6 +154,9 @@ export function groupPassageItems(rawItems) {
     }
   }
 
+  // 50문항 체제 시험별 동적 복합 지문 그룹 캐시
+  const examCompoundGroupsMap = new Map();
+
   for (let i = 0; i < rawItems.length; i++) {
     const p = rawItems[i];
     if (handledIds.has(p.id)) continue;
@@ -97,73 +165,53 @@ export function groupPassageItems(rawItems) {
 
     if (is50Exam) {
       // =======================================================================
-      // [총 50문항 체제]: 18~45번 단일 문항 / 46~48번 (1지문3문항) / 49~50번 (1지문2문항)
+      // [총 50문항 체제]: 발문 분석 기반 동적 복합 지문 통합 ([46~48]+[49~50] 또는 [46~47]+[48~50] 등)
       // =======================================================================
-
-      // 46~48번 (1지문 3문항) 통합
-      if (p.q_num === 46 || (p.question_type === "1지문3문항" && p.q_num === 46)) {
-        const p47 = itemMap.get(`${p.exam_id}_47`);
-        const p48 = itemMap.get(`${p.exam_id}_48`);
-        if (p47 && p48) {
-          handledIds.add(p.id);
-          handledIds.add(p47.id);
-          handledIds.add(p48.id);
-
-          const examPrefix = p.id.replace(/-46번\]$/, "").replace(/^\[/, "");
-          const ans46 = p.answer_text || "-";
-          const ans47 = p47.answer_text || "-";
-          const ans48 = p48.answer_text || "-";
-          const ansLabel = `46.${ans46} / 47.${ans47} / 48.${ans48}`;
-          const combinedAns46_48 = `[정답] 46. ${ans46}   47. ${ans47}   48. ${ans48}`;
-          const baseExp46_48 = (p.explanation_text || p47.explanation_text || p48.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
-          const expText46_48 = `${combinedAns46_48}\n\n${baseExp46_48.trim()}`;
-
-          result.push({
-            ...p,
-            isGroup: true,
-            groupType: "46-48",
-            q_num_label: "46~48번",
-            display_id: `[${examPrefix}-46~48번]`,
-            all_ids: [p.id, p47.id, p48.id],
-            subItems: [p, p47, p48],
-            question_type: "1지문3문항",
-            answer_text: ansLabel,
-            answer_verified: [p, p47, p48].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
-            pdf_crop_images: [p.pdf_crop_image, p47.pdf_crop_image, p48.pdf_crop_image].filter(Boolean),
-            explanation_text: expText46_48
-          });
-          continue;
-        }
+      if (!examCompoundGroupsMap.has(p.exam_id)) {
+        examCompoundGroupsMap.set(p.exam_id, resolveCompoundGroupsFor50(p.exam_id, itemMap));
       }
+      const groups = examCompoundGroupsMap.get(p.exam_id) || [];
+      const matchedGroup = groups.find((g) => g[0] === p.q_num);
 
-      // 49~50번 (1지문 2문항) 통합
-      if (p.q_num === 49 || (p.question_type === "1지문2문항" && p.q_num === 49)) {
-        const p50 = itemMap.get(`${p.exam_id}_50`);
-        if (p50) {
-          handledIds.add(p.id);
-          handledIds.add(p50.id);
+      if (matchedGroup) {
+        const [gStart, gEnd] = matchedGroup;
+        const subItems = [];
+        let allFound = true;
+        for (let q = gStart; q <= gEnd; q++) {
+          const item = itemMap.get(`${p.exam_id}_${q}`);
+          if (item) {
+            subItems.push(item);
+          } else {
+            allFound = false;
+            break;
+          }
+        }
 
-          const examPrefix = p.id.replace(/-49번\]$/, "").replace(/^\[/, "");
-          const ans49 = p.answer_text || "-";
-          const ans50 = p50.answer_text || "-";
-          const ansLabel = `49.${ans49} / 50.${ans50}`;
-          const combinedAns49_50 = `[정답] 49. ${ans49}   50. ${ans50}`;
-          const baseExp49_50 = (p.explanation_text || p50.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
-          const expText49_50 = `${combinedAns49_50}\n\n${baseExp49_50.trim()}`;
+        if (allFound && subItems.length > 1) {
+          subItems.forEach((si) => handledIds.add(si.id));
+
+          const examPrefix = p.id.replace(new RegExp(`-${gStart}번\\]$`), "").replace(/^\[/, "");
+          const ansLabel = subItems.map((si) => `${si.q_num}.${si.answer_text || "-"}`).join(" / ");
+          const combinedAns = `[정답] ` + subItems.map((si) => `${si.q_num}. ${si.answer_text || "-"}`).join("   ");
+          const baseExp = (subItems.map((si) => si.explanation_text).filter(Boolean)[0] || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText = `${combinedAns}\n\n${baseExp.trim()}`;
+          const qCount = subItems.length;
+          const groupTypeLabel = `1지문${qCount}문항`;
+          const rangeLabel = `${gStart}~${gEnd}번`;
 
           result.push({
             ...p,
             isGroup: true,
-            groupType: "49-50",
-            q_num_label: "49~50번",
-            display_id: `[${examPrefix}-49~50번]`,
-            all_ids: [p.id, p50.id],
-            subItems: [p, p50],
-            question_type: "1지문2문항",
+            groupType: `${gStart}-${gEnd}`,
+            q_num_label: rangeLabel,
+            display_id: `[${examPrefix}-${rangeLabel}]`,
+            all_ids: subItems.map((si) => si.id),
+            subItems: subItems,
+            question_type: groupTypeLabel,
             answer_text: ansLabel,
-            answer_verified: [p, p50].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
-            pdf_crop_images: [p.pdf_crop_image, p50.pdf_crop_image].filter(Boolean),
-            explanation_text: expText49_50
+            answer_verified: subItems.every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+            pdf_crop_images: Array.from(new Set(subItems.map((si) => si.pdf_crop_image).filter(Boolean))),
+            explanation_text: expText
           });
           continue;
         }
@@ -200,7 +248,7 @@ export function groupPassageItems(rawItems) {
             question_type: "1지문2문항",
             answer_text: ansLabel,
             answer_verified: [p, p42].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
-            pdf_crop_images: [p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean),
+            pdf_crop_images: Array.from(new Set([p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean))),
             explanation_text: expText41_42
           });
           continue;
@@ -236,7 +284,7 @@ export function groupPassageItems(rawItems) {
             question_type: "1지문3문항",
             answer_text: ansLabel,
             answer_verified: [p, p44, p45].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
-            pdf_crop_images: [p.pdf_crop_image, p44.pdf_crop_image, p45.pdf_crop_image].filter(Boolean),
+            pdf_crop_images: Array.from(new Set([p.pdf_crop_image, p44.pdf_crop_image, p45.pdf_crop_image].filter(Boolean))),
             explanation_text: expText43_45
           });
           continue;
@@ -258,15 +306,28 @@ export function groupPassageItems(rawItems) {
   return result;
 }
 
+/** 지문 본문이나 문제 텍스트에 오염되어 포함된 정답표/해설 텍스트 블록을 안전하게 잘라냄 */
+function cleanQuestionExplanationLeak(text) {
+  if (!text) return "";
+  // 예: '2026학년도 영어영역 정답 및 해설', '정답 및 해설', '정답표', '[출제의도]', '[해설]' 등으로 시작하는 블록 감지
+  const leakRegex = /(?:^|\n)\s*(?:[^\n]{0,35})?(?:정답\s*(?:및|과)?\s*해설|정답표|정답\s*및\s*풀이|해설\s*및\s*정답|\[\s*출제\s*의도\s*\]|\[\s*해설\s*\])/i;
+  const match = text.search(leakRegex);
+  if (match !== -1) {
+    return text.substring(0, match).trim();
+  }
+  return text.trim();
+}
+
 /** 42번, 44번, 45번 등 복합 지문 하위 문항에서 지문 본문 반복을 제외하고 발문+선지만 추출 */
 function extractQuestionChoicesOnly(text, questionTitle) {
   if (!text) return questionTitle || "";
-  const cIdx = text.indexOf("①");
+  const cleaned = cleanQuestionExplanationLeak(text);
+  const cIdx = cleaned.indexOf("①");
   if (cIdx !== -1) {
-    const choices = text.substring(cIdx).trim();
+    const choices = cleaned.substring(cIdx).trim();
     return `${questionTitle || ""}\n\n${choices}`.trim();
   }
-  return questionTitle || text;
+  return questionTitle || cleaned;
 }
 
 /** 지문 객체에서 학년, 년도, 월, 시험 유형 추출 */
@@ -743,9 +804,12 @@ function loadPassageDetail(p) {
   setHeaderSlotState("passage");
 
   // [좌측 상단]: PDF 문항 캡처 이미지 (단일 또는 그룹 이미지들)
-  const rawImages = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
+  let rawImages = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
     ? p.pdf_crop_images
     : (p.pdf_crop_image ? [p.pdf_crop_image] : []);
+
+  // 동일한 이미지 URL이 중복 지정된 경우(예: 43~45번 세로 결합 단일 이미지가 43, 44, 45번에 동일하게 할당된 경우) 1장만 노출
+  rawImages = Array.from(new Set(rawImages.filter(Boolean)));
 
   // 브라우저 디스크 캐시로 인해 형광펜 하이라이트 반영 전 이미지가 노출되는 것을 방지하기 위해 캐시 버스팅 적용
   const images = rawImages.map(url => {
@@ -800,14 +864,14 @@ function loadPassageDetail(p) {
   if (p.isGroup && p.subItems && p.subItems.length > 1) {
     const parts = p.subItems.map((si, sIdx) => {
       if (sIdx === 0) {
-        return si.passage_text || si.question_title || "";
+        return cleanQuestionExplanationLeak(si.passage_text || si.question_title || "");
       } else {
         return extractQuestionChoicesOnly(si.passage_text, si.question_title);
       }
     });
     rawPassageText = parts.filter(Boolean).join("\n\n----------------------------------------\n\n");
   } else {
-    rawPassageText = p.passage_text || "지문 본문 텍스트가 비어 있습니다.";
+    rawPassageText = cleanQuestionExplanationLeak(p.passage_text) || "지문 본문 텍스트가 비어 있습니다.";
   }
 
   panelPassageText.dataset.rawText = rawPassageText;

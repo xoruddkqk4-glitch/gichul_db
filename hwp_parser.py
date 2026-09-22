@@ -215,23 +215,23 @@ def split_questions_and_explanations(full_text: str) -> Tuple[str, str]:
     if not full_text:
         return "", ""
 
-    # 1. 명시적 정답/해설 헤더 탐색
+    # 1. 명시적 정답/해설 헤더 탐색 (앞에 연도/과목명 등이 붙은 경우 포함: 예: '2026학년도 영어영역 정답 및 해설')
     pattern1 = re.compile(
-        r"(?:^|\n)\s*(?:\[|\b)?(?:정답\s*(?:및|과)?\s*해설|정답표|정답\s*및\s*풀이|해설\s*및\s*정답|해설편|정답편)(?:\s*\])?",
+        r"(?:^|\n)\s*(?:\[|\b)?(?:[^\n]{0,35})?(?:정답\s*(?:및|과)?\s*해설|정답표|정답\s*및\s*풀이|해설\s*및\s*정답|해설편|정답편)(?:\s*\])?",
         re.IGNORECASE
     )
     m1 = pattern1.search(full_text)
     if m1:
-        return full_text[:m1.start()], full_text[m1.start():]
+        return full_text[:m1.start()].strip(), full_text[m1.start():].strip()
 
     # 2. [출제의도] 또는 [해설] 태그 시작 위치 탐색 (예: 1. [출제의도] 또는 [출제의도])
     pattern2 = re.compile(
-        r"(?:^|\n)\s*(?:0?1\s*[\.\s\t]\s*)?\[\s*(?:출제의도|해설)\s*\]",
+        r"(?:^|\n)\s*(?:0?1\s*[\.\s\t]\s*)?\[\s*(?:출제의도|출제\s*의도|해설)\s*\]",
         re.IGNORECASE
     )
     m2 = pattern2.search(full_text)
     if m2:
-        return full_text[:m2.start()], full_text[m2.start():]
+        return full_text[:m2.start()].strip(), full_text[m2.start():].strip()
 
     # 3. 40~45번 문항이 나타난 이후에 다시 1번(01.)으로 번호가 리셋되는 지점 탐색
     m_40s = list(re.finditer(r"(?:^|\n)\s*(?:4[0-5])\s*\.", full_text))
