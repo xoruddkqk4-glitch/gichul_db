@@ -1042,7 +1042,7 @@ CREATE TABLE user_sentence_status (
   - Node+jsdom 스모크(브라우저 미사용): 실제 `index.html` 로드 후 모듈 평가·전체 `init()`·초기화·버튼 클릭 5회 실행 → 원본과 분리본 모두 예외 0·console.error 0·DOM 상태 동일
   - `python -m py_compile app.py grammar_analyzer.py hwp_parser.py` 통과, `describe_non_ascii('sk-ant-api03-abcd…xyz')` → `"18번째 '…'"` 확인
 
-### [2026-09-22 14:01] 업데이트 이력 (Commit ID: pending)
+### [2026-09-22 14:01] 업데이트 이력 (Commit ID: 46d874c)
 - **수정 내용**:
   - **정답 JSON 최우선 적용 파이프라인 구축 (`answer_keys.py`, `answer_resolver.py`)**:
     - `answer_keys.py`: `parse_answer_json` 유연한 파서(숫자 딕셔너리, 원문자 딕셔너리, 중첩 answers 딕셔너리, 28/45개 평탄 배열, 딕셔너리 리스트 수용), `parse_answer_json_file`(utf-8/utf-8-sig/cp949 다중 인코딩), `save_uploaded_answer_key`(업로드 정답을 `data/answer_keys/`에 영구 보관) 신설
