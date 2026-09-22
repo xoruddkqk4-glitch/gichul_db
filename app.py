@@ -21,7 +21,9 @@ from pydantic import BaseModel
 import database as db
 import grammar_analyzer
 from pdf_parser import extract_pdf_columns_and_questions
-from hwp_parser import parse_hwp_questions, parse_hwp_explanations, parse_answer_image, KNOWN_EXAM_ANSWERS, CIRCLED_MAP
+from hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP
+import answer_keys
+import answer_resolver
 from validator import cross_validate_and_merge
 from rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
 
@@ -46,6 +48,11 @@ class TagRequest(BaseModel):
 
 class QuestionTypeRequest(BaseModel):
     question_type: str
+
+
+class AnswerRequest(BaseModel):
+    answer: str
+    note: Optional[str] = ""
 
 
 class SeedDataRequest(BaseModel):
@@ -89,6 +96,47 @@ class AddGrammarAnnotationRequest(BaseModel):
 class BatchSetGrammarAnnotationsRequest(BaseModel):
     annotations: List[Dict[str, Any]] = []
 
+
+
+def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_end, answers_dict) -> bool:
+    """원본 PDF가 있으면 정답 선지 형광펜 하이라이트 크롭 이미지를 재생성하고 경로를 DB에 동기화"""
+    search_patterns = [
+        os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_*.pdf"),
+        os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month}_*.pdf"),
+        os.path.join(UPLOADS_DIR, f"*{year}*{month:02d}*.pdf"),
+        os.path.join(UPLOADS_DIR, f"*{year}*{month}*.pdf"),
+        os.path.join(UPLOADS_DIR, f"*{grade}*{year}*.pdf"),
+    ]
+    pdf_candidates = []
+    for pat in search_patterns:
+        matched = [p for p in glob.glob(pat) if "_ans_" not in os.path.basename(p)]
+        if matched:
+            pdf_candidates = matched
+            break
+    if not pdf_candidates:
+        return False
+    try:
+        crop_results = extract_pdf_columns_and_questions(
+            pdf_path=pdf_candidates[0], grade=grade, year=year, month=month,
+            start_q=reading_start, end_q=reading_end, answers_dict=answers_dict
+        )
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            for q_n, q_data in crop_results.items():
+                crop_url = q_data.get("pdf_crop_image", "")
+                if crop_url:
+                    cursor.execute(
+                        "UPDATE passages SET pdf_crop_image = ? WHERE exam_id = ? AND q_num = ?",
+                        (crop_url, exam_id, q_n)
+                    )
+            conn.commit()
+        print(f"[Crops] {exam_id} 정답 형광펜 크롭 {len(crop_results)}개 재생성 완료")
+        return True
+    except Exception as crop_err:
+        import traceback
+        traceback.print_exc()
+        print(f"[Crops] {exam_id} PDF 하이라이트 갱신 중 경고: {crop_err}")
+        return False
 
 
 # --- 웹 페이지 루트 ---
@@ -216,6 +264,54 @@ async def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
 
     success = db.update_passage_question_type(clean_id, req.question_type)
     return {"success": success, "question_type": req.question_type}
+
+
+# --- 정답 수동 정정 API ---
+@app.patch("/api/passages/{passage_id}/answer")
+async def api_update_answer(passage_id: str, req: AnswerRequest):
+    """교사가 확인한 정답으로 정정: DB 정답/해설 헤더/검증 상태 갱신 + 키 파일 기록 + 형광펜 크롭 재생성"""
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    new_ans = answer_resolver.normalize_answer(req.answer)
+    if not new_ans:
+        raise HTTPException(status_code=400, detail="정답은 ①~⑤ 또는 1~5 로 입력해야 합니다.")
+
+    passage = db.get_passage(clean_id)
+    if not passage:
+        raise HTTPException(status_code=404, detail=f"지문 '{clean_id}'를 찾을 수 없습니다.")
+    exam_id = passage["exam_id"]
+    q_num = int(passage["q_num"])
+    old_ans = passage.get("answer_text") or ""
+
+    with db.get_connection() as conn:
+        exam = conn.execute(
+            "SELECT grade, year, month, reading_start_q, reading_end_q FROM exams WHERE id = ?", (exam_id,)
+        ).fetchone()
+        exam_answers = {int(r["q_num"]): (r["answer_text"] or "") for r in conn.execute(
+            "SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (exam_id,))}
+    if not exam:
+        raise HTTPException(status_code=404, detail=f"시험지 '{exam_id}'를 찾을 수 없습니다.")
+
+    db.update_passage_answers(exam_id, {q_num: new_ans}, source="manual", verified=1)
+    answer_keys.record_manual_answer(exam["grade"], exam["year"], exam["month"], q_num, new_ans, old_ans, req.note or "")
+
+    exam_answers[q_num] = new_ans
+    pdf_highlighted = False
+    if old_ans != new_ans:
+        pdf_highlighted = _regenerate_exam_crops(
+            exam_id, exam["grade"], exam["year"], exam["month"],
+            exam["reading_start_q"] or 18, exam["reading_end_q"] or 45, exam_answers
+        )
+
+    return {
+        "success": True,
+        "passage": db.get_passage(clean_id),
+        "old_answer": old_ans,
+        "new_answer": new_ans,
+        "pdf_highlighted": pdf_highlighted,
+        "message": f"{clean_id} 정답을 '{old_ans or '-'}' → '{new_ans}' 로 정정했습니다." + (" (형광펜 크롭 갱신)" if pdf_highlighted else "")
+    }
 
 
 # --- 태그 관리 API ---
@@ -730,14 +826,11 @@ async def api_upload_exam(
             "reading_end_q": reading_end or 45
         })
 
-        # 3. 해설/정답 파싱
-        # (1) 정답표 이미지(-A.png)가 제공된 경우 Vision AI로 1~45번 정답 추출
-        image_answers = {}
+        # 3. 정답 소스 수집
+        # (1) 정답표 이미지(-A.png): 활성화된 모든 Vision 모델이 독립 판독, 2개 이상 일치한 문항만 검증 정답으로 인정
+        image_report = None
         if ans_save_path and os.path.exists(ans_save_path):
-            try:
-                image_answers = parse_answer_image(ans_save_path)
-            except Exception as e:
-                print(f"[Upload] 정답표 이미지 파싱 실패: {e}")
+            image_report = read_answer_image(ans_save_path)
 
         # (2) HWP 해설 파싱 (별도 해설 파일 우선, 없거나 미흡할 경우 문제지 HWP 파일에서 추출)
         explanations = {}
@@ -753,8 +846,7 @@ async def api_upload_exam(
                     if q_num not in explanations or not explanations[q_num].get("explanation"):
                         explanations[q_num] = exp_info
 
-        # (3) 정답 딕셔너리 최종 결합:
-        # 우선순위: 정답표 이미지(image_answers) [절대 최우선] > 정답률 CSV(rates_dict) > HWP 해설 > 기출 백업 사전
+        # (3) 정답률 CSV
         rates_dict = {}
         if csv_save_path and os.path.exists(csv_save_path):
             try:
@@ -762,47 +854,24 @@ async def api_upload_exam(
             except Exception as e:
                 print(f"[Upload] 정답률 CSV 파싱 실패: {e}")
 
-        answers_dict = {}
+        # (4) 문항별 정답 확정: 검증 키 파일 > CSV 정답 > 이미지 모델 합의 > 이미지 단일 모델 > HWP 해설
+        #     검증되지 않은 소스로 결정된 문항은 answer_verified=0 으로 기록되고 응답에 경고로 명시된다 (무언 폴백 금지)
+        resolution = answer_resolver.resolve_answers(
+            q_range=range(reading_start or 18, (reading_end or 45) + 1),
+            verified_key=answer_keys.load_answer_key(grade, year, month),
+            image_report=image_report,
+            csv_rates=rates_dict,
+            hwp_answers={q: info.get("answer", "") for q, info in explanations.items()},
+        )
+        answers_dict = resolution["answers"]
+        for w in resolution["report"]["warnings"]:
+            print(f"[Upload][정답 검증 경고] {exam_id} {w}")
 
-        # 1. HWP 해설에서 기본 정답 수집
-        for q_num, exp_data in explanations.items():
-            ans = exp_data.get("answer", "").strip()
-            if ans in CIRCLED_MAP:
-                ans = CIRCLED_MAP[ans]
-            if ans:
-                answers_dict[q_num] = ans
-
-        # 2. 기출 정답 백업 사전 (정확한 학년 일치 시 미등록 문항 보강)
-        exam_keys = [f"{grade}_{year}_{month:02d}", (grade, year, month)]
-        for ek in exam_keys:
-            if ek in KNOWN_EXAM_ANSWERS:
-                backup_answers = KNOWN_EXAM_ANSWERS[ek]
-                for q_num, ans in backup_answers.items():
-                    if q_num not in answers_dict or not answers_dict[q_num]:
-                        answers_dict[q_num] = ans
-                break
-
-        # 3. 정답률 CSV의 정답 반영 (HWP 오답보다 우선)
-        if rates_dict:
-            for q_num, item in rates_dict.items():
-                c_circle = item.get("correct_ans_circle")
-                if c_circle:
-                    answers_dict[q_num] = c_circle
-
-        # 4. 정답표 이미지 분석 결과 반영 (★ 절대 최우선 기준: HWP 해설/CSV/백업의 어떤 값도 덮어씀)
-        if image_answers:
-            for q_num, ans in image_answers.items():
-                if ans in CIRCLED_MAP:
-                    ans = CIRCLED_MAP[ans]
-                if ans:
-                    answers_dict[q_num] = ans
-
-        # 5. 최종 확정된 정답(정답표 이미지 최우선)을 explanations 해설 텍스트 헤더 및 answer 필드에 강제 동기화
+        # (5) 최종 확정된 정답을 explanations 해설 텍스트 헤더 및 answer 필드에 동기화
         for q_num, final_ans in answers_dict.items():
             if q_num in explanations:
                 explanations[q_num]["answer"] = final_ans
                 exp_body = explanations[q_num].get("explanation", "").strip()
-                # 기존 [정답] 라벨이 오기입되어 있더라도 정규식 치환으로 최우선 정답 번호로 교체
                 if re.search(r"^\s*\[\s*정답\s*\]", exp_body):
                     explanations[q_num]["explanation"] = re.sub(
                         r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?",
@@ -857,6 +926,9 @@ async def api_upload_exam(
                 db.save_sentences(pkg["sentences"])
                 saved_sentences_count += len(pkg["sentences"])
 
+        # 문항별 정답 출처/검증 상태 기록
+        db.set_answer_status(exam_id, resolution["sources"], resolution["verified"])
+
         # 정답률 데이터가 파싱된 경우 passages 테이블에 일괄 반영
         if rates_dict:
             try:
@@ -869,12 +941,17 @@ async def api_upload_exam(
         if ai_key:
             background_tasks.add_task(background_auto_analyze_exam_grammar, exam_id)
 
+        report = resolution["report"]
+        msg = f"성공적으로 {saved_passages_count}개 문항과 {saved_sentences_count}개 문장을 상호 검증하여 저장했습니다."
+        if report["unverified_questions"]:
+            msg += f" ⚠ 정답 미검증 {len(report['unverified_questions'])}문항 - 정답표 이미지/정답률 CSV를 확인하세요."
         return {
             "status": "success",
             "exam_id": exam_id,
             "passages_count": saved_passages_count,
             "sentences_count": saved_sentences_count,
-            "message": f"성공적으로 {saved_passages_count}개 문항과 {saved_sentences_count}개 문장을 상호 검증하여 저장했습니다."
+            "answer_report": report,
+            "message": msg
         }
 
     except Exception as e:
@@ -949,12 +1026,19 @@ async def api_upload_exam_single_file(
     # 3. 정답표 이미지(ans) 처리
     if file_type == "ans":
         try:
-            # (1) Vision AI 정답 분석
-            image_answers = parse_answer_image(save_path)
-            if not image_answers:
-                raise ValueError("정답표 이미지에서 정답을 추출하지 못했습니다.")
+            # (1) 활성화된 모든 Vision 모델로 독립 판독 → 2개 이상 일치한 문항만 검증 정답으로 인정
+            report = read_answer_image(save_path)
+            if report["status"] == "failed":
+                raise ValueError("정답표 이미지 판독 실패: " + "; ".join(report["errors"]))
+            if report["status"] == "single_reader":
+                image_answers = next(iter(report["readings"].values()))
+                img_source, img_verified = "image_single", 0
+            else:
+                image_answers = report["consensus"]
+                img_source, img_verified = "image_consensus", 1
+            verified_key = answer_keys.load_answer_key(grade, year, month)
 
-            # (2) DB 지문 정답 및 해설 텍스트 갱신
+            # (2) DB 지문 정답 및 해설 텍스트 갱신 (검증 키 파일이 있으면 키 파일 우선)
             answers_dict = {}
             with db.get_connection() as conn:
                 cursor = conn.cursor()
@@ -965,86 +1049,51 @@ async def api_upload_exam_single_file(
                 passages = cursor.fetchall()
 
                 for p in passages:
-                    q_num = p["q_num"]
-                    q_int = int(q_num) if str(q_num).isdigit() else q_num
-                    old_ans = p["answer_text"] or ""
-                    # int, str 키 모두 안전하게 조회
-                    target_ans = (
-                        image_answers.get(q_int)
-                        or image_answers.get(str(q_int))
-                        or image_answers.get(q_num)
-                    )
-                    new_ans = target_ans if target_ans else old_ans
+                    q_int = int(p["q_num"])
+                    if q_int in verified_key:
+                        target_ans, src, ver = verified_key[q_int], "verified_key", 1
+                    elif q_int in image_answers:
+                        target_ans, src, ver = image_answers[q_int], img_source, img_verified
+                    else:
+                        target_ans, src, ver = None, None, 0
+                    new_ans = target_ans or (p["answer_text"] or "")
                     if new_ans:
                         answers_dict[q_int] = new_ans
 
                     if target_ans:
-                        ans_val = target_ans
                         exp_body = p["explanation_text"] or ""
                         if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
-                            new_exp = f"[정답] {ans_val}\n\n{exp_body}".strip()
+                            new_exp = f"[정답] {target_ans}\n\n{exp_body}".strip()
                         else:
-                            new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans_val}", exp_body)
+                            new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {target_ans}", exp_body)
 
                         cursor.execute(
-                            "UPDATE passages SET answer_text = ?, explanation_text = ? WHERE id = ?",
-                            (ans_val, new_exp, p["id"])
+                            "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = ?, answer_verified = ? WHERE id = ?",
+                            (target_ans, new_exp, src, ver, p["id"])
                         )
                 conn.commit()
 
-            # (3) 원본 PDF가 있으면 정답 선지 파스텔톤 노란색 형광펜 하이라이트 크롭 이미지 재생성
-            pdf_candidates = []
-            # 다양한 패턴으로 저장된 원본 PDF 탐색
-            search_patterns = [
-                os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_*.pdf"),
-                os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month}_*.pdf"),
-                os.path.join(UPLOADS_DIR, f"*{year}*{month:02d}*.pdf"),
-                os.path.join(UPLOADS_DIR, f"*{year}*{month}*.pdf"),
-                os.path.join(UPLOADS_DIR, f"*{grade}*{year}*.pdf")
-            ]
-            for pat in search_patterns:
-                matched = glob.glob(pat)
-                if matched:
-                    pdf_candidates = matched
-                    break
+            # (3) 원본 PDF가 있으면 정답 선지 형광펜 하이라이트 크롭 이미지 재생성
+            pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict)
 
-            pdf_highlighted = False
-            if pdf_candidates:
-                try:
-                    crop_results = extract_pdf_columns_and_questions(
-                        pdf_path=pdf_candidates[0],
-                        grade=grade,
-                        year=year,
-                        month=month,
-                        start_q=reading_start,
-                        end_q=reading_end,
-                        answers_dict=answers_dict
-                    )
-                    # DB passages 테이블에 최신 크롭 이미지 경로 동기화
-                    with db.get_connection() as conn:
-                        cursor = conn.cursor()
-                        for q_n, q_data in crop_results.items():
-                            crop_url = q_data.get("pdf_crop_image", "")
-                            if crop_url:
-                                cursor.execute(
-                                    "UPDATE passages SET pdf_crop_image = ? WHERE exam_id = ? AND q_num = ?",
-                                    (crop_url, clean_id, q_n)
-                                )
-                        conn.commit()
-                    pdf_highlighted = True
-                    print(f"[SingleUpload] {clean_id} PDF 정답 선지 형광펜 하이라이트 크롭 {len(crop_results)}개 생성 완료!")
-                except Exception as crop_err:
-                    import traceback
-                    traceback.print_exc()
-                    print(f"[SingleUpload] PDF 하이라이트 갱신 중 경고: {crop_err}")
-
+            warnings = []
+            if report["status"] == "single_reader":
+                warnings.append("Vision 모델 1개만 응답 - 교차검증 불가 (미검증 처리)")
+            if report["disputed"]:
+                warnings.append(f"모델 간 판독 불일치 문항(미반영): {sorted(report['disputed'])}")
             return {
                 "status": "success",
                 "exam_id": clean_id,
                 "file_type": "ans",
+                "image_status": report["status"],
+                "reader_count": report["reader_count"],
                 "extracted_count": len(image_answers),
+                "disputed": {str(q): v for q, v in report["disputed"].items()},
+                "warnings": warnings,
                 "pdf_highlighted": pdf_highlighted,
-                "message": f"정답표 이미지에서 {len(image_answers)}개 문항 정답을 성공적으로 추출하여 반영했습니다." + (" (PDF 정답 번호에 파스텔톤 노란색 형광펜 하이라이트 적용 완료)" if pdf_highlighted else "")
+                "message": f"정답표 이미지를 {report['reader_count']}개 모델이 판독하여 {len(image_answers)}개 문항 정답을 반영했습니다."
+                           + (" (PDF 형광펜 갱신 완료)" if pdf_highlighted else "")
+                           + ((" ⚠ " + " / ".join(warnings)) if warnings else "")
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"정답 이미지 파싱 중 오류: {str(e)}")
@@ -1055,7 +1104,36 @@ async def api_upload_exam_single_file(
             rates_dict = parse_correct_rate_csv(save_path)
             if not rates_dict:
                 raise ValueError("정답률 CSV 파일에서 유효한 문항 데이터를 추출하지 못했습니다.")
+
+            # (1) 기존 DB 정답과 교차검증: 다른 시험의 CSV면 반영 거부, 정답률이 유일하게 가리키는 정답은 정정/확인
+            with db.get_connection() as conn:
+                rows = conn.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (clean_id,)).fetchall()
+            current = {int(r["q_num"]): r["answer_text"] or "" for r in rows}
+            check = answer_resolver.check_csv_against_answers(rates_dict, current)
+            if check["suspect"]:
+                raise HTTPException(status_code=422, detail=(
+                    f"정답률 CSV가 다른 시험의 데이터로 의심되어 반영하지 않았습니다 "
+                    f"(비교 {check['checked']}문항 중 {len(check['mismatch'])}문항 정답 불일치: {check['mismatch']}). 파일을 확인하세요."
+                ))
+
+            # (2) 정답률/선택률 저장
             res_data = db.save_exam_correct_rates(clean_id, rates_dict)
+
+            # (3) CSV가 결정적으로 확정한 정답: 기존 정답 정정 + 검증 상태 기록
+            decided = {q: new for q, (_old, new) in check["corrections"].items()}
+            decided.update({q: current[q] for q in check["confirmed"]})
+            if decided:
+                db.update_passage_answers(clean_id, decided, source="csv", verified=1)
+            pdf_highlighted = False
+            if check["corrections"]:
+                merged = {**current, **{q: n for q, (_o, n) in check["corrections"].items()}}
+                pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, merged)
+
+            warnings = []
+            if check["corrections"]:
+                warnings.append("정답 정정: " + ", ".join(f"Q{q} {o}→{n}" for q, (o, n) in sorted(check["corrections"].items())))
+            if check["violations"]:
+                warnings.append(f"정답률과 모순되는 기존 정답 (후보 복수로 자동 확정 불가, 확인 필요): {check['violations']}")
             return {
                 "status": "success",
                 "exam_id": clean_id,
@@ -1063,8 +1141,19 @@ async def api_upload_exam_single_file(
                 "extracted_count": len(rates_dict),
                 "updated_count": res_data["updated_count"],
                 "avg_rate": res_data["avg_rate"],
-                "message": f"정답률 및 선지 선택률 데이터 {res_data['updated_count']}개 문항이 성공적으로 반영되었습니다." + (f" (평균 정답률: {res_data['avg_rate']}%)" if res_data["avg_rate"] is not None else "")
+                "csv_checked": check["checked"],
+                "confirmed_count": len(check["confirmed"]),
+                "corrections": {str(q): {"old": o, "new": n} for q, (o, n) in check["corrections"].items()},
+                "violations": check["violations"],
+                "pdf_highlighted": pdf_highlighted,
+                "warnings": warnings,
+                "message": f"정답률 데이터 {res_data['updated_count']}문항 반영, 정답 {len(check['confirmed'])}문항 교차검증 확인"
+                           + (f", {len(check['corrections'])}문항 정정" if check["corrections"] else "")
+                           + (f" (평균 정답률 {res_data['avg_rate']}%)" if res_data["avg_rate"] is not None else "")
+                           + ((" ⚠ " + " / ".join(warnings)) if warnings else "")
             }
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"정답률 CSV 파싱 중 오류: {str(e)}")
 

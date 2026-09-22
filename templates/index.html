@@ -479,6 +479,16 @@
                 <div class="meta-item">
                   <span class="meta-label">정답</span>
                   <span class="meta-val" id="metaAnswer" style="color: #dc2626; font-weight: 700;">-</span>
+                  <span class="answer-status-badge" id="metaAnswerStatus" style="display: none;" title="정답 출처 및 검증 상태"></span>
+                  <button type="button" class="btn-answer-edit" id="btnEditAnswer" title="정답 수동 정정" style="display: none;">✏</button>
+                  <span class="answer-edit-form" id="answerEditForm" style="display: none;">
+                    <select id="answerEditQ" class="answer-edit-select" style="display: none;"></select>
+                    <select id="answerEditVal" class="answer-edit-select">
+                      <option value="①">①</option><option value="②">②</option><option value="③">③</option><option value="④">④</option><option value="⑤">⑤</option>
+                    </select>
+                    <button type="button" class="btn-answer-save" id="btnSaveAnswer">저장</button>
+                    <button type="button" class="btn-answer-cancel" id="btnCancelAnswer">취소</button>
+                  </span>
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">정답률</span>

@@ -90,7 +90,7 @@ PROVIDER_NAMES = {
 PROVIDER_DEFAULT_MODELS = {
     "gemini": "gemini-3.6-flash",
     "openai": "gpt-4o-mini",
-    "claude": "claude-3-5-haiku-20241022",
+    "claude": "claude-haiku-4-5",
     "openrouter": "deepseek/deepseek-chat"
 }
 
@@ -791,7 +791,7 @@ def _call_llm(
                 raw_json_str = resp_data["choices"][0]["message"]["content"]
 
         elif provider == "claude":
-            target_model = model or "claude-3-5-haiku-20241022"
+            target_model = model or "claude-haiku-4-5"
             used_model = target_model
             url = "https://api.anthropic.com/v1/messages"
             payload = {

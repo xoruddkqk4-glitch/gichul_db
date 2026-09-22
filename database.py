@@ -95,6 +95,16 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
+        # 정답 출처 및 검증 상태 (verified_key / csv / image_consensus 만 검증 인정)
+        for col_sql in (
+            "ALTER TABLE passages ADD COLUMN answer_source TEXT;",
+            "ALTER TABLE passages ADD COLUMN answer_verified INTEGER DEFAULT 0;",
+        ):
+            try:
+                cursor.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass
+
         # 3. 문장 테이블
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sentences (
@@ -611,9 +621,43 @@ def save_passage(passage_data: dict) -> str:
         return passage_data["id"]
 
 
+def set_answer_status(exam_id: str, sources: Dict[int, str], verified: Dict[int, bool]):
+    """문항별 정답 출처(answer_source)와 검증 여부(answer_verified) 기록"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        for q_num, source in sources.items():
+            cursor.execute(
+                "UPDATE passages SET answer_source = ?, answer_verified = ? WHERE exam_id = ? AND q_num = ?",
+                (source, 1 if verified.get(q_num) else 0, exam_id, q_num)
+            )
+        conn.commit()
+
+
+def update_passage_answers(exam_id: str, answers: Dict[int, str], source: str, verified: int):
+    """문항별 정답, 해설 [정답] 헤더, 정답 출처, 검증 상태를 함께 갱신"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        for q_num, ans in answers.items():
+            row = cursor.execute(
+                "SELECT id, explanation_text FROM passages WHERE exam_id = ? AND q_num = ?", (exam_id, q_num)
+            ).fetchone()
+            if not row:
+                continue
+            exp = (row["explanation_text"] or "").strip()
+            if re.search(r"^\s*\[\s*정답\s*\]", exp):
+                exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp, count=1)
+            else:
+                exp = f"[정답] {ans}\n\n{exp}".strip()
+            cursor.execute(
+                "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = ?, answer_verified = ? WHERE id = ?",
+                (ans, exp, source, verified, row["id"])
+            )
+        conn.commit()
+
+
 def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
     """
-    특정 시험지의 문항별 정답률 및 선지 선택률 일괄 DB 갱신
+    특정 시험지의 문항별 정답률 및 선지 선택률 일괄 DB 갱신 (정답은 건드리지 않음 - 정답 교차검증은 answer_resolver 담당)
     rates_dict: { q_num: { 'correct_rate': float, 'choice_rates': dict, 'correct_ans_circle': str } }
     """
     clean_id = exam_id.strip()
@@ -636,28 +680,10 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]])
                 c_rate = target_data.get("correct_rate")
                 ch_rates = target_data.get("choice_rates")
                 ch_rates_json = json.dumps(ch_rates, ensure_ascii=False) if ch_rates else None
-                c_ans = target_data.get("correct_ans_circle")
-
-                old_ans = p["answer_text"] or ""
-                old_exp = p["explanation_text"] or ""
-
-                # CSV의 공인 정답 기호(①~⑤)가 존재하면 정답 우선 동기화
-                new_ans = c_ans if (c_ans and c_ans in ("①", "②", "③", "④", "⑤")) else (old_ans or "")
-
-                # 해설 상단 [정답] 표기도 정답에 맞추어 자동 동기화
-                if new_ans and old_exp:
-                    if re.search(r"^\s*\[\s*정답\s*\]", old_exp):
-                        new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {new_ans}", old_exp)
-                    else:
-                        new_exp = f"[정답] {new_ans}\n\n{old_exp.strip()}".strip()
-                else:
-                    new_exp = old_exp
-
-                cursor.execute("""
-                    UPDATE passages 
-                    SET correct_rate = ?, choice_rates = ?, answer_text = ?, explanation_text = ?
-                    WHERE id = ?
-                """, (c_rate, ch_rates_json, new_ans if new_ans else old_ans, new_exp, p["id"]))
+                cursor.execute(
+                    "UPDATE passages SET correct_rate = ?, choice_rates = ? WHERE id = ?",
+                    (c_rate, ch_rates_json, p["id"])
+                )
                 updated_count += 1
                 if c_rate is not None:
                     rates_collected.append(c_rate)

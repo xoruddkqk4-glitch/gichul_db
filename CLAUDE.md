@@ -47,3 +47,4 @@
 
 ## 7. 원본 규칙 파일
 이 문서는 `.agents/rules/rules.md`를 기반으로 구성되었습니다. 규칙을 변경할 때는 함께 갱신하세요.
+- 스킬 정의 원본은 `.agents/skills/*/SKILL.md`이며, Claude Code 슬래시 명령(`/git-commit`, `/ask`, `/scratchpad`)용으로 `.claude/skills/*/SKILL.md`에 미러링되어 있습니다. 스킬을 수정할 때는 두 위치를 함께 갱신하세요.

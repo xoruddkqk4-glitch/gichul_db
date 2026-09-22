@@ -110,6 +110,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const metaPassageId = document.getElementById("metaPassageId");
   const metaQNum = document.getElementById("metaQNum");
   const metaAnswer = document.getElementById("metaAnswer");
+  const metaAnswerStatus = document.getElementById("metaAnswerStatus");
+  const btnEditAnswer = document.getElementById("btnEditAnswer");
+  const answerEditForm = document.getElementById("answerEditForm");
+  const answerEditQ = document.getElementById("answerEditQ");
+  const answerEditVal = document.getElementById("answerEditVal");
+  const btnSaveAnswer = document.getElementById("btnSaveAnswer");
+  const btnCancelAnswer = document.getElementById("btnCancelAnswer");
+  let currentDetailPassage = null;
+  const ANSWER_SOURCE_LABELS = { verified_key: "검증 키 파일", csv: "정답률 CSV", image_consensus: "이미지 모델 합의", image_single: "이미지 단일 모델", hwp: "HWP 해설", manual: "수동 확정", none: "출처 없음" };
   const metaCorrectRate = document.getElementById("metaCorrectRate");
   const metaQuestionTitle = document.getElementById("metaQuestionTitle");
   const metaQuestionType = document.getElementById("metaQuestionType");
@@ -1048,6 +1057,7 @@ document.addEventListener("DOMContentLoaded", () => {
             subItems: [p, p42],
             question_type: "1지문2문항",
             answer_text: ansLabel,
+            answer_verified: [p, p42].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
             pdf_crop_images: [p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean),
             explanation_text: expText41_42
           });
@@ -1083,6 +1093,7 @@ document.addEventListener("DOMContentLoaded", () => {
             subItems: [p, p44, p45],
             question_type: "1지문3문항",
             answer_text: ansLabel,
+            answer_verified: [p, p44, p45].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
             pdf_crop_images: [p.pdf_crop_image].filter(Boolean),
             explanation_text: expText43_45
           });
@@ -1606,6 +1617,64 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  /** 정답 수동 정정: 편집 폼 표시 */
+  if (btnEditAnswer) {
+    btnEditAnswer.addEventListener("click", () => {
+      const p = currentDetailPassage;
+      if (!p || !answerEditForm) return;
+      const targets = (p.isGroup && p.subItems) ? p.subItems : [p];
+      answerEditQ.innerHTML = targets.map((t, i) => `<option value="${i}">${t.q_num}번</option>`).join("");
+      answerEditQ.style.display = targets.length > 1 ? "inline-block" : "none";
+      answerEditQ.value = "0";
+      answerEditVal.value = ["①", "②", "③", "④", "⑤"].includes(targets[0].answer_text) ? targets[0].answer_text : "①";
+      answerEditForm.style.display = "inline-flex";
+    });
+    answerEditQ.addEventListener("change", () => {
+      const p = currentDetailPassage;
+      const targets = (p && p.isGroup && p.subItems) ? p.subItems : [p];
+      const t = targets[Number(answerEditQ.value)] || targets[0];
+      if (t && ["①", "②", "③", "④", "⑤"].includes(t.answer_text)) answerEditVal.value = t.answer_text;
+    });
+    btnCancelAnswer.addEventListener("click", () => { answerEditForm.style.display = "none"; });
+    btnSaveAnswer.addEventListener("click", async () => {
+      const p = currentDetailPassage;
+      if (!p) return;
+      const targets = (p.isGroup && p.subItems) ? p.subItems : [p];
+      const target = targets[Number(answerEditQ.value)] || targets[0];
+      const newAns = answerEditVal.value;
+      if (target.answer_text === newAns) { answerEditForm.style.display = "none"; return; }
+      if (!confirm(`${target.id} 정답을 '${target.answer_text || "-"}' → '${newAns}' 로 정정할까요?\n(DB·해설·형광펜 이미지·검증 키 파일에 함께 반영됩니다)`)) return;
+      btnSaveAnswer.disabled = true;
+      btnSaveAnswer.textContent = "반영 중...";
+      try {
+        const res = await fetch(`/api/passages/${encodeURIComponent(target.id)}/answer`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answer: newAns })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "정답 정정 실패");
+        applyPassageUpdate(data.passage, p.id);
+        showToast(data.message || "정답이 정정되었습니다.", "success");
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || "정답 정정 중 오류가 발생했습니다.", "error");
+      } finally {
+        btnSaveAnswer.disabled = false;
+        btnSaveAnswer.textContent = "저장";
+        if (answerEditForm) answerEditForm.style.display = "none";
+      }
+    });
+  }
+
+  /** 서버에서 갱신된 단일 지문 데이터를 현재 결과 목록에 반영하고 뷰어를 다시 그림 */
+  function applyPassageUpdate(fresh, focusId) {
+    if (!fresh || !fresh.id) return;
+    const flatten = (items) => items.flatMap((it) => (it.isGroup && it.subItems) ? it.subItems : [it]);
+    const replaceIn = (items) => flatten(items).map((it) => (it.id === fresh.id ? { ...it, ...fresh } : it));
+    if (passagesData && passagesData.length) passagesData = groupPassageItems(replaceIn(passagesData));
+    if (rawPassagesData && rawPassagesData.length) rawPassagesData = groupPassageItems(replaceIn(rawPassagesData));
+    renderPassageView(passagesData, focusId || fresh.id);
+  }
+
   /** 2x2 패널에 특정 지문 상세 정보 로드 */
   function loadPassageDetail(p) {
     if (!p) return;
@@ -1688,6 +1757,16 @@ document.addEventListener("DOMContentLoaded", () => {
     metaQNum.textContent = p.q_num_label || (p.q_num ? `${p.q_num}번` : "-");
     if (metaQuestionType) metaQuestionType.textContent = p.question_type || "-";
     metaAnswer.textContent = p.answer_text ? `${p.answer_text}` : "-";
+    if (metaAnswerStatus) {
+      const src = p.answer_source || "none";
+      const verified = Number(p.answer_verified) === 1;
+      metaAnswerStatus.textContent = verified ? `✔ 검증 · ${ANSWER_SOURCE_LABELS[src] || src}` : `⚠ 미검증 · ${ANSWER_SOURCE_LABELS[src] || src}`;
+      metaAnswerStatus.className = `answer-status-badge ${verified ? "ok" : "warn"}`;
+      metaAnswerStatus.style.display = p.answer_text ? "inline-flex" : "none";
+    }
+    currentDetailPassage = p;
+    if (btnEditAnswer) btnEditAnswer.style.display = "inline-block";
+    if (answerEditForm) answerEditForm.style.display = "none";
     if (metaQuestionTitle) metaQuestionTitle.textContent = p.question_title || "-";
     validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
 
@@ -1854,6 +1933,10 @@ document.addEventListener("DOMContentLoaded", () => {
     metaQNum.textContent = "-";
     if (metaQuestionType) metaQuestionType.textContent = "-";
     metaAnswer.textContent = "-";
+    if (metaAnswerStatus) metaAnswerStatus.style.display = "none";
+    if (btnEditAnswer) btnEditAnswer.style.display = "none";
+    if (answerEditForm) answerEditForm.style.display = "none";
+    currentDetailPassage = null;
     if (metaCorrectRate) metaCorrectRate.innerHTML = "-";
     if (metaQuestionTitle) metaQuestionTitle.textContent = "-";
     if (choiceBarsList) choiceBarsList.innerHTML = "";
@@ -3152,10 +3235,14 @@ document.addEventListener("DOMContentLoaded", () => {
               body: formData
             });
             const resData = await res.json();
+            if (!res.ok && statusCell) {
+              statusCell.title = resData.detail || "";
+            }
             if (res.ok) {
               successCount++;
               if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답률 (${resData.updated_count || resData.parsed_count || 0}문항)</span>`;
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답률 (${resData.updated_count || resData.parsed_count || 0}문항)</span>`
+                  + ((resData.warnings || []).length ? ` <span style="color: #d97706; font-weight: 700;" title="${resData.warnings.join('\n')}">⚠ ${resData.corrections ? Object.keys(resData.corrections).length : 0}건 정정</span>` : "");
               }
             } else {
               failCount++;
@@ -3210,7 +3297,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (res.ok) {
               successCount++;
               if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답 갱신 (${resData.extracted_count || 45}문항)</span>`;
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답 갱신 (${resData.extracted_count || 0}문항)</span>`
+                  + ((resData.warnings || []).length ? ` <span style="color: #d97706; font-weight: 700;" title="${resData.warnings.join('\n')}">⚠ ${resData.image_status}</span>` : "");
               }
             } else {
               failCount++;
@@ -3241,7 +3329,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (res.ok) {
               successCount++;
               if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 완료 (${resData.passages_count || 28}문항)</span>`;
+                const unv = (resData.answer_report && resData.answer_report.unverified_questions) || [];
+                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 완료 (${resData.passages_count || 28}문항)</span>`
+                  + (unv.length ? ` <span style="color: #d97706; font-weight: 700;" title="${(resData.answer_report.warnings || []).join('\n')}">⚠ 정답 미검증 ${unv.length}</span>` : "");
               }
             } else {
               failCount++;
@@ -3329,7 +3419,11 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       const data = await res.json();
       if (res.ok) {
-        showToast(data.message || "시험지가 성공적으로 등록되었습니다!", "success");
+        const rep = data.answer_report;
+        if (rep && rep.unverified_questions && rep.unverified_questions.length) {
+          alert(`⚠ 정답 검증 경고 [${data.exam_id}]\n\n${(rep.warnings || []).join("\n")}`);
+        }
+        showToast(data.message || "시험지가 성공적으로 등록되었습니다!", rep && rep.unverified_questions && rep.unverified_questions.length ? "warning" : "success");
         closeUploadModal();
         uploadForm.reset();
         loadStats();

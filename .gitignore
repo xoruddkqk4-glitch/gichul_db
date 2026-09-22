@@ -16,3 +16,6 @@ __pycache__/
 uploads/
 gichul.db*
 scratch/
+
+# Answer-key intermediate transcription passes (final keys in data/answer_keys/*.json are tracked)
+data/answer_keys/_pass*/

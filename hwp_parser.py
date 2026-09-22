@@ -9,7 +9,7 @@ import os
 import re
 import zipfile
 import xml.etree.ElementTree as ET
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
 def sanitize_text(text: str) -> str:
@@ -409,82 +409,6 @@ def format_hwp_question(
 
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
 
-KNOWN_EXAM_ANSWERS = {
-    "고1_2026_03": {
-        18: "②", 19: "①", 20: "②", 21: "⑤", 22: "⑤", 23: "③", 24: "⑤", 25: "④",
-        26: "③", 27: "④", 28: "⑤", 29: "②", 30: "③", 31: "①", 32: "①", 33: "②",
-        34: "①", 35: "④", 36: "③", 37: "⑤", 38: "④", 39: "③", 40: "①", 41: "③",
-        42: "⑤", 43: "②", 44: "⑤", 45: "③"
-    },
-    "고1_2026_06": {
-        18: "④", 19: "⑤", 20: "②", 21: "⑤", 22: "①", 23: "③", 24: "①", 25: "⑤",
-        26: "②", 27: "④", 28: "④", 29: "④", 30: "③", 31: "②", 32: "①", 33: "②",
-        34: "①", 35: "③", 36: "②", 37: "⑤", 38: "③", 39: "③", 40: "①", 41: "③",
-        42: "③", 43: "②", 44: "②", 45: "④"
-    },
-    "고1_2026_09": {
-        18: "④", 19: "①", 20: "②", 21: "①", 22: "③", 23: "②", 24: "④", 25: "③",
-        26: "⑤", 27: "④", 28: "③", 29: "④", 30: "⑤", 31: "①", 32: "②", 33: "①",
-        34: "②", 35: "④", 36: "②", 37: "⑤", 38: "⑤", 39: "③", 40: "①", 41: "①",
-        42: "⑤", 43: "⑤", 44: "②", 45: "③"
-    },
-    "고2_2026_03": {
-        18: "⑤", 19: "①", 20: "⑤", 21: "②", 22: "④", 23: "②", 24: "②", 25: "④",
-        26: "③", 27: "③", 28: "④", 29: "④", 30: "③", 31: "①", 32: "⑤", 33: "⑤",
-        34: "④", 35: "④", 36: "⑤", 37: "②", 38: "④", 39: "③", 40: "①", 41: "③",
-        42: "⑤", 43: "②", 44: "③", 45: "③"
-    },
-    "고2_2026_06": {
-        18: "④", 19: "①", 20: "③", 21: "①", 22: "②", 23: "③", 24: "④", 25: "④",
-        26: "③", 27: "④", 28: "③", 29: "②", 30: "③", 31: "①", 32: "②", 33: "②",
-        34: "⑤", 35: "③", 36: "②", 37: "⑤", 38: "⑤", 39: "②", 40: "④", 41: "①",
-        42: "⑤", 43: "④", 44: "⑤", 45: "⑤"
-    },
-    "고2_2026_09": {
-        18: "③", 19: "①", 20: "⑤", 21: "②", 22: "②", 23: "①", 24: "②", 25: "④",
-        26: "②", 27: "③", 28: "④", 29: "⑤", 30: "③", 31: "②", 32: "①", 33: "①",
-        34: "③", 35: "④", 36: "④", 37: "⑤", 38: "③", 39: "③", 40: "①", 41: "①",
-        42: "④", 43: "③", 44: "③", 45: "②"
-    },
-    "고3_2026_03": {
-        18: "①", 19: "①", 20: "①", 21: "③", 22: "⑤", 23: "①", 24: "①", 25: "②",
-        26: "⑤", 27: "⑤", 28: "⑤", 29: "④", 30: "②", 31: "⑤", 32: "②", 33: "③",
-        34: "③", 35: "③", 36: "④", 37: "②", 38: "③", 39: "⑤", 40: "②", 41: "①",
-        42: "④", 43: "②", 44: "③", 45: "④"
-    },
-    "고3_2026_05": {
-        18: "⑤", 19: "①", 20: "⑤", 21: "③", 22: "①", 23: "②", 24: "①", 25: "④",
-        26: "④", 27: "⑤", 28: "③", 29: "⑤", 30: "⑤", 31: "②", 32: "②", 33: "②",
-        34: "④", 35: "③", 36: "③", 37: "②", 38: "②", 39: "④", 40: "①", 41: "③",
-        42: "⑤", 43: "④", 44: "⑤", 45: "④"
-    },
-    "고3_2026_06": {
-        18: "③", 19: "①", 20: "③", 21: "②", 22: "①", 23: "②", 24: "②", 25: "③",
-        26: "③", 27: "④", 28: "④", 29: "②", 30: "④", 31: "①", 32: "②", 33: "②",
-        34: "①", 35: "④", 36: "⑤", 37: "④", 38: "③", 39: "③", 40: "⑤", 41: "①",
-        42: "⑤", 43: "⑤", 44: "⑤", 45: "④"
-    },
-    "고3_2026_07": {
-        18: "①", 19: "③", 20: "①", 21: "⑤", 22: "③", 23: "③", 24: "④", 25: "④",
-        26: "③", 27: "③", 28: "⑤", 29: "⑤", 30: "③", 31: "③", 32: "②", 33: "④",
-        34: "④", 35: "④", 36: "⑤", 37: "②", 38: "②", 39: "④", 40: "②", 41: "①",
-        42: "⑤", 43: "③", 44: "⑤", 45: "⑤"
-    },
-    "고3_2025_06": {
-        18: "①", 19: "①", 20: "②", 21: "③", 22: "①", 23: "③", 24: "②", 25: "④",
-        26: "②", 27: "⑤", 28: "②", 29: "③", 30: "⑤", 31: "⑤", 32: "①", 33: "④",
-        34: "②", 35: "④", 36: "④", 37: "③", 38: "④", 39: "⑤", 40: "②", 41: "①",
-        42: "⑤", 43: "③", 44: "③", 45: "⑤"
-    },
-    "고3_2026_09": {
-        18: "②", 19: "②", 20: "①", 21: "②", 22: "②", 23: "⑤", 24: "①", 25: "③",
-        26: "④", 27: "⑤", 28: "⑤", 29: "③", 30: "⑤", 31: "①", 32: "⑤", 33: "③",
-        34: "④", 35: "④", 36: "③", 37: "④", 38: "⑤", 39: "③", 40: "①", 41: "③",
-        42: "④", 43: "④", 44: "④", 45: "②"
-    }
-}
-
-
 def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
     """
     HWP 파일에서 문항별 정답 및 해설/해석/어휘 추출
@@ -566,29 +490,9 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
             except ValueError:
                 pass
 
-    # 알려진 시험지 정답 데이터 보강 (학년 불일치 오염 방지)
-    is_g1 = "고1" in hwp_path
-    is_g2 = "고2" in hwp_path
-
-    exam_key = ""
-    for k in KNOWN_EXAM_ANSWERS:
-        if isinstance(k, tuple):
-            if k[0] in hwp_path and f"{k[1]}" in hwp_path and (f"_{k[2]:02d}" in hwp_path or f"-{k[2]:02d}" in hwp_path or f"-{k[2]}" in hwp_path):
-                exam_key = k
-                break
-        elif isinstance(k, str):
-            # 문자열 키인 경우 학년 불일치 방지 (고1, 고2 파일에 고3 정답 오염 방지)
-            if (is_g1 or is_g2) and ("고3" in k or k.startswith("2026_")):
-                continue
-            if k in hwp_path or k.replace("_", "-") in hwp_path:
-                exam_key = k
-                break
-
-    known_answers = KNOWN_EXAM_ANSWERS.get(exam_key, {})
-
     # 정답 정보 표준화 및 해설 상단에 [정답] 라벨 명시
     for q_num, exp_info in explanations.items():
-        ans = exp_info.get("answer") or table_answers.get(q_num, "") or known_answers.get(q_num, "")
+        ans = exp_info.get("answer") or table_answers.get(q_num, "")
         if ans in CIRCLED_MAP:
             ans = CIRCLED_MAP[ans]
         exp_info["answer"] = ans
@@ -604,192 +508,178 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
     return explanations
 
 
-def parse_answer_image(image_path: str) -> Dict[int, str]:
-    """
-    모의고사 정답표 이미지(PNG, JPG)를 Vision AI로 분석하여 1~45번 정답 딕셔너리 반환
-    반환 예: {1: '①', 2: '③', ..., 45: '③'}
-    """
-    import base64
+ANSWER_IMAGE_EXPECTED_QUESTIONS = 45
+
+_ANSWER_IMAGE_PROMPT = (
+    "첨부된 대한민국 수능/모의고사 영어 영역 정답표 이미지입니다.\n"
+    "표 안의 1번부터 45번까지의 모든 문항 번호와 정답 번호를 정확히 판독하여 JSON으로 추출해 주세요.\n"
+    "반환 형식 예시: {\"1\": \"①\", \"2\": \"③\", \"3\": \"⑤\", ... \"45\": \"③\"}\n"
+    "규칙:\n"
+    "1. 각 셀에 인쇄된 문항 번호를 직접 읽어 짝을 맞추고, 위치로 추정하지 마십시오.\n"
+    "2. 1번부터 45번까지 누락된 문항 없이 반드시 모두 포함하십시오.\n"
+    "3. 정답 기호는 ①, ②, ③, ④, ⑤ 원문자 또는 1, 2, 3, 4, 5 숫자로 명확히 기재하십시오.\n"
+    "4. 마크다운이나 설명 없이 오직 유효한 JSON 객체만 단독으로 반환하십시오."
+)
+
+
+def _vision_request(provider: str, api_key: str, model: str, b64_data: str, mime_type: str) -> str:
+    """단일 Vision 모델 호출 후 원시 응답 텍스트 반환"""
     import json
     import urllib.request
+
+    if provider == "gemini":
+        use_model = model or "gemini-2.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{use_model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [
+                {"text": _ANSWER_IMAGE_PROMPT},
+                {"inlineData": {"mimeType": mime_type, "data": b64_data}}
+            ]}],
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.0}
+        }
+        headers = {"Content-Type": "application/json"}
+        extract = lambda d: d["candidates"][0]["content"]["parts"][0]["text"]
+    elif provider in ("openai", "openrouter"):
+        if provider == "openai":
+            url, use_model = "https://api.openai.com/v1/chat/completions", (model or "gpt-4o-mini")
+        else:
+            url, use_model = "https://openrouter.ai/api/v1/chat/completions", (model or "anthropic/claude-sonnet-4.5")
+        payload = {
+            "model": use_model,
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": _ANSWER_IMAGE_PROMPT},
+                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}}
+            ]}],
+            "temperature": 0.0
+        }
+        if provider == "openai":
+            payload["response_format"] = {"type": "json_object"}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+        extract = lambda d: d["choices"][0]["message"]["content"]
+    elif provider == "claude":
+        url = "https://api.anthropic.com/v1/messages"
+        payload = {
+            "model": model or "claude-sonnet-5",
+            "max_tokens": 1024,
+            "temperature": 0.0,
+            "messages": [{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": b64_data}},
+                {"type": "text", "text": _ANSWER_IMAGE_PROMPT}
+            ]}]
+        }
+        headers = {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        extract = lambda d: "".join(block.get("text", "") for block in d.get("content", []))
+    else:
+        raise ValueError(f"Vision 판독 미지원 provider: {provider}")
+
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        return extract(json.loads(resp.read().decode("utf-8")))
+
+
+def _parse_answer_json(raw_json_str: str) -> Dict[int, str]:
+    """모델 응답 텍스트를 {문항번호: 원문자} 로 정규화"""
+    import json
+
+    clean_str = re.sub(r"^```(?:json)?\s*", "", raw_json_str.strip())
+    clean_str = re.sub(r"\s*```$", "", clean_str).strip()
+    data = json.loads(clean_str)
+    if isinstance(data, dict) and not any(str(k).isdigit() for k in data.keys()):
+        for v in data.values():
+            if isinstance(v, dict) and any(str(sub_k).isdigit() for sub_k in v.keys()):
+                data = v
+                break
+    result: Dict[int, str] = {}
+    for k, v in data.items():
+        digits = re.sub(r"[^\d]", "", str(k))
+        if not digits:
+            continue
+        q = int(digits)
+        norm = CIRCLED_MAP.get(str(v).strip(), str(v).strip())
+        if 1 <= q <= ANSWER_IMAGE_EXPECTED_QUESTIONS and norm in CIRCLED_MAP.values():
+            result[q] = norm
+    return result
+
+
+def read_answer_image(image_path: str) -> Dict[str, Any]:
+    """
+    정답표 이미지를 활성화된 모든 Vision 모델로 독립 판독하고 합의 결과를 반환.
+    - 45문항이 모두 추출된 판독만 유효로 인정한다.
+    - 유효 판독 중 과반(2개 이상)이 일치한 문항만 consensus 에 포함하고, 소수 의견은 dissent 에 남긴다.
+    반환: {
+        status: 'ok' | 'partial' | 'single_reader' | 'failed',
+        readings: {모델라벨: {q: 원문자}}, consensus: {q: 원문자}, disputed: {q: {모델라벨: 원문자}},
+        errors: [str], reader_count: int
+    }
+    """
+    import base64
     import grammar_analyzer
 
+    result: Dict[str, Any] = {"status": "failed", "readings": {}, "consensus": {}, "disputed": {}, "dissent": {}, "errors": [], "reader_count": 0}
     if not image_path or not os.path.exists(image_path):
-        return {}
+        result["errors"].append("이미지 파일 없음")
+        return result
 
-    # 1. 이미지 base64 인코딩
+    # 원문자(③/④/⑤) 혼동을 줄이기 위해 폭 1200px 미만 이미지는 2배 확대한 PNG로 전송
     try:
-        with open(image_path, "rb") as f:
-            img_bytes = f.read()
+        img_bytes = None
+        try:
+            import pymupdf
+            page = pymupdf.open(image_path)[0]
+            if page.rect.width < 1200:
+                img_bytes = page.get_pixmap(matrix=pymupdf.Matrix(2, 2)).tobytes("png")
+        except Exception:
+            img_bytes = None
+        if img_bytes is None:
+            with open(image_path, "rb") as f:
+                img_bytes = f.read()
+            mime_type = "image/jpeg" if image_path.lower().endswith((".jpg", ".jpeg")) else "image/png"
+        else:
+            mime_type = "image/png"
         b64_data = base64.b64encode(img_bytes).decode("utf-8")
     except Exception as e:
-        print(f"[parse_answer_image] 이미지 읽기 실패: {e}")
-        return {}
+        result["errors"].append(f"이미지 읽기 실패: {e}")
+        return result
 
-    # MIME 타입 감지
-    lower_path = image_path.lower()
-    mime_type = "image/jpeg" if lower_path.endswith((".jpg", ".jpeg")) else "image/png"
+    configs = [c for c in grammar_analyzer.get_active_ai_configs() if c.get("api_key")]
+    if not configs:
+        result["errors"].append("유효한 AI API Key가 설정되지 않음 (AI 설정에서 2개 이상 모델 활성화 필요)")
+        return result
 
-    # 2. 활성 AI 설정 조회
-    active_configs = grammar_analyzer.get_active_ai_configs()
-    valid_configs = [c for c in active_configs if c.get("api_key")]
-    if not valid_configs:
-        print("[parse_answer_image] 유효한 AI API Key가 설정되지 않았습니다.")
-        return {}
-
-    prompt_text = (
-        "첨부된 대한민국 수능/모의고사 영어 영역 정답표 이미지입니다.\n"
-        "표 안의 1번부터 45번까지의 모든 문항 번호와 정답 번호를 정확히 판독하여 JSON으로 추출해 주세요.\n"
-        "반환 형식 예시: {\"1\": \"①\", \"2\": \"③\", \"3\": \"⑤\", ... \"45\": \"③\"}\n"
-        "규칙:\n"
-        "1. 1번부터 45번까지 누락된 문항 없이 반드시 모두 포함하십시오.\n"
-        "2. 정답 기호는 ①, ②, ③, ④, ⑤ 원문자 또는 1, 2, 3, 4, 5 숫자로 명확히 기재하십시오.\n"
-        "3. 마크다운이나 설명 없이 오직 유효한 JSON 객체만 단독으로 반환하십시오."
-    )
-
-    for cfg in valid_configs:
-        provider = cfg["provider"]
-        api_key = cfg["api_key"]
-        model = cfg.get("model", "")
-
+    for cfg in configs:
+        label = cfg.get("label") or cfg.get("provider")
         try:
-            raw_json_str = ""
-
-            # 2-1. Google Gemini 호출
-            if provider == "gemini":
-                use_model = model or "gemini-flash-lite-latest"
-                if "flash" not in use_model:
-                    use_model = "gemini-2.5-flash"
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{use_model}:generateContent?key={api_key}"
-                payload = {
-                    "contents": [
-                        {
-                            "parts": [
-                                {"text": prompt_text},
-                                {
-                                    "inlineData": {
-                                        "mimeType": mime_type,
-                                        "data": b64_data
-                                    }
-                                }
-                            ]
-                        }
-                    ],
-                    "generationConfig": {
-                        "response_mime_type": "application/json",
-                        "temperature": 0.0
-                    }
-                }
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=35) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-                    raw_json_str = resp_data["candidates"][0]["content"]["parts"][0]["text"]
-
-            # 2-2. OpenAI (ChatGPT / GPT-4o-mini) 호출
-            elif provider == "openai":
-                use_model = model or "gpt-4o-mini"
-                url = "https://api.openai.com/v1/chat/completions"
-                payload = {
-                    "model": use_model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt_text},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
-                                }
-                            ]
-                        }
-                    ],
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.0
-                }
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}"
-                    },
-                    method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=35) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-                    raw_json_str = resp_data["choices"][0]["message"]["content"]
-
-            # 2-3. OpenRouter 호출
-            elif provider == "openrouter":
-                use_model = model or "anthropic/claude-sonnet-4.5"
-                url = "https://openrouter.ai/api/v1/chat/completions"
-                payload = {
-                    "model": use_model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt_text},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:{mime_type};base64,{b64_data}"}
-                                }
-                            ]
-                        }
-                    ],
-                    "temperature": 0.0
-                }
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}"
-                    },
-                    method="POST"
-                )
-                with urllib.request.urlopen(req, timeout=40) as resp:
-                    resp_data = json.loads(resp.read().decode("utf-8"))
-                    raw_json_str = resp_data["choices"][0]["message"]["content"]
-
-            # 3. JSON 응답 파싱 및 원문자 정규화
-            if raw_json_str:
-                # 마크다운 코드블록 제거
-                clean_str = re.sub(r"^```(?:json)?\s*", "", raw_json_str.strip())
-                clean_str = re.sub(r"\s*```$", "", clean_str).strip()
-                data = json.loads(clean_str)
-
-                # 최상위 키가 감싸져 있는 경우 처리 (예: {"answers": {...}} 또는 {"정답": {...}})
-                if not any(k.isdigit() for k in data.keys()):
-                    for v in data.values():
-                        if isinstance(v, dict) and any(str(sub_k).isdigit() for sub_k in v.keys()):
-                            data = v
-                            break
-
-                result = {}
-                for k, v in data.items():
-                    try:
-                        q = int(re.sub(r"[^\d]", "", str(k)))
-                        if 1 <= q <= 45:
-                            val_str = str(v).strip()
-                            # 원문자 또는 숫자를 원문자로 통일
-                            norm_ans = CIRCLED_MAP.get(val_str, val_str)
-                            if norm_ans in ["①", "②", "③", "④", "⑤"]:
-                                result[q] = norm_ans
-                    except Exception:
-                        pass
-
-                if len(result) >= 30:
-                    print(f"[parse_answer_image] {provider} 모델로 정답 {len(result)}개 추출 성공!")
-                    return result
-
+            raw = _vision_request(cfg["provider"], cfg["api_key"], cfg.get("model", ""), b64_data, mime_type)
+            reading = _parse_answer_json(raw)
         except Exception as e:
-            print(f"[parse_answer_image] {provider} 처리 실패, 다음 모델 시도: {e}")
+            result["errors"].append(f"{label}: 호출/파싱 실패 ({e})")
             continue
+        if len(reading) < ANSWER_IMAGE_EXPECTED_QUESTIONS:
+            result["errors"].append(f"{label}: {len(reading)}/{ANSWER_IMAGE_EXPECTED_QUESTIONS}문항만 추출되어 판독 무효")
+            continue
+        result["readings"][label] = reading
 
-    return {}
+    readings = result["readings"]
+    result["reader_count"] = len(readings)
+    if not readings:
+        return result
+    if len(readings) == 1:
+        result["status"] = "single_reader"
+        return result
+
+    # 과반(2개 이상이며 나머지보다 많은) 판독을 합의로 인정, 소수 의견은 dissent 에 기록
+    from collections import Counter
+    n_readers = len(readings)
+    for q in range(1, ANSWER_IMAGE_EXPECTED_QUESTIONS + 1):
+        values = {label: r.get(q) for label, r in readings.items()}
+        votes = Counter(v for v in values.values() if v)
+        top, cnt = votes.most_common(1)[0] if votes else (None, 0)
+        if top and cnt >= 2 and cnt > n_readers - cnt:
+            result["consensus"][q] = top
+            if cnt < n_readers:
+                result["dissent"][q] = {label: v for label, v in values.items() if v != top}
+        else:
+            result["disputed"][q] = values
+    result["status"] = "ok" if not result["disputed"] else "partial"
+    print(f"[read_answer_image] {n_readers}개 모델 판독, 합의 {len(result['consensus'])}문항 (소수의견 {len(result['dissent'])}), 불일치 {len(result['disputed'])}문항")
+    return result

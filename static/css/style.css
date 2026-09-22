@@ -4609,3 +4609,41 @@ mark.passage-highlight {
 
 
 
+
+/* 정답 출처/검증 상태 배지 (우하단 추가 정보 패널) */
+.answer-status-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.answer-status-badge.ok { background: #dcfce7; color: #166534; }
+.answer-status-badge.warn { background: #fef3c7; color: #92400e; }
+
+/* 정답 수동 정정 UI */
+.btn-answer-edit {
+  margin-left: 0.35rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  border-radius: 6px;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.btn-answer-edit:hover { background: #f1f5f9; color: #0f172a; }
+.answer-edit-form { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.4rem; vertical-align: middle; }
+.answer-edit-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.1rem 0.3rem; font-size: 0.8rem; font-weight: 700; }
+.btn-answer-save, .btn-answer-cancel {
+  border-radius: 6px; padding: 0.15rem 0.55rem; font-size: 0.72rem; font-weight: 700; cursor: pointer; border: 1px solid transparent;
+}
+.btn-answer-save { background: #2563eb; color: #fff; }
+.btn-answer-save:hover { background: #1d4ed8; }
+.btn-answer-cancel { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }

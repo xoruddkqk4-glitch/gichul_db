@@ -34,6 +34,14 @@
 - **2x2 지문 뷰어 시각화**: 난이도 등급 배지(🔴 킬러 / 🟠 중고난도 / 🟡 보통 / 🟢 평이), 5개 선지별 선택률 가로 프로그레스 바, `★ 정답`(에메랄드) 및 15% 이상 오답인 `🚨 매력적 오답`(레드 배지) 직관적 강조.
 - **4종 세트 스마트 업로드**: 문제지(PDF) + 해설지(HWP) + 정답표(-A.png) + 정답률(CSV) 4종 파일의 일괄/단독 업로드 및 세트별 현황 관리 지원.
 
+### 7. 정답 신뢰성 검증 파이프라인 (Answer Verification)
+- **정답은 코드가 아닌 데이터**: 시험지별 검증 정답 키를 `data/answer_keys/{학년}_{연도}_{월}.json`에 검증 근거(CSV 확정 문항, 이미지 확정 문항, 수동 정정 이력)와 함께 보관. 소스코드 하드코딩 정답 사전 완전 제거.
+- **문항별 정답 결정 우선순위** (`answer_resolver.py`): 정답률 CSV(정답 컬럼 또는 `|정답률 − 선지 선택률| ≤ 2%p` 유일 후보) → 검증 키 파일 → 정답표 이미지 다중 모델 합의 → 이미지 단일 모델 → HWP 해설. 앞의 세 소스만 '검증됨'으로 인정하며, 미검증 정답은 `answer_verified=0`으로 기록되고 업로드 응답·뷰어 배지에 명시 (무언 폴백 금지).
+- **정답표 이미지 판독 게이트** (`hwp_parser.read_answer_image`): 활성화된 모든 Vision 모델이 2배 확대 이미지를 독립 판독 → 45문항 완전 추출된 판독만 유효 → 과반 일치 문항만 채택, 불일치·소수의견 기록.
+- **CSV 교차검증**: 정답률로 결정적 검증, 다른 시험의 CSV(30% 초과 불일치)는 자동 감지·차단.
+- **수동 정정**: 뷰어에서 `✏`로 정답 정정 시 DB·해설 헤더·형광펜 크롭·키 파일에 동시 반영 (`PATCH /api/passages/{id}/answer`).
+- **운영 도구** (`tools/`): `build_answer_keys.py`(이중 전사·CSV 계층 검증으로 키 생성), `resync_answers.py`(키 → DB/크롭 재동기화), `audit_keys_with_vision.py`(다중 모델 재감사).
+
 
 ---
 
@@ -71,8 +79,17 @@
 ├── hwp_parser.py           # HWP/HWPX 문제지 파싱 및 정답/해설 추출
 ├── validator.py            # HWP vs PDF 상호 교차 검증 및 데이터 무결성 검사
 ├── rate_parser.py          # OMR/채점 통계 CSV 파서 (정답률, 선지별 선택률, 매력적 오답 탐지)
+├── answer_keys.py          # 검증 정답 키(data/answer_keys) 로더 및 수동 정정 기록
+├── answer_resolver.py      # 정답 소스 결합·우선순위·검증 판정, CSV 정답률 교차검증
 ├── app.py                  # FastAPI REST API 및 웹 서버 엔드포인트
 ├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기
+├── data/
+│   └── answer_keys/        # 시험지별 검증 정답 키 JSON (101세트) + _manual.json(직접 재판독 확정값)
+├── tools/
+│   ├── build_answer_keys.py    # 이중 전사(_passA/_passB) + CSV 계층 검증 → 정답 키 생성
+│   ├── resync_answers.py       # 정답 키 → DB 정답/해설 헤더/형광펜 크롭 재동기화
+│   └── audit_keys_with_vision.py # 다중 Vision 모델 합의로 정답 키 재감사
+├── .claude/skills/         # Claude Code 슬래시 명령(/git-commit, /ask, /scratchpad) 미러 (원본: .agents/skills)
 ├── templates/
 │   └── index.html          # 구글 스타일 검색 + 2x2 그리드 + 문장 테이블 + AI 설정 모달 SPA
 └── static/
@@ -973,3 +990,29 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py hwp_parser.py pdf_parser.py rate_parser.py`: 파이썬 문법 검사 통과 (오류 0건)
   - `node -c static/js/main.js`: 자바스크립트 문법 검사 통과 (오류 0건)
   - 전체 시스템 및 데이터 무결성 100% 유지 상태 확인
+
+### [2026-09-22 03:46] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **정답 신뢰성 전면 개편 (3-A ~ 3-E)** — 사용자 보고("정답 이미지를 업로드했는데도 정답이 자주 틀림")에 대한 원인 규명 및 구조 개선
+    - **원인**: (1) 정답표 이미지 판독 실패·부분 추출이 무언 폴백되어 HWP 정규식 추출값이 저장됨, (2) 이미지 판독을 "첫 성공 모델 1개"에 의존했고 그 모델(GPT-4o)의 원문자 오독이 그대로 DB에 유입됨, (3) 정답이 소스코드 `KNOWN_EXAM_ANSWERS`에 하드코딩되어 12세트만 보호되고 검증 근거가 없었음
+    - **실측**: 101세트 2,828문항 중 **303문항(10.7%)이 오답**이었음 (예: 고3 2024-11 수능 19/28, 고3 2023-09 14/28)
+  - **3-A 정답 데이터화 및 전수 복구**
+    - `KNOWN_EXAM_ANSWERS`(74줄) 및 파일명 기반 매칭 블록 삭제(`hwp_parser.py`), `answer_keys.py` 로더 신설
+    - 101개 정답표 이미지를 독립 에이전트 2팀이 각각 전사(`_passA/_passB`) → `tools/build_answer_keys.py`가 정답률 CSV 정합성(`|정답률 − 선택률[정답]| ≤ 2%p`) 우선, 이중 전사 일치, 직접 재판독(`_manual.json`) 순으로 확정 → `data/answer_keys/*.json` 101개 생성
+    - `tools/resync_answers.py`로 DB 정답·해설 `[정답]` 헤더 재동기화, 형광펜 크롭 이미지 재생성 (1차 294문항/1,072크롭, 재감사 후 9문항/237크롭 추가)
+    - `tools/audit_keys_with_vision.py`: CSV 없는 62세트를 3개 Vision 모델 합의로 재감사. 불일치 11셀을 3배 확대 크롭으로 직접 판정하여 키 9건 정정 (원본 해상도에서 ③/④/⑤, ①/③ 원문자 혼동이 원인)
+    - 잘못 연결된 CSV 2개 감지·제거: `고1 2021-03` CSV는 고3 2021-03 데이터, `고3 2022-06` CSV는 고3 2021-06 데이터 (파일은 `scratch/backup/`에 보관, DB 정답률 데이터 초기화)
+  - **3-B 이미지 판독 신뢰성 게이트** (`hwp_parser.read_answer_image`, `answer_resolver.py` 신설)
+    - 활성화된 모든 Vision 모델 독립 판독, 폭 1200px 미만 이미지는 2배 확대 PNG로 전송, 45문항 완전 추출만 유효, 과반 일치 문항만 합의 채택(소수 의견·불일치 기록), Anthropic 직접 호출 분기 추가
+    - 정답 우선순위: 정답률 CSV → 검증 키 파일 → 이미지 합의 → 이미지 단일 → HWP. 검증 소스 외 정답은 `answer_verified=0` + 경고 (무언 폴백 제거)
+    - `passages.answer_source / answer_verified` 컬럼 추가(자동 마이그레이션), `/api/upload` 응답에 `answer_report`, 정답표 재업로드 엔드포인트 동일 게이트 적용
+    - UI: 뷰어 정답 옆 `✔ 검증 · 출처` / `⚠ 미검증 · 출처` 배지, 업로드 결과 경고 표시
+  - **3-C CSV 교차검증 자동화**: 정답률 유일 후보로 정답 확정, 최종 정답이 후보와 모순되면 미검증 강등, 다른 시험 CSV(8문항 이상 비교·30% 초과 불일치) 자동 무시/422 거부. CSV 재업로드 시 기존 정답 정정·확인 및 크롭 재생성. `save_exam_correct_rates`는 정답률 저장 전용으로 분리, `update_passage_answers` 헬퍼 신설
+  - **3-E 수동 정답 정정**: `PATCH /api/passages/{id}/answer` — DB·해설 헤더·`answer_source='manual'`·키 파일(`manual_overrides` 이력)·형광펜 크롭 동시 반영. 뷰어 `✏` 인라인 편집 폼(복합 문항 41~42/43~45 문항 선택 지원)
+  - **기타**: Vision 판독 Claude 기본 모델 `claude-sonnet-5`, 어법 분석 Claude 기본 모델 `claude-haiku-4-5`로 갱신; `.gitignore`에 전사 중간 파일(`data/answer_keys/_pass*/`) 제외; `.claude/skills/`에 `/git-commit`, `/ask`, `/scratchpad` 스킬 미러 및 `CLAUDE.md` §7 안내 추가
+- **검증 결과**:
+  - `python -m py_compile app.py database.py hwp_parser.py grammar_analyzer.py answer_keys.py answer_resolver.py tools/*.py` 통과, `node --check static/js/main.js` 통과, FastAPI 앱 임포트 정상(35 라우트)
+  - 최종 정합성: DB↔정답 키 파일 불일치 **0/2,828**, 해설 `[정답]` 헤더 불일치 0, 정답률 CSV 정합성 위반 0, 전 문항 `answer_source='verified_key' / answer_verified=1`
+  - 남은 CSV 41개로 교차검증: 1,090문항 확인·정정 0·의심 0. 백업한 잘못된 CSV 2개는 `suspect=True`(28문항 중 21 불일치)로 자동 차단 확인
+  - 리졸버 단위 검증(후보 산출, 우선순위, 복수 후보, 모순 강등, 의심 CSV, 재업로드 교차검증) 통과; 수동 정정 API TestClient 검증(400/404/200, 키 파일 기록·원복) 통과
+  - 실측 게이트 동작: 고3 2025-06 정답표를 3모델 판독 → GPT-4o 44/45 추출로 무효 처리, Gemini+Claude 45문항 일치 → `status: ok`
