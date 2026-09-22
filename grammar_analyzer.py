@@ -796,12 +796,12 @@ def _call_llm(
             url = "https://api.anthropic.com/v1/messages"
             payload = {
                 "model": target_model,
-                "max_tokens": 1024,
+                "max_tokens": 4096,  # thinking 토큰이 포함되므로 여유 확보
                 "system": SYSTEM_PROMPT,
                 "messages": [
                     {"role": "user", "content": user_content + "\n반드시 JSON 블록만 단독 출력하십시오."}
-                ],
-                "temperature": 0.1
+                ]
+                # 현행 Claude 모델(Opus 5/Sonnet 5 등)은 temperature 파라미터를 거부(400)하므로 보내지 않음
             }
             req = urllib.request.Request(
                 url,
@@ -815,7 +815,8 @@ def _call_llm(
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
-                raw_json_str = resp_data["content"][0]["text"]
+                # 현행 모델은 content 앞에 thinking 블록이 올 수 있으므로 text 블록만 모아서 사용
+                raw_json_str = "".join(b.get("text", "") for b in resp_data.get("content", []) if b.get("type") == "text")
 
         else:
             raise ValueError(f"지원하지 않는 AI Provider: {provider}")

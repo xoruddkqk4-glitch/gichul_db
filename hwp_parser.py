@@ -560,8 +560,8 @@ def _vision_request(provider: str, api_key: str, model: str, b64_data: str, mime
         url = "https://api.anthropic.com/v1/messages"
         payload = {
             "model": model or "claude-sonnet-5",
-            "max_tokens": 1024,
-            "temperature": 0.0,
+            "max_tokens": 4096,  # thinking 토큰이 포함되므로 여유 확보
+            # 현행 Claude 모델(Opus 5/Sonnet 5 등)은 temperature 파라미터를 거부(400)하므로 보내지 않음
             "messages": [{"role": "user", "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": b64_data}},
                 {"type": "text", "text": _ANSWER_IMAGE_PROMPT}

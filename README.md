@@ -95,8 +95,19 @@
 └── static/
     ├── css/
     │   └── style.css       # 모던 디자인 시스템 스타일시트 (어법 태그, 별표, 필터 바 등)
-    ├── js/
-    │   └── main.js         # 검색, 2x2 뷰어, 문장 뷰어, 어법 캐스케이딩 필터, AI 연동 로직
+    ├── js/                 # ES 모듈 (index.html 에서 <script type="module" src="main.js">)
+    │   ├── main.js         # 진입점: 각 모듈 init() 순서 호출 + 초기 상태
+    │   ├── dom.js          # DOM 요소 참조 230개 (named export)
+    │   ├── state.js        # 모듈 간 공유 상태 appState
+    │   ├── navigation.js   # 헤더 슬롯 · 화면 전환 · 모드 전환
+    │   ├── search.js       # 통계 로드 · 검색 실행 · 필터 초기화
+    │   ├── results-passage.js  # 지문 결과 트리 탭 · 2x2 그리드 · 정답/태그
+    │   ├── results-sentence.js # 전체 문장 보기 · 문장 테이블 · 어법 팝오버
+    │   ├── utils.js        # 클립보드 · 토스트 · escapeHtml
+    │   ├── upload.js       # 업로드/DB 관리 모달 · 샘플 주입
+    │   ├── files-status.js # 원본 파일 현황 탭 · 선택 삭제
+    │   ├── grammar.js      # 어법 범주 모달 · 브레드크럼 필터 · 일괄 분석 진행
+    │   └── ai-settings.js  # AI 설정 모달 (Multi-LLM / OpenRouter 앙상블)
     ├── data/
     │   └── grammar_categories.json # 8개 대분류, 243개 세부 어법 분류체계 JSON
     └── captures/           # 크롭된 PDF 문항 고화질 이미지 저장소
@@ -235,7 +246,7 @@ CREATE TABLE user_sentence_status (
 
 1. **필수 라이브러리 설치**:
    ```bash
-   pip install fastapi uvicorn pymupdf pyhwpx pywin32
+   pip install -r requirements.txt
    ```
 
 2. **로컬 웹앱 구동**:
@@ -1016,3 +1027,17 @@ CREATE TABLE user_sentence_status (
   - 남은 CSV 41개로 교차검증: 1,090문항 확인·정정 0·의심 0. 백업한 잘못된 CSV 2개는 `suspect=True`(28문항 중 21 불일치)로 자동 차단 확인
   - 리졸버 단위 검증(후보 산출, 우선순위, 복수 후보, 모순 강등, 의심 CSV, 재업로드 교차검증) 통과; 수동 정정 API TestClient 검증(400/404/200, 키 파일 기록·원복) 통과
   - 실측 게이트 동작: 고3 2025-06 정답표를 3모델 판독 → GPT-4o 44/45 추출로 무효 처리, Gemini+Claude 45문항 일치 → `status: ok`
+
+### [2026-09-22 13:38] 업데이트 이력 (Commit ID: PENDING_HASH)
+- **수정 내용**:
+  - **`requirements.txt` 신설**: 실측 버전 고정(fastapi 0.141.1, uvicorn 0.49.0, pydantic 2.13.4, python-multipart 0.0.32, pymupdf 1.28.2, pillow 12.2.0, pyhwpx 1.7.2·pywin32 312은 `sys_platform == "win32"` 마커, pytest 9.1.1). 한글 주석 유지를 위해 첫 줄 `# -*- coding: utf-8 -*-` 선언(Windows cp949 pip 대응). README 설치 안내를 `pip install -r requirements.txt`로 교체
+  - **pytest 회귀 테스트 `tests/` 신설 (73개)**: `test_sentence_tokenizer.py`(약어·소수점·인용부호·원문자 분할, 발문/선지/각주/배점 제거, 문장 ID 규격), `test_rate_parser.py`(실제 교육청 CSV 헤더 포맷, cp949/utf-8-sig, 정답·정답률 컬럼 혼동 방지, 매력적 오답 15% 기준, 헤더 없는 45행 포맷, 난이도 경계값), `test_answer_resolver.py`(소스 우선순위, 검증 플래그, 단일 판독기/실패/불일치 경고, 다른 시험 CSV 판정 경계 8문항·30%, 정답률 모순 강등, CSV 재업로드 교차검증). `conftest.py`로 루트 import 경로 설정
+  - **`static/js/main.js`(6,406줄) ES 모듈 12개로 분리**: 원본 섹션 헤더 경계를 모듈 경계로 사용, 함수 본문 무변경. acorn AST 기반 변환기(`scratch/jsmod/split.js`, gitignore)로 기계 생성 — DOM 참조 230개 `dom.js` named export, 상태 변수 33개 중 다중 모듈 공유 13개만 `state.js`의 `appState`로 치환(282곳), 나머지 20개는 모듈 private `let`, 이벤트 바인딩 115개는 모듈별 `init()`으로 묶어 `main.js`가 원본 순서로 호출. `index.html` `<script type="module">` 전환, `app.py`에 `/static/js/` `Cache-Control: no-cache` 미들웨어 추가(모듈 import 경로에 캐시버스터가 없으므로). 원본 백업 `scratch/backup/main.js.before-module-split-20260922-1324.js`
+  - **strict 모드 전환으로 드러난 원본 버그 2건 수정**: `executeSearch`의 `correctRateRange` 미선언 대입(ES 모듈에서는 ReferenceError) → `let` 선언 추가; 뷰어 정답률 CSV 업로드 버튼의 미정의 `currentExamId`(원래도 클릭 시 항상 예외) → `currentDetailPassage.exam_id` 참조로 교정
+  - **Anthropic Claude 직접 연결 404 수정**: 설정 모달 Claude 모델 기본값·바로가기 버튼을 종료된 `claude-3-5-*-20241022`에서 `claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5`로 교체, DB `ai_model_claude`를 `claude-opus-5`로 갱신. `grammar_analyzer.py`·`hwp_parser.py` Claude 요청에서 현행 모델이 거부(400)하는 `temperature` 제거, thinking 블록이 앞에 오는 응답 구조에 맞춰 text 블록만 취합, `max_tokens` 1024→4096
+  - **API Key 비ASCII 문자 사전 검증**: `x-api-key` 헤더는 latin-1만 허용되어 잘린 키의 `…` 등이 섞이면 `'latin-1' codec can't encode` 오류가 났음. `app.py`에 `describe_non_ascii()` 추가, 연결 테스트·설정 저장 양쪽에서 위치·문자를 명시한 한국어 메시지로 400 반환(저장 차단)
+- **검증 결과**:
+  - `pip install -r requirements.txt --dry-run` 의존성 해석 통과; `python -m pytest tests -q` **73 passed**
+  - 모듈 분리 정적 검증(acorn): 12개 파일 구문 파싱 통과, import↔export 정합 일치, 미사용 import 0, 함수 106개·상수·상태 변수 개수 원본과 보존, 공유 let 잔여 직접 참조 0
+  - Node+jsdom 스모크(브라우저 미사용): 실제 `index.html` 로드 후 모듈 평가·전체 `init()`·초기화·버튼 클릭 5회 실행 → 원본과 분리본 모두 예외 0·console.error 0·DOM 상태 동일
+  - `python -m py_compile app.py grammar_analyzer.py hwp_parser.py` 통과, `describe_non_ascii('sk-ant-api03-abcd…xyz')` → `"18번째 '…'"` 확인

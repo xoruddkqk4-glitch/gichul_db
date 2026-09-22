@@ -41,6 +41,15 @@ app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def no_cache_static_js(request, call_next):
+    """ES 모듈 파일(/static/js/*.js)은 import 경로에 ?v= 캐시버스터가 없으므로 항상 재검증(ETag)하도록 강제"""
+    response = await call_next(request)
+    if request.url.path.startswith("/static/js/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # --- Pydantic 모델 ---
 class TagRequest(BaseModel):
     tag_name: str
@@ -400,6 +409,12 @@ async def api_get_openrouter_all_models(force_refresh: bool = False):
 
 
 
+def describe_non_ascii(value: str) -> str:
+    """문자열에 ASCII 외 문자가 있으면 '위치: 문자' 목록을 반환 (없으면 빈 문자열)"""
+    found = [f"{i + 1}번째 '{ch}'" for i, ch in enumerate(value) if ord(ch) > 127]
+    return ", ".join(found[:5]) + (" 외" if len(found) > 5 else "")
+
+
 @app.post("/api/settings/ai/test")
 async def api_test_single_ai_provider(req: SingleProviderTestRequest):
     """특정 AI Provider 개별 연결 핑 테스트"""
@@ -416,6 +431,11 @@ async def api_test_single_ai_provider(req: SingleProviderTestRequest):
     if not k:
         prov_label = grammar_analyzer.PROVIDER_NAMES.get(p, p)
         return JSONResponse(status_code=400, content={"success": False, "message": f"{prov_label} API Key를 입력해 주세요."})
+
+    # HTTP 헤더(x-api-key 등)는 latin-1 만 허용되므로 ASCII 외 문자가 섞인 키는 전송 전에 차단
+    bad = describe_non_ascii(k)
+    if bad:
+        return JSONResponse(status_code=400, content={"success": False, "message": f"API Key에 허용되지 않는 문자가 있습니다 ({bad}). 콘솔에서 전체 키를 다시 복사해 붙여 주세요 (말줄임표 '…'나 공백이 섞인 잘린 키인지 확인)."})
 
     if p == "gemini":
         m = grammar_analyzer.resolve_gemini_model(k, m)
@@ -450,6 +470,10 @@ async def api_save_ai_settings(req: AISettingsRequest):
                 k = (p_data.get("api_key") or "").strip()
                 m = (p_data.get("model") or "").strip()
                 if k:
+                    bad = describe_non_ascii(k)
+                    if bad:
+                        prov_label = grammar_analyzer.PROVIDER_NAMES.get(p_clean, p_clean)
+                        return JSONResponse(status_code=400, content={"success": False, "message": f"{prov_label} API Key에 허용되지 않는 문자가 있습니다 ({bad}). 저장하지 않았습니다. 콘솔에서 전체 키를 다시 복사해 주세요."})
                     db.set_setting(f"ai_key_{p_clean}", k)
                 if m:
                     db.set_setting(f"ai_model_{p_clean}", m)
