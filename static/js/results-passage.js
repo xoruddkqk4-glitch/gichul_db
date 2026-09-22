@@ -54,7 +54,7 @@ import { copyToClipboard, escapeHtml, showToast } from "./utils.js";
 import { triggerSingleFileUpload } from "./upload.js";
 
 let currentDetailPassage = null;
-const ANSWER_SOURCE_LABELS = { verified_key: "검증 키 파일", csv: "정답률 CSV", image_consensus: "이미지 모델 합의", image_single: "이미지 단일 모델", hwp: "HWP 해설", manual: "수동 확정", none: "출처 없음" };
+const ANSWER_SOURCE_LABELS = { uploaded_json: "정답 JSON", verified_key: "검증 키 파일", csv: "정답률 CSV", image_consensus: "이미지 모델 합의", image_single: "이미지 단일 모델", hwp: "HWP 해설", manual: "수동 확정", none: "출처 없음" };
 // =========================================================================
 // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
 // =========================================================================

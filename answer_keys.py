@@ -7,7 +7,7 @@
 import os
 import json
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Any, Union
 
 KEYS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "answer_keys")
 CIRCLED = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
@@ -19,6 +19,124 @@ def exam_key(grade: str, year: int, month: int) -> str:
 
 def key_path(grade: str, year: int, month: int) -> str:
     return os.path.join(KEYS_DIR, exam_key(grade, year, month) + ".json")
+
+
+def normalize_answer_val(val: Any) -> str:
+    """숫자(1~5) 또는 원문자('①'~'⑤')를 '①'~'⑤'로 정규화"""
+    s = str(val or "").strip()
+    return CIRCLED.get(s, s) if (s in CIRCLED or s in CIRCLED.values()) else ""
+
+
+def parse_answer_json(data: Any) -> Dict[int, str]:
+    """
+    유연한 JSON 정답 파서.
+    지원 형태:
+    1) {"18": 2, "19": "①", ...}
+    2) {"answers": {"18": 2, ...}}
+    3) {"data": {"18": 2, ...}} 또는 {"questions": [{"q": 18, "a": 2}, ...]}
+    4) [2, 1, 4, 3, ...] (길이 45면 1~45, 길이 28이면 18~45)
+    반환: {문항번호(int): '①'..'⑤'}
+    """
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            return {}
+
+    result: Dict[int, str] = {}
+
+    # 리스트 형식
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict):
+            for item in data:
+                q_raw = item.get("q") or item.get("question") or item.get("q_num") or item.get("no")
+                a_raw = item.get("a") or item.get("ans") or item.get("answer")
+                if q_raw is not None and a_raw is not None:
+                    try:
+                        q_int = int(q_raw)
+                        ans_str = normalize_answer_val(a_raw)
+                        if ans_str:
+                            result[q_int] = ans_str
+                    except (ValueError, TypeError):
+                        pass
+        else:
+            start_q = 1 if len(data) >= 40 else 18
+            for idx, a_raw in enumerate(data):
+                ans_str = normalize_answer_val(a_raw)
+                if ans_str:
+                    result[start_q + idx] = ans_str
+        return result
+
+    # 딕셔너리 형식
+    if isinstance(data, dict):
+        target_dict = data
+        for k in ("answers", "data", "result", "items"):
+            if isinstance(target_dict.get(k), (dict, list)):
+                target_dict = target_dict[k]
+                break
+
+        if isinstance(target_dict, list):
+            return parse_answer_json(target_dict)
+
+        if isinstance(target_dict, dict):
+            for k, v in target_dict.items():
+                try:
+                    q_int = int(str(k).strip())
+                    ans_str = normalize_answer_val(v)
+                    if ans_str:
+                        result[q_int] = ans_str
+                except (ValueError, TypeError):
+                    continue
+
+    return result
+
+
+def parse_answer_json_file(file_path: str) -> Dict[int, str]:
+    """JSON 파일 경로에서 정답 dict 추출. utf-8, utf-8-sig, cp949 인코딩 순차 시도."""
+    if not os.path.exists(file_path):
+        return {}
+    content = None
+    for enc in ("utf-8", "utf-8-sig", "cp949"):
+        try:
+            with open(file_path, "r", encoding=enc) as f:
+                content = f.read()
+            break
+        except UnicodeDecodeError:
+            continue
+    if not content:
+        return {}
+    return parse_answer_json(content)
+
+
+def save_uploaded_answer_key(grade: str, year: int, month: int, answers: Dict[int, str], filename: str = "") -> str:
+    """사용자가 업로드한 정답 JSON 데이터를 data/answer_keys/{key}.json 에 영구 저장"""
+    path = key_path(grade, year, month)
+    existing_data = {}
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                existing_data = json.load(f)
+        except Exception:
+            existing_data = {}
+
+    data = {
+        "exam_key": exam_key(grade, year, month),
+        "grade": grade,
+        "year": int(year),
+        "month": int(month),
+        "source_file": filename or existing_data.get("source_file", ""),
+        "verification": {
+            "method": "uploaded_json",
+            "verified_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "warnings": [],
+            "manual_overrides": existing_data.get("verification", {}).get("manual_overrides", [])
+        },
+        "answers": {str(int(q)): normalize_answer_val(a) for q, a in sorted(answers.items()) if normalize_answer_val(a)}
+    }
+    os.makedirs(KEYS_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return path
 
 
 def load_answer_key(grade: str, year: int, month: int) -> Dict[int, str]:

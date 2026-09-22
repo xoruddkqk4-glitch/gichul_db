@@ -851,10 +851,24 @@ async def api_upload_exam(
         })
 
         # 3. 정답 소스 수집
-        # (1) 정답표 이미지(-A.png): 활성화된 모든 Vision 모델이 독립 판독, 2개 이상 일치한 문항만 검증 정답으로 인정
+        # (1) 정답표 파일 처리:
+        #     - .json 확장자인 경우: Vision AI 호출을 건너뛰고(Bypass), JSON 데이터를 1순위 Ground Truth(uploaded_json)로 채택
+        #     - 이미지(.png/.jpg)인 경우: 활성화된 모든 Vision 모델이 독립 판독, 2개 이상 일치한 문항만 검증 정답으로 인정
+        uploaded_json_answers = {}
         image_report = None
         if ans_save_path and os.path.exists(ans_save_path):
-            image_report = read_answer_image(ans_save_path)
+            if ans_save_path.lower().endswith(".json"):
+                try:
+                    uploaded_json_answers = answer_keys.parse_answer_json_file(ans_save_path)
+                    if uploaded_json_answers:
+                        answer_keys.save_uploaded_answer_key(grade, year, month, uploaded_json_answers, ans_file.filename if ans_file else "")
+                        print(f"[Upload] 정답 JSON 파일 파싱 및 키 저장 완료 ({len(uploaded_json_answers)}문항)")
+                    else:
+                        print(f"[Upload] 정답 JSON 파싱 결과 비어있음: {ans_save_path}")
+                except Exception as e:
+                    print(f"[Upload] 정답 JSON 파싱 실패: {e}")
+            else:
+                image_report = read_answer_image(ans_save_path)
 
         # (2) HWP 해설 파싱 (별도 해설 파일 우선, 없거나 미흡할 경우 문제지 HWP 파일에서 추출)
         explanations = {}
@@ -878,7 +892,7 @@ async def api_upload_exam(
             except Exception as e:
                 print(f"[Upload] 정답률 CSV 파싱 실패: {e}")
 
-        # (4) 문항별 정답 확정: 검증 키 파일 > CSV 정답 > 이미지 모델 합의 > 이미지 단일 모델 > HWP 해설
+        # (4) 문항별 정답 확정: 업로드 JSON > 정답률 CSV > 검증 키 파일 > 이미지 모델 합의 > 이미지 단일 모델 > HWP 해설
         #     검증되지 않은 소스로 결정된 문항은 answer_verified=0 으로 기록되고 응답에 경고로 명시된다 (무언 폴백 금지)
         resolution = answer_resolver.resolve_answers(
             q_range=range(reading_start or 18, (reading_end or 45) + 1),
@@ -886,6 +900,7 @@ async def api_upload_exam(
             image_report=image_report,
             csv_rates=rates_dict,
             hwp_answers={q: info.get("answer", "") for q, info in explanations.items()},
+            uploaded_json=uploaded_json_answers,
         )
         answers_dict = resolution["answers"]
         for w in resolution["report"]["warnings"]:
@@ -1047,10 +1062,55 @@ async def api_upload_exam_single_file(
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 3. 정답표 이미지(ans) 처리
+    # 3. 정답표 파일(ans) 처리 (JSON 파일 또는 이미지 파일)
     if file_type == "ans":
         try:
-            # (1) 활성화된 모든 Vision 모델로 독립 판독 → 2개 이상 일치한 문항만 검증 정답으로 인정
+            # (A) 정답 JSON 파일인 경우: Vision AI 바이패스, 1순위 Ground Truth로 즉시 반영
+            if save_path.lower().endswith(".json"):
+                json_answers = answer_keys.parse_answer_json_file(save_path)
+                if not json_answers:
+                    raise ValueError("정답 JSON 파일에서 유효한 문항 정답을 추출하지 못했습니다.")
+                answer_keys.save_uploaded_answer_key(grade, year, month, json_answers, file.filename)
+
+                answers_dict = {}
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT id, q_num, answer_text, explanation_text FROM passages WHERE exam_id = ?",
+                        (clean_id,)
+                    )
+                    passages = cursor.fetchall()
+                    for p in passages:
+                        q_int = int(p["q_num"])
+                        if q_int in json_answers:
+                            target_ans = json_answers[q_int]
+                            answers_dict[q_int] = target_ans
+                            exp_body = p["explanation_text"] or ""
+                            if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
+                                new_exp = f"[정답] {target_ans}\n\n{exp_body}".strip()
+                            else:
+                                new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {target_ans}", exp_body)
+                            cursor.execute(
+                                "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = 'uploaded_json', answer_verified = 1 WHERE id = ?",
+                                (target_ans, new_exp, p["id"])
+                            )
+                        elif p["answer_text"]:
+                            answers_dict[q_int] = p["answer_text"]
+                    conn.commit()
+
+                pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict)
+                return {
+                    "status": "success",
+                    "exam_id": clean_id,
+                    "file_type": "ans",
+                    "extracted_count": len(json_answers),
+                    "source": "uploaded_json",
+                    "pdf_highlighted": pdf_highlighted,
+                    "message": f"정답 JSON 파일에서 {len(json_answers)}개 문항 정답을 1순위로 즉시 반영했습니다."
+                               + (" (PDF 형광펜 갱신 완료)" if pdf_highlighted else "")
+                }
+
+            # (B) 이미지 파일인 경우: 활성화된 모든 Vision 모델로 독립 판독 → 2개 이상 일치한 문항만 검증 정답으로 인정
             report = read_answer_image(save_path)
             if report["status"] == "failed":
                 raise ValueError("정답표 이미지 판독 실패: " + "; ".join(report["errors"]))

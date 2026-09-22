@@ -156,11 +156,11 @@ function renderFilesStatusTable() {
     const answeredCount = ansStat.answered_count || 0;
     const totalCount = exam.passage_count || 28;
     if (ansStat.exists) {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 정답표로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 정답표/JSON으로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
     } else if (answeredCount > 0) {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표 이미지 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표/JSON 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
     } else {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 업로드</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답 JSON(.json) 또는 이미지 등록 (1순위 정답 반영 & PDF 형광펜 갱신)">➕ 정답표 업로드</button>`;
     }
 
     // 4. 정답률 CSV 버튼

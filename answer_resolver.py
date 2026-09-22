@@ -2,13 +2,15 @@
 05-gichul_db: 정답 소스 결합 및 검증 판정 (answer_resolver.py)
 
 문항별 정답 결정 우선순위:
-  1. csv              - 정답률 CSV: 정답 컬럼이 있으면 그 값, 없으면 |정답률 - 선지 선택률| <= 2.0%p 인 선지가 유일할 때 그 선지
+  1. uploaded_json    - 사용자가 직접 업로드한 정답 JSON 파일 (100% 확정 Ground Truth, 최우선)
+  2. csv              - 정답률 CSV: 정답 컬럼이 있으면 그 값, 없으면 |정답률 - 선지 선택률| <= 2.0%p 인 선지가 유일할 때 그 선지
                         (채점 통계에서 결정적으로 도출되므로 최우선. 단, 다른 시험의 CSV로 판단되면 전체 무시)
-  2. verified_key     - data/answer_keys 검증 키 파일
-  3. image_consensus  - 정답표 이미지를 2개 이상 Vision 모델이 독립 판독하여 과반 일치한 값
-  4. image_single     - Vision 모델 1개만 응답한 이미지 판독값 (미검증)
-  5. hwp              - HWP 해설 정규식 추출값 (미검증)
-'검증됨'으로 인정하는 소스는 1~3 이며, 최종 정답이 CSV 정답률 후보와 어긋나면 미검증으로 강등하고 경고를 남긴다.
+  3. verified_key     - data/answer_keys 검증 키 파일
+  4. image_consensus  - 정답표 이미지를 2개 이상 Vision 모델이 독립 판독하여 과반 일치한 값
+  5. image_single     - Vision 모델 1개만 응답한 이미지 판독값 (미검증)
+  6. hwp              - HWP 해설 정규식 추출값 (미검증)
+'검증됨'으로 인정하는 소스는 1~4 이며, 최종 정답이 CSV 정답률 후보와 어긋나면 미검증으로 강등하고 경고를 남긴다.
+(직접 업로드한 JSON 정답은 최우선 Ground Truth로 채택되며, CSV와 불일치 시 검토용 경고를 기록한다)
 """
 
 from collections import Counter
@@ -16,8 +18,9 @@ from typing import Dict, Any, Iterable, List, Optional
 
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
 CIRCLED_SET = set(CIRCLED_MAP.values())
-VERIFIED_SOURCES = {"verified_key", "csv", "image_consensus", "manual"}
+VERIFIED_SOURCES = {"uploaded_json", "verified_key", "csv", "image_consensus", "manual"}
 SOURCE_LABELS = {
+    "uploaded_json": "정답 JSON 파일",
     "verified_key": "검증 키 파일",
     "csv": "정답률 CSV",
     "image_consensus": "정답표 이미지(모델 합의)",
@@ -82,8 +85,10 @@ def resolve_answers(
     image_report: Optional[Dict[str, Any]] = None,
     csv_rates: Optional[Dict[int, Dict[str, Any]]] = None,
     hwp_answers: Optional[Dict[int, str]] = None,
+    uploaded_json: Optional[Dict[int, str]] = None,
 ) -> Dict[str, Any]:
     q_list = list(q_range)
+    uploaded_json_clean = {int(q): normalize_answer(a) for q, a in (uploaded_json or {}).items() if normalize_answer(a)}
     verified_key = {int(q): normalize_answer(a) for q, a in (verified_key or {}).items() if normalize_answer(a)}
     consensus: Dict[int, str] = {}
     single: Dict[int, str] = {}
@@ -94,12 +99,13 @@ def resolve_answers(
             single = next(iter(readings.values()), {}) if readings else {}
 
     csv_decided, csv_candidates = csv_answer_tables(csv_rates)
-    reference = {**consensus, **verified_key}
+    reference = {**consensus, **verified_key, **uploaded_json_clean}
     csv_check = detect_csv_mismatch(csv_decided, reference)
     if csv_check["suspect"]:
         csv_decided, csv_candidates = {}, {}
 
     ordered_sources = (
+        ("uploaded_json", uploaded_json_clean),
         ("csv", csv_decided),
         ("verified_key", verified_key),
         ("image_consensus", consensus),
@@ -121,17 +127,23 @@ def resolve_answers(
     verified = {q: sources[q] in VERIFIED_SOURCES for q in q_list}
 
     # 최종 정답이 CSV 정답률 후보(복수 포함)에 속하지 않으면 검증 강등
+    # 직접 업로드한 JSON 및 수동 확정은 정답표 자체를 입력한 것이므로 강등하지 않음
     rate_violations = []
     for q in q_list:
         cands = csv_candidates.get(q)
         if cands and q in answers and answers[q] not in cands:
             rate_violations.append({"q": q, "answer": answers[q], "source": sources[q], "csv_candidates": cands})
-            verified[q] = False
+            if sources[q] not in ("uploaded_json", "manual"):
+                verified[q] = False
 
     unverified = [q for q in q_list if not verified[q]]
     csv_conflicts = [
         {"q": q, "image": consensus[q], "csv": csv_decided[q]}
         for q in q_list if q in consensus and q in csv_decided and consensus[q] != csv_decided[q]
+    ]
+    json_csv_conflicts = [
+        {"q": q, "json": uploaded_json_clean[q], "csv": csv_decided[q]}
+        for q in q_list if q in uploaded_json_clean and q in csv_decided and uploaded_json_clean[q] != csv_decided[q]
     ]
 
     warnings = []
@@ -149,6 +161,11 @@ def resolve_answers(
             f"정답률 CSV가 다른 시험의 데이터로 의심됩니다 (비교 {csv_check['checked']}문항 중 "
             f"{len(csv_check['mismatch'])}문항 불일치) - CSV 정답을 무시했습니다. 파일을 확인하세요."
         )
+    if json_csv_conflicts:
+        warnings.append(
+            "정답 JSON과 CSV 정답 불일치 (JSON 우선 적용): "
+            + ", ".join(f"Q{c['q']} JSON {c['json']} / CSV {c['csv']}" for c in json_csv_conflicts)
+        )
     if csv_conflicts:
         warnings.append(
             "이미지 합의 정답과 CSV 정답 불일치 (CSV 우선 적용): "
@@ -156,7 +173,7 @@ def resolve_answers(
         )
     if rate_violations:
         warnings.append(
-            "정답률과 모순되는 정답 (미검증 처리): "
+            "정답률과 모순되는 정답" + (" (미검증 처리)" if any(v["source"] not in ("uploaded_json", "manual") for v in rate_violations) else " (확인 필요)") + ": "
             + ", ".join(f"Q{v['q']} {v['answer']}({SOURCE_LABELS[v['source']]}) vs 정답률 후보 {'/'.join(v['csv_candidates'])}" for v in rate_violations)
         )
     if unverified:
@@ -177,6 +194,7 @@ def resolve_answers(
             "csv_checked": csv_check["checked"],
             "csv_rate_violations": rate_violations,
             "csv_conflicts": csv_conflicts,
+            "json_csv_conflicts": json_csv_conflicts,
             "warnings": warnings,
         },
     }

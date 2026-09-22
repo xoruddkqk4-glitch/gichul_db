@@ -200,3 +200,62 @@ def test_check_csv_suspect_suppresses_corrections():
     assert check["suspect"] is True
     assert check["corrections"] == {} and check["confirmed"] == []
     assert check["mismatch"] == list(range(18, 28))
+
+
+# ---------- uploaded_json 최우선 순위 및 정답 키 JSON 파싱 ----------
+
+def test_uploaded_json_wins_over_all_sources():
+    uploaded = {18: "①"}
+    csv = {18: _csv_item(ans="2")}
+    key = {18: "③"}
+    image = _image("ok", consensus={18: "④"})
+    hwp = {18: "⑤"}
+    res = ar.resolve_answers(
+        range(18, 19),
+        verified_key=key,
+        image_report=image,
+        csv_rates=csv,
+        hwp_answers=hwp,
+        uploaded_json=uploaded,
+    )
+    assert res["answers"] == {18: "①"}
+    assert res["sources"][18] == "uploaded_json"
+    assert res["verified"][18] is True
+    assert res["report"]["source_counts"]["uploaded_json"] == 1
+    # CSV와 불일치 시 경고 및 json_csv_conflicts 기록 확인
+    assert res["report"]["json_csv_conflicts"] == [{"q": 18, "json": "①", "csv": "②"}]
+    assert any("정답 JSON과 CSV 정답 불일치 (JSON 우선 적용)" in w for w in res["report"]["warnings"])
+
+
+def test_uploaded_json_stays_verified_even_with_csv_rate_discrepancy():
+    uploaded = {18: "③"}
+    # CSV는 후보 ①/② 만 가리킴
+    csv = {18: _csv_item(rate=50.0, rates={"1": 50.0, "2": 49.0, "3": 1.0, "4": 0, "5": 0})}
+    res = ar.resolve_answers(range(18, 19), uploaded_json=uploaded, csv_rates=csv)
+    assert res["answers"] == {18: "③"}
+    assert res["sources"][18] == "uploaded_json"
+    # Ground Truth이므로 verified 상태 유지
+    assert res["verified"][18] is True
+    assert len(res["report"]["csv_rate_violations"]) == 1
+    assert any("정답률과 모순되는 정답" in w for w in res["report"]["warnings"])
+
+
+def test_parse_answer_json_various_formats():
+    import answer_keys as ak
+
+    # 1) dict with numbers
+    assert ak.parse_answer_json({"18": 2, "19": 1}) == {18: "②", 19: "①"}
+    # 2) dict with circles
+    assert ak.parse_answer_json({"18": "③", "19": "④"}) == {18: "③", 19: "④"}
+    # 3) nested {"answers": {...}}
+    assert ak.parse_answer_json({"answers": {"20": 5, "21": 3}}) == {20: "⑤", 21: "③"}
+    # 4) flat list of length 28 (starts at 18)
+    lst28 = [1] * 28
+    res28 = ak.parse_answer_json(lst28)
+    assert len(res28) == 28
+    assert res28[18] == "①" and res28[45] == "①"
+    # 5) list of dicts
+    assert ak.parse_answer_json([{"q": 18, "a": 4}, {"q": 19, "a": "②"}]) == {18: "④", 19: "②"}
+    # 6) json string
+    assert ak.parse_answer_json('{"18": 3, "19": 5}') == {18: "③", 19: "⑤"}
+

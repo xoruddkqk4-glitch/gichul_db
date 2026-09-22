@@ -100,7 +100,8 @@ export const closeUploadModal = () => {
 function parseExamMetadataFromFilename(filename) {
   if (!filename) return null;
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
-  const is_ans = /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
+  const is_json = filename.toLowerCase().endsWith(".json");
+  const is_ans = is_json || /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
   const cleanName = nameWithoutExt.replace(/[\s\-_]?(A|ans|정답)$/i, "");
 
   // 지원 패턴 예: 고3-[2026-07], 고3-[2026-7], 고3-2026-07, 고3_2026_07, 고3 2026년 7월 등
@@ -153,7 +154,7 @@ async function handleBatchFilesSelected(fileList) {
       batchSetsMap[key].hwpFile = file;
     } else if (lowerName.endsWith(".csv")) {
       batchSetsMap[key].csvFile = file;
-    } else if (lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || meta.is_ans) {
+    } else if (lowerName.endsWith(".json") || lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || meta.is_ans) {
       batchSetsMap[key].ansFile = file;
     }
   }
@@ -420,11 +421,11 @@ export function renderManageExamsTable() {
     const answeredCount = ansStat.answered_count || 0;
     const totalCount = ansStat.total_count || exam.passage_count || 28;
     if (ansStat.exists) {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 이미지로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="${escapeHtml(ansStat.filename)} (정답 ${answeredCount}/${totalCount}문항 반영됨, 클릭 시 새 정답표/JSON으로 교체)">🖼️ 등록됨 (${answeredCount}/${totalCount})</button>`;
     } else if (answeredCount > 0) {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표 이미지 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표/JSON 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
     } else {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답표 이미지(-A.png) 등록 (Vision AI 정답 자동 추출 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답 JSON(.json) 또는 이미지 등록 (1순위 정답 반영 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
     }
 
     // 4. 정답률 CSV 칩 버튼
@@ -517,7 +518,7 @@ export function triggerSingleFileUpload(examId, fileType, btnElement) {
   activeSingleTargetBtn = btnElement;
 
   if (fileType === "ans") {
-    examSingleFileInput.accept = ".png,.jpg,.jpeg";
+    examSingleFileInput.accept = ".json,.png,.jpg,.jpeg";
   } else if (fileType === "csv") {
     examSingleFileInput.accept = ".csv";
   } else if (fileType === "pdf") {

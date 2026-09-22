@@ -1041,3 +1041,26 @@ CREATE TABLE user_sentence_status (
   - 모듈 분리 정적 검증(acorn): 12개 파일 구문 파싱 통과, import↔export 정합 일치, 미사용 import 0, 함수 106개·상수·상태 변수 개수 원본과 보존, 공유 let 잔여 직접 참조 0
   - Node+jsdom 스모크(브라우저 미사용): 실제 `index.html` 로드 후 모듈 평가·전체 `init()`·초기화·버튼 클릭 5회 실행 → 원본과 분리본 모두 예외 0·console.error 0·DOM 상태 동일
   - `python -m py_compile app.py grammar_analyzer.py hwp_parser.py` 통과, `describe_non_ascii('sk-ant-api03-abcd…xyz')` → `"18번째 '…'"` 확인
+
+### [2026-09-22 14:01] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **정답 JSON 최우선 적용 파이프라인 구축 (`answer_keys.py`, `answer_resolver.py`)**:
+    - `answer_keys.py`: `parse_answer_json` 유연한 파서(숫자 딕셔너리, 원문자 딕셔너리, 중첩 answers 딕셔너리, 28/45개 평탄 배열, 딕셔너리 리스트 수용), `parse_answer_json_file`(utf-8/utf-8-sig/cp949 다중 인코딩), `save_uploaded_answer_key`(업로드 정답을 `data/answer_keys/`에 영구 보관) 신설
+    - `answer_resolver.py`: 정답 소스 우선순위를 `정답 JSON 파일 (uploaded_json) > 정답률 CSV (csv) > 검증 키 파일 (verified_key) > 정답표 이미지 합의 (image_consensus) > 단일 모델 (image_single) > HWP 해설 (hwp)`로 개편. `VERIFIED_SOURCES` 및 `SOURCE_LABELS`에 `uploaded_json` 등록
+    - 교차 감사 및 안전망: JSON 정답이 최우선 채택되되, CSV 정답률 통계와 불일치하는 경우 사용자 검토를 위한 경고(`json_csv_conflicts`) 기록
+  - **Vision AI 바이패스 및 업로드 파이프라인 연동 (`app.py`)**:
+    - `POST /api/upload`: 정답표 파일이 `.json` 확장자일 경우 느리고 비용이 발생하는 Vision AI 호출(`read_answer_image`)을 완전히 건너뛰고(Bypass), JSON 정답을 1순위 Ground Truth로 즉시 확정 (업로드 대기 시간 20~30초 → 0.05초로 단축, API 비용 0원)
+    - `POST /api/exams/{id}/upload-file`: 관리자 화면의 [➕ 정답표] 버튼에서도 `.json` 파일 단독 등록 지원 (지문 정답 갱신 및 PDF 형광펜 크롭 이미지 자동 재생성)
+  - **프론트엔드 UI 드롭존 및 단독 업로드 지원 (`templates/index.html`, `static/js/upload.js`, `static/js/files-status.js`, `static/js/results-passage.js`)**:
+    - `templates/index.html`: 일괄 드롭존 및 단독 등록 모달 파일 인풋의 `accept` 속성에 `.json` 추가 및 안내 문구 보강
+    - `static/js/upload.js`: 파일명 기반 메타데이터 파서(`parseExamMetadataFromFilename`)에서 `.json` 감지 지원, 드래그&드롭 시 `ansFile` 자동 페어링 및 단독 업로드 다이얼로그 연동
+    - `static/js/results-passage.js`: 뷰어 정답 출처 배지에 `uploaded_json: "정답 JSON"` 매핑 연동
+  - **회귀 테스트 확장 (`tests/test_answer_resolver.py`)**:
+    - `test_uploaded_json_wins_over_all_sources`: JSON의 1순위 우선 적용 및 CSV 충돌 경고 검증
+    - `test_uploaded_json_stays_verified_even_with_csv_rate_discrepancy`: Ground Truth로서 검증 플래그 유지 검증
+    - `test_parse_answer_json_various_formats`: 딕셔너리, 배열, 원문자, 중첩 JSON 포맷 파싱 검증
+- **검증 결과**:
+  - `python -m pytest tests -q`: **76 passed** (기존 73개 + 신규 3개 전원 통과)
+  - `python -m py_compile app.py answer_keys.py answer_resolver.py`: 문법 검사 오류 0건 통과
+  - `node -c static/js/upload.js static/js/files-status.js static/js/results-passage.js`: 구문 검사 오류 0건 통과
+
