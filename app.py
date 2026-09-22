@@ -125,6 +125,8 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
     if not pdf_candidates:
         return False
     try:
+        if (reading_end is None or reading_end == 45) and (2006 <= year <= 2011):
+            reading_end = 50
         crop_results = extract_pdf_columns_and_questions(
             pdf_path=pdf_candidates[0], grade=grade, year=year, month=month,
             start_q=reading_start, end_q=reading_end, answers_dict=answers_dict
@@ -320,6 +322,55 @@ async def api_update_answer(passage_id: str, req: AnswerRequest):
         "new_answer": new_ans,
         "pdf_highlighted": pdf_highlighted,
         "message": f"{clean_id} 정답을 '{old_ans or '-'}' → '{new_ans}' 로 정정했습니다." + (" (형광펜 크롭 갱신)" if pdf_highlighted else "")
+    }
+
+
+# --- PDF 문항 크롭 다시 캡처 API ---
+@app.post("/api/passages/{passage_id:path}/recapture")
+async def api_recapture_passage_pdf(passage_id: str):
+    """지문 PDF 크롭 이미지 다시 캡처 (원본 PDF로부터 형광펜 하이라이트 문항 크롭 재생성)"""
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    passage = db.get_passage(clean_id)
+    if not passage:
+        raise HTTPException(status_code=404, detail=f"지문 '{clean_id}'를 찾을 수 없습니다.")
+    exam_id = passage["exam_id"]
+
+    with db.get_connection() as conn:
+        exam = conn.execute(
+            "SELECT grade, year, month, reading_start_q, reading_end_q FROM exams WHERE id = ?", (exam_id,)
+        ).fetchone()
+        exam_answers = {int(r["q_num"]): (r["answer_text"] or "") for r in conn.execute(
+            "SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (exam_id,))}
+    if not exam:
+        raise HTTPException(status_code=404, detail=f"시험지 '{exam_id}'를 찾을 수 없습니다.")
+
+    success = _regenerate_exam_crops(
+        exam_id, exam["grade"], exam["year"], exam["month"],
+        exam["reading_start_q"] or 18, exam["reading_end_q"] or 45, exam_answers
+    )
+
+    with db.get_connection() as conn:
+        exam_passages = [dict(r) for r in conn.execute(
+            "SELECT * FROM passages WHERE exam_id = ? ORDER BY q_num ASC", (exam_id,)
+        ).fetchall()]
+
+    updated_passage = db.get_passage(clean_id)
+    if not success or not (updated_passage and updated_passage.get("pdf_crop_image")):
+        return {
+            "success": False,
+            "message": "PDF 원본 파일이 없거나 캡처 생성에 실패했습니다. uploads 폴더의 PDF 파일을 확인하세요.",
+            "passage": updated_passage,
+            "passages": exam_passages
+        }
+
+    return {
+        "success": True,
+        "message": f"{clean_id} PDF 문항 캡처를 성공적으로 다시 생성했습니다.",
+        "passage": updated_passage,
+        "passages": exam_passages
     }
 
 
@@ -840,6 +891,9 @@ async def api_upload_exam(
         else:
             exam_type = "교육청"
 
+        default_end = 50 if (2006 <= year <= 2011) else 45
+        effective_reading_end = reading_end or default_end
+
         db.save_exam({
             "id": exam_id,
             "grade": grade,
@@ -847,7 +901,7 @@ async def api_upload_exam(
             "month": month,
             "exam_type": exam_type,
             "reading_start_q": reading_start or 18,
-            "reading_end_q": reading_end or 45
+            "reading_end_q": effective_reading_end
         })
 
         # 3. 정답 소스 수집
@@ -895,7 +949,7 @@ async def api_upload_exam(
         # (4) 문항별 정답 확정: 업로드 JSON > 정답률 CSV > 검증 키 파일 > 이미지 모델 합의 > 이미지 단일 모델 > HWP 해설
         #     검증되지 않은 소스로 결정된 문항은 answer_verified=0 으로 기록되고 응답에 경고로 명시된다 (무언 폴백 금지)
         resolution = answer_resolver.resolve_answers(
-            q_range=range(reading_start or 18, (reading_end or 45) + 1),
+            q_range=range(reading_start or 18, effective_reading_end + 1),
             verified_key=answer_keys.load_answer_key(grade, year, month),
             image_report=image_report,
             csv_rates=rates_dict,
@@ -929,7 +983,7 @@ async def api_upload_exam(
             year=year,
             month=month,
             start_q=reading_start or 18,
-            end_q=reading_end or 45,
+            end_q=effective_reading_end,
             answers_dict=answers_dict
         )
 
@@ -940,7 +994,7 @@ async def api_upload_exam(
             year=year,
             month=month,
             start_q=reading_start or 18,
-            end_q=reading_end or 45,
+            end_q=effective_reading_end,
             answers_dict=answers_dict
         )
 

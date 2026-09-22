@@ -14,6 +14,7 @@ import {
   btnCopyExplanation,
   btnCopyPassage,
   btnEditAnswer,
+  btnRecapturePdf,
   btnSaveAnswer,
   btnTabScrollLeft,
   btnTabScrollRight,
@@ -59,12 +60,25 @@ const ANSWER_SOURCE_LABELS = { uploaded_json: "정답 JSON", verified_key: "검�
 // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
 // =========================================================================
 
-/** 41~42번(1지문2문항), 43~45번(1지문3문항)을 단일 탭으로 병합 (O(1) Map 색인 최적화) */
+/** 41~42번/43~45번(45문항 체제) 또는 46~48번/49~50번(50문항 체제) 복합 지문을 단일 탭으로 병합 */
 export function groupPassageItems(rawItems) {
   if (!rawItems || rawItems.length === 0) return [];
 
   const result = [];
   const handledIds = new Set();
+
+  // exam별 50문항 체제 여부 판별 (1: reading_end_q >= 48, 2: q_num >= 46 존재, 3: 2006~2011년 기출)
+  const examIs50Map = new Map();
+  for (let i = 0; i < rawItems.length; i++) {
+    const it = rawItems[i];
+    if (!it.exam_id) continue;
+    if (!examIs50Map.has(it.exam_id)) examIs50Map.set(it.exam_id, false);
+    const yMatch = it.exam_id.match(/(\d{4})년/) || (it.year ? [null, it.year] : null);
+    const yr = yMatch ? parseInt(yMatch[1], 10) : 0;
+    if (it.reading_end_q >= 48 || it.q_num >= 46 || (yr >= 2006 && yr <= 2011)) {
+      examIs50Map.set(it.exam_id, true);
+    }
+  }
 
   // 대량 데이터 고속 처리를 위해 exam_id + q_num 인덱스 Map 사전 구축
   const itemMap = new Map();
@@ -79,72 +93,154 @@ export function groupPassageItems(rawItems) {
     const p = rawItems[i];
     if (handledIds.has(p.id)) continue;
 
-    // 41~42번 (1지문 2문항) 통합
-    if (p.q_num === 41 || (p.question_type === "1지문2문항" && p.q_num === 41)) {
-      const p42 = itemMap.get(`${p.exam_id}_42`);
-      if (p42) {
-        handledIds.add(p.id);
-        handledIds.add(p42.id);
+    const is50Exam = examIs50Map.get(p.exam_id) || false;
 
-        const examPrefix = p.id.replace(/-41번\]$/, "").replace(/^\[/, "");
-        const ans41 = p.answer_text || "-";
-        const ans42 = p42.answer_text || "-";
-        const ansLabel = `41.${ans41} / 42.${ans42}`;
-        const combinedAns41_42 = `[정답] 41. ${ans41}   42. ${ans42}`;
-        const baseExp41_42 = (p.explanation_text || p42.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
-        const expText41_42 = `${combinedAns41_42}\n\n${baseExp41_42.trim()}`;
+    if (is50Exam) {
+      // =======================================================================
+      // [총 50문항 체제]: 18~45번 단일 문항 / 46~48번 (1지문3문항) / 49~50번 (1지문2문항)
+      // =======================================================================
 
-        result.push({
-          ...p,
-          isGroup: true,
-          groupType: "41-42",
-          q_num_label: "41~42번",
-          display_id: `[${examPrefix}-41~42번]`,
-          all_ids: [p.id, p42.id],
-          subItems: [p, p42],
-          question_type: "1지문2문항",
-          answer_text: ansLabel,
-          answer_verified: [p, p42].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
-          pdf_crop_images: [p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean),
-          explanation_text: expText41_42
-        });
-        continue;
+      // 46~48번 (1지문 3문항) 통합
+      if (p.q_num === 46 || (p.question_type === "1지문3문항" && p.q_num === 46)) {
+        const p47 = itemMap.get(`${p.exam_id}_47`);
+        const p48 = itemMap.get(`${p.exam_id}_48`);
+        if (p47 && p48) {
+          handledIds.add(p.id);
+          handledIds.add(p47.id);
+          handledIds.add(p48.id);
+
+          const examPrefix = p.id.replace(/-46번\]$/, "").replace(/^\[/, "");
+          const ans46 = p.answer_text || "-";
+          const ans47 = p47.answer_text || "-";
+          const ans48 = p48.answer_text || "-";
+          const ansLabel = `46.${ans46} / 47.${ans47} / 48.${ans48}`;
+          const combinedAns46_48 = `[정답] 46. ${ans46}   47. ${ans47}   48. ${ans48}`;
+          const baseExp46_48 = (p.explanation_text || p47.explanation_text || p48.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText46_48 = `${combinedAns46_48}\n\n${baseExp46_48.trim()}`;
+
+          result.push({
+            ...p,
+            isGroup: true,
+            groupType: "46-48",
+            q_num_label: "46~48번",
+            display_id: `[${examPrefix}-46~48번]`,
+            all_ids: [p.id, p47.id, p48.id],
+            subItems: [p, p47, p48],
+            question_type: "1지문3문항",
+            answer_text: ansLabel,
+            answer_verified: [p, p47, p48].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+            pdf_crop_images: [p.pdf_crop_image, p47.pdf_crop_image, p48.pdf_crop_image].filter(Boolean),
+            explanation_text: expText46_48
+          });
+          continue;
+        }
       }
-    }
 
-    // 43~45번 (1지문 3문항) 통합
-    if (p.q_num === 43 || (p.question_type === "1지문3문항" && p.q_num === 43)) {
-      const p44 = itemMap.get(`${p.exam_id}_44`);
-      const p45 = itemMap.get(`${p.exam_id}_45`);
-      if (p44 && p45) {
-        handledIds.add(p.id);
-        handledIds.add(p44.id);
-        handledIds.add(p45.id);
+      // 49~50번 (1지문 2문항) 통합
+      if (p.q_num === 49 || (p.question_type === "1지문2문항" && p.q_num === 49)) {
+        const p50 = itemMap.get(`${p.exam_id}_50`);
+        if (p50) {
+          handledIds.add(p.id);
+          handledIds.add(p50.id);
 
-        const examPrefix = p.id.replace(/-43번\]$/, "").replace(/^\[/, "");
-        const ans43 = p.answer_text || "-";
-        const ans44 = p44.answer_text || "-";
-        const ans45 = p45.answer_text || "-";
-        const ansLabel = `43.${ans43} / 44.${ans44} / 45.${ans45}`;
-        const combinedAns43_45 = `[정답] 43. ${ans43}   44. ${ans44}   45. ${ans45}`;
-        const baseExp43_45 = (p.explanation_text || p44.explanation_text || p45.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
-        const expText43_45 = `${combinedAns43_45}\n\n${baseExp43_45.trim()}`;
+          const examPrefix = p.id.replace(/-49번\]$/, "").replace(/^\[/, "");
+          const ans49 = p.answer_text || "-";
+          const ans50 = p50.answer_text || "-";
+          const ansLabel = `49.${ans49} / 50.${ans50}`;
+          const combinedAns49_50 = `[정답] 49. ${ans49}   50. ${ans50}`;
+          const baseExp49_50 = (p.explanation_text || p50.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText49_50 = `${combinedAns49_50}\n\n${baseExp49_50.trim()}`;
 
-        result.push({
-          ...p,
-          isGroup: true,
-          groupType: "43-45",
-          q_num_label: "43~45번",
-          display_id: `[${examPrefix}-43~45번]`,
-          all_ids: [p.id, p44.id, p45.id],
-          subItems: [p, p44, p45],
-          question_type: "1지문3문항",
-          answer_text: ansLabel,
-          answer_verified: [p, p44, p45].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
-          pdf_crop_images: [p.pdf_crop_image].filter(Boolean),
-          explanation_text: expText43_45
-        });
-        continue;
+          result.push({
+            ...p,
+            isGroup: true,
+            groupType: "49-50",
+            q_num_label: "49~50번",
+            display_id: `[${examPrefix}-49~50번]`,
+            all_ids: [p.id, p50.id],
+            subItems: [p, p50],
+            question_type: "1지문2문항",
+            answer_text: ansLabel,
+            answer_verified: [p, p50].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+            pdf_crop_images: [p.pdf_crop_image, p50.pdf_crop_image].filter(Boolean),
+            explanation_text: expText49_50
+          });
+          continue;
+        }
+      }
+
+    } else {
+      // =======================================================================
+      // [총 45문항 체제 (2012년 이후)]: 41~42번 (1지문2문항) / 43~45번 (1지문3문항)
+      // =======================================================================
+
+      // 41~42번 (1지문 2문항) 통합
+      if (p.q_num === 41 || (p.question_type === "1지문2문항" && p.q_num === 41)) {
+        const p42 = itemMap.get(`${p.exam_id}_42`);
+        if (p42) {
+          handledIds.add(p.id);
+          handledIds.add(p42.id);
+
+          const examPrefix = p.id.replace(/-41번\]$/, "").replace(/^\[/, "");
+          const ans41 = p.answer_text || "-";
+          const ans42 = p42.answer_text || "-";
+          const ansLabel = `41.${ans41} / 42.${ans42}`;
+          const combinedAns41_42 = `[정답] 41. ${ans41}   42. ${ans42}`;
+          const baseExp41_42 = (p.explanation_text || p42.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText41_42 = `${combinedAns41_42}\n\n${baseExp41_42.trim()}`;
+
+          result.push({
+            ...p,
+            isGroup: true,
+            groupType: "41-42",
+            q_num_label: "41~42번",
+            display_id: `[${examPrefix}-41~42번]`,
+            all_ids: [p.id, p42.id],
+            subItems: [p, p42],
+            question_type: "1지문2문항",
+            answer_text: ansLabel,
+            answer_verified: [p, p42].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+            pdf_crop_images: [p.pdf_crop_image, p42.pdf_crop_image].filter(Boolean),
+            explanation_text: expText41_42
+          });
+          continue;
+        }
+      }
+
+      // 43~45번 (1지문 3문항) 통합
+      if (p.q_num === 43 || (p.question_type === "1지문3문항" && p.q_num === 43)) {
+        const p44 = itemMap.get(`${p.exam_id}_44`);
+        const p45 = itemMap.get(`${p.exam_id}_45`);
+        if (p44 && p45) {
+          handledIds.add(p.id);
+          handledIds.add(p44.id);
+          handledIds.add(p45.id);
+
+          const examPrefix = p.id.replace(/-43번\]$/, "").replace(/^\[/, "");
+          const ans43 = p.answer_text || "-";
+          const ans44 = p44.answer_text || "-";
+          const ans45 = p45.answer_text || "-";
+          const ansLabel = `43.${ans43} / 44.${ans44} / 45.${ans45}`;
+          const combinedAns43_45 = `[정답] 43. ${ans43}   44. ${ans44}   45. ${ans45}`;
+          const baseExp43_45 = (p.explanation_text || p44.explanation_text || p45.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
+          const expText43_45 = `${combinedAns43_45}\n\n${baseExp43_45.trim()}`;
+
+          result.push({
+            ...p,
+            isGroup: true,
+            groupType: "43-45",
+            q_num_label: "43~45번",
+            display_id: `[${examPrefix}-43~45번]`,
+            all_ids: [p.id, p44.id, p45.id],
+            subItems: [p, p44, p45],
+            question_type: "1지문3문항",
+            answer_text: ansLabel,
+            answer_verified: [p, p44, p45].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+            pdf_crop_images: [p.pdf_crop_image, p44.pdf_crop_image, p45.pdf_crop_image].filter(Boolean),
+            explanation_text: expText43_45
+          });
+          continue;
+        }
       }
     }
 
@@ -684,10 +780,17 @@ function loadPassageDetail(p) {
   } else {
     panelPdfImageContainer.innerHTML = `
         <div class="pdf-placeholder">
-          🖼️ PDF 문항 캡처 이미지가 생성되지 않았거나 없습니다.<br>
-          <small style="color: var(--text-light); margin-top: 6px; display: inline-block;">
+          <div style="font-size: 0.98rem; font-weight: 700; margin-bottom: 6px; color: #475569;">
+            🖼️ PDF 문항 캡처 이미지가 생성되지 않았거나 없습니다.
+          </div>
+          <div style="color: var(--text-light); font-size: 0.8rem; line-height: 1.5; max-width: 440px; margin: 0 auto;">
             시험지 업로드 시 PDF 파일을 함께 등록하시면 원본 문항 인쇄 영역이 고화질로 자동 크롭됩니다.
-          </small>
+          </div>
+          <div>
+            <button type="button" class="btn-inline-recapture">
+              🔄 지금 다시 캡처 실행
+            </button>
+          </div>
         </div>
       `;
   }
@@ -730,7 +833,8 @@ function loadPassageDetail(p) {
     metaAnswerStatus.style.display = p.answer_text ? "inline-flex" : "none";
   }
   currentDetailPassage = p;
-  if (btnEditAnswer) btnEditAnswer.style.display = "inline-block";
+  if (btnRecapturePdf) btnRecapturePdf.disabled = false;
+  if (btnEditAnswer) btnEditAnswer.style.display = "inline-flex";
   if (answerEditForm) answerEditForm.style.display = "none";
   if (metaQuestionTitle) metaQuestionTitle.textContent = p.question_title || "-";
   validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
@@ -891,6 +995,7 @@ export function renderChoiceRates(p) {
 
 function reset2x2ContentPanels() {
   panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">탐색할 시험 및 문항을 선택하세요.</div>`;
+  if (btnRecapturePdf) btnRecapturePdf.disabled = true;
   panelPassageText.textContent = "-";
   panelPassageText.dataset.rawText = "";
   panelExplanation.textContent = "-";
@@ -1072,6 +1177,62 @@ export function init() {
         btnSaveAnswer.disabled = false;
         btnSaveAnswer.textContent = "저장";
         if (answerEditForm) answerEditForm.style.display = "none";
+      }
+    });
+  }
+
+  /** PDF 문항 캡처 다시 실행 */
+  async function handleRecapturePdf() {
+    const p = currentDetailPassage;
+    if (!p) {
+      showToast("선택된 문항이 없습니다. 문항을 먼저 선택해 주세요.", "warning");
+      return;
+    }
+    const targetId = p.id;
+    if (btnRecapturePdf) {
+      btnRecapturePdf.disabled = true;
+      btnRecapturePdf.textContent = "⏳ 캡처 중...";
+    }
+    showToast(`${p.display_id || p.id} PDF 문항 캡처를 다시 생성하는 중입니다...`, "info");
+    try {
+      const res = await fetch(`/api/passages/${encodeURIComponent(targetId)}/recapture`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || data.detail || "PDF 문항 다시 캡처 실패");
+      }
+      if (Array.isArray(data.passages) && data.passages.length > 0) {
+        const updatedMap = new Map(data.passages.map(it => [it.id, it]));
+        const flatten = (items) => items.flatMap((it) => (it.isGroup && it.subItems) ? it.subItems : [it]);
+        const replaceIn = (items) => flatten(items).map((it) => updatedMap.has(it.id) ? { ...it, ...updatedMap.get(it.id) } : it);
+        if (appState.passagesData && appState.passagesData.length) appState.passagesData = groupPassageItems(replaceIn(appState.passagesData));
+        if (appState.rawPassagesData && appState.rawPassagesData.length) appState.rawPassagesData = groupPassageItems(replaceIn(appState.rawPassagesData));
+        renderPassageView(appState.passagesData, p.id);
+      } else if (data.passage) {
+        applyPassageUpdate(data.passage, p.id);
+      }
+      showToast(data.message || "PDF 캡처가 성공적으로 재생성되었습니다.", "success");
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || "PDF 캡처 재생성 중 오류가 발생했습니다.", "error");
+    } finally {
+      if (btnRecapturePdf) {
+        btnRecapturePdf.disabled = false;
+        btnRecapturePdf.textContent = "🔄 다시 캡처";
+      }
+    }
+  }
+
+  if (btnRecapturePdf) {
+    btnRecapturePdf.addEventListener("click", handleRecapturePdf);
+  }
+
+  // PDF placeholder 내부 인라인 다시 캡처 버튼 이벤트 위임
+  if (panelPdfImageContainer) {
+    panelPdfImageContainer.addEventListener("click", (e) => {
+      if (e.target && e.target.closest(".btn-inline-recapture")) {
+        handleRecapturePdf();
       }
     });
   }

@@ -193,20 +193,23 @@ def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str)
 
 
 
-def detect_listening_range(full_text: str) -> Tuple[int, int]:
+def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[int, int]:
     """
     시험지 텍스트에서 듣기 평가 문항 번호 범위 감지
-    기본값: 독해 시작 18, 끝 45 (안내문 발견 시 동적 설정)
+    기본값: 독해 시작 18, 끝 45 (50문항 체제 감지 시 끝 50)
     """
+    is_50 = bool(re.search(r"(?:^|\n|\s)50\s*\.", full_text) or re.search(r"\[\s*49\s*[~～\-]\s*50\s*\]", full_text) or (year and 2006 <= year <= 2011))
+    default_end = 50 if is_50 else 45
+
     match = re.search(r"1\s*번\s*부터\s*(\d{1,2})\s*번\s*까지\s*는\s*듣고", full_text)
     if match:
-        return int(match.group(1)) + 1, 45
+        return int(match.group(1)) + 1, default_end
     else:
         match_ab = re.search(r"(\d{1,2})\s*번\s*까지는\s*듣고", full_text)
         if match_ab:
-            return int(match_ab.group(1)) + 1, 45
+            return int(match_ab.group(1)) + 1, default_end
 
-    return 18, 45
+    return 18, default_end
 
 
 def extract_pdf_columns_and_questions(
@@ -231,7 +234,11 @@ def extract_pdf_columns_and_questions(
     for page in doc:
         all_page_text += page.get_text() + "\n"
 
-    detected_start, detected_end = detect_listening_range(all_page_text)
+    detected_start, detected_end = detect_listening_range(all_page_text, year=year)
+    is_50 = (detected_end == 50) or (end_q is not None and end_q >= 48) or (reading_end is not None and reading_end >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011)
+    if is_50 and (end_q is None or end_q == 45) and (reading_end is None or reading_end == 45):
+        detected_end = 50
+
     actual_start = start_q if start_q is not None else (reading_start if reading_start is not None else detected_start)
     actual_end = end_q if end_q is not None else (reading_end if reading_end is not None else detected_end)
     start_q = actual_start
@@ -239,8 +246,8 @@ def extract_pdf_columns_and_questions(
 
     # 문항 번호 감지 정규식 (예: "18. 다음 글의", "36.", "37. ")
     q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?")
-    # 복합 지문 헤더 감지 정규식 (예: "[41~42] 다음 글을 읽고...")
-    group_header_pattern = re.compile(r"^\s*\[\s*(\d{1,2})\s*[~～\-]\s*(\d{1,2})\s*\](?:\s*(.*))?")
+    # 복합 지문 헤더 감지 정규식 (예: "[41~42] 다음 글을 읽고...", "[46\n48]", "[49-50]")
+    group_header_pattern = re.compile(r"^\s*\[\s*(\d{1,2})\s*[\s~～\-_]*\s*(\d{1,2})\s*\](?:\s*(.*))?")
 
     questions_data = {}
     shared_group_cache = {}  # (g_start, g_end): {'rects': [...], 'text': [...], 'page_num': int}
@@ -251,9 +258,9 @@ def extract_pdf_columns_and_questions(
         width, height = rect.width, rect.height
         mid_x = width / 2.0
 
-        # 헤더(상단 155pt)와 푸터(하단 60pt)를 제외한 칼럼 클립 영역
-        left_clip = fitz.Rect(35, 155, mid_x - 5, height - 60)
-        right_clip = fitz.Rect(mid_x + 5, 155, width - 35, height - 60)
+        # 헤더(상단 105pt)와 푸터(하단 50pt)를 제외한 칼럼 클립 영역
+        left_clip = fitz.Rect(35, 105, mid_x - 5, height - 50)
+        right_clip = fitz.Rect(mid_x + 5, 105, width - 35, height - 50)
 
         for col_idx, col_clip in [("L", left_clip), ("R", right_clip)]:
             raw_blocks = page.get_text("blocks", clip=col_clip)
@@ -276,7 +283,7 @@ def extract_pdf_columns_and_questions(
                     continue
 
                 # 헤더/푸터/페이지 번호 단독 블록 필터링
-                if b_rect.y1 < 160 or b_rect.y0 > height - 65:
+                if b_rect.y1 < 105 or b_rect.y0 > height - 50:
                     continue
                 if b_text in ("영어 영역", "홀수형", "짝수형") or re.match(r"^\d{1,2}$", b_text):
                     continue
@@ -284,9 +291,17 @@ def extract_pdf_columns_and_questions(
                 lines = b_text.split("\n")
                 first_line = lines[0].strip()
 
-                # 복합 지문 헤더 확인 (예: [41~42])
-                grp_match = group_header_pattern.match(first_line)
+                # 복합 지문 헤더 확인 (예: [41~42], [43~45], [46~48], [49~50])
+                # 줄바꿈으로 인해 "[46\n48]" 처럼 나뉜 블록도 첫 40자 공백 정규화 후 매칭
+                header_candidate = re.sub(r"\s+", " ", b_text[:40]).strip()
+                grp_match = group_header_pattern.match(first_line) or group_header_pattern.match(header_candidate)
                 if grp_match:
+                    g_s = int(grp_match.group(1))
+                    g_e = int(grp_match.group(2))
+                    # 50문항 체제에서는 [41~42]가 공유 지문이 아니므로 안내 블록만 건너뜀
+                    if is_50 and (g_s, g_e) == (41, 42):
+                        continue
+
                     # 이전 문항이 있다면 종료
                     if current_q and current_text_lines:
                         ans_sym = (answers_dict or {}).get(current_q, "")
@@ -299,8 +314,6 @@ def extract_pdf_columns_and_questions(
                         current_text_lines = []
                         current_rects = []
 
-                    g_s = int(grp_match.group(1))
-                    g_e = int(grp_match.group(2))
                     active_group = (g_s, g_e)
                     group_text_lines = [b_text]
                     group_rects = [(page_num, b_rect)]
@@ -362,12 +375,13 @@ def extract_pdf_columns_and_questions(
                     "text": list(group_text_lines)
                 }
 
-    # 1지문 3문항 (43~45번) 전용 고화질 크롭 & 세로 이어붙이기 수행
-    merged_43_45_url = crop_and_merge_43_45(doc, grade, year, month, answers_dict)
-    if merged_43_45_url:
-        for q_target in (43, 44, 45):
-            if q_target in questions_data:
-                questions_data[q_target]["pdf_crop_image"] = merged_43_45_url
+    # 45문항 체제에서만 1지문 3문항 (43~45번) 전용 고화질 크롭 & 세로 이어붙이기 수행
+    if not is_50:
+        merged_43_45_url = crop_and_merge_43_45(doc, grade, year, month, answers_dict)
+        if merged_43_45_url:
+            for q_target in (43, 44, 45):
+                if q_target in questions_data:
+                    questions_data[q_target]["pdf_crop_image"] = merged_43_45_url
 
     doc.close()
     return questions_data
@@ -392,16 +406,17 @@ def save_extracted_question(
     question_title = lines[0] if lines else f"{q_num}. 문항"
     passage_body = "\n".join(lines[1:]) if len(lines) > 1 else ""
 
-    # 공유 지문에 속한 문항(예: 41번)인 경우 공유 지문 텍스트 및 영역 병합
+    # 공유 지문에 속한 문항(예: 41번 또는 46번, 49번)인 경우 공유 지문 텍스트 및 영역 병합
     attached_group_rects = []
     for (g_s, g_e), g_data in shared_group_cache.items():
         if g_s <= q_num <= g_e:
-            # 41번 또는 첫 문항의 경우 공유 지문 Bounding Box 포함하여 크롭
+            # 첫 문항(예: 41번, 46번, 49번)의 경우 공유 지문 Bounding Box 포함하여 크롭
             if q_num == g_s:
                 attached_group_rects = g_data.get("rects", [])
-            # 본문이 비어있으면 공유 지문 텍스트 채우기
-            if not passage_body and g_data.get("text"):
-                passage_body = "\n".join(g_data["text"]) + "\n" + passage_body
+                if g_data.get("text"):
+                    passage_body = "\n".join(g_data["text"]) + ("\n\n" + passage_body if passage_body else "")
+            elif not passage_body and g_data.get("text"):
+                passage_body = "\n".join(g_data["text"])
             break
 
     # 하단 선택지(① ~ ⑤) 앞까지의 순수 지문 본문 정제 (문장 분할용)

@@ -879,7 +879,7 @@ def search_passages(
 ) -> List[Dict[str, Any]]:
     """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분 - 온전한 단어 검색 지원)"""
     query = """
-        SELECT p.*, e.grade, e.year, e.month, e.exam_type
+        SELECT p.*, e.grade, e.year, e.month, e.exam_type, e.reading_start_q, e.reading_end_q
         FROM passages p
         JOIN exams e ON p.exam_id = e.id
         WHERE 1=1

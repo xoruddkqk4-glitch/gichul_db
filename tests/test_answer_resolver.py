@@ -258,4 +258,17 @@ def test_parse_answer_json_various_formats():
     assert ak.parse_answer_json([{"q": 18, "a": 4}, {"q": 19, "a": "②"}]) == {18: "④", 19: "②"}
     # 6) json string
     assert ak.parse_answer_json('{"18": 3, "19": 5}') == {18: "③", 19: "⑤"}
+    # 7) EBSi format: {"answers": [{"number": 1, "answer": 5}, ...]}
+    ebsi_data = {
+        "year": 2026, "month": 9, "grade": "고3",
+        "answers": [
+            {"number": 1, "answer": 5},
+            {"number": 18, "answer": 2},
+            {"number": 45, "answer": 2},
+        ]
+    }
+    ebsi_res = ak.parse_answer_json(ebsi_data)
+    assert ebsi_res[1] == "⑤"
+    assert ebsi_res[18] == "②"
+    assert ebsi_res[45] == "②"
 

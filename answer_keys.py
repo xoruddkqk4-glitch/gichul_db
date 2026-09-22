@@ -5,6 +5,7 @@
 """
 
 import os
+import re
 import json
 from datetime import datetime
 from typing import Dict, Any, Union
@@ -32,9 +33,10 @@ def parse_answer_json(data: Any) -> Dict[int, str]:
     유연한 JSON 정답 파서.
     지원 형태:
     1) {"18": 2, "19": "①", ...}
-    2) {"answers": {"18": 2, ...}}
-    3) {"data": {"18": 2, ...}} 또는 {"questions": [{"q": 18, "a": 2}, ...]}
-    4) [2, 1, 4, 3, ...] (길이 45면 1~45, 길이 28이면 18~45)
+    2) {"answers": [{"number": 1, "answer": 5}, ...]} (EBSi 표준 포맷 등)
+    3) {"answers": {"18": 2, ...}}
+    4) {"data": {"18": 2, ...}} 또는 {"questions": [{"q": 18, "a": 2}, ...]}
+    5) [2, 1, 4, 3, ...] (길이 45면 1~45, 길이 28이면 18~45)
     반환: {문항번호(int): '①'..'⑤'}
     """
     if isinstance(data, str):
@@ -49,11 +51,35 @@ def parse_answer_json(data: Any) -> Dict[int, str]:
     if isinstance(data, list):
         if data and isinstance(data[0], dict):
             for item in data:
-                q_raw = item.get("q") or item.get("question") or item.get("q_num") or item.get("no")
-                a_raw = item.get("a") or item.get("ans") or item.get("answer")
+                q_raw = (
+                    item.get("number")
+                    or item.get("no")
+                    or item.get("num")
+                    or item.get("q")
+                    or item.get("question")
+                    or item.get("q_num")
+                    or item.get("qNum")
+                    or item.get("questionNumber")
+                    or item.get("question_number")
+                    or item.get("id")
+                    or item.get("문항")
+                    or item.get("문제")
+                    or item.get("번호")
+                )
+                a_raw = (
+                    item.get("answer")
+                    or item.get("ans")
+                    or item.get("a")
+                    or item.get("correctAnswer")
+                    or item.get("correct_answer")
+                    or item.get("정답")
+                    or item.get("답")
+                    or item.get("val")
+                    or item.get("value")
+                )
                 if q_raw is not None and a_raw is not None:
                     try:
-                        q_int = int(q_raw)
+                        q_int = int(str(q_raw).strip())
                         ans_str = normalize_answer_val(a_raw)
                         if ans_str:
                             result[q_int] = ans_str
@@ -70,7 +96,7 @@ def parse_answer_json(data: Any) -> Dict[int, str]:
     # 딕셔너리 형식
     if isinstance(data, dict):
         target_dict = data
-        for k in ("answers", "data", "result", "items"):
+        for k in ("answers", "data", "result", "items", "questions"):
             if isinstance(target_dict.get(k), (dict, list)):
                 target_dict = target_dict[k]
                 break
@@ -86,7 +112,15 @@ def parse_answer_json(data: Any) -> Dict[int, str]:
                     if ans_str:
                         result[q_int] = ans_str
                 except (ValueError, TypeError):
-                    continue
+                    m = re.search(r'\d+', str(k))
+                    if m:
+                        try:
+                            q_int = int(m.group())
+                            ans_str = normalize_answer_val(v)
+                            if ans_str:
+                                result[q_int] = ans_str
+                        except Exception:
+                            pass
 
     return result
 

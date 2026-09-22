@@ -1064,3 +1064,29 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py answer_keys.py answer_resolver.py`: 문법 검사 오류 0건 통과
   - `node -c static/js/upload.js static/js/files-status.js static/js/results-passage.js`: 구문 검사 오류 0건 통과
 
+### [2026-09-22 22:00] 업데이트 이력 (Commit ID: 5600b75)
+- **수정 내용**:
+  - **총 50문항 체제(2006~2011년 기출) 문항 구조 전면 지원 및 PDF 크롭 일괄 정상화**:
+    - **원인 분석**: 45문항 체제용 1지문 3문항 결합 로직(`crop_and_merge_43_45`)이 50문항 시험(2006~2011년)에도 오작동하여, 마지막 8페이지의 49~50번 영역을 크롭해 `_43.png`로 저장하고 43, 44, 45번에 동일하게 할당되었던 문제 해결
+    - **PDF 파서 엔진 개선 (`pdf_parser.py`)**:
+      - 50문항 체제에서는 18~45번이 모두 1지문 1문항(단일 문항)이므로 결합 로직을 배제하고 각 문항별 독립 크롭(`_41.png`~`_45.png`) 생성
+      - 상단 클립 시작 마진을 `155pt`에서 `105pt`로 확장하고 헤더 필터링을 완화하여 7~8페이지 최상단 문항(41번 및 46~48, 49~50번 지문 헤더)이 잘리던 현상 원천 차단
+      - `group_header_pattern` 정규식을 개선하여 `[46\n48]`처럼 개행이 포함된 복합 지문 헤더도 완벽히 매칭, 46번 및 49번 문항에 본문 지문 전체가 정상 결합되도록 수정
+    - **2006~2011년 기출 24개 시험 크롭 이미지 일괄 재생성**: 50문항 기출 전체에 대해 고화질 크롭을 일괄 재생성하고 DB `passages.pdf_crop_image` 경로를 100% 정상화 (문항 간 중복 참조 0건)
+    - **50문항 체제 문항 탭 분리 UI (`static/js/results-passage.js`)**: 46~48번(1지문 3문항), 49~50번(1지문 2문항)을 단일 복합 탭으로 통합하고 41~45번은 개별 문항 탭으로 노출
+  - **PDF 문항 캡처 이미지 패널 '다시 캡처' 버튼 신설**:
+    - [templates/index.html](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/templates/index.html) 및 [static/js/dom.js](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/dom.js), [static/js/results-passage.js](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/results-passage.js)
+    - 2x2 그리드 좌상단 'PDF 문항 캡처 이미지' 패널 헤더 우측에 `[🔄 다시 캡처]` 버튼(`btnRecapturePdf`) 추가
+    - PDF 크롭 이미지가 없거나 잘못되었을 때 표시되는 안내 Placeholder 화면에도 인라인 `[🔄 지금 다시 캡처 실행]` 버튼 배치
+    - 백엔드에 `POST /api/passages/{passage_id}/recapture` 엔드포인트 신설 (`app.py`), 원본 PDF에서 해당 시험지 문항을 자동 재크롭하고 뷰어를 실시간 갱신
+  - **'정답 정정' 버튼 크기 확대 및 텍스트 시인성 개선**:
+    - [templates/index.html](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/templates/index.html), [static/css/style.css](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/css/style.css)
+    - 기존에 부모 컨테이너 flex column으로 인해 버튼 높이가 납작하게 찌그러지고 텍스트가 보이지 않던 문제를 해결
+    - 컨테이너 분리(`meta-answer-container`) 및 버튼 내 `✏️ 정답 정정` 텍스트 명시
+    - 최소 높이(28px), 패딩(`0.28rem 0.65rem`), 폰트(`0.78rem 700 bold`), 호버 애니메이션 및 소프트 블루 칩 테마 적용
+- **검증 결과**:
+  - `python -m py_compile app.py pdf_parser.py database.py`: 파이썬 구문 검사 오류 0건 통과
+  - `node -c static/js/results-passage.js static/js/dom.js`: 자바스크립트 구문 검사 오류 0건 통과
+  - 50문항 시험 전체 43, 44, 45, 46-48, 49-50번 독립 크롭 이미지 생성 및 DB 중복 0건 무결성 확인 완료
+
+

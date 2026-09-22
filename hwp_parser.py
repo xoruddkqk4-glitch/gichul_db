@@ -145,15 +145,22 @@ QUESTION_TYPES = [
 ]
 
 
-def classify_question_type(title: str, q_num: int = 0) -> str:
-    """발문(문제 제목)과 문항 번호를 기반으로 20대 문제 유형 자동 판별"""
+def classify_question_type(title: str, q_num: int = 0, is_50_questions: bool = False) -> str:
+    """발문(문제 제목)과 문항 번호를 기반으로 20대 문제 유형 자동 판별 (50문항 체제 지원)"""
     t = title.strip()
 
     # 복합 장문 우선 판별
-    if q_num in (41, 42) or "41~42" in t or "41-42" in t or "41～42" in t:
-        return "1지문2문항"
-    if q_num in (43, 44, 45) or "43~45" in t or "43-45" in t or "43～45" in t:
-        return "1지문3문항"
+    if is_50_questions:
+        if q_num in (46, 47, 48) or "46~48" in t or "46-48" in t or "46～48" in t:
+            return "1지문3문항"
+        if q_num in (49, 50) or "49~50" in t or "49-50" in t or "49～50" in t:
+            return "1지문2문항"
+        # 50문항 체제에서는 41~45번이 단일 문항이므로 아래 개별 유형 매칭으로 진행
+    else:
+        if q_num in (41, 42) or "41~42" in t or "41-42" in t or "41～42" in t:
+            return "1지문2문항"
+        if q_num in (43, 44, 45) or "43~45" in t or "43-45" in t or "43～45" in t:
+            return "1지문3문항"
 
     if "목적" in t:
         return "글의목적"
@@ -264,6 +271,11 @@ def parse_hwp_questions(
     if not full_text:
         return {}
 
+    # 50문항 체제 여부 판별
+    is_50 = (end_q >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011) or bool(re.search(r"(?:^|\n)\s*50\s*\.", full_text))
+    if is_50 and reading_end is None and end_q == 45:
+        end_q = 50
+
     # 문제지와 해설지 영역 분리
     question_text, _ = split_questions_and_explanations(full_text)
 
@@ -275,66 +287,59 @@ def parse_hwp_questions(
     current_q = None
     current_lines = []
     current_inherited_title = ""
-    active_group_header = ""
+
+    # 공유 지문 캐시: (start_q, end_q) -> 지문 텍스트
+    group_passages = {}
     active_group_range = (0, 0)
     group_passage_lines = []
-    group_passages = {}
 
     for line in lines:
         line_s = line.strip()
         if not line_s:
+            if current_q:
+                current_lines.append("")
+            elif active_group_range[0] > 0 and current_q is None:
+                group_passage_lines.append("")
             continue
 
-        # [31~34] 다음 빈칸... 과 같은 복합 그룹 헤더 감지
-        grp_match = group_header_pattern.match(line_s)
-        if grp_match:
-            # 이전 문항 마무리
+        # 복합 지문 헤더 감지 (예: [41~42], [43~45], [46~48], [49~50])
+        grp_m = group_header_pattern.match(line_s)
+        if grp_m:
             if current_q and current_lines:
                 questions[current_q] = format_hwp_question(
-                    current_q, current_lines, grade, year, month, current_inherited_title, group_passages
+                    current_q, current_lines, grade, year, month, current_inherited_title, group_passages, is_50_questions=is_50
                 )
                 current_q = None
                 current_lines = []
 
-            g_start = int(grp_match.group(1))
-            g_end = int(grp_match.group(2))
-            active_group_header = line_s
+            g_start = int(grp_m.group(1))
+            g_end = int(grp_m.group(2))
             active_group_range = (g_start, g_end)
             group_passage_lines = []
+            current_inherited_title = grp_m.group(3).strip() if grp_m.group(3) else ""
             continue
 
-        match = q_pattern.match(line_s)
-        if match:
-            # [출제의도], [해설], [정답] 등 해설 블록 마커가 포함된 경우 문제지가 아니므로 건너뜀
-            if any(marker in line_s for marker in ("[출제의도]", "[해설]", "[정답]", "출제의도")):
-                continue
-
-            q_num = int(match.group(1))
-            if start_q <= q_num <= end_q:
-                # 이미 해당 문항이 정상적인 영어 지문(영문 100자 이상)으로 수집되어 있다면 중복 덮어쓰기 차단
-                if q_num in questions and len(re.findall(r'[a-zA-Z]', questions[q_num].get("passage_body", ""))) > 100:
-                    continue
-
-                # 그룹 지문 수집 중이었으면 캐시에 저장
+        # 문항 번호 감지
+        qm = q_pattern.match(line_s)
+        if qm:
+            q_val = int(qm.group(1))
+            if start_q <= q_val <= end_q:
+                # 공유 지문 본문 저장
                 if active_group_range[0] > 0 and group_passage_lines:
                     group_passages[active_group_range] = "\n".join(group_passage_lines).strip()
                     group_passage_lines = []
 
                 if current_q and current_lines:
                     questions[current_q] = format_hwp_question(
-                        current_q, current_lines, grade, year, month, current_inherited_title, group_passages
+                        current_q, current_lines, grade, year, month, current_inherited_title, group_passages, is_50_questions=is_50
                     )
-                current_q = q_num
+
+                current_q = q_val
                 current_lines = [line_s]
 
-                # 발문 설정: 단독 발문이 있으면 우선 사용, 비어있으면 그룹 헤더 상속
-                rest_title = (match.group(2) or "").strip()
-                if rest_title and rest_title not in ("[3점]", "[2점]", "3점", "2점"):
-                    current_inherited_title = f"{q_num}. {rest_title}"
-                elif active_group_range[0] <= q_num <= active_group_range[1] and active_group_header:
-                    current_inherited_title = f"{q_num}. {active_group_header}"
-                else:
-                    current_inherited_title = f"{q_num}. 문항"
+                # 해당 문항이 복합 지문 범위를 벗어나면 공통 발문 초기화
+                if q_val < active_group_range[0] or q_val > active_group_range[1]:
+                    current_inherited_title = ""
                 continue
 
         # 복합 지문 본문 누적 (문항 번호가 시작되기 전 지문 텍스트)
@@ -347,7 +352,7 @@ def parse_hwp_questions(
 
     if current_q and current_lines:
         questions[current_q] = format_hwp_question(
-            current_q, current_lines, grade, year, month, current_inherited_title, group_passages
+            current_q, current_lines, grade, year, month, current_inherited_title, group_passages, is_50_questions=is_50
         )
 
     return questions
@@ -360,7 +365,8 @@ def format_hwp_question(
     year: int,
     month: int,
     inherited_title: str = "",
-    group_passages: dict = None
+    group_passages: dict = None,
+    is_50_questions: bool = False
 ) -> dict:
     """문항 본문, 발문, 문제 유형 자동 분류"""
     raw_title = lines[0] if lines else f"{q_num}. 문항"
@@ -372,9 +378,11 @@ def format_hwp_question(
     body_text = "\n".join(lines[1:]) if len(lines) > 1 else ""
     body = body_text
 
-    # 복합 지문(예: [41~42], [43~45])에 속한 문항의 경우 공유 지문 + 해당 문항 발문 및 선지 병합
+    # 복합 지문에 속한 문항의 경우 공유 지문 + 해당 문항 발문 및 선지 병합
     if group_passages:
         for (g_s, g_e), g_text in group_passages.items():
+            if is_50_questions and (g_s, g_e) == (41, 42):
+                continue
             if g_s <= q_num <= g_e and g_text:
                 if body_text:
                     body = f"{g_text}\n\n{body_text}"
@@ -394,7 +402,7 @@ def format_hwp_question(
         full_passage_text = title
 
     passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
-    q_type = classify_question_type(title, q_num)
+    q_type = classify_question_type(title, q_num, is_50_questions=is_50_questions)
 
     return {
         "passage_id": passage_id,
@@ -430,7 +438,7 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
         for tm in pat.finditer(full_text):
             try:
                 t_q = int(tm.group(1))
-                if 1 <= t_q <= 45 and t_q not in table_answers:
+                if 1 <= t_q <= 50 and t_q not in table_answers:
                     t_sym = tm.group(2)
                     table_answers[t_q] = CIRCLED_MAP.get(t_sym, t_sym)
             except Exception:

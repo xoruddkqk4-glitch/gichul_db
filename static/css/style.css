@@ -4610,40 +4610,156 @@ mark.passage-highlight {
 
 
 
+/* 정답 항목 전용 컨테이너 및 뱃지 레이아웃 (우하단 추가 정보 패널) */
+.meta-item-answer {
+  min-width: 140px;
+}
+.meta-answer-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+.meta-answer-main-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.meta-answer-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 /* 정답 출처/검증 상태 배지 (우하단 추가 정보 패널) */
 .answer-status-badge {
   display: inline-flex;
   align-items: center;
-  margin-left: 0.4rem;
-  padding: 0.1rem 0.55rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  vertical-align: middle;
   white-space: nowrap;
 }
-.answer-status-badge.ok { background: #dcfce7; color: #166534; }
-.answer-status-badge.warn { background: #fef3c7; color: #92400e; }
+.answer-status-badge.ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.answer-status-badge.warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 
-/* 정답 수동 정정 UI */
+/* 정답 수동 정정 버튼 (크기 확대, 아이콘+텍스트 선명 표시) */
 .btn-answer-edit {
-  margin-left: 0.35rem;
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #64748b;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.65rem;
+  min-height: 28px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
   border-radius: 6px;
-  padding: 0 0.4rem;
-  font-size: 0.75rem;
-  line-height: 1.4;
   cursor: pointer;
-  vertical-align: middle;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.08);
+  transition: all 0.15s ease;
 }
-.btn-answer-edit:hover { background: #f1f5f9; color: #0f172a; }
-.answer-edit-form { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.4rem; vertical-align: middle; }
-.answer-edit-select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 0.1rem 0.3rem; font-size: 0.8rem; font-weight: 700; }
+.btn-answer-edit:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.15);
+}
+.btn-answer-edit:active {
+  transform: translateY(0);
+}
+.btn-answer-edit .btn-edit-icon {
+  font-size: 0.82rem;
+  line-height: 1;
+}
+.btn-answer-edit .btn-edit-label {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+/* 정답 수정 폼 */
+.answer-edit-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  padding: 0.3rem 0.5rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.answer-edit-select {
+  border: 1.5px solid #94a3b8;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  background: #fff;
+  color: #0f172a;
+}
 .btn-answer-save, .btn-answer-cancel {
-  border-radius: 6px; padding: 0.15rem 0.55rem; font-size: 0.72rem; font-weight: 700; cursor: pointer; border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+  min-height: 26px;
 }
 .btn-answer-save { background: #2563eb; color: #fff; }
 .btn-answer-save:hover { background: #1d4ed8; }
-.btn-answer-cancel { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+.btn-answer-cancel { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+.btn-answer-cancel:hover { background: #e2e8f0; }
+
+/* PDF 패널 다시 캡처 버튼 */
+#btnRecapturePdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.24rem 0.65rem;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+#btnRecapturePdf:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+#btnRecapturePdf:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* PDF 플레이스홀더 인라인 재캡처 버튼 */
+.btn-inline-recapture {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  border: 1px solid transparent;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2);
+  transition: all 0.15s ease;
+}
+.btn-inline-recapture:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}

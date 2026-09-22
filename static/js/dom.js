@@ -80,6 +80,7 @@ export const btnTabScrollRight = document.getElementById("btnTabScrollRight");
 
 // 2x2 그리드 요소
 export const panelPdfImageContainer = document.getElementById("panelPdfImageContainer");
+export const btnRecapturePdf = document.getElementById("btnRecapturePdf");
 export const panelPassageText = document.getElementById("panelPassageText");
 export const panelExplanation = document.getElementById("panelExplanation");
 export const metaPassageId = document.getElementById("metaPassageId");

@@ -14,6 +14,7 @@
   - TypeScript: `npx tsc --noEmit` (또는 `npm run type-check`)
   - Next.js / React: `npm run lint`
   - Vanilla JS / Node.js: `node -c app.js` (또는 `node --check <file>.js`)
+  - Python: `python -m py_compile <file>.py`
 - 경미한 경고는 끝없이 고치려 하지 말고 간단히 보고한 뒤 작업을 마칩니다.
 - 무거운 데브 서버, 빌드 명령어(`npm run build`), 장시간 테스트를 임의로 실행하지 않습니다.
 

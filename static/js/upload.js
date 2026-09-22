@@ -712,7 +712,8 @@ export function init() {
             } else {
               failCount++;
               if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+                const errMsg = (d1 && d1.detail) || (d2 && d2.detail) || "처리 실패";
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;" title="${escapeHtml(errMsg)}">❌ 실패</span>`;
               }
             }
           } else if (set.mode === "ans_only") {
@@ -735,7 +736,8 @@ export function init() {
             } else {
               failCount++;
               if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+                const errMsg = resData.detail || "서버 처리 오류";
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;" title="${escapeHtml(errMsg)}">❌ 실패</span>`;
               }
             }
           } else {
@@ -768,7 +770,8 @@ export function init() {
             } else {
               failCount++;
               if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
+                const errMsg = resData.detail || "업로드 실패";
+                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;" title="${escapeHtml(errMsg)}">❌ 실패</span>`;
               }
             }
           }
