@@ -195,21 +195,50 @@ def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str)
 
 def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[int, int]:
     """
-    시험지 텍스트에서 듣기 평가 문항 번호 범위 감지
-    기본값: 독해 시작 18, 끝 45 (50문항 체제 감지 시 끝 50)
+    시험지 텍스트에서 듣기/독해 영역 문항 번호 범위 감지
+    - 발문 1: '1번부터 N번까지는 듣고 답하는 문제입니다...' (듣기 시작 안내 박스)
+    - 발문 2: '이제 듣기·말하기 문제가 끝났습니다. M번부터는 문제지의 지시에 따라...' (독해 시작 안내 박스)
+    - 2013년도(2014학년도 수준별 수능) 체제: 듣기 1~22번, 독해 23~45번 자동 감지
+    - 구 50문항 체제(2006~2011년): 독해 끝 50번 자동 감지
+    기본값: 독해 시작 18, 끝 45
     """
-    is_50 = bool(re.search(r"(?:^|\n|\s)50\s*\.", full_text) or re.search(r"\[\s*49\s*[~～\-]\s*50\s*\]", full_text) or (year and 2006 <= year <= 2011))
+    is_50 = bool(
+        re.search(r"(?:^|\n|\s)50\s*\.", full_text)
+        or re.search(r"\[\s*49\s*[~～\-]\s*50\s*\]", full_text)
+        or (year and 2006 <= year <= 2011)
+    )
     default_end = 50 if is_50 else 45
 
-    match = re.search(r"1\s*번\s*부터\s*(\d{1,2})\s*번\s*까지\s*는\s*듣고", full_text)
-    if match:
-        return int(match.group(1)) + 1, default_end
-    else:
-        match_ab = re.search(r"(\d{1,2})\s*번\s*까지는\s*듣고", full_text)
-        if match_ab:
-            return int(match_ab.group(1)) + 1, default_end
+    # 1. 종료 발문 (이제 듣기·말하기 문제가 끝났습니다. M번부터는 문제지의 지시에 따라...)
+    m_end = re.search(r"(?:이제\s*)?(?:듣기[·\s]*말하기\s*문제|듣기\s*문제)[\s\S]{0,30}?(?:끝났습니다|끝났)[\s\S]{0,40}?(18|23)\s*번?\s*부터", full_text)
+    if not m_end:
+        m_end = re.search(r"(?:끝났습니다|끝났|ϱ⹮|ϴ)[\s\S]{0,40}?(18|23)\s*번?\s*부터", full_text)
+    if not m_end:
+        # CID 폰트 깨짐 대응: 끝났습니다 후 번호 단독 등장 (. 23)
+        m_end = re.search(r"(?:끝났습니다|끝났|ϱ⹮|ϴ)[\s\S]{0,30}?\.\s*(18|23)\b", full_text)
+    if m_end:
+        return int(m_end.group(1)), default_end
+
+    # 2. 시작 발문 표준 (1번부터 N번까지는 듣고 답하는 문제입니다...)
+    m_start = re.search(r"1\s*번\s*부터\s*(\d{1,2})\s*번\s*까지\s*는?\s*(?:듣고|방송)", full_text)
+    if m_start:
+        return int(m_start.group(1)) + 1, default_end
+
+    m_start_ab = re.search(r"(\d{1,2})\s*번\s*까지는?\s*(?:듣고|방송)", full_text)
+    if m_start_ab:
+        return int(m_start_ab.group(1)) + 1, default_end
+
+    # 3. 깨진 폰트(CID ToUnicode 누락) 대비 시작 발문 숫자 시퀀스 패턴 (1 ... 22 ... 1 ... 20)
+    m_loose = re.search(r"1[\s\S]{1,8}(17|22)[\s\S]{1,25}1[\s\S]{1,8}(?:15|20)", full_text)
+    if m_loose:
+        return int(m_loose.group(1)) + 1, default_end
+
+    # 4. 연도 기본값 (2013년은 수준별 수능으로 듣기 22문항 -> 독해 23번 시작)
+    if year == 2013:
+        return 23, default_end
 
     return 18, default_end
+
 
 
 def find_group_header(b_text: str, start_q: int, end_q: int) -> Optional[Tuple[int, int]]:
@@ -305,8 +334,20 @@ def extract_pdf_columns_and_questions(
     if is_50 and (end_q is None or end_q == 45) and (reading_end is None or reading_end == 45):
         detected_end = 50
 
-    actual_start = start_q if start_q is not None else (reading_start if reading_start is not None else detected_start)
-    actual_end = end_q if end_q is not None else (reading_end if reading_end is not None else detected_end)
+    if reading_start is not None:
+        actual_start = reading_start
+    elif start_q is not None and start_q != 18:
+        actual_start = start_q
+    else:
+        actual_start = detected_start
+
+    if reading_end is not None:
+        actual_end = reading_end
+    elif end_q is not None and end_q not in (45, 50):
+        actual_end = end_q
+    else:
+        actual_end = detected_end
+
     start_q = actual_start
     end_q = actual_end
 

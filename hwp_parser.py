@@ -250,8 +250,8 @@ def parse_hwp_questions(
     grade: str = "고3",
     year: int = 2024,
     month: int = 6,
-    start_q: int = 18,
-    end_q: int = 45,
+    start_q: Optional[int] = None,
+    end_q: Optional[int] = None,
     reading_start: Optional[int] = None,
     reading_end: Optional[int] = None,
     answers_dict: Optional[Dict[int, str]] = None,
@@ -262,14 +262,26 @@ def parse_hwp_questions(
     단일 HWP 파일(문제+해설 포함)에서도 문제지 영역만 분리하여 파싱
     복합 지문([41~42], [43~45]) 공유 지문 정상 매핑
     """
-    if reading_start is not None:
-        start_q = reading_start
-    if reading_end is not None:
-        end_q = reading_end
-
     full_text = get_hwp_text(hwp_path)
     if not full_text:
         return {}
+
+    from pdf_parser import detect_listening_range
+    detected_start, detected_end = detect_listening_range(full_text, year=year)
+
+    if reading_start is not None:
+        start_q = reading_start
+    elif start_q is not None and start_q != 18:
+        pass
+    else:
+        start_q = detected_start
+
+    if reading_end is not None:
+        end_q = reading_end
+    elif end_q is not None and end_q not in (45, 50):
+        pass
+    else:
+        end_q = detected_end
 
     # 50문항 체제 여부 판별
     is_50 = (end_q >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011) or bool(re.search(r"(?:^|\n)\s*50\s*\.", full_text))

@@ -20,8 +20,9 @@ from pydantic import BaseModel
 
 import database as db
 import grammar_analyzer
-from pdf_parser import extract_pdf_columns_and_questions
-from hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP
+import pymupdf as fitz
+from pdf_parser import extract_pdf_columns_and_questions, detect_listening_range
+from hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP, get_hwp_text
 import answer_keys
 import answer_resolver
 from validator import cross_validate_and_merge
@@ -127,6 +128,8 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
     try:
         if (reading_end is None or reading_end == 45) and (2006 <= year <= 2011):
             reading_end = 50
+        if (reading_start is None or reading_start == 18) and year == 2013:
+            reading_start = 23
 
         # 스캔본 PDF(텍스트 0자) 감지 시 동명 HWP 원본으로부터 고화질 디지털 PDF 자동 생성
         target_pdf = pdf_candidates[0]
@@ -914,8 +917,24 @@ async def api_upload_exam(
         else:
             exam_type = "교육청"
 
-        default_end = 50 if (2006 <= year <= 2011) else 45
-        effective_reading_end = reading_end or default_end
+        # 독해 시작 및 종료 문항 번호 자동 감지 (발문 기반 분기: 18~45, 23~45, 18~50)
+        sample_text = ""
+        if pdf_save_path and os.path.exists(pdf_save_path):
+            try:
+                tdoc = fitz.open(pdf_save_path)
+                sample_text = "".join(p.get_text() for p in tdoc)
+                tdoc.close()
+            except Exception:
+                pass
+        if not sample_text and hwp_save_path and os.path.exists(hwp_save_path):
+            try:
+                sample_text = get_hwp_text(hwp_save_path)
+            except Exception:
+                pass
+
+        detected_start, detected_end = detect_listening_range(sample_text, year=year)
+        effective_reading_start = reading_start if reading_start is not None else detected_start
+        effective_reading_end = reading_end if reading_end is not None else detected_end
 
         db.save_exam({
             "id": exam_id,
@@ -923,7 +942,7 @@ async def api_upload_exam(
             "year": year,
             "month": month,
             "exam_type": exam_type,
-            "reading_start_q": reading_start or 18,
+            "reading_start_q": effective_reading_start,
             "reading_end_q": effective_reading_end
         })
 
@@ -972,7 +991,7 @@ async def api_upload_exam(
         # (4) 문항별 정답 확정: 업로드 JSON > 정답률 CSV > 검증 키 파일 > 이미지 모델 합의 > 이미지 단일 모델 > HWP 해설
         #     검증되지 않은 소스로 결정된 문항은 answer_verified=0 으로 기록되고 응답에 경고로 명시된다 (무언 폴백 금지)
         resolution = answer_resolver.resolve_answers(
-            q_range=range(reading_start or 18, effective_reading_end + 1),
+            q_range=range(effective_reading_start, effective_reading_end + 1),
             verified_key=answer_keys.load_answer_key(grade, year, month),
             image_report=image_report,
             csv_rates=rates_dict,
@@ -1005,7 +1024,7 @@ async def api_upload_exam(
             grade=grade,
             year=year,
             month=month,
-            start_q=reading_start or 18,
+            start_q=effective_reading_start,
             end_q=effective_reading_end,
             answers_dict=answers_dict
         )
@@ -1016,7 +1035,7 @@ async def api_upload_exam(
             grade=grade,
             year=year,
             month=month,
-            start_q=reading_start or 18,
+            start_q=effective_reading_start,
             end_q=effective_reading_end,
             answers_dict=answers_dict
         )
@@ -1127,8 +1146,8 @@ async def api_upload_exam_single_file(
     grade = exam["grade"]
     year = exam["year"]
     month = exam["month"]
-    reading_start = exam["reading_start_q"] or 18
-    reading_end = exam["reading_end_q"] or 45
+    reading_start = exam["reading_start_q"] or (23 if year == 2013 else 18)
+    reading_end = exam["reading_end_q"] or (50 if 2006 <= year <= 2011 else 45)
 
     # 2. 파일 저장
     if file_type == "ans":
