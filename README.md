@@ -1028,7 +1028,7 @@ CREATE TABLE user_sentence_status (
   - 리졸버 단위 검증(후보 산출, 우선순위, 복수 후보, 모순 강등, 의심 CSV, 재업로드 교차검증) 통과; 수동 정정 API TestClient 검증(400/404/200, 키 파일 기록·원복) 통과
   - 실측 게이트 동작: 고3 2025-06 정답표를 3모델 판독 → GPT-4o 44/45 추출로 무효 처리, Gemini+Claude 45문항 일치 → `status: ok`
 
-### [2026-09-22 13:38] 업데이트 이력 (Commit ID: PENDING_HASH)
+### [2026-09-22 13:38] 업데이트 이력 (Commit ID: 0d1f59a)
 - **수정 내용**:
   - **`requirements.txt` 신설**: 실측 버전 고정(fastapi 0.141.1, uvicorn 0.49.0, pydantic 2.13.4, python-multipart 0.0.32, pymupdf 1.28.2, pillow 12.2.0, pyhwpx 1.7.2·pywin32 312은 `sys_platform == "win32"` 마커, pytest 9.1.1). 한글 주석 유지를 위해 첫 줄 `# -*- coding: utf-8 -*-` 선언(Windows cp949 pip 대응). README 설치 안내를 `pip install -r requirements.txt`로 교체
   - **pytest 회귀 테스트 `tests/` 신설 (73개)**: `test_sentence_tokenizer.py`(약어·소수점·인용부호·원문자 분할, 발문/선지/각주/배점 제거, 문장 ID 규격), `test_rate_parser.py`(실제 교육청 CSV 헤더 포맷, cp949/utf-8-sig, 정답·정답률 컬럼 혼동 방지, 매력적 오답 15% 기준, 헤더 없는 45행 포맷, 난이도 경계값), `test_answer_resolver.py`(소스 우선순위, 검증 플래그, 단일 판독기/실패/불일치 경고, 다른 시험 CSV 판정 경계 8문항·30%, 정답률 모순 강등, CSV 재업로드 교차검증). `conftest.py`로 루트 import 경로 설정
