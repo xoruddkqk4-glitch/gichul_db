@@ -1139,7 +1139,7 @@ CREATE TABLE user_sentence_status (
   - 일반 시험지(2020년 등): 독해 시작 18번 ~ 끝 45번 정상 유지 확인
   - 50문항 체제(2008년 등): 독해 시작 18번 ~ 끝 50번 정상 유지 확인
 
-### [2026-09-23 09:40] 업데이트 이력 (Commit ID: pending)
+### [2026-09-23 09:40] 업데이트 이력 (Commit ID: 81665d8)
 - **수정 내용**:
   - **영어 듣기 영역 2x2 뷰어 및 ElevenLabs TTS & FELS(약형드랩) 시스템 종합 기획 및 설계 완료**:
     - **참조 자료 등록 (`static/data/`)**: FELS(Function-Embedded Listening Skills) 청취 이론서(`current_English_listening.pdf`) 및 기능어 자동 괄호 삽입 가이드(`FELS.txt`) 추가.
