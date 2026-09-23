@@ -550,8 +550,38 @@ async function openAiSettingsModal() {
         renderOpenRouterModelSelectOptions();
       }
 
+      // TTS 설정 동기화 (Edge-TTS 및 ElevenLabs)
+      const ttsData = data.tts || {};
+      const ttsEngine = ttsData.engine || "edge-tts";
+
+      const radioEdge = document.getElementById("radioTtsEdge");
+      const radioElevenlabs = document.getElementById("radioTtsElevenlabs");
+      const cardEdge = document.getElementById("cardEdgeTts");
+      const cardEleven = document.getElementById("cardElevenlabs");
+
+      if (radioEdge && radioElevenlabs) {
+        if (ttsEngine === "elevenlabs") {
+          radioElevenlabs.checked = true;
+          if (cardEdge) cardEdge.style.display = "none";
+          if (cardEleven) cardEleven.style.display = "block";
+        } else {
+          radioEdge.checked = true;
+          if (cardEdge) cardEdge.style.display = "block";
+          if (cardEleven) cardEleven.style.display = "none";
+        }
+      }
+
+      // Edge-TTS 설정 UI 반영
+      const edgeCfg = ttsData.edge_tts || {};
+      const selEdgeMale = document.getElementById("selectEdgeTtsVoiceMale");
+      const selEdgeFemale = document.getElementById("selectEdgeTtsVoiceFemale");
+      const selEdgeRate = document.getElementById("selectEdgeTtsRate");
+      if (selEdgeMale && edgeCfg.voice_male) selEdgeMale.value = edgeCfg.voice_male;
+      if (selEdgeFemale && edgeCfg.voice_female) selEdgeFemale.value = edgeCfg.voice_female;
+      if (selEdgeRate && edgeCfg.rate) selEdgeRate.value = edgeCfg.rate;
+
       // ElevenLabs TTS 설정 동기화
-      const elData = data.elevenlabs || {};
+      const elData = ttsData.elevenlabs || data.elevenlabs || {};
       const keyStatusEl = document.getElementById("keyStatusElevenlabs");
       const keyInputEl = document.getElementById("keyInputElevenlabs");
       const voiceMaleEl = document.getElementById("voiceInputElevenlabsMale");
@@ -911,6 +941,22 @@ export function init() {
     btnCancelAiSettings.addEventListener("click", closeAiSettingsModal);
   }
 
+  // 모달 배경 클릭 시 닫기
+  if (aiSettingsModal) {
+    aiSettingsModal.addEventListener("click", (e) => {
+      if (e.target === aiSettingsModal) {
+        closeAiSettingsModal();
+      }
+    });
+  }
+
+  // ESC 키 입력 시 모달 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && aiSettingsModal && aiSettingsModal.style.display !== "none") {
+      closeAiSettingsModal();
+    }
+  });
+
   // 전체 AI 설정 저장 버튼 바인딩
   if (btnSaveAiSettings) {
     btnSaveAiSettings.addEventListener("click", async () => {
@@ -936,16 +982,29 @@ export function init() {
       const modeSelect = document.getElementById("selectConsensusMode");
       const consensusMode = modeSelect ? modeSelect.value : "majority";
 
-      // ElevenLabs TTS 설정 수집
+      // TTS 엔진 및 설정 수집 (Edge-TTS / ElevenLabs)
+      const radioElevenlabs = document.getElementById("radioTtsElevenlabs");
+      const selectedTtsEngine = (radioElevenlabs && radioElevenlabs.checked) ? "elevenlabs" : "edge-tts";
+
+      const selEdgeMale = document.getElementById("selectEdgeTtsVoiceMale");
+      const selEdgeFemale = document.getElementById("selectEdgeTtsVoiceFemale");
+      const selEdgeRate = document.getElementById("selectEdgeTtsRate");
+
       const elKeyInput = document.getElementById("keyInputElevenlabs");
       const elVoiceMale = document.getElementById("voiceInputElevenlabsMale");
       const elVoiceFemale = document.getElementById("voiceInputElevenlabsFemale");
       const elModel = document.getElementById("modelInputElevenlabs");
-      const elevenlabsPayload = {};
-      if (elKeyInput && elKeyInput.value.trim()) elevenlabsPayload.elevenlabs_api_key = elKeyInput.value.trim();
-      if (elVoiceMale) elevenlabsPayload.elevenlabs_voice_male = elVoiceMale.value.trim();
-      if (elVoiceFemale) elevenlabsPayload.elevenlabs_voice_female = elVoiceFemale.value.trim();
-      if (elModel) elevenlabsPayload.elevenlabs_model_id = elModel.value.trim();
+
+      const ttsPayload = {
+        tts_engine: selectedTtsEngine,
+        edge_tts_voice_male: selEdgeMale ? selEdgeMale.value : "en-US-GuyNeural",
+        edge_tts_voice_female: selEdgeFemale ? selEdgeFemale.value : "en-US-JennyNeural",
+        edge_tts_rate: selEdgeRate ? selEdgeRate.value : "+0%",
+      };
+      if (elKeyInput && elKeyInput.value.trim()) ttsPayload.elevenlabs_api_key = elKeyInput.value.trim();
+      if (elVoiceMale) ttsPayload.elevenlabs_voice_male = elVoiceMale.value.trim();
+      if (elVoiceFemale) ttsPayload.elevenlabs_voice_female = elVoiceFemale.value.trim();
+      if (elModel) ttsPayload.elevenlabs_model_id = elModel.value.trim();
 
       btnSaveAiSettings.disabled = true;
       btnSaveAiSettings.textContent = "⏳ 저장 중...";
@@ -961,12 +1020,12 @@ export function init() {
             providers: providersPayload,
             openrouter_ensemble: cbOREnsemble ? cbOREnsemble.checked : false,
             openrouter_ensemble_models: getSelectedOpenRouterEnsembleModels(),
-            ...elevenlabsPayload,
+            ...ttsPayload,
           }),
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          showToast("AI 모델 설정이 성공적으로 저장되었습니다.", "success");
+          showToast("AI 및 TTS 설정이 성공적으로 저장되었습니다.", "success");
           await refreshAiStatusIndicator();
           setTimeout(() => {
             closeAiSettingsModal();
@@ -985,6 +1044,75 @@ export function init() {
   }
   if (selectConsensusModeEl) {
     selectConsensusModeEl.addEventListener("change", updateAiModalSelectionSummary);
+  }
+
+  // TTS 엔진 라디오 토글 이벤트 바인딩 (Edge-TTS <-> ElevenLabs)
+  const radioEdge = document.getElementById("radioTtsEdge");
+  const radioElevenlabs = document.getElementById("radioTtsElevenlabs");
+  const cardEdge = document.getElementById("cardEdgeTts");
+  const cardEleven = document.getElementById("cardElevenlabs");
+
+  const toggleTtsEngineCards = () => {
+    const isEleven = radioElevenlabs && radioElevenlabs.checked;
+    if (cardEdge) cardEdge.style.display = isEleven ? "none" : "block";
+    if (cardEleven) cardEleven.style.display = isEleven ? "block" : "none";
+    updateAiModalSelectionSummary();
+  };
+
+  if (radioEdge) radioEdge.addEventListener("change", toggleTtsEngineCards);
+  if (radioElevenlabs) radioElevenlabs.addEventListener("change", toggleTtsEngineCards);
+
+  // Edge-TTS 음성 샘플 미리듣기 핸들러
+  const handleEdgeTtsPreview = async (gender) => {
+    const voiceSelect = gender === "female"
+      ? document.getElementById("selectEdgeTtsVoiceFemale")
+      : document.getElementById("selectEdgeTtsVoiceMale");
+    const rateSelect = document.getElementById("selectEdgeTtsRate");
+    const resDiv = document.getElementById("testResultEdgeTts");
+
+    const voice = voiceSelect ? voiceSelect.value : (gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
+    const rate = rateSelect ? rateSelect.value : "+0%";
+
+    if (resDiv) {
+      resDiv.className = "provider-test-result info visible";
+      resDiv.textContent = `⏳ ${gender === "female" ? "여성" : "남성"}(${voice}) 음성 샘플 합성 중...`;
+    }
+
+    try {
+      const res = await fetch("/api/settings/edge-tts/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice, rate }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.audio_url) {
+        if (resDiv) {
+          resDiv.className = "provider-test-result success visible";
+          resDiv.textContent = `✔ 음성 합성 완료! 재생 중... (${voice})`;
+        }
+        const audio = new Audio(data.audio_url);
+        audio.play().catch(e => console.warn("오디오 자동재생 차단:", e));
+      } else {
+        if (resDiv) {
+          resDiv.className = "provider-test-result error visible";
+          resDiv.textContent = `❌ 미리듣기 실패: ${data.message || "오류"}`;
+        }
+      }
+    } catch (e) {
+      if (resDiv) {
+        resDiv.className = "provider-test-result error visible";
+        resDiv.textContent = `❌ 통신 오류: ${e.message}`;
+      }
+    }
+  };
+
+  const btnPreviewMale = document.getElementById("btnPreviewEdgeTtsMale");
+  if (btnPreviewMale) {
+    btnPreviewMale.addEventListener("click", () => handleEdgeTtsPreview("male"));
+  }
+  const btnPreviewFemale = document.getElementById("btnPreviewEdgeTtsFemale");
+  if (btnPreviewFemale) {
+    btnPreviewFemale.addEventListener("click", () => handleEdgeTtsPreview("female"));
   }
 
   // ElevenLabs TTS 개별 연결 테스트 버튼 바인딩

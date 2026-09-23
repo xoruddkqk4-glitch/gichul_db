@@ -12,7 +12,7 @@ import json
 import shutil
 import glob
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
@@ -89,6 +89,11 @@ class AISettingsRequest(BaseModel):
     providers: Optional[Dict[str, Dict[str, str]]] = None
     openrouter_ensemble: Optional[bool] = None
     openrouter_ensemble_models: Optional[List[str]] = None
+    # TTS 엔진 설정 (Edge-TTS 및 ElevenLabs)
+    tts_engine: Optional[str] = None
+    edge_tts_voice_male: Optional[str] = None
+    edge_tts_voice_female: Optional[str] = None
+    edge_tts_rate: Optional[str] = None
     elevenlabs_api_key: Optional[str] = None
     elevenlabs_voice_male: Optional[str] = None
     elevenlabs_voice_female: Optional[str] = None
@@ -324,12 +329,12 @@ async def api_get_passage(passage_id: str):
 # --- 듣기 영역 오디오 및 동기화 API ---
 @app.post("/api/passages/{passage_id:path}/generate-audio")
 async def api_generate_passage_audio(passage_id: str):
-    """특정 듣기 문항의 대본을 ElevenLabs M/W 듀얼 보이스로 합성하여 MP3 생성"""
+    """특정 듣기 문항의 대본을 Edge-TTS 또는 ElevenLabs M/W 듀얼 보이스로 합성하여 MP3 생성"""
     try:
         clean_id = passage_id.strip()
         if not clean_id.startswith("["):
             clean_id = f"[{clean_id}]"
-        result = elevenlabs_service.generate_passage_audio(clean_id)
+        result = await elevenlabs_service.generate_passage_audio(clean_id)
         if not result.get("success"):
             return JSONResponse(status_code=400, content=result)
         return result
@@ -348,7 +353,7 @@ async def api_generate_exam_listening_audio(exam_id: str):
         clean_id = exam_id.strip()
         if not clean_id.startswith("["):
             clean_id = f"[{clean_id}]"
-        result = elevenlabs_service.generate_exam_listening_audio(clean_id)
+        result = await elevenlabs_service.generate_exam_listening_audio(clean_id)
         return result
     except Exception as e:
         logger.error(f"시험지 전체 음성 합성 실패 ({exam_id}): {e}")
@@ -552,6 +557,7 @@ async def api_get_ai_settings():
     cfg["has_key"] = bool(legacy_k)
     cfg["masked_key"] = cfg["providers"].get(legacy_p, {}).get("masked_key", "")
     cfg["elevenlabs"] = elevenlabs_service.get_elevenlabs_config()
+    cfg["tts"] = elevenlabs_service.get_tts_config()
     return cfg
 
 
@@ -666,7 +672,16 @@ async def api_save_ai_settings(req: AISettingsRequest):
     if req.openrouter_ensemble_models is not None:
         grammar_analyzer.set_openrouter_ensemble_models(req.openrouter_ensemble_models)
 
-    # 5. ElevenLabs TTS 설정 저장
+    # 5. TTS 엔진 및 세부 설정 저장 (Edge-TTS 및 ElevenLabs)
+    if req.tts_engine is not None:
+        db.set_setting("tts_engine", req.tts_engine.strip())
+    if req.edge_tts_voice_male is not None:
+        db.set_setting("edge_tts_voice_male", req.edge_tts_voice_male.strip())
+    if req.edge_tts_voice_female is not None:
+        db.set_setting("edge_tts_voice_female", req.edge_tts_voice_female.strip())
+    if req.edge_tts_rate is not None:
+        db.set_setting("edge_tts_rate", req.edge_tts_rate.strip())
+
     if req.elevenlabs_api_key is not None:
         db.set_setting("elevenlabs_api_key", req.elevenlabs_api_key.strip())
     if req.elevenlabs_voice_male is not None:
@@ -691,6 +706,19 @@ async def api_save_ai_settings(req: AISettingsRequest):
         "success": True,
         "message": test_msg or "AI 및 TTS 설정이 성공적으로 저장되었습니다."
     }
+
+
+@app.post("/api/settings/edge-tts/preview")
+async def api_preview_edge_tts(req: Dict[str, Any] = Body(...)):
+    """Edge-TTS 목소리 샘플 미리듣기 생성"""
+    try:
+        voice = (req.get("voice") or "en-US-GuyNeural").strip()
+        rate = (req.get("rate") or "+0%").strip()
+        preview_url = await elevenlabs_service.generate_edge_tts_preview(voice, rate)
+        return {"success": True, "audio_url": preview_url}
+    except Exception as e:
+        logger.error(f"Edge-TTS 미리듣기 실패: {e}")
+        return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
 
 
 @app.post("/api/settings/elevenlabs/test")

@@ -883,6 +883,26 @@ export function init() {
 
   if (btnCloseGrammarModal) btnCloseGrammarModal.addEventListener("click", closeGrammarCategoryModal);
   if (btnCancelGrammarModal) btnCancelGrammarModal.addEventListener("click", closeGrammarCategoryModal);
+
+  // 모달 배경 클릭 시 닫기
+  if (grammarCategoryModal) {
+    grammarCategoryModal.addEventListener("click", (e) => {
+      if (e.target === grammarCategoryModal) {
+        closeGrammarCategoryModal();
+      }
+    });
+  }
+
+  // ESC 키 입력 시 모달 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (grammarCategoryModal && grammarCategoryModal.style.display !== "none") {
+        closeGrammarCategoryModal();
+      } else if (batchAnalysisModal && batchAnalysisModal.style.display !== "none" && btnCloseBatchModal && btnCloseBatchModal.style.display !== "none") {
+        btnCloseBatchModal.click();
+      }
+    }
+  });
   loadGrammarCategories();
 
   // 상단 브레드크럼 홈 아이콘 클릭 -> 1단계로 복귀

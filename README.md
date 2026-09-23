@@ -42,6 +42,11 @@
 - **수동 정정**: 뷰어에서 `✏`로 정답 정정 시 DB·해설 헤더·형광펜 크롭·키 파일에 동시 반영 (`PATCH /api/passages/{id}/answer`).
 - **운영 도구** (`tools/`): `build_answer_keys.py`(이중 전사·CSV 계층 검증으로 키 생성), `resync_answers.py`(키 → DB/크롭 재동기화), `audit_keys_with_vision.py`(다중 모델 재감사).
 
+### 8. 영어 듣기 영역 2x2 뷰어, 100% 무료 Edge-TTS / ElevenLabs 듀얼 엔진 및 FELS 약형드랩
+- **Edge-TTS 100% 무료 음성 합성**: 고가의 API 비용 없이 인터넷이 연결된 로컬 환경에서 Microsoft Neural 고품질 음성(남성 `en-US-GuyNeural`, 여성 `en-US-JennyNeural` 등)으로 대화/독백 지문 실시간 무제한 생성.
+- **ElevenLabs 유료 API 하이브리드 지원**: 필요 시 ElevenLabs 고품질 음성으로 자유롭게 전환 가능하며, AI 환경설정 모달에서 엔진 선택 및 실시간 음성 샘플(`[🔊 남성 샘플]`, `[🔊 여성 샘플]`) 미리듣기 지원.
+- **화자 분리(M/W) 턴 자동 합성 & 17문항 ZIP 일괄 다운로드**: 남/여 대화문 및 독백을 분리 합성하여 단일 MP3로 제공하며, 시험지 전체 17문항 일괄 생성 및 ZIP 다운로드 지원.
+- **FELS 약형드랩 시스템**: 7대 기능어 추출, 학생용 최장 단어 기준 균일 공백(`[        ]`) 복사 및 교사용 정답(`[단어]`) 복사 1:1 지원.
 
 ---
 
@@ -81,6 +86,9 @@
 ├── rate_parser.py          # OMR/채점 통계 CSV 파서 (정답률, 선지별 선택률, 매력적 오답 탐지)
 ├── answer_keys.py          # 검증 정답 키(data/answer_keys) 로더 및 수동 정정 기록
 ├── answer_resolver.py      # 정답 소스 결합·우선순위·검증 판정, CSV 정답률 교차검증
+├── listening_parser.py     # 듣기 대본 HWP/PDF 추출 및 어휘 블록 자동 정제
+├── fels_engine.py          # 7대 기능어 약형드랩 및 최장 단어 기준 균일 빈칸 생성 모듈
+├── elevenlabs_service.py   # Edge-TTS(무료) 및 ElevenLabs M/W 듀얼 보이스 음성 합성 엔진
 ├── app.py                  # FastAPI REST API 및 웹 서버 엔드포인트
 ├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기
 ├── data/
@@ -1236,6 +1244,29 @@ CREATE TABLE user_sentence_status (
   - ElevenLabs TTS 실제 다화자 대화(Q2: 12턴 대화) 실시간 오디오 합성 및 551KB MP3 파일 생성 검증 완료
   - 1지문 다문항 41~42번 및 43~45번 문항별 정답률 및 선지 선택률 렌더링 무결성 확인 완료
   - FELS 학생용 균일 공백 `[        ]` 및 교사용 `[단어]` 클립보드 복사 검증 완료
+
+### [2026-09-23 14:48] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **Edge-TTS 기반 100% 무료 영어 듣기 음성 생성 파이프라인 구축 (`elevenlabs_service.py`, `app.py`, `requirements.txt`)**:
+    - ElevenLabs 유료 API의 높은 비용 부담을 해소하기 위해, 인터넷이 연결된 로컬 환경에서 API 키 없이 무제한 사용 가능한 `edge-tts>=7.2.8` 엔진 전격 도입 및 의존성 추가.
+    - **화자 분리(M/W) 턴 자동 분기 합성**: 대화형(남/여) 및 독백형 지문을 자동 파싱하여 남성(`en-US-GuyNeural` 외 다수) 및 여성(`en-US-JennyNeural` 외 다수) 프리셋 음색을 각각 적용하고, 하나의 깨끗한 MP3 파일로 병합하는 `synthesize_edge_tts_turn` 및 `generate_passage_audio` 비동기 파이프라인 구현.
+    - **음성 속도 조절(Rate) 및 음색 프리셋 확장**: 기본 속도(+0%)부터 +5%, +10%, -5% 등 자연스러운 발화 속도 조절 지원.
+    - **17문항 시험지 일괄 생성 & ZIP 다운로드 연동**: 단일 문항 음성 생성뿐 아니라 시험지 전체 17개 듣기 문항 일괄 합성 및 ZIP 압축 스트리밍 다운로드까지 Edge-TTS 엔진에 완벽 연동.
+  - **AI 환경설정 모달 내 TTS 엔진 전환 & 실시간 샘플 미리듣기 구현 (`templates/index.html`, `static/js/ai-settings.js`, `app.py`)**:
+    - **하이브리드 TTS 엔진 선택**: `Edge-TTS (무료 / 로컬)` vs `ElevenLabs (유료 API)` 라디오 버튼 스위치를 제공하여 상황에 따라 자유롭게 엔진을 전환할 수 있도록 구현.
+    - **실시간 목소리 샘플 미리듣기**: 남성/여성 목소리 드롭다운 옆에 `[🔊 남성 샘플]`, `[🔊 여성 샘플]` 버튼을 배치하고, 전용 엔드포인트(`POST /api/settings/edge-tts/preview`)를 통해 브라우저에서 즉시 음색을 청취할 수 있도록 연동.
+    - 설정 저장(`POST /api/settings/ai`) 시 TTS 엔진, 선택된 목소리, 발화 속도를 SQLite DB에 영구 반영.
+  - **전체 모달 창 버튼 및 이벤트 핸들러 전수 점검 및 안정화 (`static/js/year-filter.js`, `static/js/upload.js`, `static/js/files-status.js`, `static/js/grammar.js`, `static/js/ai-settings.js`)**:
+    - 연도별 필터 모달(`modalYearFilter`), 시험지 업로드 모달(`modalUpload`), 원본 파일 현황 모달(`modalFilesStatus`), 어법 범주 모달(`modalGrammarCategory`), AI 설정 모달(`modalAISettings`)의 적용(`btnApply*`), 취소 및 닫기(`btnClose*`) 버튼의 셀렉터 바인딩 및 이벤트 전파 로직을 전수 검증 및 보강하여 미동작 이슈 원천 차단.
+  - **지문 결과 뷰어 안내 문구 개선 (`static/js/results-passage.js`)**:
+    - 지문 결과창의 음성 생성 안내 컨펌 창 문구를 '완전 무료 Edge-TTS 엔진으로 음성을 생성합니다'로 갱신하여 사용자 비용 불안 해소.
+- **검증 결과**:
+  - `python -m py_compile app.py elevenlabs_service.py database.py fels_engine.py listening_parser.py`: 파이썬 구문 오류 0건 통과
+  - `node -c static/js/ai-settings.js static/js/results-passage.js static/js/upload.js static/js/files-status.js static/js/grammar.js static/js/year-filter.js static/js/main.js`: 자바스크립트 구문 오류 0건 통과
+  - Edge-TTS 샘플 미리듣기 API(`POST /api/settings/edge-tts/preview`) 남성/여성 음성 정상 합성 확인 (200 OK)
+  - 실제 기출 지문(`고3-2026년-09월-01번`) 대상 Edge-TTS 음성 합성 실행 완료 (231.5KB 고음질 MP3 정상 생성)
+  - 연도별 필터 모달, 업로드 모달, 어법 모달, AI 설정 모달 열기/닫기/적용 버튼 연동 검증 완료
+
 
 
 

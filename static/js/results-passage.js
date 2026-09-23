@@ -1771,7 +1771,7 @@ export function init() {
   if (btnGenerateAllListeningAudio) {
     btnGenerateAllListeningAudio.addEventListener("click", async () => {
       if (!currentDetailPassage) return;
-      if (!confirm(`[${currentDetailPassage.exam_id}] 전체 듣기 문항(1~17번)의 음성을 일괄 생성하시겠습니까?\n\n※ ElevenLabs 크레딧이 문항 대본 길이에 따라 소모됩니다.`)) {
+      if (!confirm(`[${currentDetailPassage.exam_id}] 전체 듣기 문항(1~17번)의 음성을 일괄 생성하시겠습니까?\n\n(Edge-TTS 엔진 선택 시 비용 없이 완전 무료로 생성됩니다)`)) {
         return;
       }
       btnGenerateAllListeningAudio.disabled = true;

@@ -444,6 +444,22 @@ export function init() {
     btnCancelSelectiveDelete.addEventListener("click", closeSelectiveDeleteModal);
   }
 
+  // 모달 배경 클릭 시 닫기
+  if (selectiveDeleteModal) {
+    selectiveDeleteModal.addEventListener("click", (e) => {
+      if (e.target === selectiveDeleteModal) {
+        closeSelectiveDeleteModal();
+      }
+    });
+  }
+
+  // ESC 키 입력 시 모달 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && selectiveDeleteModal && selectiveDeleteModal.classList.contains("show")) {
+      closeSelectiveDeleteModal();
+    }
+  });
+
   if (btnPresetFullWipe) {
     btnPresetFullWipe.addEventListener("click", () => applySelectiveDeletePreset("full"));
   }

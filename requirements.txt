@@ -17,3 +17,6 @@ pywin32==312; sys_platform == "win32"    # pyhwpx 의존 + Windows COM
 
 # 개발/테스트
 pytest==9.1.1             # 회귀 테스트 (tests/)
+
+# 음성 합성 (TTS)
+edge-tts>=7.2.8           # Microsoft Neural 무료 음성 합성 (영어 듣기 평가 M/W 듀얼 보이스)

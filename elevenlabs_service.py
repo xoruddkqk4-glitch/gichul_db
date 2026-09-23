@@ -12,8 +12,10 @@
 import os
 import re
 import json
+import asyncio
 import zipfile
 import requests
+import edge_tts
 from typing import List, Dict, Any, Optional, Tuple
 import database as db
 
@@ -21,10 +23,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_DIR = os.path.join(BASE_DIR, "static", "audio")
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-# 기본 음성 ID 및 모델 설정
+# 기본 음성 ID 및 모델 설정 (ElevenLabs)
 DEFAULT_VOICE_MALE = "pNInz6obpgDQGcFmaJgB"    # Adam (남성, Free API 지원)
 DEFAULT_VOICE_FEMALE = "EXAVITQu4vr4xnSDxMaL"  # Sarah (여성, Free API 지원 - 구 Rachel(21m00Tcm4TlvDq8ikWAM) 유료 전환 대응)
 DEFAULT_MODEL_ID = "eleven_multilingual_v2"
+
+# Edge-TTS 기본 음성 및 속도 설정 (무료 Microsoft Neural)
+DEFAULT_EDGE_TTS_VOICE_MALE = "en-US-GuyNeural"
+DEFAULT_EDGE_TTS_VOICE_FEMALE = "en-US-JennyNeural"
+DEFAULT_EDGE_TTS_RATE = "+0%"
 
 # 남성/여성 화자 식별 정규식 패턴
 MALE_SPEAKER_PATTERN = re.compile(
@@ -53,6 +60,26 @@ def get_elevenlabs_config() -> Dict[str, str]:
         "voice_male": voice_male,
         "voice_female": voice_female,
         "model_id": model_id
+    }
+
+
+def get_tts_config() -> Dict[str, Any]:
+    """저장된 전체 TTS (Edge-TTS 및 ElevenLabs) 설정값 조회"""
+    engine = db.get_setting("tts_engine", "edge-tts").strip() or "edge-tts"
+    edge_male = db.get_setting("edge_tts_voice_male", DEFAULT_EDGE_TTS_VOICE_MALE).strip() or DEFAULT_EDGE_TTS_VOICE_MALE
+    edge_female = db.get_setting("edge_tts_voice_female", DEFAULT_EDGE_TTS_VOICE_FEMALE).strip() or DEFAULT_EDGE_TTS_VOICE_FEMALE
+    edge_rate = db.get_setting("edge_tts_rate", DEFAULT_EDGE_TTS_RATE).strip() or DEFAULT_EDGE_TTS_RATE
+
+    eleven_cfg = get_elevenlabs_config()
+
+    return {
+        "engine": engine,
+        "edge_tts": {
+            "voice_male": edge_male,
+            "voice_female": edge_female,
+            "rate": edge_rate,
+        },
+        "elevenlabs": eleven_cfg
     }
 
 
@@ -182,14 +209,42 @@ def synthesize_turn_speech(text: str, voice_id: str, api_key: str, model_id: str
     return resp.content
 
 
+async def synthesize_edge_tts_turn(text: str, voice: str, rate: str = "+0%") -> bytes:
+    """Edge-TTS를 이용한 단일 턴 음성 비동기 합성 (Microsoft Neural 무료 고품질 음성)"""
+    clean_text = text.strip()
+    if not clean_text:
+        return b""
+    communicate = edge_tts.Communicate(clean_text, voice, rate=rate)
+    audio_data = bytearray()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data.extend(chunk["data"])
+    return bytes(audio_data)
+
+
+async def generate_edge_tts_preview(voice: str = DEFAULT_EDGE_TTS_VOICE_MALE, rate: str = DEFAULT_EDGE_TTS_RATE) -> str:
+    """Edge-TTS 목소리 샘플 미리듣기 파일 생성 (/static/audio/preview_edge_tts.mp3)"""
+    sample_text = "Hello! This is a test of the Microsoft Neural voice for high school English listening tests."
+    audio_bytes = await synthesize_edge_tts_turn(sample_text, voice, rate=rate)
+    if not audio_bytes:
+        raise RuntimeError("샘플 음성 생성 실패")
+
+    preview_filename = "preview_edge_tts.mp3"
+    preview_path = os.path.join(AUDIO_DIR, preview_filename)
+    with open(preview_path, "wb") as f:
+        f.write(audio_bytes)
+    return f"/static/audio/{preview_filename}?t={int(os.path.getmtime(preview_path))}"
+
+
 def sanitize_filename(name: str) -> str:
     """파일명으로 사용 가능한 안전한 문자열로 치환"""
     return re.sub(r'[\\/*?:"<>|\[\]\s]', '_', name).strip('_')
 
 
-def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
+async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
     """
     단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
+    (Edge-TTS 무료 기본 또는 ElevenLabs 유료 API 하이브리드 지원)
     """
     passage = db.get_passage(passage_id)
     if not passage:
@@ -199,9 +254,8 @@ def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
     if not script_text.strip():
         raise ValueError("합성할 대본(스크립트) 텍스트가 없습니다.")
 
-    cfg = get_elevenlabs_config()
-    if not cfg["api_key"]:
-        raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. [AI 설정] 모달에서 등록해 주세요.")
+    tts_cfg = get_tts_config()
+    engine = tts_cfg.get("engine", "edge-tts")
 
     turns = split_script_by_speaker(script_text)
     if not turns:
@@ -209,11 +263,29 @@ def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
 
     # 각 턴별 오디오 합성 및 바이너리 결합
     combined_audio = bytearray()
-    for idx, turn in enumerate(turns):
-        voice_id = cfg["voice_female"] if turn["speaker"] == "female" else cfg["voice_male"]
-        turn_bytes = synthesize_turn_speech(turn["text"], voice_id, cfg["api_key"], cfg["model_id"])
-        if turn_bytes:
-            combined_audio.extend(turn_bytes)
+
+    if engine == "edge-tts":
+        edge_cfg = tts_cfg.get("edge_tts", {})
+        male_voice = edge_cfg.get("voice_male") or DEFAULT_EDGE_TTS_VOICE_MALE
+        female_voice = edge_cfg.get("voice_female") or DEFAULT_EDGE_TTS_VOICE_FEMALE
+        rate = edge_cfg.get("rate") or DEFAULT_EDGE_TTS_RATE
+
+        for turn in turns:
+            voice = female_voice if turn["speaker"] == "female" else male_voice
+            turn_bytes = await synthesize_edge_tts_turn(turn["text"], voice, rate=rate)
+            if turn_bytes:
+                combined_audio.extend(turn_bytes)
+    else:
+        # ElevenLabs
+        el_cfg = tts_cfg.get("elevenlabs", {})
+        if not el_cfg.get("api_key"):
+            raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. [AI 설정] 모달에서 등록하거나 무료 Edge-TTS를 선택해 주세요.")
+
+        for turn in turns:
+            voice_id = el_cfg["voice_female"] if turn["speaker"] == "female" else el_cfg["voice_male"]
+            turn_bytes = synthesize_turn_speech(turn["text"], voice_id, el_cfg["api_key"], el_cfg["model_id"])
+            if turn_bytes:
+                combined_audio.extend(turn_bytes)
 
     if not combined_audio:
         raise RuntimeError("음성 데이터 생성에 실패했습니다.")
@@ -232,12 +304,13 @@ def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
         "success": True,
         "passage_id": passage_id,
         "audio_url": relative_url,
+        "engine": engine,
         "turns_count": len(turns),
         "file_size": len(combined_audio)
     }
 
 
-def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
+async def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
     """
     해당 시험지의 모든 듣기 문항(1~17번)에 대해 순차적으로 음성 합성 진행
     """
@@ -245,9 +318,12 @@ def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
     if not passages:
         raise ValueError(f"시험지 '{exam_id}'에 등록된 듣기 문항이 없습니다.")
 
-    cfg = get_elevenlabs_config()
-    if not cfg["api_key"]:
-        raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. [AI 설정] 모달에서 등록해 주세요.")
+    tts_cfg = get_tts_config()
+    engine = tts_cfg.get("engine", "edge-tts")
+    if engine == "elevenlabs":
+        el_cfg = tts_cfg.get("elevenlabs", {})
+        if not el_cfg.get("api_key"):
+            raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. [AI 설정] 모달에서 등록하거나 무료 Edge-TTS를 선택해 주세요.")
 
     results = []
     success_count = 0
@@ -267,7 +343,7 @@ def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
             continue
 
         try:
-            res = generate_passage_audio(p_id)
+            res = await generate_passage_audio(p_id)
             results.append({
                 "passage_id": p_id,
                 "q_num": p.get("q_num"),
@@ -286,6 +362,7 @@ def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
 
     return {
         "exam_id": exam_id,
+        "engine": engine,
         "total": len(passages),
         "success_count": success_count,
         "fail_count": fail_count,

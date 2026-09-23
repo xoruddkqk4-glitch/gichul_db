@@ -18,6 +18,7 @@ import {
   btnCancelBatchModal,
   btnCancelUpload,
   btnClearBatchFiles,
+  btnCloseFilesStatusModal,
   btnCloseManageModal,
   btnCloseUploadModal,
   btnOpenUploadModal,
@@ -555,6 +556,23 @@ export function init() {
   btnCancelUpload.addEventListener("click", closeUploadModal);
   if (btnCancelBatchModal) btnCancelBatchModal.addEventListener("click", closeUploadModal);
   if (btnCloseManageModal) btnCloseManageModal.addEventListener("click", closeUploadModal);
+  if (btnCloseFilesStatusModal) btnCloseFilesStatusModal.addEventListener("click", closeUploadModal);
+
+  // 모달 배경 클릭 시 닫기
+  if (uploadModal) {
+    uploadModal.addEventListener("click", (e) => {
+      if (e.target === uploadModal) {
+        closeUploadModal();
+      }
+    });
+  }
+
+  // ESC 키 입력 시 모달 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && uploadModal && uploadModal.classList.contains("show")) {
+      closeUploadModal();
+    }
+  });
 
   // 드롭존 이벤트 바인딩
   if (batchDropzone) {

@@ -369,12 +369,10 @@ export function initYearFilter(onChangeCallback) {
     }
   });
 
-  // 5. 팝오버 내부 클릭 시 이벤트 버블링 차단 (팝오버 닫힘 방지)
-  [menuHome, menuResults].forEach(menu => {
-    if (menu) {
-      menu.addEventListener("click", (e) => {
-        e.stopPropagation();
-      });
+  // 5. ESC 키 입력 시 팝오버 닫기
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeAllYearPopovers();
     }
   });
 
@@ -438,6 +436,9 @@ export function initYearFilter(onChangeCallback) {
     const applyBtn = e.target.closest(".btn-popover-apply");
     if (applyBtn) {
       closeAllYearPopovers();
+      if (typeof onYearChangeCallback === "function") {
+        onYearChangeCallback(applyBtn.dataset.prefix || "apply");
+      }
     }
   });
 
