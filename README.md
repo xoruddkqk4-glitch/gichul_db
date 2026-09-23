@@ -1290,7 +1290,7 @@ CREATE TABLE user_sentence_status (
   - `고3-2026년-09월` 전체 17문항 일괄 음성 합성(`POST /api/exams/{id}/generate-listening-audio`) 성공 (HTTP 200 OK, 17/17개 성공, 실패 0건)
   - 11개 듣기 시험지 4번 캡처 이미지 정상 해상도(916~1040x507~710px) 렌더링 확인 완료
 
-### [2026-09-23 15:35] 업데이트 이력 (Commit ID: pending)
+### [2026-09-23 15:35] 업데이트 이력 (Commit ID: ccc026c)
 - **수정 내용**:
   - **FELS 패널 본문 내 중복 복사 버튼 제거 및 상단 헤더 버튼 일원화 (`static/js/results-passage.js`, `templates/index.html`)**:
     - 좌측 하단 FELS 패널의 상단 헤더 액션 바(`[📝 FELS 빈칸 복사 (학생용)]`, `[🔑 FELS 정답 복사 (교사용)]`, `[📋 대본 복사]`)와 본문 상단 가이드 배너 내부(`[학생용 빈칸 복사 ([ ])]`, `[교사용 정답 복사 ([단어])]`)에 동일한 기능의 버튼이 이중 배치되어 있던 문제 해결.
