@@ -1154,6 +1154,38 @@ CREATE TABLE user_sentence_status (
   - `implementation_plan.md` 기술 계획서 작성 및 5대 세부 요구사항 전원 검토·반영 완료
   - 참조 데이터 파일(`FELS.txt`, `current_English_listening.pdf`) 무결성 확인
 
+### [2026-09-23 10:10] 업데이트 이력 (Commit ID: 3c75bf9)
+- **수정 내용**:
+  - **'전체 연도' 5대 그룹 및 2006~2026 개별 연도 복수 선택 시스템 구축**:
+    - `static/js/year-filter.js`: 5대 그룹(최근 3개년[2024~2026], 최근 5개년[2022~2026], 최근 7개년[2020~2026], 최근 10개년[2017~2026], 전체 연도[2006~2026]) 일괄 토글 및 21개 연도 개별 체크 칩 연동 구현.
+    - 부분 선택 시 그룹 체크박스 `indeterminate` 반선택 상태 자동 감지 및 '2025, 2026년 (2개)' 등 동적 요약 라벨 표시.
+    - 백엔드 연동: `app.py` 및 `database.py`의 `search_passages`, `search_sentences` 함수에 `years` 파라미터(쉼표 구분)를 지원하여 `e.year IN (?, ?, ...)` 다중 연도 동시 조회 지원.
+  - **'전체 월' 1,2학년(교육청)과 3학년(평가원/수능) 동적 분기 드롭다운 구현**:
+    - `static/js/month-filter.js`: 고1, 고2 선택 시 전 문항이 교육청 출제이므로 `(교육청)` 옵션(3, 6, 8, 9, 10, 11, 12월)만 노출, 고3 선택 시 `교육청`(3, 4, 5, 7, 10월), `평가원`(6, 9월), `수능`(11월)으로 정확하게 분기 노출.
+    - 학년 변경 시 현재 선택된 월 유효성을 검증하고 맞춤형 옵션 목록으로 자동 재구성.
+  - **문제유형 '기타' 추가 및 미분류 문항 DB 자동 마이그레이션**:
+    - `hwp_parser.py`: `QUESTION_TYPES` 목록에 `'기타'` 유형 공식 추가 및 미분류 문항 기본값 설정.
+    - SQLite DB 마이그레이션을 통해 기존 분류되지 않은 348개 문항의 유형을 `기타`로 일괄 갱신.
+    - `templates/index.html`: 홈 및 결과 화면 문제유형 드롭다운에 `<option value="기타">기타</option>` 추가.
+  - **검색창 맨 앞 독해/듣기 영역 토글 버튼 배치**:
+    - 홈 및 결과 검색창 최좌측에 세그먼트 필 버튼(`[📖 독해]` 기본 활성, `[🎧 듣기]` 준비중 비활성) 배치.
+    - 아직 미구현된 듣기 버튼 클릭 시 '듣기 영역은 현재 개발 준비 중입니다.' 알림 토스트 연동.
+  - **검색 입력창 가로 폭 2배 대폭 확장**:
+    - 홈 검색창: `.google-search-box` 최대 너비를 `720px`에서 `1150px`로, 검색 카드 최대 너비를 `1200px`로 확대하고 검색 입력창 `min-width: 500px` 적용.
+    - 결과 화면 검색바: `.results-search-bar` 최대 너비를 `680px`에서 `1200px`로 확대하고 검색 입력창 `min-width: 400px` 적용.
+  - **필터 버튼 불변 레이아웃(Fixed-width & Reserve Space) 구축**:
+    - 학년, 월, 유형 등 필터 버튼에 가장 긴 텍스트 기준 최소/고정 너비(`110px`, `172px` 등)를 부여하여 선택 상태에 따른 버튼 크기 및 위치 변동 제거.
+    - 초기화 버튼(`btnResetHomeFilters`, `btnResetResultsFilters`)을 `display: none` 대신 `visibility: hidden; opacity: 0; pointer-events: none;`으로 처리하여 항상 자리를 차지하도록 고정.
+  - **결과 화면 연도 팝오버 좌측 잘림 방지 및 뷰포트 안전 보정**:
+    - `.year-popover-menu.compact`의 기준 위치를 `right: 0`에서 `left: 0; right: auto;`로 변경하여 모달 창 좌측 경계 밖으로 벗어나지 않도록 수정.
+    - `getBoundingClientRect()` 기반 동적 뷰포트 경계 감지 로직을 추가하여 화면 좌측 최소 16px 여백 보장.
+- **검증 결과**:
+  - Python 구문 검사(`python -m py_compile app.py database.py hwp_parser.py`): 오류 0건 통과
+  - JavaScript 구문 검사(`node -c static/js/year-filter.js static/js/month-filter.js static/js/search.js static/js/main.js`): 오류 0건 통과
+  - DB 다중 연도 쿼리 검증: 2024~2026 복수 연도 1,148건 정상 조회 확인
+  - DB 기타 유형 마이그레이션 검증: `question_type = '기타'` 348건 정상 반영 확인
+
+
 
 
 

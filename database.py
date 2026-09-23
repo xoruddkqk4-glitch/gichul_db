@@ -105,6 +105,12 @@ def init_db():
             except sqlite3.OperationalError:
                 pass
 
+        # 빈 문제 유형을 '기타'로 자동 보정
+        try:
+            cursor.execute("UPDATE passages SET question_type = '기타' WHERE question_type IS NULL OR question_type = '' OR trim(question_type) = '';")
+        except Exception:
+            pass
+
         # 3. 문장 테이블
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sentences (
@@ -586,8 +592,8 @@ def delete_exam(exam_id: str) -> Dict[str, Any]:
 
 def save_passage(passage_data: dict) -> str:
     """지문 정보 저장"""
-    if "question_type" not in passage_data:
-        passage_data["question_type"] = ""
+    if "question_type" not in passage_data or not passage_data.get("question_type") or not str(passage_data["question_type"]).strip():
+        passage_data["question_type"] = "기타"
     if "correct_rate" not in passage_data:
         passage_data["correct_rate"] = None
     if "choice_rates" not in passage_data:
@@ -869,6 +875,7 @@ def search_passages(
     keyword: str = "",
     grade: str = "",
     year: Optional[int] = None,
+    years: Optional[List[int]] = None,
     month: Optional[int] = None,
     exam_type: str = "",
     question_type: str = "",
@@ -877,7 +884,7 @@ def search_passages(
     whole_word: bool = False,
     limit: int = 0
 ) -> List[Dict[str, Any]]:
-    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분 - 온전한 단어 검색 지원)"""
+    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분 - 온전한 단어 검색 및 복수 연도 지원)"""
     query = """
         SELECT p.*, e.grade, e.year, e.month, e.exam_type, e.reading_start_q, e.reading_end_q
         FROM passages p
@@ -915,7 +922,11 @@ def search_passages(
     if grade:
         query += " AND e.grade = ?"
         params.append(grade)
-    if year:
+    if years and len(years) > 0:
+        placeholders = ",".join(["?"] * len(years))
+        query += f" AND e.year IN ({placeholders})"
+        params.extend(years)
+    elif year:
         query += " AND e.year = ?"
         params.append(year)
     if month:
@@ -1205,6 +1216,7 @@ def search_sentences(
     passage_id: str = "",
     grade: str = "",
     year: Optional[int] = None,
+    years: Optional[List[int]] = None,
     month: Optional[int] = None,
     exam_type: str = "",
     question_type: str = "",
@@ -1216,7 +1228,7 @@ def search_sentences(
     whole_word: bool = False,
     limit: int = 0
 ) -> List[Dict[str, Any]]:
-    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
+    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도 지원)"""
     query = """
         SELECT s.*, p.q_num, p.correct_rate, p.question_type, e.grade, e.year, e.month, e.exam_type
         FROM sentences s
@@ -1248,7 +1260,11 @@ def search_sentences(
     if grade:
         query += " AND e.grade = ?"
         params.append(grade)
-    if year:
+    if years and len(years) > 0:
+        placeholders = ",".join(["?"] * len(years))
+        query += f" AND e.year IN ({placeholders})"
+        params.extend(years)
+    elif year:
         query += " AND e.year = ?"
         params.append(year)
     if month:

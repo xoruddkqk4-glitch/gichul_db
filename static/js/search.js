@@ -48,6 +48,8 @@ import { groupPassageItems, renderPassageView } from "./results-passage.js";
 import { renderSentenceView } from "./results-sentence.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { resetAllGrammarFilters, updateGrammarBreadcrumbFilterUI } from "./grammar.js";
+import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter } from "./year-filter.js";
+import { updateMonthOptionsByGrade, initMonthFilter } from "./month-filter.js";
 
 let isWholeWordActive = false;
 // =========================================================================
@@ -137,6 +139,8 @@ export async function executeSearch(source = "home") {
     questionType = "";
     correctRateRange = "";
     tag = "";
+    resetYearFilter();
+    updateMonthOptionsByGrade("");
   } else if (source === "home") {
     const parsed = parseSearchQuery(mainSearchInput.value);
     keyword = parsed.keyword;
@@ -199,7 +203,18 @@ export async function executeSearch(source = "home") {
   if (keyword) params.append("keyword", keyword);
   if (isWholeWordActive) params.append("whole_word", "true");
   if (grade) params.append("grade", grade);
-  if (year) params.append("year", year);
+
+  const yearsParam = getYearsQueryParam();
+  if (yearsParam) {
+    if (yearsParam.includes(",")) {
+      params.append("years", yearsParam);
+    } else {
+      params.append("year", yearsParam);
+    }
+  } else if (year) {
+    params.append("year", year);
+  }
+
   if (month) params.append("month", month);
   if (examType) params.append("exam_type", examType);
   if (questionType) params.append("question_type", questionType);
@@ -431,7 +446,7 @@ function handleResultsSearch() {
 export function hasActiveSearchFilters() {
   const hasKeyword = !!((resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()));
   const hasGrade = !!((resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value));
-  const hasYear = !!((resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value));
+  const hasYear = !isAllYearsSelected();
   const hasMonth = !!((resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value));
   const hasExamType = !!((resultsFilterExamType && resultsFilterExamType.value) || (filterExamType && filterExamType.value));
   const hasQuestionType = !!((resultsFilterQuestionType && resultsFilterQuestionType.value) || (filterQuestionType && filterQuestionType.value));
@@ -444,6 +459,12 @@ export function hasActiveSearchFilters() {
 /** 검색 조건 초기화 버튼 가시성 및 필터 드롭다운 active 스타일 업데이트 */
 export function updateFilterResetButtonsUI() {
   const hasFilters = hasActiveSearchFilters();
+  const hasYear = !isAllYearsSelected();
+
+  // 연도 트리거 버튼 active 스타일 동기화
+  document.querySelectorAll(".year-multiselect-trigger").forEach(btn => {
+    btn.classList.toggle("active", hasYear);
+  });
 
   // 드롭다운 필터 active 스타일 동기화
   const pairs = [
@@ -459,14 +480,18 @@ export function updateFilterResetButtonsUI() {
     if (resEl) resEl.classList.toggle("active", !!resEl.value);
   });
 
-  // 결과창 검색 조건 초기화 버튼
+  // 결과창 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 유지)
   if (btnResetResultsFilters) {
-    btnResetResultsFilters.style.display = hasFilters ? "inline-flex" : "none";
+    btnResetResultsFilters.style.visibility = hasFilters ? "visible" : "hidden";
+    btnResetResultsFilters.style.opacity = hasFilters ? "1" : "0";
+    btnResetResultsFilters.style.pointerEvents = hasFilters ? "auto" : "none";
   }
 
-  // 홈 화면 검색 조건 초기화 버튼
+  // 홈 화면 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 유지)
   if (btnResetHomeFilters) {
-    btnResetHomeFilters.style.display = hasFilters ? "inline-flex" : "none";
+    btnResetHomeFilters.style.visibility = hasFilters ? "visible" : "hidden";
+    btnResetHomeFilters.style.opacity = hasFilters ? "1" : "0";
+    btnResetHomeFilters.style.pointerEvents = hasFilters ? "auto" : "none";
   }
 }
 
@@ -492,6 +517,9 @@ export function resetAllSearchFilters(triggerSearch = true) {
   if (filterCorrectRate) filterCorrectRate.value = "";
   if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
   if (filterTag) filterTag.value = "";
+
+  resetYearFilter();
+  updateMonthOptionsByGrade("");
 
   // 3. 어법 필터 초기화
   if (typeof resetAllGrammarFilters === "function") {
@@ -541,11 +569,26 @@ export function init() {
       if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
       if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
 
+      resetYearFilter();
+      updateMonthOptionsByGrade("");
+
       setMode("passage");
       updateClearButtons();
       executeSearch("all_passages");
     });
   }
+
+  // 월 필터 및 연도 복수 선택 모듈 초기화
+  initMonthFilter();
+  initYearFilter((sourcePrefix) => {
+    if (resultsView && resultsView.style.display !== "none") {
+      setSearchWithinState(false);
+      updateFilterResetButtonsUI();
+      executeSearch("results");
+    } else {
+      updateFilterResetButtonsUI();
+    }
+  });
 
   // 검색창 입력 시 x 버튼 동적 표시/숨김
   if (mainSearchInput) {
@@ -603,6 +646,17 @@ export function init() {
   btnSearch.addEventListener("click", () => executeSearch("home"));
   mainSearchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") executeSearch("home");
+  });
+
+  // 영역 선택 토글 클릭 핸들러 (독해 vs 듣기)
+  document.querySelectorAll(".area-toggle-group").forEach(group => {
+    group.addEventListener("click", (e) => {
+      const btn = e.target.closest(".area-toggle-btn");
+      if (!btn) return;
+      if (btn.classList.contains("disabled") || btn.disabled) {
+        showToast("🎧 듣기 영역 서비스는 현재 준비 중입니다.", "info");
+      }
+    });
   });
 
   // 결과 내 검색 토글 클릭 핸들러

@@ -200,6 +200,7 @@ async def api_search_passages(
     keyword: str = "",
     grade: str = "",
     year: Optional[int] = None,
+    years: Optional[str] = Query(None),
     month: Optional[int] = None,
     exam_type: str = "",
     question_type: str = "",
@@ -208,7 +209,7 @@ async def api_search_passages(
     whole_word: bool = False,
     limit: int = 0
 ):
-    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 지원)"""
+    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 및 복수 연도 지원)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -216,10 +217,18 @@ async def api_search_passages(
             tag = found_tags[0]
             keyword = re.sub(r"#[^\s#]+", "", keyword).strip()
 
+    years_list: Optional[List[int]] = None
+    if years:
+        try:
+            years_list = [int(y.strip()) for y in years.split(",") if y.strip().isdigit()]
+        except Exception:
+            years_list = None
+
     results = db.search_passages(
         keyword=keyword,
         grade=grade,
         year=year,
+        years=years_list,
         month=month,
         exam_type=exam_type,
         question_type=question_type,
@@ -238,6 +247,7 @@ async def api_search_sentences(
     passage_id: str = "",
     grade: str = "",
     year: Optional[int] = None,
+    years: Optional[str] = Query(None),
     month: Optional[int] = None,
     exam_type: str = "",
     question_type: str = "",
@@ -249,7 +259,7 @@ async def api_search_sentences(
     whole_word: bool = False,
     limit: int = 0
 ):
-    """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 지원)"""
+    """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도 지원)"""
     # 검색어 내 #태그 자동 파싱
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -257,11 +267,19 @@ async def api_search_sentences(
             tag = found_tags[0]
             keyword = re.sub(r"#[^\s#]+", "", keyword).strip()
 
+    years_list: Optional[List[int]] = None
+    if years:
+        try:
+            years_list = [int(y.strip()) for y in years.split(",") if y.strip().isdigit()]
+        except Exception:
+            years_list = None
+
     results = db.search_sentences(
         keyword=keyword,
         passage_id=passage_id,
         grade=grade,
         year=year,
+        years=years_list,
         month=month,
         exam_type=exam_type,
         question_type=question_type,

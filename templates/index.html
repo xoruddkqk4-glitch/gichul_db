@@ -64,6 +64,15 @@
 
         <!-- 구글 스타일 대형 검색창 -->
         <div class="google-search-box">
+          <!-- 영역 선택 토글 버튼 (기본: 독해 선택됨, 듣기: 비활성화/준비중) -->
+          <div class="area-toggle-group" id="homeAreaToggle" title="영역 선택 (독해 / 듣기)">
+            <button type="button" class="area-toggle-btn active" id="btnHomeAreaReading" data-area="reading" title="독해 영역 (기본 선택)">
+              <span class="area-icon">📖</span> 독해
+            </button>
+            <button type="button" class="area-toggle-btn disabled" id="btnHomeAreaListening" data-area="listening" disabled title="듣기 영역 (준비 중)">
+              <span class="area-icon">🎧</span> 듣기 <span class="badge-soon">준비중</span>
+            </button>
+          </div>
           <span class="search-icon">🔍</span>
           <input 
             type="text" 
@@ -90,26 +99,29 @@
             <option value="고1">고1</option>
           </select>
 
-          <select class="filter-select" id="filterYear">
-            <option value="">전체 연도</option>
-            <option value="2026">2026년</option>
-            <option value="2025">2025년</option>
-            <option value="2024">2024년</option>
-            <option value="2023">2023년</option>
-            <option value="2022">2022년</option>
-          </select>
+          <!-- 연도 5대 그룹 및 개별 연도 복수 선택 드롭다운 (2006~2026 전체 연도) -->
+          <div class="year-multiselect-dropdown" id="yearMultiSelectHome">
+            <button type="button" class="filter-select year-multiselect-trigger" id="btnYearMultiSelectHome" aria-haspopup="true" aria-expanded="false" title="연도 선택 (복수 선택 가능)">
+              <span class="year-trigger-label" id="labelYearHome">전체 연도</span>
+              <span class="dropdown-caret">▾</span>
+            </button>
+            <div class="year-popover-menu" id="menuYearHome" style="display: none;"></div>
+          </div>
+          <input type="hidden" id="filterYear" value="">
 
-          <!-- 3월, 4월, 5월, 6월, 7월, 9월, 10월, 11월 전체 월 지원 -->
+          <!-- 학년별 동적 월 목록 (1,2학년 교육청 전용 / 3학년 평가원·수능 구분) -->
           <select class="filter-select" id="filterMonth">
             <option value="">전체 월</option>
             <option value="3">3월 (교육청)</option>
-            <option value="4">4월 (교육청)</option>
-            <option value="5">5월 (교육청)</option>
-            <option value="6">6월 (평가원)</option>
-            <option value="7">7월 (교육청)</option>
-            <option value="9">9월 (평가원)</option>
+            <option value="4">4월 (고3 교육청)</option>
+            <option value="5">5월 (고3 교육청)</option>
+            <option value="6">6월 (평가원/교육청)</option>
+            <option value="7">7월 (고3 교육청)</option>
+            <option value="8">8월 (교육청)</option>
+            <option value="9">9월 (평가원/교육청)</option>
             <option value="10">10월 (교육청)</option>
-            <option value="11">11월 (수능)</option>
+            <option value="11">11월 (수능/교육청)</option>
+            <option value="12">12월 (교육청)</option>
           </select>
 
           <select class="filter-select" id="filterExamType">
@@ -140,6 +152,7 @@
             <option value="글의요약">글의요약</option>
             <option value="1지문2문항">1지문2문항</option>
             <option value="1지문3문항">1지문3문항</option>
+            <option value="기타">기타</option>
           </select>
 
           <select class="filter-select" id="filterCorrectRate">
@@ -154,8 +167,8 @@
             <option value="over80">80% 이상 (기본 문항)</option>
           </select>
 
-          <!-- 홈 검색 조건 초기화 버튼 -->
-          <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeFilters" style="display: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
+          <!-- 홈 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 예약) -->
+          <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeFilters" style="visibility: hidden; opacity: 0; pointer-events: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
             ↺ 검색 조건 초기화
           </button>
 
@@ -211,6 +224,15 @@
         <!-- 1행: 결과 검색창 및 검색 모드 탭 -->
         <div class="results-nav-top-row">
           <div class="results-search-bar">
+            <!-- 영역 선택 토글 버튼 (기본: 독해 선택됨, 듣기: 비활성화/준비중) -->
+            <div class="area-toggle-group compact" id="resultsAreaToggle" title="영역 선택 (독해 / 듣기)">
+              <button type="button" class="area-toggle-btn active" id="btnResultsAreaReading" data-area="reading" title="독해 영역 (기본 선택)">
+                <span class="area-icon">📖</span> 독해
+              </button>
+              <button type="button" class="area-toggle-btn disabled" id="btnResultsAreaListening" data-area="listening" disabled title="듣기 영역 (준비 중)">
+                <span class="area-icon">🎧</span> 듣기 <span class="badge-soon">준비중</span>
+              </button>
+            </div>
             <div class="results-mode-tabs">
               <button type="button" class="mini-mode-btn active" id="resultsTabModePassage" data-mode="passage">지문</button>
               <button type="button" class="mini-mode-btn" id="resultsTabModeSentence" data-mode="sentence">문장</button>
@@ -244,24 +266,30 @@
               <option value="고2">고2</option>
               <option value="고1">고1</option>
             </select>
-            <select class="filter-select compact-select" id="resultsFilterYear">
-              <option value="">전체 연도</option>
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
-              <option value="2023">2023</option>
-              <option value="2022">2022</option>
-            </select>
+
+            <!-- 연도 5대 그룹 및 개별 연도 복수 선택 드롭다운 (2006~2026 전체 연도) -->
+            <div class="year-multiselect-dropdown compact" id="yearMultiSelectResults">
+              <button type="button" class="filter-select compact-select year-multiselect-trigger" id="btnYearMultiSelectResults" aria-haspopup="true" aria-expanded="false" title="연도 선택 (복수 선택 가능)">
+                <span class="year-trigger-label" id="labelYearResults">전체 연도</span>
+                <span class="dropdown-caret">▾</span>
+              </button>
+              <div class="year-popover-menu compact" id="menuYearResults" style="display: none;"></div>
+            </div>
+            <input type="hidden" id="resultsFilterYear" value="">
+
+            <!-- 학년별 동적 월 목록 (1,2학년 교육청 전용 / 3학년 평가원·수능 구분) -->
             <select class="filter-select compact-select" id="resultsFilterMonth">
               <option value="">전체 월</option>
-              <option value="3">3월</option>
-              <option value="4">4월</option>
-              <option value="5">5월</option>
-              <option value="6">6월</option>
-              <option value="7">7월</option>
-              <option value="9">9월</option>
-              <option value="10">10월</option>
-              <option value="11">11월</option>
+              <option value="3">3월 (교육청)</option>
+              <option value="4">4월 (고3 교육청)</option>
+              <option value="5">5월 (고3 교육청)</option>
+              <option value="6">6월 (평가원/교육청)</option>
+              <option value="7">7월 (고3 교육청)</option>
+              <option value="8">8월 (교육청)</option>
+              <option value="9">9월 (평가원/교육청)</option>
+              <option value="10">10월 (교육청)</option>
+              <option value="11">11월 (수능/교육청)</option>
+              <option value="12">12월 (교육청)</option>
             </select>
             <select class="filter-select compact-select" id="resultsFilterExamType">
               <option value="">시험구분</option>
@@ -290,6 +318,7 @@
               <option value="글의요약">글의요약</option>
               <option value="1지문2문항">1지문2문항</option>
               <option value="1지문3문항">1지문3문항</option>
+              <option value="기타">기타</option>
             </select>
 
             <select class="filter-select compact-select" id="resultsFilterCorrectRate">
@@ -304,8 +333,8 @@
               <option value="over80">&ge;80% (기본)</option>
             </select>
 
-            <!-- 결과창 검색 조건 초기화 버튼 (지문/문장 공통 필터 초기화) -->
-            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters" style="display: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
+            <!-- 결과창 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 예약) -->
+            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters" style="visibility: hidden; opacity: 0; pointer-events: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
               ↺ 검색 조건 초기화
             </button>
 
