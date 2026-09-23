@@ -203,6 +203,7 @@ export async function executeSearch(source = "home") {
   if (keyword) params.append("keyword", keyword);
   if (isWholeWordActive) params.append("whole_word", "true");
   if (grade) params.append("grade", grade);
+  params.append("area", appState.currentArea || "reading");
 
   const yearsParam = getYearsQueryParam();
   if (yearsParam) {
@@ -544,6 +545,21 @@ export function resetAllSearchFilters(triggerSearch = true) {
   }
 }
 
+// 영역 선택 토글 (독해 vs 듣기) 공통 설정 함수
+export function setSearchArea(area, triggerSearch = true) {
+  appState.currentArea = area;
+  document.querySelectorAll(".area-toggle-btn").forEach(btn => {
+    const bArea = btn.getAttribute("data-area");
+    btn.classList.toggle("active", bArea === area);
+  });
+  if (triggerSearch) {
+    const resultsScreen = document.getElementById("resultsScreen");
+    if (resultsScreen && resultsScreen.style.display !== "none") {
+      executeSearch("results");
+    }
+  }
+}
+
 // ---- 이벤트 바인딩 및 초기화 (main.js 에서 원본 순서대로 호출) ----
 export function init() {
   loadStats();
@@ -653,8 +669,15 @@ export function init() {
     group.addEventListener("click", (e) => {
       const btn = e.target.closest(".area-toggle-btn");
       if (!btn) return;
+      const targetArea = btn.getAttribute("data-area");
+      if (!targetArea) return;
       if (btn.classList.contains("disabled") || btn.disabled) {
         showToast("🎧 듣기 영역 서비스는 현재 준비 중입니다.", "info");
+        return;
+      }
+      if (targetArea !== appState.currentArea) {
+        setSearchArea(targetArea, true);
+        showToast(targetArea === "listening" ? "🎧 듣기 영역 모드로 전환되었습니다." : "📖 독해 영역 모드로 전환되었습니다.", "info");
       }
     });
   });

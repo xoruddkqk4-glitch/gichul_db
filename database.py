@@ -99,11 +99,24 @@ def init_db():
         for col_sql in (
             "ALTER TABLE passages ADD COLUMN answer_source TEXT;",
             "ALTER TABLE passages ADD COLUMN answer_verified INTEGER DEFAULT 0;",
+            "ALTER TABLE passages ADD COLUMN area TEXT DEFAULT 'reading';",
+            "ALTER TABLE passages ADD COLUMN script_crop_image TEXT DEFAULT NULL;",
+            "ALTER TABLE passages ADD COLUMN script_text TEXT DEFAULT NULL;",
+            "ALTER TABLE passages ADD COLUMN fels_text TEXT DEFAULT NULL;",
+            "ALTER TABLE passages ADD COLUMN audio_file_path TEXT DEFAULT NULL;",
+            "ALTER TABLE exams ADD COLUMN listening_start_q INTEGER DEFAULT 1;",
+            "ALTER TABLE exams ADD COLUMN listening_end_q INTEGER DEFAULT 17;",
         ):
             try:
                 cursor.execute(col_sql)
             except sqlite3.OperationalError:
                 pass
+
+        # 기존 지문들의 기본 area를 'reading'으로 보정
+        try:
+            cursor.execute("UPDATE passages SET area = 'reading' WHERE area IS NULL OR area = '';")
+        except Exception:
+            pass
 
         # 빈 문제 유형을 '기타'로 자동 보정
         try:
@@ -262,6 +275,7 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_starred ON sentences(is_starred);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_analyzed ON sentences(grammar_analyzed);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_correct_rate ON passages(correct_rate);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_area ON passages(area);")
 
         conn.commit()
 
@@ -270,18 +284,24 @@ def init_db():
 
 def save_exam(exam_data: dict) -> str:
     """시험지 정보 저장 (기존 존재 시 갱신)"""
+    if "listening_start_q" not in exam_data:
+        exam_data["listening_start_q"] = 1
+    if "listening_end_q" not in exam_data:
+        exam_data["listening_end_q"] = 17
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO exams (id, grade, year, month, exam_type, reading_start_q, reading_end_q)
-            VALUES (:id, :grade, :year, :month, :exam_type, :reading_start_q, :reading_end_q)
+            INSERT INTO exams (id, grade, year, month, exam_type, reading_start_q, reading_end_q, listening_start_q, listening_end_q)
+            VALUES (:id, :grade, :year, :month, :exam_type, :reading_start_q, :reading_end_q, :listening_start_q, :listening_end_q)
             ON CONFLICT(id) DO UPDATE SET
                 grade = excluded.grade,
                 year = excluded.year,
                 month = excluded.month,
                 exam_type = excluded.exam_type,
                 reading_start_q = excluded.reading_start_q,
-                reading_end_q = excluded.reading_end_q
+                reading_end_q = excluded.reading_end_q,
+                listening_start_q = excluded.listening_start_q,
+                listening_end_q = excluded.listening_end_q
         """, exam_data)
         conn.commit()
         return exam_data["id"]
@@ -598,18 +618,30 @@ def save_passage(passage_data: dict) -> str:
         passage_data["correct_rate"] = None
     if "choice_rates" not in passage_data:
         passage_data["choice_rates"] = None
+    if "area" not in passage_data or not passage_data.get("area"):
+        q_num = passage_data.get("q_num", 0)
+        passage_data["area"] = "listening" if 1 <= q_num <= 17 else "reading"
+    if "script_crop_image" not in passage_data:
+        passage_data["script_crop_image"] = None
+    if "script_text" not in passage_data:
+        passage_data["script_text"] = None
+    if "fels_text" not in passage_data:
+        passage_data["fels_text"] = None
+    if "audio_file_path" not in passage_data:
+        passage_data["audio_file_path"] = None
+
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO passages (
                 id, exam_id, q_num, question_title, question_type, passage_text,
                 answer_text, explanation_text, pdf_crop_image, validation_ratio, remarks,
-                correct_rate, choice_rates
+                correct_rate, choice_rates, area, script_crop_image, script_text, fels_text, audio_file_path
             )
             VALUES (
                 :id, :exam_id, :q_num, :question_title, :question_type, :passage_text,
                 :answer_text, :explanation_text, :pdf_crop_image, :validation_ratio, :remarks,
-                :correct_rate, :choice_rates
+                :correct_rate, :choice_rates, :area, :script_crop_image, :script_text, :fels_text, :audio_file_path
             )
             ON CONFLICT(id) DO UPDATE SET
                 question_title = excluded.question_title,
@@ -621,7 +653,12 @@ def save_passage(passage_data: dict) -> str:
                 validation_ratio = excluded.validation_ratio,
                 remarks = excluded.remarks,
                 correct_rate = COALESCE(excluded.correct_rate, passages.correct_rate),
-                choice_rates = COALESCE(excluded.choice_rates, passages.choice_rates)
+                choice_rates = COALESCE(excluded.choice_rates, passages.choice_rates),
+                area = excluded.area,
+                script_crop_image = COALESCE(excluded.script_crop_image, passages.script_crop_image),
+                script_text = COALESCE(excluded.script_text, passages.script_text),
+                fels_text = COALESCE(excluded.fels_text, passages.fels_text),
+                audio_file_path = COALESCE(excluded.audio_file_path, passages.audio_file_path)
         """, passage_data)
         conn.commit()
         return passage_data["id"]
@@ -881,10 +918,11 @@ def search_passages(
     question_type: str = "",
     correct_rate_range: str = "",
     tag: str = "",
+    area: str = "",
     whole_word: bool = False,
     limit: int = 0
 ) -> List[Dict[str, Any]]:
-    """지문 검색 (지문 본문, 발문, 해설, 출처, 태그, 문제유형, 시험구분 - 온전한 단어 검색 및 복수 연도 지원)"""
+    """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원)"""
     query = """
         SELECT p.*, e.grade, e.year, e.month, e.exam_type, e.reading_start_q, e.reading_end_q
         FROM passages p
@@ -903,10 +941,11 @@ def search_passages(
                     p.id REGEXP ? OR
                     p.passage_text REGEXP ? OR
                     p.question_title REGEXP ? OR
-                    p.explanation_text REGEXP ?
+                    p.explanation_text REGEXP ? OR
+                    p.script_text REGEXP ?
                 )
             """
-            params.extend([pattern, pattern, pattern, pattern])
+            params.extend([pattern, pattern, pattern, pattern, pattern])
         else:
             kw = f"%{k_strip}%"
             query += """
@@ -914,10 +953,17 @@ def search_passages(
                     p.id LIKE ? OR
                     p.passage_text LIKE ? OR
                     p.question_title LIKE ? OR
-                    p.explanation_text LIKE ?
+                    p.explanation_text LIKE ? OR
+                    p.script_text LIKE ?
                 )
             """
-            params.extend([kw, kw, kw, kw])
+            params.extend([kw, kw, kw, kw, kw])
+
+    if area:
+        if area == "listening":
+            query += " AND p.area = 'listening'"
+        elif area == "reading":
+            query += " AND (p.area = 'reading' OR p.area IS NULL)"
 
     if grade:
         query += " AND e.grade = ?"
@@ -1225,18 +1271,25 @@ def search_sentences(
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
+    area: str = "",
     whole_word: bool = False,
     limit: int = 0
 ) -> List[Dict[str, Any]]:
-    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도 지원)"""
+    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역 지원)"""
     query = """
-        SELECT s.*, p.q_num, p.correct_rate, p.question_type, e.grade, e.year, e.month, e.exam_type
+        SELECT s.*, p.q_num, p.correct_rate, p.question_type, p.area, e.grade, e.year, e.month, e.exam_type
         FROM sentences s
         JOIN passages p ON s.passage_id = p.id
         JOIN exams e ON p.exam_id = e.id
         WHERE 1=1
     """
     params = []
+
+    if area:
+        if area == "listening":
+            query += " AND p.area = 'listening'"
+        elif area == "reading":
+            query += " AND (p.area = 'reading' OR p.area IS NULL)"
 
     if passage_id:
         clean_pid = passage_id.strip()
@@ -1360,6 +1413,77 @@ def search_sentences(
 
             results.append(s_dict)
         return results
+
+
+def get_listening_passages_by_exam(exam_id: str) -> List[Dict[str, Any]]:
+    """특정 시험지의 듣기 문항(area='listening' 또는 q_num <= 17) 목록 조회 (q_num 순 정렬)"""
+    clean_id = exam_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.*, e.grade, e.year, e.month, e.exam_type
+            FROM passages p
+            JOIN exams e ON p.exam_id = e.id
+            WHERE p.exam_id = ? AND (p.area = 'listening' OR p.q_num <= 17)
+            ORDER BY p.q_num ASC
+        """, (clean_id,))
+        rows = cursor.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["tags"] = get_passage_tags(d["id"])
+            if d.get("choice_rates") and isinstance(d["choice_rates"], str):
+                try:
+                    d["choice_rates_obj"] = json.loads(d["choice_rates"])
+                except Exception:
+                    d["choice_rates_obj"] = None
+            result.append(d)
+        return result
+
+
+def update_passage_audio(passage_id: str, audio_file_path: str) -> bool:
+    """문항 오디오 파일 경로 갱신"""
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE passages SET audio_file_path = ? WHERE id = ?", (audio_file_path, clean_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def update_passage_script(
+    passage_id: str,
+    script_text: Optional[str] = None,
+    fels_text: Optional[str] = None,
+    script_crop_image: Optional[str] = None
+) -> bool:
+    """문항 대본 텍스트, FELS 텍스트 및 대본 크롭 이미지 경로 갱신"""
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    updates = []
+    params = []
+    if script_text is not None:
+        updates.append("script_text = ?")
+        params.append(script_text)
+    if fels_text is not None:
+        updates.append("fels_text = ?")
+        params.append(fels_text)
+    if script_crop_image is not None:
+        updates.append("script_crop_image = ?")
+        params.append(script_crop_image)
+    if not updates:
+        return False
+    params.append(clean_id)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE passages SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        return cursor.rowcount > 0
 
 
 def get_db_stats() -> Dict[str, Any]:

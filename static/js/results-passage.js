@@ -8,12 +8,23 @@ import {
   answerEditForm,
   answerEditQ,
   answerEditVal,
+  badgeBottomLeftSource,
+  badgeTopLeftSource,
+  badgeTopRightSource,
   breadcrumbTrail,
   btnAddPassageTag,
   btnCancelAnswer,
   btnCopyExplanation,
+  btnCopyFels,
+  btnCopyFelsBlank,
+  btnCopyFelsAnswer,
   btnCopyPassage,
+  btnCopyScript,
+  btnDownloadListeningMp3,
+  btnDownloadListeningZip,
   btnEditAnswer,
+  btnGenerateAllListeningAudio,
+  btnGenerateListeningAudio,
   btnRecapturePdf,
   btnSaveAnswer,
   btnTabScrollLeft,
@@ -27,6 +38,8 @@ import {
   choiceRatesStatsSub,
   emptyResultsBox,
   inputPassageTag,
+  listeningBottomLeftActions,
+  listeningTopRightActions,
   mainSearchInput,
   metaAnswer,
   metaAnswerStatus,
@@ -38,6 +51,9 @@ import {
   panelExplanation,
   panelPassageText,
   panelPdfImageContainer,
+  panelTitleBottomLeft,
+  panelTitleTopLeft,
+  panelTitleTopRight,
   passageDifficultyBadge,
   passageTabBar,
   passageTabCount,
@@ -504,13 +520,16 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
 
     let html = `<span class="tree-step-title">📁 학년 선택:</span><div class="tree-step-buttons">`;
     grades.forEach((g) => {
-      let count = 0;
+      let questionCount = 0;
+      let examCount = 0;
       sortYearsDescending(Object.keys(tree[g])).forEach((y) => {
-        sortMonthsDescending(Object.keys(tree[g][y])).forEach((m) => {
-          count += tree[g][y][m].items.length;
+        const months = sortMonthsDescending(Object.keys(tree[g][y]));
+        examCount += months.length;
+        months.forEach((m) => {
+          questionCount += tree[g][y][m].items.length;
         });
       });
-      html += `<button type="button" class="btn-tree-chip" data-grade="${escapeHtml(g)}">${escapeHtml(g)} <span class="chip-count">${count}</span></button>`;
+      html += `<button type="button" class="btn-tree-chip" data-grade="${escapeHtml(g)}">${escapeHtml(g)} <span class="chip-count">${questionCount.toLocaleString()}문항 (${examCount}회)</span></button>`;
     });
     html += `</div>`;
     treeStepSelector.innerHTML = html;
@@ -543,11 +562,13 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
 
     let html = `<span class="tree-step-title">📅 [${escapeHtml(appState.treeNavState.grade)}] 년도 선택:</span><div class="tree-step-buttons">`;
     years.forEach((y) => {
-      let count = 0;
-      sortMonthsDescending(Object.keys(tree[appState.treeNavState.grade][y])).forEach((m) => {
-        count += tree[appState.treeNavState.grade][y][m].items.length;
+      let questionCount = 0;
+      const months = sortMonthsDescending(Object.keys(tree[appState.treeNavState.grade][y]));
+      const examCount = months.length;
+      months.forEach((m) => {
+        questionCount += tree[appState.treeNavState.grade][y][m].items.length;
       });
-      html += `<button type="button" class="btn-tree-chip" data-year="${escapeHtml(y)}">${escapeHtml(y)} <span class="chip-count">${count}</span></button>`;
+      html += `<button type="button" class="btn-tree-chip" data-year="${escapeHtml(y)}">${escapeHtml(y)} <span class="chip-count">${questionCount.toLocaleString()}문항 (${examCount}회)</span></button>`;
     });
     html += `</div>`;
     treeStepSelector.innerHTML = html;
@@ -578,7 +599,7 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
       const examObj = tree[appState.treeNavState.grade][appState.treeNavState.year][m];
       const count = examObj.items.length;
       const examType = examObj.examType ? ` (${examObj.examType})` : "";
-      html += `<button type="button" class="btn-tree-chip" data-month="${escapeHtml(m)}">${escapeHtml(m)}${escapeHtml(examType)} <span class="chip-count">${count}</span></button>`;
+      html += `<button type="button" class="btn-tree-chip" data-month="${escapeHtml(m)}">${escapeHtml(m)}${escapeHtml(examType)} <span class="chip-count">${count}문항</span></button>`;
     });
     html += `</div>`;
     treeStepSelector.innerHTML = html;
@@ -646,8 +667,9 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
         <span class="breadcrumb-hint">년도를 선택하세요</span>
       `;
   } else {
+    const examSetHint = totalExamsCount ? ` (${totalExamsCount}회차 시험지 세트)` : "";
     trailHtml = `
-        <span class="breadcrumb-hint">총 ${allItems.length}개 문항 중 탐색할 학년을 선택하세요</span>
+        <span class="breadcrumb-hint">총 ${allItems.length.toLocaleString()}개 문항${examSetHint} 중 탐색할 학년을 선택하세요</span>
       `;
   }
 
@@ -797,28 +819,142 @@ function applyPassageUpdate(fresh, focusId) {
   renderPassageView(appState.passagesData, focusId || fresh.id);
 }
 
+/** FELS 학생용 빈칸 텍스트([ ]) 복사 (최장 단어 글자수 균일 공백 적용) */
+export function copyFelsBlankVersion() {
+  const felsText = currentDetailPassage ? (currentDetailPassage.fels_text || "") : "";
+  if (!felsText) {
+    showToast("복사할 FELS 텍스트가 없습니다.", "warning");
+    return;
+  }
+  // 1. 모든 괄호 안의 기능어 단어 추출 (<단어> 및 [단어] 지원, 순수 공백 제외)
+  const matches = Array.from(felsText.matchAll(/<([^>]+?)>|\[([^\]]+?)\]/g));
+  const words = matches
+    .map((m) => (m[1] || m[2] || "").trim())
+    .filter((w) => w.length > 0);
+
+  // 2. 들어가는 단어의 철자수와는 상관 없이 최고 긴 단어의 길이 계산
+  let maxLen = 0;
+  for (const w of words) {
+    if (w.length > maxLen) maxLen = w.length;
+  }
+  if (maxLen === 0) maxLen = 5;
+
+  // 3. 최고 긴 단어의 길이에 맞게 모든 [ ]에 동일한 개수의 공백 빈칸 적용
+  const blankStr = `[${" ".repeat(maxLen)}]`;
+  const blankText = felsText.replace(/<([^>]+?)>|\[([^\]]+?)\]/g, (match, p1, p2) => {
+    const content = (p1 || p2 || "").trim();
+    return content ? blankStr : match;
+  });
+
+  copyToClipboard(
+    blankText,
+    `FELS 학생용 빈칸([ ]) 텍스트가 클립보드에 복사되었습니다! (최장 ${maxLen}자 기준 공백 일괄 적용)`
+  );
+}
+
+/** FELS 교사용 정답 텍스트([단어]) 복사 */
+export function copyFelsAnswerVersion() {
+  const felsText = currentDetailPassage ? (currentDetailPassage.fels_text || "") : "";
+  if (!felsText) {
+    showToast("복사할 FELS 텍스트가 없습니다.", "warning");
+    return;
+  }
+  // <단어>가 있는 경우 [단어]로 일관되게 치환하여 교사용 정답지 생성 (학생용 [ ] 빈칸과 1:1 대응)
+  const answerText = felsText.replace(/<([^>]+?)>/g, "[$1]");
+  copyToClipboard(
+    answerText,
+    "FELS 교사용 정답 텍스트([단어])가 클립보드에 복사되었습니다! (정답지·해설용)"
+  );
+}
+
 /** 2x2 패널에 특정 지문 상세 정보 로드 */
 function loadPassageDetail(p) {
   if (!p) return;
   appState.currentPassageId = p.id;
   setHeaderSlotState("passage");
 
+  const isListening = p.area === "listening";
+
+  // 1. 헤더 텍스트 및 배지 동적 전환
+  if (panelTitleTopLeft) panelTitleTopLeft.textContent = isListening ? "🖼️ 문제 + 📜 대본 캡처 (상하 수직 배열)" : "🖼️ PDF 문항 캡처 이미지";
+  if (badgeTopLeftSource) badgeTopLeftSource.textContent = "고화질 원본";
+  if (panelTitleTopRight) panelTitleTopRight.textContent = isListening ? "📝 영문 대본 텍스트 & 🎙️ 음성 듣기" : "📝 TXT 지문 본문 텍스트";
+  if (badgeTopRightSource) badgeTopRightSource.textContent = isListening ? "ElevenLabs TTS" : "순수 영문";
+  if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = isListening ? "🎯 FELS (기능어 약형드랩) 교사용 텍스트" : "📘 HWP 정답 및 해설";
+  if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = isListening ? "7대 기능어 추출" : "공식 해설지";
+
+  // 2. 우측 상단 & 좌측 하단 버튼 그룹 표시 전환
+  if (btnCopyPassage) btnCopyPassage.style.display = isListening ? "none" : "inline-flex";
+  if (listeningTopRightActions) listeningTopRightActions.style.display = isListening ? "flex" : "none";
+
+  if (btnCopyExplanation) btnCopyExplanation.style.display = isListening ? "none" : "inline-flex";
+  if (listeningBottomLeftActions) listeningBottomLeftActions.style.display = isListening ? "flex" : "none";
+
   // [좌측 상단]: PDF 문항 캡처 이미지 (단일 또는 그룹 이미지들)
   let rawImages = (p.pdf_crop_images && p.pdf_crop_images.length > 0)
     ? p.pdf_crop_images
     : (p.pdf_crop_image ? [p.pdf_crop_image] : []);
 
-  // 동일한 이미지 URL이 중복 지정된 경우(예: 43~45번 세로 결합 단일 이미지가 43, 44, 45번에 동일하게 할당된 경우) 1장만 노출
+  // 동일한 이미지 URL이 중복 지정된 경우 1장만 노출
   rawImages = Array.from(new Set(rawImages.filter(Boolean)));
 
-  // 브라우저 디스크 캐시로 인해 형광펜 하이라이트 반영 전 이미지가 노출되는 것을 방지하기 위해 캐시 버스팅 적용
+  // 캐시 버스팅 적용
   const images = rawImages.map(url => {
     if (!url) return "";
     const sep = url.includes("?") ? "&" : "?";
     return `${url}${sep}t=${Date.now()}`;
   });
 
-  if (images.length > 0) {
+  if (isListening) {
+    // 듣기 모드: 문제지 크롭(위) + 구분선 + 대본 크롭(아래) 상하 수직 배열
+    const qImgSrc = (images.length > 0) ? images[0] : "";
+    let sImgSrc = p.script_crop_image || "";
+    if (sImgSrc) {
+      const sep = sImgSrc.includes("?") ? "&" : "?";
+      sImgSrc = `${sImgSrc}${sep}t=${Date.now()}`;
+    }
+
+    const qCropHtml = qImgSrc
+      ? `<div class="listening-crop-img-wrapper"><img src="${qImgSrc}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} 문제지 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기"></div>`
+      : `<div class="pdf-placeholder" style="padding: 1.5rem 1rem; min-height: 100px;">🖼️ 문제지 캡처 이미지가 생성되지 않았습니다.</div>`;
+
+    const sCropHtml = sImgSrc
+      ? `<div class="listening-crop-img-wrapper"><img src="${sImgSrc}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} 대본 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기"></div>`
+      : `<div class="pdf-placeholder" style="padding: 1.25rem 1rem; min-height: 100px;">
+           <div style="font-size: 0.88rem; font-weight: 600; color: #64748b;">📜 대본 크롭 이미지가 아직 등록되지 않았습니다.</div>
+           <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 4px;">대본 PDF 파일 또는 해설 PDF 파일을 업로드하면 대본 섹션이 자동 크롭됩니다.</div>
+         </div>`;
+
+    panelPdfImageContainer.innerHTML = `
+      <div class="listening-crops-container">
+        <div class="listening-crop-section">
+          <div class="listening-crop-section-header">
+            <span class="crop-section-badge badge-q">📑 문제지 캡처</span>
+            <span class="crop-section-hint">클릭 시 새 창 확대 보기</span>
+          </div>
+          ${qCropHtml}
+        </div>
+
+        <div class="crop-section-divider">
+          <span class="crop-divider-line"></span>
+          <span class="crop-divider-badge">📜 원본 대본 인쇄본</span>
+          <span class="crop-divider-line"></span>
+        </div>
+
+        <div class="listening-crop-section">
+          <div class="listening-crop-section-header">
+            <span class="crop-section-badge badge-s">📜 대본 / 해설지 원본</span>
+            <span class="crop-section-hint">클릭 시 새 창 확대 보기</span>
+          </div>
+          ${sCropHtml}
+        </div>
+      </div>
+    `;
+
+    panelPdfImageContainer.querySelectorAll(".listening-crop-img").forEach((img) => {
+      img.addEventListener("click", () => window.open(img.src, "_blank"));
+    });
+  } else if (images.length > 0) {
     if (images.length === 1) {
       panelPdfImageContainer.innerHTML = `
           <img src="${images[0]}" class="pdf-crop-img" alt="${escapeHtml(p.display_id || p.id)} 문항 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
@@ -859,30 +995,118 @@ function loadPassageDetail(p) {
       `;
   }
 
-  // [좌측 하단]: TXT 지문 본문 (41번/43번에만 지문 전체 포함, 42번/44번/45번은 발문+선지만 표시)
-  let rawPassageText = "";
-  if (p.isGroup && p.subItems && p.subItems.length > 1) {
-    const parts = p.subItems.map((si, sIdx) => {
-      if (sIdx === 0) {
-        return cleanQuestionExplanationLeak(si.passage_text || si.question_title || "");
-      } else {
-        return extractQuestionChoicesOnly(si.passage_text, si.question_title);
+  // [우측 상단]: TXT 지문 본문 / 듣기 스크립트 + ElevenLabs TTS
+  if (isListening) {
+    const rawScript = p.script_text || p.passage_text || "대본 정보가 등록되지 않았습니다.";
+    panelPassageText.dataset.rawText = rawScript;
+
+    let formattedScript = escapeHtml(rawScript);
+    formattedScript = formattedScript.replace(
+      /(^|\n)\s*(M|W|Man|Woman|Boy|Girl|남|여)\s*:\s*/g,
+      (match, p1, speaker) => {
+        const isMale = /^(M|Man|Boy|남)$/i.test(speaker);
+        const cls = isMale ? "speaker-tag speaker-male" : "speaker-tag speaker-female";
+        return `${p1}<span class="${cls}">${speaker}:</span> `;
       }
-    });
-    rawPassageText = parts.filter(Boolean).join("\n\n----------------------------------------\n\n");
+    );
+
+    const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
+                         (mainSearchInput && mainSearchInput.value.trim()) || "";
+    if (currentQuery) {
+      formattedScript = highlightTextKeyword(formattedScript, currentQuery, "passage-highlight");
+    }
+
+    const hasAudio = !!p.audio_file_path;
+    const audioSrc = hasAudio ? `${p.audio_file_path}?t=${Date.now()}` : "";
+
+    panelPassageText.innerHTML = `
+      <div class="listening-top-right-wrapper">
+        <div class="listening-audio-bar">
+          <div class="audio-player-row">
+            <audio id="listeningAudioPlayer" controls src="${audioSrc}" style="flex: 1; height: 38px; border-radius: 8px;"></audio>
+            <span class="audio-status-chip ${hasAudio ? 'ready' : 'empty'}" id="audioStatusChip">
+              ${hasAudio ? '🎙️ 음성 준비됨' : '🎙️ 음성 미생성'}
+            </span>
+          </div>
+        </div>
+        <div class="listening-script-text-box">
+          ${formattedScript}
+        </div>
+      </div>
+    `;
   } else {
-    rawPassageText = cleanQuestionExplanationLeak(p.passage_text) || "지문 본문 텍스트가 비어 있습니다.";
+    let rawPassageText = "";
+    if (p.isGroup && p.subItems && p.subItems.length > 1) {
+      const parts = p.subItems.map((si, sIdx) => {
+        if (sIdx === 0) {
+          return cleanQuestionExplanationLeak(si.passage_text || si.question_title || "");
+        } else {
+          return extractQuestionChoicesOnly(si.passage_text, si.question_title);
+        }
+      });
+      rawPassageText = parts.filter(Boolean).join("\n\n----------------------------------------\n\n");
+    } else {
+      rawPassageText = cleanQuestionExplanationLeak(p.passage_text) || "지문 본문 텍스트가 비어 있습니다.";
+    }
+
+    panelPassageText.dataset.rawText = rawPassageText;
+    const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
+                         (mainSearchInput && mainSearchInput.value.trim()) || "";
+    panelPassageText.innerHTML = highlightTextKeyword(rawPassageText, currentQuery, "passage-highlight");
   }
 
-  panelPassageText.dataset.rawText = rawPassageText;
+  // [좌측 하단]: HWP 정답 및 해설 / FELS 교사용 텍스트
+  if (isListening) {
+    const rawFels = p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.";
+    panelExplanation.dataset.rawFels = rawFels;
 
-  // 현재 검색창에 입력된 검색 키워드로 파스텔톤 빨간색 형광펜 하이라이트 적용 (PDF 이미지는 원본 유지)
-  const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
-                       (mainSearchInput && mainSearchInput.value.trim()) || "";
-  panelPassageText.innerHTML = highlightTextKeyword(rawPassageText, currentQuery, "passage-highlight");
+    let formattedFels = escapeHtml(rawFels);
+    formattedFels = formattedFels.replace(
+      /(?:&lt;|\[)([^&\]\n]+?)(?:&gt;|\])/g,
+      (match, p1) => {
+        const word = (p1 || "").trim();
+        return word ? `<span class="fels-tag-word">[${word}]</span>` : match;
+      }
+    );
+    formattedFels = formattedFels.replace(
+      /(^|\n)\s*(M|W|Man|Woman|Boy|Girl|남|여)\s*:\s*/g,
+      (match, p1, speaker) => {
+        const isMale = /^(M|Man|Boy|남)$/i.test(speaker);
+        const cls = isMale ? "speaker-tag speaker-male" : "speaker-tag speaker-female";
+        return `${p1}<span class="${cls}">${speaker}:</span> `;
+      }
+    );
 
-  // [우측 상단]: HWP 정답 및 해설
-  panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
+    panelExplanation.innerHTML = `
+      <div class="listening-fels-container">
+        <div class="fels-guide-banner" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="fels-badge-icon">🎯</span>
+            <span><strong>FELS 기능어 약형드랩:</strong> 7대 기능어가 [단어]로 추출되었습니다. 용도에 맞게 선택하여 복사하세요:</span>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button type="button" class="btn btn-primary btn-xs" id="btnBannerCopyBlank" style="font-size: 0.76rem; font-weight: 700; padding: 3px 10px; border-radius: 5px; cursor: pointer;">
+              📝 학생용 빈칸 복사 ([ ])
+            </button>
+            <button type="button" class="btn btn-secondary btn-xs" id="btnBannerCopyAnswer" style="font-size: 0.76rem; font-weight: 700; padding: 3px 10px; border-radius: 5px; cursor: pointer;">
+              🔑 교사용 정답 복사 ([단어])
+            </button>
+          </div>
+        </div>
+        <div class="fels-content-box">
+          ${formattedFels}
+        </div>
+      </div>
+    `;
+
+    // 인라인 FELS 복사 버튼 이벤트 연결
+    const bBlank = panelExplanation.querySelector("#btnBannerCopyBlank");
+    if (bBlank) bBlank.addEventListener("click", copyFelsBlankVersion);
+    const bAnswer = panelExplanation.querySelector("#btnBannerCopyAnswer");
+    if (bAnswer) bAnswer.addEventListener("click", copyFelsAnswerVersion);
+  } else {
+    panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
+  }
 
   // [우측 하단]: 지문 메타 정보, 문제 유형, 태그 관리
   metaPassageId.textContent = p.display_id || p.id;
@@ -951,43 +1175,230 @@ function getDifficultyInfo(rate) {
   }
 }
 
-export function renderChoiceRates(p) {
-  if (!choiceRatesContainer) return;
-
-  const rate = (p.correct_rate !== null && p.correct_rate !== undefined) ? parseFloat(p.correct_rate) : null;
-  const diff = getDifficultyInfo(rate);
-
-  // 1. 메타 정답률 배지 렌더링
-  if (metaCorrectRate) {
-    if (rate !== null) {
-      metaCorrectRate.innerHTML = `<span class="${diff.badgeClass}" title="정답률 ${rate.toFixed(1)}%">${rate.toFixed(1)}%</span>`;
-    } else {
-      metaCorrectRate.innerHTML = `<span class="badge-rate-none">미등록</span>`;
+/** 단일 지문의 choice_rates 객체 파싱 헬퍼 */
+function parseChoiceRatesObj(p) {
+  if (!p) return null;
+  if (p.choice_rates_obj && typeof p.choice_rates_obj === "object") {
+    return p.choice_rates_obj;
+  }
+  if (p.choice_rates) {
+    if (typeof p.choice_rates === "object") return p.choice_rates;
+    if (typeof p.choice_rates === "string") {
+      try {
+        return JSON.parse(p.choice_rates);
+      } catch (e) {
+        return null;
+      }
     }
   }
+  return null;
+}
 
-  if (passageDifficultyBadge) {
-    passageDifficultyBadge.className = `choice-rates-difficulty-badge ${diff.badgeClass}`;
-    passageDifficultyBadge.textContent = diff.label;
+/** 5개 선지 게이지 바 HTML 생성 헬퍼 */
+function renderSingleQuestionBars(ratesObj, answerText) {
+  if (!ratesObj || (!ratesObj["1"] && !ratesObj["2"] && !ratesObj["3"] && !ratesObj["4"] && !ratesObj["5"])) {
+    return `<div class="choice-sub-empty-msg">선지 선택률 데이터가 등록되지 않았습니다.</div>`;
   }
 
-  // 2. 선지별 선택률 파싱
-  let ratesObj = null;
-  if (p.choice_rates_obj && typeof p.choice_rates_obj === "object") {
-    ratesObj = p.choice_rates_obj;
-  } else if (p.choice_rates) {
-    if (typeof p.choice_rates === "object") {
-      ratesObj = p.choice_rates;
-    } else if (typeof p.choice_rates === "string") {
-      try {
-        ratesObj = JSON.parse(p.choice_rates);
-      } catch (e) {
-        ratesObj = null;
+  const circleSymbols = { "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤" };
+  const circleToNum = { "①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" };
+  const ansRaw = (answerText || "").trim();
+  const correctAnsNum = circleToNum[ansRaw] || "";
+
+  const attractiveWrong = ratesObj.attractive_wrong;
+  const attractiveChoice = attractiveWrong ? String(attractiveWrong.choice) : "";
+
+  let rowsHtml = "";
+  for (let ch = 1; ch <= 5; ch++) {
+    const chStr = String(ch);
+    const circleSym = circleSymbols[chStr];
+    const val = ratesObj[chStr] !== undefined ? parseFloat(ratesObj[chStr]) : 0.0;
+    const count = (ratesObj.counts && ratesObj.counts[chStr] !== undefined) ? ratesObj.counts[chStr] : null;
+
+    const isCorrect = (chStr === correctAnsNum);
+    const isTrap = !isCorrect && (chStr === attractiveChoice);
+
+    let rowClass = "choice-bar-row";
+    if (isCorrect) rowClass += " choice-correct";
+    else if (isTrap) rowClass += " choice-trap";
+
+    let tagHtml = "";
+    if (isCorrect) {
+      tagHtml = `<span class="choice-star">★ 정답</span>`;
+    } else if (isTrap) {
+      tagHtml = `<span class="choice-trap-tag">🚨 매력적 오답</span>`;
+    }
+
+    const countLabel = (count !== null) ? `<span class="choice-count-label">(${count.toLocaleString()}명)</span>` : "";
+
+    rowsHtml += `
+      <div class="${rowClass}">
+        <div class="choice-label-badge">
+          <span class="choice-num-circle">${circleSym}</span>
+          ${tagHtml}
+        </div>
+        <div class="choice-progress-wrapper" title="${circleSym} 선택률: ${val.toFixed(1)}%${count !== null ? ` (${count.toLocaleString()}명)` : ''}">
+          <div class="choice-progress-fill" style="width: ${Math.min(100, Math.max(0, val))}%;"></div>
+        </div>
+        <div class="choice-percent-val">
+          <strong>${val.toFixed(1)}%</strong>
+          ${countLabel}
+        </div>
+      </div>
+    `;
+  }
+  return `<div class="choice-bars-sublist" style="display: flex; flex-direction: column; gap: 0.35rem;">${rowsHtml}</div>`;
+}
+
+export function renderChoiceRates(p) {
+  if (!choiceRatesContainer) return;
+  if (!p) return;
+
+  // 단일 갱신 시 현재 상세가 복합 지문이면 복합 지문 컨텍스트 유지
+  let targetP = p;
+  if ((!p.isGroup || !p.subItems) && currentDetailPassage && currentDetailPassage.isGroup && Array.isArray(currentDetailPassage.subItems)) {
+    currentDetailPassage.subItems = currentDetailPassage.subItems.map((si) => (si.id === p.id ? { ...si, ...p } : si));
+    targetP = currentDetailPassage;
+  }
+
+  const isMultiQuestion = !!(targetP.isGroup && Array.isArray(targetP.subItems) && targetP.subItems.length > 1);
+
+  // 1. 메타 정답률 배지 렌더링 (단일 문항 vs 1지문 다문항 문항별 배지)
+  if (metaCorrectRate) {
+    if (isMultiQuestion) {
+      metaCorrectRate.innerHTML = `
+        <div class="meta-multi-rates-wrapper">
+          ${targetP.subItems.map((si) => {
+            const r = (si.correct_rate !== null && si.correct_rate !== undefined) ? parseFloat(si.correct_rate) : null;
+            const d = getDifficultyInfo(r);
+            const badgeHtml = r !== null
+              ? `<span class="${d.badgeClass}" title="${si.q_num}번 정답률 ${r.toFixed(1)}%">${r.toFixed(1)}%</span>`
+              : `<span class="badge-rate-none">미등록</span>`;
+            return `<span class="meta-multi-rate-item">
+              <strong style="color: #475569; font-size: 0.80rem;">${si.q_num}번:</strong> ${badgeHtml}
+            </span>`;
+          }).join("")}
+        </div>
+      `;
+    } else {
+      const rate = (targetP.correct_rate !== null && targetP.correct_rate !== undefined) ? parseFloat(targetP.correct_rate) : null;
+      const diff = getDifficultyInfo(rate);
+      if (rate !== null) {
+        metaCorrectRate.innerHTML = `<span class="${diff.badgeClass}" title="정답률 ${rate.toFixed(1)}%">${rate.toFixed(1)}%</span>`;
+      } else {
+        metaCorrectRate.innerHTML = `<span class="badge-rate-none">미등록</span>`;
       }
     }
   }
 
-  // 데이터가 없는 경우 -> 엠프티 안내 및 단독 등록 버튼 노출
+  // 2. 1지문 다문항 복합 처리
+  if (isMultiQuestion) {
+    const subItems = targetP.subItems;
+    const hasAnyRates = subItems.some((si) => {
+      const ro = parseChoiceRatesObj(si);
+      return ro && (ro["1"] || ro["2"] || ro["3"] || ro["4"] || ro["5"]);
+    });
+
+    if (!hasAnyRates) {
+      if (choiceBarsList) choiceBarsList.innerHTML = "";
+      if (choiceRatesStatsSub) choiceRatesStatsSub.textContent = "복합 문항 정답률 데이터가 등록되지 않았습니다.";
+      if (passageDifficultyBadge) {
+        passageDifficultyBadge.className = "choice-rates-difficulty-badge badge-rate-none";
+        passageDifficultyBadge.style.background = "";
+        passageDifficultyBadge.style.color = "";
+        passageDifficultyBadge.style.border = "";
+        passageDifficultyBadge.textContent = "미등록";
+      }
+      if (choiceRatesEmpty) choiceRatesEmpty.style.display = "flex";
+      return;
+    }
+
+    if (choiceRatesEmpty) choiceRatesEmpty.style.display = "none";
+
+    // 총 응시자 수 표기
+    const totalCount = subItems.map((si) => parseChoiceRatesObj(si)?.counts?.total).find(Boolean);
+    if (choiceRatesStatsSub) {
+      choiceRatesStatsSub.textContent = totalCount ? `총 응시자 ${totalCount.toLocaleString()}명 기준 · 문항별 선지 선택률` : `문항별 선지 선택률`;
+    }
+    if (passageDifficultyBadge) {
+      passageDifficultyBadge.className = "choice-rates-difficulty-badge";
+      passageDifficultyBadge.style.background = "#eff6ff";
+      passageDifficultyBadge.style.color = "#1d4ed8";
+      passageDifficultyBadge.style.border = "1px solid #bfdbfe";
+      passageDifficultyBadge.textContent = `총 ${subItems.length}문항 복합`;
+    }
+
+    if (choiceBarsList) {
+      // 상단 문항 전환 탭 + 문항별 개별 카드 렌더링
+      const tabsHtml = `
+        <div class="choice-multi-q-tabs">
+          <button type="button" class="btn-choice-q-pill active" data-q="all">전체 문항 (${subItems.length})</button>
+          ${subItems.map((si) => `<button type="button" class="btn-choice-q-pill" data-q="${si.q_num}">${si.q_num}번 문항</button>`).join("")}
+        </div>
+      `;
+
+      const cardsHtml = subItems.map((si) => {
+        const ro = parseChoiceRatesObj(si);
+        const r = (si.correct_rate !== null && si.correct_rate !== undefined) ? parseFloat(si.correct_rate) : null;
+        const d = getDifficultyInfo(r);
+
+        return `
+          <div class="choice-multi-q-card" data-qnum="${si.q_num}">
+            <div class="choice-multi-q-card-header">
+              <div class="choice-multi-q-card-title">
+                <span class="choice-multi-q-badge">📌 ${si.q_num}번 문항</span>
+                <span class="choice-rates-difficulty-badge ${d.badgeClass}">${d.label}</span>
+              </div>
+              <div class="choice-multi-q-card-meta">
+                <span class="choice-multi-rate-text">정답률 <strong style="color: ${r !== null && r < 50 ? '#dc2626' : (r !== null && r < 70 ? '#d97706' : '#059669')};">${r !== null ? r.toFixed(1) + '%' : '미등록'}</strong></span>
+                <span class="choice-multi-sep">|</span>
+                <span class="choice-multi-ans-text">정답 <strong style="color: #059669;">${si.answer_text || '-'}</strong></span>
+              </div>
+            </div>
+            <div class="choice-multi-bars-body">
+              ${renderSingleQuestionBars(ro, si.answer_text)}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      choiceBarsList.innerHTML = tabsHtml + cardsHtml;
+
+      // 탭 클릭 필터링 이벤트 바인딩
+      const tabBtns = choiceBarsList.querySelectorAll(".btn-choice-q-pill");
+      const cards = choiceBarsList.querySelectorAll(".choice-multi-q-card");
+      tabBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          tabBtns.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const targetQ = btn.dataset.q;
+          cards.forEach((card) => {
+            if (targetQ === "all" || card.dataset.qnum === targetQ) {
+              card.style.display = "block";
+            } else {
+              card.style.display = "none";
+            }
+          });
+        });
+      });
+    }
+    return;
+  }
+
+  // 3. 단일 문항 처리 (기존 로직 유지)
+  const rate = (targetP.correct_rate !== null && targetP.correct_rate !== undefined) ? parseFloat(targetP.correct_rate) : null;
+  const diff = getDifficultyInfo(rate);
+
+  if (passageDifficultyBadge) {
+    passageDifficultyBadge.style.display = "inline-flex";
+    passageDifficultyBadge.className = `choice-rates-difficulty-badge ${diff.badgeClass}`;
+    passageDifficultyBadge.style.background = "";
+    passageDifficultyBadge.style.color = "";
+    passageDifficultyBadge.style.border = "";
+    passageDifficultyBadge.textContent = diff.label;
+  }
+
+  const ratesObj = parseChoiceRatesObj(targetP);
   if (!ratesObj || (!ratesObj["1"] && !ratesObj["2"] && !ratesObj["3"] && !ratesObj["4"] && !ratesObj["5"])) {
     if (choiceBarsList) choiceBarsList.innerHTML = "";
     if (choiceRatesStatsSub) choiceRatesStatsSub.textContent = "정답률 데이터가 등록되지 않았습니다.";
@@ -997,69 +1408,30 @@ export function renderChoiceRates(p) {
 
   if (choiceRatesEmpty) choiceRatesEmpty.style.display = "none";
 
-  // 총 응시자 수 표기
   const totalCount = ratesObj.counts?.total;
   if (choiceRatesStatsSub) {
     choiceRatesStatsSub.textContent = totalCount ? `총 응시자 ${totalCount.toLocaleString()}명 기준` : `선지별 선택 비율`;
   }
 
-  // 정답 선지 및 원문자 정규화
-  const circleSymbols = { "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤" };
-  const circleToNum = { "①": "1", "②": "2", "③": "3", "④": "4", "⑤": "5", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5" };
-  const ansRaw = (p.answer_text || "").trim();
-  const correctAnsNum = circleToNum[ansRaw] || "";
-
-  // 매력적 오답 정보
-  const attractiveWrong = ratesObj.attractive_wrong;
-  const attractiveChoice = attractiveWrong ? String(attractiveWrong.choice) : "";
-
   if (choiceBarsList) {
-    choiceBarsList.innerHTML = "";
-    for (let ch = 1; ch <= 5; ch++) {
-      const chStr = String(ch);
-      const circleSym = circleSymbols[chStr];
-      const val = ratesObj[chStr] !== undefined ? parseFloat(ratesObj[chStr]) : 0.0;
-      const count = (ratesObj.counts && ratesObj.counts[chStr] !== undefined) ? ratesObj.counts[chStr] : null;
-
-      const isCorrect = (chStr === correctAnsNum);
-      const isTrap = !isCorrect && (chStr === attractiveChoice);
-
-      let rowClass = "choice-bar-row";
-      if (isCorrect) rowClass += " choice-correct";
-      else if (isTrap) rowClass += " choice-trap";
-
-      let tagHtml = "";
-      if (isCorrect) {
-        tagHtml = `<span class="choice-star">★ 정답</span>`;
-      } else if (isTrap) {
-        tagHtml = `<span class="choice-trap-tag">🚨 매력적 오답</span>`;
-      }
-
-      const countLabel = (count !== null) ? `<span class="choice-count-label">(${count.toLocaleString()}명)</span>` : "";
-
-      const row = document.createElement("div");
-      row.className = rowClass;
-      row.innerHTML = `
-          <div class="choice-label-badge">
-            <span class="choice-num-circle">${circleSym}</span>
-            ${tagHtml}
-          </div>
-          <div class="choice-progress-wrapper" title="${circleSym} 선택률: ${val.toFixed(1)}%${count !== null ? ` (${count}명)` : ''}">
-            <div class="choice-progress-fill" style="width: ${Math.min(100, Math.max(0, val))}%;"></div>
-          </div>
-          <div class="choice-percent-val">
-            <strong>${val.toFixed(1)}%</strong>
-            ${countLabel}
-          </div>
-        `;
-      choiceBarsList.appendChild(row);
-    }
+    choiceBarsList.innerHTML = renderSingleQuestionBars(ratesObj, targetP.answer_text);
   }
 }
 
 function reset2x2ContentPanels() {
   panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">탐색할 시험 및 문항을 선택하세요.</div>`;
   if (btnRecapturePdf) btnRecapturePdf.disabled = true;
+  if (panelTitleTopLeft) panelTitleTopLeft.textContent = "🖼️ PDF 문항 캡처 이미지";
+  if (badgeTopLeftSource) badgeTopLeftSource.textContent = "고화질 원본";
+  if (panelTitleTopRight) panelTitleTopRight.textContent = "📝 TXT 지문 본문 텍스트";
+  if (badgeTopRightSource) badgeTopRightSource.textContent = "순수 영문";
+  if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = "📘 HWP 정답 및 해설";
+  if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = "공식 해설지";
+  if (btnCopyPassage) btnCopyPassage.style.display = "inline-flex";
+  if (listeningTopRightActions) listeningTopRightActions.style.display = "none";
+  if (btnCopyExplanation) btnCopyExplanation.style.display = "inline-flex";
+  if (listeningBottomLeftActions) listeningBottomLeftActions.style.display = "none";
+
   panelPassageText.textContent = "-";
   panelPassageText.dataset.rawText = "";
   panelExplanation.textContent = "-";
@@ -1077,6 +1449,9 @@ function reset2x2ContentPanels() {
   if (passageDifficultyBadge) {
     passageDifficultyBadge.textContent = "-";
     passageDifficultyBadge.className = "choice-rates-difficulty-badge";
+    passageDifficultyBadge.style.background = "";
+    passageDifficultyBadge.style.color = "";
+    passageDifficultyBadge.style.border = "";
   }
   if (choiceRatesStatsSub) choiceRatesStatsSub.textContent = "-";
   if (choiceRatesEmpty) choiceRatesEmpty.style.display = "none";
@@ -1329,4 +1704,138 @@ export function init() {
       copyToClipboard(text, "정답 및 해설이 클립보드에 복사되었습니다!");
     }
   });
+
+  // 듣기 모드 전용 버튼 이벤트 바인딩
+  if (btnCopyFelsBlank) {
+    btnCopyFelsBlank.addEventListener("click", copyFelsBlankVersion);
+  }
+  if (btnCopyFelsAnswer) {
+    btnCopyFelsAnswer.addEventListener("click", copyFelsAnswerVersion);
+  }
+  if (btnCopyFels) {
+    btnCopyFels.addEventListener("click", copyFelsBlankVersion);
+  }
+
+  if (btnCopyScript) {
+    btnCopyScript.addEventListener("click", () => {
+      const scText = currentDetailPassage ? (currentDetailPassage.script_text || currentDetailPassage.passage_text || "") : "";
+      if (!scText) {
+        showToast("복사할 대본 텍스트가 없습니다.", "warning");
+        return;
+      }
+      copyToClipboard(scText, "영문 대본 텍스트가 클립보드에 복사되었습니다!");
+    });
+  }
+
+  if (btnGenerateListeningAudio) {
+    btnGenerateListeningAudio.addEventListener("click", async () => {
+      if (!currentDetailPassage) return;
+      btnGenerateListeningAudio.disabled = true;
+      btnGenerateListeningAudio.textContent = "⏳ 음성 합성 중...";
+      try {
+        const res = await fetch(`/api/passages/${encodeURIComponent(currentDetailPassage.id)}/generate-audio`, { method: "POST" });
+        let resData;
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          resData = await res.json();
+        } else {
+          const rawText = await res.text();
+          resData = { success: false, message: rawText || `서버 오류 (${res.status})` };
+        }
+
+        if (res.ok && resData.success) {
+          currentDetailPassage.audio_file_path = resData.audio_url;
+          showToast("🎙️ 문항 듣기 음성이 성공적으로 생성되었습니다!", "success");
+          const player = document.getElementById("listeningAudioPlayer");
+          const chip = document.getElementById("audioStatusChip");
+          if (player) {
+            player.src = `${resData.audio_url}?t=${Date.now()}`;
+            player.load();
+          }
+          if (chip) {
+            chip.className = "audio-status-chip ready";
+            chip.textContent = "🎙️ 음성 준비됨";
+          }
+        } else {
+          showToast(resData.detail || resData.message || "음성 합성 실패", "error");
+        }
+      } catch (e) {
+        showToast(`오류 발생: ${e.message}`, "error");
+      } finally {
+        btnGenerateListeningAudio.disabled = false;
+        btnGenerateListeningAudio.textContent = "🎙️ 음성 생성";
+      }
+    });
+  }
+
+  if (btnGenerateAllListeningAudio) {
+    btnGenerateAllListeningAudio.addEventListener("click", async () => {
+      if (!currentDetailPassage) return;
+      if (!confirm(`[${currentDetailPassage.exam_id}] 전체 듣기 문항(1~17번)의 음성을 일괄 생성하시겠습니까?\n\n※ ElevenLabs 크레딧이 문항 대본 길이에 따라 소모됩니다.`)) {
+        return;
+      }
+      btnGenerateAllListeningAudio.disabled = true;
+      btnGenerateAllListeningAudio.textContent = "⏳ 일괄 합성 진행 중...";
+      try {
+        const res = await fetch(`/api/exams/${encodeURIComponent(currentDetailPassage.exam_id)}/generate-listening-audio`, { method: "POST" });
+        let resData;
+        const contentType = res.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          resData = await res.json();
+        } else {
+          const rawText = await res.text();
+          resData = { success: false, message: rawText || `서버 오류 (${res.status})` };
+        }
+
+        if (res.ok && resData.success) {
+          showToast(`🎙️ 전체 듣기 문항 일괄 생성이 완료되었습니다! (성공: ${resData.generated_count || resData.success_count || 0}개)`, "success");
+          const freshRes = await fetch(`/api/passages/${encodeURIComponent(currentDetailPassage.id)}`);
+          if (freshRes.ok) {
+            const freshData = await freshRes.json();
+            currentDetailPassage.audio_file_path = freshData.audio_file_path;
+            const player = document.getElementById("listeningAudioPlayer");
+            const chip = document.getElementById("audioStatusChip");
+            if (player && currentDetailPassage.audio_file_path) {
+              player.src = `${currentDetailPassage.audio_file_path}?t=${Date.now()}`;
+              player.load();
+            }
+            if (chip && currentDetailPassage.audio_file_path) {
+              chip.className = "audio-status-chip ready";
+              chip.textContent = "🎙️ 음성 준비됨";
+            }
+          }
+        } else {
+          showToast(resData.detail || resData.message || "일괄 합성 실패", "error");
+        }
+      } catch (e) {
+        showToast(`오류 발생: ${e.message}`, "error");
+      } finally {
+        btnGenerateAllListeningAudio.disabled = false;
+        btnGenerateAllListeningAudio.textContent = "🎙️ 전체 일괄 생성";
+      }
+    });
+  }
+
+  if (btnDownloadListeningMp3) {
+    btnDownloadListeningMp3.addEventListener("click", () => {
+      if (!currentDetailPassage || !currentDetailPassage.audio_file_path) {
+        showToast("생성된 음성 파일이 없습니다. [🎙️ 음성 생성]을 먼저 실행해 주세요.", "warning");
+        return;
+      }
+      const a = document.createElement("a");
+      a.href = currentDetailPassage.audio_file_path;
+      a.download = `${currentDetailPassage.id.replace(/[\[\]]/g, '')}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+  }
+
+  if (btnDownloadListeningZip) {
+    btnDownloadListeningZip.addEventListener("click", () => {
+      if (!currentDetailPassage) return;
+      const url = `/api/exams/${encodeURIComponent(currentDetailPassage.exam_id)}/download-listening-zip`;
+      window.open(url, "_blank");
+    });
+  }
 }

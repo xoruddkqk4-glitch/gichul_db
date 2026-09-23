@@ -372,24 +372,24 @@ function updateAiHeaderButton(data) {
   if (activeWithKeys.length === 0) {
     btnOpenAiSettingsModal.classList.remove("api-active");
     btnOpenAiSettingsModal.innerHTML = `🔑 AI 설정`;
-    btnOpenAiSettingsModal.title = "AI 어법 분석기 설정 (Gemini/ChatGPT/Claude/OpenRouter)";
+    btnOpenAiSettingsModal.title = "AI 어법 분석기 및 ElevenLabs TTS 설정 (Gemini/ChatGPT/Claude/OpenRouter/ElevenLabs)";
   } else if (activeWithKeys.length === 1) {
     const p = activeWithKeys[0];
     const name = providerShortNames[p] || p;
     btnOpenAiSettingsModal.classList.add("api-active");
     if (p === "openrouter" && data.openrouter_ensemble) {
       const mNames = (data.openrouter_ensemble_models || currentEnsembleModels || []).map(m => getModelDisplayShortName(m)).join(", ");
-      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ OpenRouter 앙상블 <span class="ai-active-badge">3개 모델 합의</span>`;
-      btnOpenAiSettingsModal.title = `OpenRouter 3개 모델(${mNames}) 교차 검증 활성화됨 - 클릭하여 설정 변경`;
+      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 설정 <span class="ai-active-badge">OpenRouter 3모델 합의</span>`;
+      btnOpenAiSettingsModal.title = `AI 설정 (OpenRouter 3개 모델[${mNames}] 교차 검증 활성화됨) - 클릭하여 AI 설정 및 ElevenLabs 키 입력`;
     } else {
-      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 연결됨 <span class="ai-active-badge">${escapeHtml(name)}</span>`;
-      btnOpenAiSettingsModal.title = `AI 어법 분석기 활성화됨 (${name}: 단독 실행) - 클릭하여 설정 변경`;
+      btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 설정 <span class="ai-active-badge">${escapeHtml(name)}</span>`;
+      btnOpenAiSettingsModal.title = `AI 설정 (${name} 활성화됨) - 클릭하여 AI 설정 및 ElevenLabs 키 입력`;
     }
   } else {
     const names = activeWithKeys.map((p) => providerShortNames[p] || p).join(" + ");
     btnOpenAiSettingsModal.classList.add("api-active");
-    btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 다수결 합의 <span class="ai-active-badge">${escapeHtml(names)}</span>`;
-    btnOpenAiSettingsModal.title = `AI 복수 모델 다수결 합의 활성화됨 (${names}) - 클릭하여 설정 변경`;
+    btnOpenAiSettingsModal.innerHTML = `<span class="ai-status-pulse-dot"></span>⚡ AI 설정 <span class="ai-active-badge">${escapeHtml(names)}</span>`;
+    btnOpenAiSettingsModal.title = `AI 설정 (다수결 합의 [${names}] 활성화됨) - 클릭하여 AI 설정 및 ElevenLabs 키 입력`;
   }
 }
 
@@ -550,6 +550,38 @@ async function openAiSettingsModal() {
         renderOpenRouterModelSelectOptions();
       }
 
+      // ElevenLabs TTS 설정 동기화
+      const elData = data.elevenlabs || {};
+      const keyStatusEl = document.getElementById("keyStatusElevenlabs");
+      const keyInputEl = document.getElementById("keyInputElevenlabs");
+      const voiceMaleEl = document.getElementById("voiceInputElevenlabsMale");
+      const voiceFemaleEl = document.getElementById("voiceInputElevenlabsFemale");
+      const modelEl = document.getElementById("modelInputElevenlabs");
+      const testResEl = document.getElementById("testResultElevenlabs");
+
+      if (keyInputEl) keyInputEl.value = "";
+      if (keyStatusEl) {
+        if (elData.has_key) {
+          keyStatusEl.textContent = `현재 키: ${elData.masked_key} (등록됨)`;
+          keyStatusEl.style.color = "#059669";
+        } else {
+          keyStatusEl.textContent = "현재 키: 미등록";
+          keyStatusEl.style.color = "#64748b";
+        }
+      }
+      if (voiceMaleEl && elData.voice_male) voiceMaleEl.value = elData.voice_male;
+      if (voiceFemaleEl && elData.voice_female) voiceFemaleEl.value = elData.voice_female;
+      if (modelEl && elData.model_id) modelEl.value = elData.model_id;
+      if (testResEl) {
+        if (elData.has_key) {
+          testResEl.className = "provider-test-result info visible";
+          testResEl.innerHTML = `<span>ℹ️ <strong>ElevenLabs 키 등록됨:</strong> [🧪 개별 연결 테스트]를 클릭하여 실시간 API 통신 및 잔여 크레딧을 확인해 보세요.</span>`;
+        } else {
+          testResEl.className = "provider-test-result info visible";
+          testResEl.innerHTML = `<span>⚠️ <strong>ElevenLabs 키 미등록:</strong> API Key를 입력한 후 저장하면 영어 듣기 TTS 생성이 활성화됩니다.</span>`;
+        }
+      }
+
       updateAiModalSelectionSummary();
     }
   } catch (e) {
@@ -564,6 +596,8 @@ function closeAiSettingsModal() {
     const keyInput = document.getElementById(`keyInput${capitalize(p)}`);
     if (keyInput) keyInput.value = "";
   });
+  const elKeyInput = document.getElementById("keyInputElevenlabs");
+  if (elKeyInput) elKeyInput.value = "";
 }
 
 // OpenRouter 앙상블 모드 UI 반영 공통 함수 (3개 모델 앙상블 활성화 시 단일 모델 선택/직접입력 잠금)
@@ -902,6 +936,17 @@ export function init() {
       const modeSelect = document.getElementById("selectConsensusMode");
       const consensusMode = modeSelect ? modeSelect.value : "majority";
 
+      // ElevenLabs TTS 설정 수집
+      const elKeyInput = document.getElementById("keyInputElevenlabs");
+      const elVoiceMale = document.getElementById("voiceInputElevenlabsMale");
+      const elVoiceFemale = document.getElementById("voiceInputElevenlabsFemale");
+      const elModel = document.getElementById("modelInputElevenlabs");
+      const elevenlabsPayload = {};
+      if (elKeyInput && elKeyInput.value.trim()) elevenlabsPayload.elevenlabs_api_key = elKeyInput.value.trim();
+      if (elVoiceMale) elevenlabsPayload.elevenlabs_voice_male = elVoiceMale.value.trim();
+      if (elVoiceFemale) elevenlabsPayload.elevenlabs_voice_female = elVoiceFemale.value.trim();
+      if (elModel) elevenlabsPayload.elevenlabs_model_id = elModel.value.trim();
+
       btnSaveAiSettings.disabled = true;
       btnSaveAiSettings.textContent = "⏳ 저장 중...";
 
@@ -916,6 +961,7 @@ export function init() {
             providers: providersPayload,
             openrouter_ensemble: cbOREnsemble ? cbOREnsemble.checked : false,
             openrouter_ensemble_models: getSelectedOpenRouterEnsembleModels(),
+            ...elevenlabsPayload,
           }),
         });
         const data = await res.json();
@@ -939,5 +985,44 @@ export function init() {
   }
   if (selectConsensusModeEl) {
     selectConsensusModeEl.addEventListener("change", updateAiModalSelectionSummary);
+  }
+
+  // ElevenLabs TTS 개별 연결 테스트 버튼 바인딩
+  const btnTestElevenlabs = document.getElementById("btnTestElevenlabs");
+  if (btnTestElevenlabs) {
+    btnTestElevenlabs.addEventListener("click", async () => {
+      const keyInput = document.getElementById("keyInputElevenlabs");
+      const resDiv = document.getElementById("testResultElevenlabs");
+      if (resDiv) {
+        resDiv.className = "provider-test-result info visible";
+        resDiv.textContent = "⏳ ElevenLabs 서버 연결 확인 중...";
+      }
+      try {
+        const res = await fetch("/api/settings/elevenlabs/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ elevenlabs_api_key: keyInput ? keyInput.value.trim() : "" }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (resDiv) {
+            resDiv.className = "provider-test-result success visible";
+            resDiv.textContent = `✔ ${data.message}`;
+          }
+          showToast(data.message, "success");
+        } else {
+          if (resDiv) {
+            resDiv.className = "provider-test-result error visible";
+            resDiv.textContent = `❌ ${data.message || "연결 실패"}`;
+          }
+          showToast(data.message || "ElevenLabs 연결 실패", "error");
+        }
+      } catch (e) {
+        if (resDiv) {
+          resDiv.className = "provider-test-result error visible";
+          resDiv.textContent = `❌ 통신 오류: ${e.message}`;
+        }
+      }
+    });
   }
 }

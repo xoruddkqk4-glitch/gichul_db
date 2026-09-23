@@ -1198,6 +1198,45 @@ CREATE TABLE user_sentence_status (
 - **검증 결과**:
   - JavaScript 구문 검증(`node -c static/js/year-filter.js static/js/month-filter.js static/js/search.js static/js/main.js`): 오류 0건 통과
 
+### [2026-09-23 13:05] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **영어 듣기 영역 2x2 전용 뷰어 및 ElevenLabs 듀얼 보이스 TTS & FELS 약형드랩 시스템 구축**:
+    - **2x2 듣기 뷰어 레이아웃 (`templates/index.html`, `static/js/results-passage.js`, `static/css/style.css`)**:
+      - 좌상단: 문제지 캡처(위) + 원본 대본집 인쇄 캡처(아래) 상하 수직 배열(Vertical Stacking)로 인쇄본 칼럼 비율 왜곡 없이 100% 보존.
+      - 우상단: 영문 대본 텍스트 본문 + ElevenLabs M/W 듀얼 보이스 TTS 플레이어 (문항별 단일 생성/재생/MP3 다운로드 및 시험지 전체 17문항 일괄 생성/ZIP 다운로드).
+      - 좌하단: 7대 기능어가 대괄호 `[단어]`로 감싸진 FELS 교사용 약형드랩 전문 렌더링 + 학생용 빈칸 복사 및 교사용 정답 복사 원클릭 액션 지원.
+      - 우하단: 독해 영역과 완벽히 동일한 문항 식별자, 유형, 정답&정정✏️, 정답률, 선지별 선택률(%) 차트, 태그 관리자 연동.
+    - **ElevenLabs Free 티어 보이스 최적화 및 듀얼 합성 엔진 (`elevenlabs_service.py`, `app.py`)**:
+      - 무료 플랜에서 402 결제 오류를 유발하던 레거시 Rachel 보이스를 Free 티어 공식 지원 보이스인 Sarah(`EXAVITQu4vr4xnSDxMaL`)로 전면 교체 및 레거시 ID 자동 폴백 로직 탑재.
+      - 남성(Adam) / 여성(Sarah) 보이스 분기 합성 및 단일 MP3 병합 파이프라인 구현, 전체 시험지 17개 문항 ZIP 일괄 압축 스트리밍 엔드포인트(`GET /api/exams/{exam_id}/download-listening-zip`) 신설.
+    - **대본 내 어휘/표현 설명 유입 방지 필터링 (`listening_parser.py`, `elevenlabs_service.py`)**:
+      - HWP 해설 끝에 수록된 어휘/어구 정리 목록(`Words & Phrases`, `어휘`)을 사전에 정밀 제거하여 TTS 음성 합성 및 FELS 텍스트에 오직 순수 대화/담화 본문만 전달되도록 정제.
+      - DB 내 기존 2026년도 11개 시험지(187개 문항)의 `script_text` 및 `fels_text` 정제 일괄 반영 완료.
+  - **FELS 학생용 빈칸 `[ ]` 대괄호 전환 및 최장 단어 기준 균일 공백 일괄 적용**:
+    - **단어 길이 힌트 유출 방지 균일 빈칸 엔진 (`static/js/results-passage.js`, `fels_engine.py`)**:
+      - 단어 철자수에 따라 빈칸 길이가 달라져 정답 단어를 유추할 수 있던 문제를 해결하기 위해, 지문 내 모든 기능어 중 **가장 긴 단어의 철자수(`maxLen`)를 계산하여 모든 빈칸을 동일한 공백 개수의 `[       ]` 형태로 일괄 적용**.
+      - 학생용 빈칸 복사 시 `최장 N자 기준 공백 일괄 적용` 안내 토스트 제공.
+      - 교사용 정답 복사 시 `[단어]` 형태로 일관되게 1:1 대응 복사 (`copyFelsAnswerVersion`).
+      - FELS 생성 엔진(`fels_engine.py`)을 `[단어]` 래핑으로 갱신하고, 균일 빈칸 생성 헬퍼(`generate_fels_blank`) 추가.
+      - DB 내 기존 185개 듣기 지문의 `fels_text`를 `<단어>`에서 `[단어]`로 마이그레이션 완료.
+  - **1지문 다문항(41~42번, 43~45번 등) 문항별 정답률 & 선지 선택률 분리 시각화 (`static/js/results-passage.js`, `static/css/style.css`)**:
+    - **문항별 정답률 개별 배지 표기**: 기존 첫 문항 정답률만 노출되던 메타 패널을 개선하여, 복합 지문에 속한 각 문항의 번호와 개별 난이도 배지(예: `41번: [47.6% (🟠 중고난도)]`, `42번: [58.6% (🟠 중고난도)]`)를 분리 렌더링.
+    - **선지별 선택률 문항별 독립 카드 렌더링**: 각 문항의 `📌 문항 번호`, `난이도 배지`, `정답률`, `정답 선지`, 그리고 ①~⑤번 선지 게이지 바(정답 ★, 매력적 오답 🚨)를 각각 독립된 카드로 시각화.
+    - **상단 퀵 필터 탭 지원 (`btn-choice-q-pill`)**: `[전체 문항 (N)]`, `[41번 문항]`, `[42번 문항]` 등의 필터 버튼을 배치하여 전체 비교 및 개별 집중 보기를 유연하게 지원.
+  - **트리 탐색 바 칩 뱃지 개선 (문항 수 + 시험지 세트 수 동시 안내) (`static/js/results-passage.js`)**:
+    - 학년 선택 칩 뱃지: 단순 문항 수(85, 1175 등) 대신 `고3 85문항 (5회)` (듣기) / `고3 1,175문항 (47회)` (독해)처럼 **[문항 수 + 시험지 세트 수]**를 명확하게 동시 안내하여 독해와 듣기의 데이터 세트 규모 차이를 직관적으로 파악할 수 있도록 개선.
+    - 년도 선택 칩 뱃지: `2026년 85문항 (5회)` 등 연도별 회차 수 동시 안내.
+    - 브레드크럼 초기 안내: `총 N개 문항 (M회차 시험지 세트)` 표기.
+  - **AI 설정 모달 및 우측 상단 메뉴 최적화 (`templates/index.html`, `static/js/ai-settings.js`, `static/css/style.css`)**:
+    - AI 설정창 가로/세로 스크롤 제거 (`max-height: 90vh` 및 반응형 스크롤 최적화).
+    - ElevenLabs API 입력 섹션을 OpenRouter LLM 섹션과 독립적으로 분리하여 설정 가시성 개선.
+- **검증 결과**:
+  - `python -m py_compile app.py database.py fels_engine.py listening_parser.py elevenlabs_service.py`: 파이썬 구문 검사 오류 0건 통과
+  - `node -c static/js/results-passage.js static/js/upload.js static/js/ai-settings.js`: 자바스크립트 구문 검사 오류 0건 통과
+  - ElevenLabs TTS 실제 다화자 대화(Q2: 12턴 대화) 실시간 오디오 합성 및 551KB MP3 파일 생성 검증 완료
+  - 1지문 다문항 41~42번 및 43~45번 문항별 정답률 및 선지 선택률 렌더링 무결성 확인 완료
+  - FELS 학생용 균일 공백 `[        ]` 및 교사용 `[단어]` 클립보드 복사 검증 완료
+
 
 
 

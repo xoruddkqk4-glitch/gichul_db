@@ -148,7 +148,10 @@ async function handleBatchFilesSelected(fileList) {
     }
 
     const lowerName = file.name.toLowerCase();
-    if (lowerName.endsWith(".pdf")) {
+    const isScript = /대본|script/i.test(lowerName);
+    if (isScript) {
+      batchSetsMap[key].scriptFile = file;
+    } else if (lowerName.endsWith(".pdf")) {
       batchSetsMap[key].pdfFile = file;
     } else if (lowerName.endsWith(".hwp") || lowerName.endsWith(".hwpx")) {
       batchSetsMap[key].hwpFile = file;
@@ -756,6 +759,9 @@ export function init() {
             }
             if (set.csvFile) {
               formData.append("csv_file", set.csvFile);
+            }
+            if (set.scriptFile) {
+              formData.append("script_file", set.scriptFile);
             }
 
             const res = await fetch("/api/upload", { method: "POST", body: formData });

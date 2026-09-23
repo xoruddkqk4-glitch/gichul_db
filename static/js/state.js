@@ -7,6 +7,7 @@
 export const appState = {
   // 상태 변수
   currentMode: "passage", // 'passage' 또는 'sentence'
+  currentArea: "reading", // 'reading' 또는 'listening'
   currentPassageId: null,
   currentPassageIndex: 0,
   passagesData: [],

@@ -27,6 +27,10 @@ import answer_keys
 import answer_resolver
 from validator import cross_validate_and_merge
 from rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
+import elevenlabs_service
+import listening_parser
+import fels_engine
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -85,6 +89,10 @@ class AISettingsRequest(BaseModel):
     providers: Optional[Dict[str, Dict[str, str]]] = None
     openrouter_ensemble: Optional[bool] = None
     openrouter_ensemble_models: Optional[List[str]] = None
+    elevenlabs_api_key: Optional[str] = None
+    elevenlabs_voice_male: Optional[str] = None
+    elevenlabs_voice_female: Optional[str] = None
+    elevenlabs_model_id: Optional[str] = None
 
 
 class BatchAnalyzeRequest(BaseModel):
@@ -206,10 +214,11 @@ async def api_search_passages(
     question_type: str = "",
     correct_rate_range: str = "",
     tag: str = "",
+    area: str = "reading",
     whole_word: bool = False,
     limit: int = 0
 ):
-    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 및 복수 연도 지원)"""
+    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 및 복수 연도, 영역(독해/듣기) 지원)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -234,6 +243,7 @@ async def api_search_passages(
         question_type=question_type,
         correct_rate_range=correct_rate_range,
         tag=tag,
+        area=area,
         whole_word=whole_word,
         limit=limit
     )
@@ -256,10 +266,11 @@ async def api_search_sentences(
     is_starred: Optional[bool] = None,
     grammar_cat_id: Optional[int] = None,
     grammar_pos: Optional[str] = None,
+    area: str = "reading",
     whole_word: bool = False,
     limit: int = 0
 ):
-    """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도 지원)"""
+    """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역(독해/듣기) 지원)"""
     # 검색어 내 #태그 자동 파싱
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -288,6 +299,7 @@ async def api_search_sentences(
         is_starred=is_starred,
         grammar_cat_id=grammar_cat_id,
         grammar_pos=grammar_pos,
+        area=area,
         whole_word=whole_word,
         limit=limit
     )
@@ -298,7 +310,7 @@ async def api_search_sentences(
 # --- 단일 지문 상세 API (2x2 그리드 뷰용) ---
 @app.get("/api/passages/{passage_id}")
 async def api_get_passage(passage_id: str):
-    """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형, 정답률 및 선지 선택률)"""
+    """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형, 정답률 및 선지 선택률, 듣기 대본/FELS/오디오)"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
@@ -307,6 +319,67 @@ async def api_get_passage(passage_id: str):
     if not data:
         raise HTTPException(status_code=404, detail="해당 지문을 찾을 수 없습니다.")
     return data
+
+
+# --- 듣기 영역 오디오 및 동기화 API ---
+@app.post("/api/passages/{passage_id:path}/generate-audio")
+async def api_generate_passage_audio(passage_id: str):
+    """특정 듣기 문항의 대본을 ElevenLabs M/W 듀얼 보이스로 합성하여 MP3 생성"""
+    try:
+        clean_id = passage_id.strip()
+        if not clean_id.startswith("["):
+            clean_id = f"[{clean_id}]"
+        result = elevenlabs_service.generate_passage_audio(clean_id)
+        if not result.get("success"):
+            return JSONResponse(status_code=400, content=result)
+        return result
+    except Exception as e:
+        logger.error(f"문항 음성 합성 실패 ({passage_id}): {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e), "detail": str(e)}
+        )
+
+
+@app.post("/api/exams/{exam_id:path}/generate-listening-audio")
+async def api_generate_exam_listening_audio(exam_id: str):
+    """시험지의 1~17번 전체 듣기 문항 오디오를 일괄 생성"""
+    try:
+        clean_id = exam_id.strip()
+        if not clean_id.startswith("["):
+            clean_id = f"[{clean_id}]"
+        result = elevenlabs_service.generate_exam_listening_audio(clean_id)
+        return result
+    except Exception as e:
+        logger.error(f"시험지 전체 음성 합성 실패 ({exam_id}): {e}")
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": str(e), "detail": str(e)}
+        )
+
+
+@app.get("/api/exams/{exam_id}/download-listening-zip")
+async def api_download_listening_zip(exam_id: str):
+    """시험지의 전체 듣기 MP3 파일들을 ZIP 파일로 묶어서 다운로드"""
+    clean_id = exam_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    zip_path = elevenlabs_service.create_listening_zip(clean_id)
+    if not zip_path or not os.path.exists(zip_path):
+        raise HTTPException(status_code=404, detail="생성된 듣기 오디오 파일이 없거나 압축 생성에 실패했습니다.")
+    safe_name = clean_id.replace("[", "").replace("]", "").replace(" ", "_")
+    filename = f"{safe_name}_listening_audio.zip"
+    return FileResponse(zip_path, media_type="application/zip", filename=filename)
+
+
+@app.post("/api/exams/{exam_id}/sync-listening")
+async def api_sync_exam_listening(exam_id: str):
+    """기존 시험지의 듣기 문항(1~17번) 크롭 이미지 및 대본/FELS 재동기화"""
+    clean_id = exam_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+    count = listening_parser.sync_exam_listening(clean_id)
+    return {"success": True, "exam_id": clean_id, "synced_count": count}
 
 
 # --- 문제 유형 수정 API ---
@@ -478,6 +551,7 @@ async def api_get_ai_settings():
     cfg["model"] = legacy_m
     cfg["has_key"] = bool(legacy_k)
     cfg["masked_key"] = cfg["providers"].get(legacy_p, {}).get("masked_key", "")
+    cfg["elevenlabs"] = elevenlabs_service.get_elevenlabs_config()
     return cfg
 
 
@@ -592,7 +666,17 @@ async def api_save_ai_settings(req: AISettingsRequest):
     if req.openrouter_ensemble_models is not None:
         grammar_analyzer.set_openrouter_ensemble_models(req.openrouter_ensemble_models)
 
-    # 5. test_now인 경우 첫 번째 활성 프로바이더 연결 테스트
+    # 5. ElevenLabs TTS 설정 저장
+    if req.elevenlabs_api_key is not None:
+        db.set_setting("elevenlabs_api_key", req.elevenlabs_api_key.strip())
+    if req.elevenlabs_voice_male is not None:
+        db.set_setting("elevenlabs_voice_male", req.elevenlabs_voice_male.strip())
+    if req.elevenlabs_voice_female is not None:
+        db.set_setting("elevenlabs_voice_female", req.elevenlabs_voice_female.strip())
+    if req.elevenlabs_model_id is not None:
+        db.set_setting("elevenlabs_model_id", req.elevenlabs_model_id.strip())
+
+    # 6. test_now인 경우 첫 번째 활성 프로바이더 연결 테스트
     test_msg = ""
     if req.test_now:
         active = grammar_analyzer.get_active_providers()
@@ -605,8 +689,34 @@ async def api_save_ai_settings(req: AISettingsRequest):
 
     return {
         "success": True,
-        "message": test_msg or "AI 설정이 성공적으로 저장되었습니다."
+        "message": test_msg or "AI 및 TTS 설정이 성공적으로 저장되었습니다."
     }
+
+
+@app.post("/api/settings/elevenlabs/test")
+async def api_test_elevenlabs(req: AISettingsRequest):
+    """ElevenLabs API 연결 상태 실시간 테스트"""
+    import urllib.request
+    key = (req.elevenlabs_api_key or "").strip()
+    if not key:
+        key = db.get_setting("elevenlabs_api_key") or ""
+    if not key:
+        return JSONResponse(status_code=400, content={"success": False, "message": "ElevenLabs API Key를 입력해 주세요."})
+
+    try:
+        url = "https://api.elevenlabs.io/v1/user"
+        request = urllib.request.Request(url, headers={"xi-api-key": key})
+        with urllib.request.urlopen(request, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            char_count = data.get("subscription", {}).get("character_count", 0)
+            char_limit = data.get("subscription", {}).get("character_limit", 0)
+            tier = data.get("subscription", {}).get("tier", "free")
+            return {
+                "success": True,
+                "message": f"ElevenLabs 연결 성공! ({tier} 플랜, 사용량: {char_count:,} / {char_limit:,}자)"
+            }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"success": False, "message": f"ElevenLabs 연결 실패: {str(e)}"})
 
 
 @app.post("/api/sentences/{sentence_id}/star")
@@ -894,10 +1004,11 @@ async def api_upload_exam(
     hwp_file: UploadFile = File(...),
     exp_file: Optional[UploadFile] = File(None),
     ans_file: Optional[UploadFile] = File(None),
-    csv_file: Optional[UploadFile] = File(None)
+    csv_file: Optional[UploadFile] = File(None),
+    script_file: Optional[UploadFile] = File(None)
 ):
     """
-    동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP), 선택적 정답표 이미지(PNG/JPG), 선택적 정답률 CSV 파일 업로드 및 상호 검증 파이프라인
+    동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP), 선택적 정답표 이미지(PNG/JPG), 선택적 정답률 CSV 파일, 선택적 듣기 대본 파일 업로드 및 상호 검증 파이프라인
     """
     # 1. 업로드 파일 임시 저장
     pdf_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{pdf_file.filename}")
@@ -907,6 +1018,12 @@ async def api_upload_exam(
         shutil.copyfileobj(pdf_file.file, buffer)
     with open(hwp_save_path, "wb") as buffer:
         shutil.copyfileobj(hwp_file.file, buffer)
+
+    script_save_path = None
+    if script_file and script_file.filename:
+        script_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_script_{script_file.filename}")
+        with open(script_save_path, "wb") as buffer:
+            shutil.copyfileobj(script_file.file, buffer)
 
     exp_save_path = None
     if exp_file and exp_file.filename:
@@ -1089,19 +1206,33 @@ async def api_upload_exam(
             except Exception as e:
                 print(f"[Upload] 정답률 DB 갱신 실패: {e}")
 
+        # 8. 듣기 영역(1~17번) 자동 크롭 및 스크립트/FELS 추출 동기화
+        listening_count = 0
+        try:
+            listening_count = listening_parser.sync_exam_listening(
+                exam_id=exam_id,
+                question_pdf_path=pdf_save_path,
+                script_pdf_path=script_save_path,
+                explanation_hwp_path=exp_save_path or hwp_save_path
+            )
+            print(f"[Upload] {exam_id} 듣기 문항 {listening_count}개 동기화 완료")
+        except Exception as l_err:
+            print(f"[Upload] 듣기 문항 동기화 중 경고: {l_err}")
+
         # AI API 키가 설정되어 있는 경우 백그라운드 어법 자동 분석 스케줄링
         _, ai_key, _ = grammar_analyzer.get_ai_config()
         if ai_key:
             background_tasks.add_task(background_auto_analyze_exam_grammar, exam_id)
 
         report = resolution["report"]
-        msg = f"성공적으로 {saved_passages_count}개 문항과 {saved_sentences_count}개 문장을 상호 검증하여 저장했습니다."
+        msg = f"성공적으로 독해 {saved_passages_count}개 문항과 듣기 {listening_count}개 문항을 상호 검증하여 저장했습니다."
         if report["unverified_questions"]:
             msg += f" ⚠ 정답 미검증 {len(report['unverified_questions'])}문항 - 정답표 이미지/정답률 CSV를 확인하세요."
         return {
             "status": "success",
             "exam_id": exam_id,
             "passages_count": saved_passages_count,
+            "listening_count": listening_count,
             "sentences_count": saved_sentences_count,
             "answer_report": report,
             "message": msg
@@ -1355,7 +1486,21 @@ async def api_upload_exam_single_file(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"정답률 CSV 파싱 중 오류: {str(e)}")
 
-    # 5. PDF 또는 HWP 파일 단독 교체 시
+    # 5. 듣기 대본 파일 단독 등록/교체 시
+    elif file_type == "script":
+        try:
+            synced_count = listening_parser.sync_exam_listening(clean_id, script_pdf_path=save_path)
+            return {
+                "status": "success",
+                "exam_id": clean_id,
+                "file_type": "script",
+                "synced_count": synced_count,
+                "message": f"듣기 대본 파일 등록 및 {synced_count}개 듣기 문항(1~17번) 대본/FELS 추출이 완료되었습니다."
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"듣기 대본 처리 중 오류: {str(e)}")
+
+    # 6. PDF 또는 HWP 파일 단독 교체 시
     return {
         "status": "success",
         "exam_id": clean_id,

@@ -290,3 +290,23 @@ export const btnRefreshAllOR = document.getElementById("btnRefreshOpenRouterAllM
 
 // 합의 기준 변경 시 모달 요약 즉시 갱신
 export const selectConsensusModeEl = document.getElementById("selectConsensusMode");
+
+// 듣기 전용 2x2 패널 및 컨트롤 요소
+export const panelTitleTopLeft = document.getElementById("panelTitleTopLeft");
+export const badgeTopLeftSource = document.getElementById("badgeTopLeftSource");
+export const panelTitleTopRight = document.getElementById("panelTitleTopRight");
+export const badgeTopRightSource = document.getElementById("badgeTopRightSource");
+export const panelTitleBottomLeft = document.getElementById("panelTitleBottomLeft");
+export const badgeBottomLeftSource = document.getElementById("badgeBottomLeftSource");
+
+export const listeningTopRightActions = document.getElementById("listeningTopRightActions");
+export const btnGenerateListeningAudio = document.getElementById("btnGenerateListeningAudio");
+export const btnGenerateAllListeningAudio = document.getElementById("btnGenerateAllListeningAudio");
+export const btnDownloadListeningMp3 = document.getElementById("btnDownloadListeningMp3");
+export const btnDownloadListeningZip = document.getElementById("btnDownloadListeningZip");
+
+export const listeningBottomLeftActions = document.getElementById("listeningBottomLeftActions");
+export const btnCopyFels = document.getElementById("btnCopyFels");
+export const btnCopyFelsBlank = document.getElementById("btnCopyFelsBlank");
+export const btnCopyFelsAnswer = document.getElementById("btnCopyFelsAnswer");
+export const btnCopyScript = document.getElementById("btnCopyScript");
