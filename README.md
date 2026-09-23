@@ -1245,7 +1245,7 @@ CREATE TABLE user_sentence_status (
   - 1지문 다문항 41~42번 및 43~45번 문항별 정답률 및 선지 선택률 렌더링 무결성 확인 완료
   - FELS 학생용 균일 공백 `[        ]` 및 교사용 `[단어]` 클립보드 복사 검증 완료
 
-### [2026-09-23 14:48] 업데이트 이력 (Commit ID: pending)
+### [2026-09-23 14:48] 업데이트 이력 (Commit ID: 80522eb)
 - **수정 내용**:
   - **Edge-TTS 기반 100% 무료 영어 듣기 음성 생성 파이프라인 구축 (`elevenlabs_service.py`, `app.py`, `requirements.txt`)**:
     - ElevenLabs 유료 API의 높은 비용 부담을 해소하기 위해, 인터넷이 연결된 로컬 환경에서 API 키 없이 무제한 사용 가능한 `edge-tts>=7.2.8` 엔진 전격 도입 및 의존성 추가.
