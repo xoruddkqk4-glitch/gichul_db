@@ -26,4 +26,5 @@ export const appState = {
   isBatchCancelled: false,
   loadedExamsCache: [],
   manageExamsSort: { key: "year", order: "desc" },
+  ttsEngine: "edge-tts", // 'edge-tts' 또는 'elevenlabs'
 };

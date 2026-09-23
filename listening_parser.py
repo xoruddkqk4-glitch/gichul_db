@@ -26,7 +26,7 @@ os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 
 def clean_script_text(text: str) -> str:
-    """영문 대본 텍스트 유니코드 및 문장부호 정제"""
+    """영문 대본 텍스트 유니코드 및 문장부호 정제 (한국어 해석/어휘/화자 라인 완전 배제)"""
     if not text:
         return ""
     # 유니코드 따옴표 표준화
@@ -41,14 +41,19 @@ def clean_script_text(text: str) -> str:
     dialogue_started = False
 
     for line in lines:
-        is_speaker = bool(re.match(r"^(?:[MW]|Man|Woman|Girl|Boy|Teacher|Student|Clerk|Host|Doctor|Officer|남|여)\s*[:：]", line, re.IGNORECASE))
+        # 한국어 해석/풀이/어휘 종료 헤더 감지 시 즉시 중단
+        if any(h in line for h in ("[해석]", "【해석】", "[풀이]", "【풀이】", "[정답]", "【정답】", "[어휘]", "【어휘】", "[Words", "Words & Phrases", "Words and Phrases")):
+            break
+        # 한글 화자 태그(남:, 여:, 선생님:, 학생: 등) 시작 시 우리말 해석 블록이므로 즉시 중단
+        if re.match(r"^\s*(?:남|여|남학생|여학생|선생님|학생|아버지|어머니|엄마|아빠)\s*[:：]", line):
+            break
+        # 한국어 문자가 포함된 라인(우리말 해석, 어휘 설명 등)은 영문 대본에서 완전 제외
+        if re.search(r"[\uac00-\ud7a3]", line):
+            continue
+
+        is_speaker = bool(re.match(r"^(?:[MW]|Man|Woman|Girl|Boy|Teacher|Student|Clerk|Host|Doctor|Officer)\s*[:：]", line, re.IGNORECASE))
         if is_speaker:
             dialogue_started = True
-
-        # 한국어 포함 라인 (어휘 설명 등) 제외 (화자 태그 '남:', '여:' 제외)
-        if re.search(r"[\uac00-\ud7a3]", line):
-            if not re.match(r"^\s*(?:남|여|선생님|학생)\s*[:：]", line):
-                continue
 
         # 대화 시작 후, 화자 태그 없고 구두점(. ? !)으로 끝나지 않으며 단어수가 적은 어휘 라인 제외
         if dialogue_started and not is_speaker:
@@ -65,7 +70,8 @@ def clean_script_text(text: str) -> str:
 def extract_script_text_from_explanation(explanation_text: str) -> str:
     """
     HWP 또는 PDF 해설 텍스트에서 순수 영문 대본(Script) 블록만 지능적으로 추출
-    - [대본] / Script 헤더 또는 M:, W: 시작점부터 [해석], [해설], [어휘] 직전까지 추출
+    - [대본] / Script 헤더 또는 M:, W: 시작점부터 [해석], [해설], [풀이], [어휘] 직전까지 추출
+    - 우리말 해석(남: ... 여: ...)은 완전히 배제하고 오직 순수 영문 스크립트만 반환
     """
     if not explanation_text:
         return ""
@@ -76,8 +82,8 @@ def extract_script_text_from_explanation(explanation_text: str) -> str:
     m_script_hdr = re.search(r"(?:\[\s*대본\s*\]|【\s*대본\s*】|\[\s*듣기\s*대본\s*\]|Script\b|\[Script\])", exp, re.IGNORECASE)
     if m_script_hdr:
         after_hdr = exp[m_script_hdr.end():]
-        # 종료 헤더: [해석], [해설], [정답], [어휘], [출제의도]
-        m_end = re.search(r"(?:\[\s*해석\s*\]|【\s*해석\s*】|\[\s*해설\s*\]|【\s*해설\s*】|\[\s*어휘\s*\]|【\s*어휘\s*】|\[\s*정답\s*\])", after_hdr)
+        # 종료 헤더: [해석], [해설], [풀이], [정답], [어휘], [출제의도] 또는 개행 후 남:/여:
+        m_end = re.search(r"(?:\[\s*해석\s*\]|【\s*해석\s*】|\[\s*해설\s*\]|【\s*해설\s*】|\[\s*풀이\s*\]|【\s*풀이\s*\]|\[\s*어휘\s*\]|【\s*어휘\s*】|\[\s*정답\s*\]|(?:\n|\r\n?)\s*(?:남|여)\s*[:：])", after_hdr)
         if m_end:
             script_raw = after_hdr[:m_end.start()]
         else:
@@ -95,7 +101,11 @@ def extract_script_text_from_explanation(explanation_text: str) -> str:
             continue
 
         # 종료 조건 헤더 감지
-        if any(h in line_s for h in ("[해석]", "[해설]", "[어휘]", "[정답]", "【해석】", "【해설】", "【어휘】")):
+        if any(h in line_s for h in ("[해석]", "[해설]", "[풀이]", "[어휘]", "[정답]", "【해석】", "【해설】", "【풀이】", "【어휘】")):
+            if recording:
+                break
+            continue
+        if re.match(r"^\s*(?:남|여|남학생|여학생|선생님|학생)\s*[:：]", line_s):
             if recording:
                 break
             continue
@@ -116,8 +126,10 @@ def extract_script_text_from_explanation(explanation_text: str) -> str:
         l_s = l.strip()
         if not l_s:
             continue
-        if any(h in l_s for h in ("[의도]", "[출제의도]", "[해석]", "[해설]", "[어휘]", "[정답]")):
+        if any(h in l_s for h in ("[의도]", "[출제의도]", "[해석]", "[해설]", "[풀이]", "[어휘]", "[정답]")):
             continue
+        if re.match(r"^\s*(?:남|여)\s*[:：]", l_s):
+            break
         # 영문 알파벳 비율이 60% 이상인 줄
         eng_chars = len(re.findall(r"[A-Za-z]", l_s))
         if eng_chars >= 15 and (eng_chars / len(l_s)) > 0.5:

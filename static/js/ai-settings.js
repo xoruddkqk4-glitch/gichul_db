@@ -553,6 +553,11 @@ async function openAiSettingsModal() {
       // TTS 설정 동기화 (Edge-TTS 및 ElevenLabs)
       const ttsData = data.tts || {};
       const ttsEngine = ttsData.engine || "edge-tts";
+      appState.ttsEngine = ttsEngine;
+      const badgeTopRight = document.getElementById("badgeTopRightSource");
+      if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData[appState.currentPassageIndex]?.area === "listening"))) {
+        badgeTopRight.textContent = (ttsEngine === "elevenlabs") ? "ElevenLabs TTS" : "Edge-TTS (무료)";
+      }
 
       const radioEdge = document.getElementById("radioTtsEdge");
       const radioElevenlabs = document.getElementById("radioTtsElevenlabs");
@@ -1025,6 +1030,11 @@ export function init() {
         });
         const data = await res.json();
         if (res.ok && data.success) {
+          appState.ttsEngine = selectedTtsEngine;
+          const badgeTopRight = document.getElementById("badgeTopRightSource");
+          if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData[appState.currentPassageIndex]?.area === "listening"))) {
+            badgeTopRight.textContent = (selectedTtsEngine === "elevenlabs") ? "ElevenLabs TTS" : "Edge-TTS (무료)";
+          }
           showToast("AI 및 TTS 설정이 성공적으로 저장되었습니다.", "success");
           await refreshAiStatusIndicator();
           setTimeout(() => {

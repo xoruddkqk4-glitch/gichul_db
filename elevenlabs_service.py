@@ -117,9 +117,13 @@ def split_script_by_speaker(script_text: str) -> List[Dict[str, str]]:
     current_speaker = "male"  # 기본 화자
     current_lines = []
 
-    speaker_tag_regex = re.compile(r"^\s*([A-Za-z0-9\.\(\)\s가-힣]+)\s*[:：]\s*(.*)$")
+    speaker_tag_regex = re.compile(r"^\s*([A-Za-z0-9\.\(\)\s]+)\s*[:：]\s*(.*)$")
 
     for line in clean_lines:
+        # 한국어 포함 라인은 음성 합성에서 100% 완전 배제
+        if re.search(r"[\uac00-\ud7a3]", line):
+            continue
+
         m = speaker_tag_regex.match(line)
         if m:
             raw_speaker = m.group(1).strip()
@@ -127,9 +131,9 @@ def split_script_by_speaker(script_text: str) -> List[Dict[str, str]]:
 
             # 화자 성별 감지
             detected_gender = None
-            if MALE_SPEAKER_PATTERN.search(raw_speaker) or re.search(r"^(?:남|남학생|선생님\(남\)|아빠|아버지)\b", raw_speaker):
+            if MALE_SPEAKER_PATTERN.search(raw_speaker):
                 detected_gender = "male"
-            elif FEMALE_SPEAKER_PATTERN.search(raw_speaker) or re.search(r"^(?:여|여학생|선생님\(여\)|엄마|어머니)\b", raw_speaker):
+            elif FEMALE_SPEAKER_PATTERN.search(raw_speaker):
                 detected_gender = "female"
             else:
                 # 일반명칭인 경우 이전 화자의 반대로 교대
@@ -212,13 +216,21 @@ def synthesize_turn_speech(text: str, voice_id: str, api_key: str, model_id: str
 async def synthesize_edge_tts_turn(text: str, voice: str, rate: str = "+0%") -> bytes:
     """Edge-TTS를 이용한 단일 턴 음성 비동기 합성 (Microsoft Neural 무료 고품질 음성)"""
     clean_text = text.strip()
-    if not clean_text:
+    # 영문/숫자 알파벳이 전혀 없는 발화는 음성 합성 건너뜀
+    if not clean_text or not re.search(r"[A-Za-z0-9]", clean_text):
         return b""
     communicate = edge_tts.Communicate(clean_text, voice, rate=rate)
     audio_data = bytearray()
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data.extend(chunk["data"])
+    try:
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.extend(chunk["data"])
+    except edge_tts.exceptions.NoAudioReceived:
+        print(f"[Edge-TTS Warning] No audio received for turn: {clean_text[:40]}")
+        return b""
+    except Exception as e:
+        print(f"[Edge-TTS Error] {e} for turn: {clean_text[:40]}")
+        return b""
     return bytes(audio_data)
 
 

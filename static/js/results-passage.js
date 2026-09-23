@@ -879,7 +879,8 @@ function loadPassageDetail(p) {
   if (panelTitleTopLeft) panelTitleTopLeft.textContent = isListening ? "🖼️ 문제 + 📜 대본 캡처 (상하 수직 배열)" : "🖼️ PDF 문항 캡처 이미지";
   if (badgeTopLeftSource) badgeTopLeftSource.textContent = "고화질 원본";
   if (panelTitleTopRight) panelTitleTopRight.textContent = isListening ? "📝 영문 대본 텍스트 & 🎙️ 음성 듣기" : "📝 TXT 지문 본문 텍스트";
-  if (badgeTopRightSource) badgeTopRightSource.textContent = isListening ? "ElevenLabs TTS" : "순수 영문";
+  const ttsLabel = (appState.ttsEngine === "elevenlabs") ? "ElevenLabs TTS" : "Edge-TTS (무료)";
+  if (badgeTopRightSource) badgeTopRightSource.textContent = isListening ? ttsLabel : "순수 영문";
   if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = isListening ? "🎯 FELS (기능어 약형드랩) 교사용 텍스트" : "📘 HWP 정답 및 해설";
   if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = isListening ? "7대 기능어 추출" : "공식 해설지";
 

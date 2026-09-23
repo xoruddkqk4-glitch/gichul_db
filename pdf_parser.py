@@ -416,7 +416,9 @@ def extract_pdf_columns_and_questions(
                         save_extracted_question(
                             doc, current_q, current_text_lines, current_rects,
                             grade, year, month, questions_data, shared_group_cache,
-                            answer_symbol=ans_sym
+                            answer_symbol=ans_sym,
+                            next_top_y=b_rect.y0,
+                            col_clip=col_clip
                         )
                         current_q = None
                         current_text_lines = []
@@ -452,7 +454,9 @@ def extract_pdf_columns_and_questions(
                             save_extracted_question(
                                 doc, current_q, current_text_lines, current_rects,
                                 grade, year, month, questions_data, shared_group_cache,
-                                answer_symbol=ans_sym
+                                answer_symbol=ans_sym,
+                                next_top_y=b_rect.y0,
+                                col_clip=col_clip
                             )
 
                         current_q = q_num
@@ -477,7 +481,9 @@ def extract_pdf_columns_and_questions(
                 save_extracted_question(
                     doc, current_q, current_text_lines, current_rects,
                     grade, year, month, questions_data, shared_group_cache,
-                    answer_symbol=ans_sym
+                    answer_symbol=ans_sym,
+                    next_top_y=col_clip.y1,
+                    col_clip=col_clip
                 )
 
             # 칼럼 끝에 공유 지문이 걸려있을 경우 캐시 저장
@@ -510,7 +516,9 @@ def save_extracted_question(
     month: int,
     out_dict: dict,
     shared_group_cache: dict,
-    answer_symbol: str = ""
+    answer_symbol: str = "",
+    next_top_y: Optional[float] = None,
+    col_clip: Optional[fitz.Rect] = None
 ):
     """문항 텍스트 정제, 정답 선지 형광펜 하이라이트 및 고화질 이미지 크롭 저장"""
     full_q_text = "\n".join(text_lines)
@@ -563,6 +571,45 @@ def save_extracted_question(
             min_y = min(r.y0 for r in same_page_rects) - 6
             max_x = max(r.x1 for r in same_page_rects) + 6
             max_y = max(r.y1 for r in same_page_rects) + 6
+
+            # 칼럼 내 삽입 이미지 및 일러스트레이션/그림 탐지 및 크롭 영역 자동 확장
+            col_left = col_clip.x0 if col_clip else 30
+            col_right = col_clip.x1 if col_clip else (page.rect.width - 30)
+            bottom_bound = next_top_y if (next_top_y is not None and next_top_y > min_y) else (col_clip.y1 if col_clip else page.rect.height - 40)
+
+            # 1. 래스터 이미지(비트맵) 탐색 (듣기 4번 그림 문항, 독해 도표/그래프 등)
+            try:
+                for img_info in page.get_images(full=True):
+                    for img_r in page.get_image_rects(img_info[0]):
+                        if (img_r.x1 > col_left - 10 and img_r.x0 < col_right + 10 and
+                            img_r.y1 > min_y and img_r.y0 < bottom_bound - 2):
+                            min_x = min(min_x, img_r.x0 - 6)
+                            max_x = max(max_x, img_r.x1 + 6)
+                            max_y = max(max_y, img_r.y1 + 6)
+            except Exception:
+                pass
+
+            # 2. 벡터 드로잉 탐색 (선, 다이어그램, 일러스트 패스)
+            try:
+                for d in page.get_drawings():
+                    dr = d.get("rect")
+                    if not dr:
+                        continue
+                    is_vert_divider = (dr.width < 5 and dr.height > 150)
+                    is_horiz_divider = (dr.height < 5 and dr.width > 200)
+                    if not is_vert_divider and not is_horiz_divider and dr.width > 15 and dr.height > 15:
+                        if (dr.x1 > col_left - 10 and dr.x0 < col_right + 10 and
+                            dr.y1 > min_y and dr.y0 < bottom_bound - 2):
+                            min_x = min(min_x, dr.x0 - 6)
+                            max_x = max(max_x, dr.x1 + 6)
+                            max_y = max(max_y, dr.y1 + 6)
+            except Exception:
+                pass
+
+            # 3. 그림 문항(듣기 4번 또는 '그림에서...' 발문) 안전 폴백: 다음 문항 직전까지 영역 확장
+            is_picture_q = ("그림" in question_title or "그림" in full_q_text or q_num == 4)
+            if is_picture_q and next_top_y is not None and next_top_y > max_y + 40:
+                max_y = max(max_y, next_top_y - 8)
 
             crop_rect = fitz.Rect(
                 max(0, min_x),

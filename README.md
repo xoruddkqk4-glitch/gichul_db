@@ -1267,6 +1267,30 @@ CREATE TABLE user_sentence_status (
   - 실제 기출 지문(`고3-2026년-09월-01번`) 대상 Edge-TTS 음성 합성 실행 완료 (231.5KB 고음질 MP3 정상 생성)
   - 연도별 필터 모달, 업로드 모달, 어법 모달, AI 설정 모달 열기/닫기/적용 버튼 연동 검증 완료
 
+### [2026-09-23 15:15] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **듣기 4번(그림 문항) 일러스트/사진 이미지 크롭 영역 자동 감지 및 포함 (`pdf_parser.py`)**:
+    - 기존 텍스트 블록 기반 크롭으로 인해 발문 한 줄 아래의 비트맵/벡터 일러스트레이션이 잘려 나가던 문제 해결.
+    - 문항 시작점과 다음 문항 시작점(`next_top_y`) 사이의 **래스터 이미지(`page.get_images()`) 및 벡터 드로잉(`page.get_drawings()`)을 실시간 탐색하여 Bounding Box 자동 확장**.
+    - '그림' 발문 문항 및 듣기 4번에 대해 다음 문항 시작 8pt 직전까지 안전 여백을 확보하는 3중 안전 장치 탑재.
+    - DB 내 11개 전체 듣기 시험지(`고3/고2/고1 2026년~2020년`)의 4번 캡처 이미지를 재추출하여 일괄 갱신 완료 (기존 72px 높이 → 650px 전후 고화질 일러스트 전체 포함).
+  - **대본 내 우리말 해석 완전 제거 및 영문 스크립트 정제 (`listening_parser.py`, `database.py`)**:
+    - 해설지 텍스트 파싱 시 한글 화자 태그(`남:`, `여:`) 및 한국어 번역문이 대본으로 유입되던 문제를 차단하기 위해 `clean_script_text` 및 `extract_script_text_from_explanation`에서 한국어 문장 및 한글 화자 태그 감지 시 즉시 수집 중단 및 100% 배제 처리.
+    - DB 내 해당 지문(`[고3-2026년-09월-04번]`)의 `script_text` 및 `fels_text`에서 우리말 번역 11줄 완전 제거 및 순수 영문 11턴 대화문으로 재동기화 (전체 187개 듣기 지문 한글 잔존 0건 검증 완료).
+  - **Edge-TTS 음성 합성 안정화 및 Internal Server Error 원천 해결 (`elevenlabs_service.py`)**:
+    - 대본에 유입된 한글 번역문이 영문 신경망 모델로 전송되어 `NoAudioReceived` 예외 및 500 에러를 유발하던 문제 해결.
+    - `split_script_by_speaker`: 한글 포함 라인 화자 턴 분할 100% 원천 배제.
+    - `synthesize_edge_tts_turn`: 영문/숫자 유효성 검증 및 `NoAudioReceived` 예외 방어 로직 추가.
+  - **TTS 엔진 상태에 따른 우측 상단 배지 라벨 실시간 동적 전환 (`static/js/results-passage.js`, `static/js/ai-settings.js`, `static/js/state.js`)**:
+    - 기존 고정 문자열(`ElevenLabs TTS`)을 개선하여 활성 엔진에 따라 `Edge-TTS (무료)` vs `ElevenLabs TTS`가 실시간 동적으로 전환되도록 연동.
+- **검증 결과**:
+  - `python -m py_compile app.py elevenlabs_service.py listening_parser.py database.py pdf_parser.py fels_engine.py`: 오류 0건 통과
+  - `node -c static/js/results-passage.js static/js/ai-settings.js static/js/state.js static/js/main.js`: 오류 0건 통과
+  - `고3-2026년-09월-04번` 단일 문항 음성 합성(`POST /api/passages/{id}/generate-audio`) 성공 (HTTP 200 OK, 356.1KB MP3 생성)
+  - `고3-2026년-09월` 전체 17문항 일괄 음성 합성(`POST /api/exams/{id}/generate-listening-audio`) 성공 (HTTP 200 OK, 17/17개 성공, 실패 0건)
+  - 11개 듣기 시험지 4번 캡처 이미지 정상 해상도(916~1040x507~710px) 렌더링 확인 완료
+
+
 
 
 
