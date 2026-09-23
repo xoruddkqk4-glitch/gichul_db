@@ -1,0 +1,1 @@
+FELS(Function-Embedded Listening Skills, 약형드랩)는 효과적인 청취를 위해 기능어(Function Words)에 자동으로 괄호를 삽입하여 문법적으로 집중 청취 학습을 할 수 있도록 한 학습 방법입니다. Gapped Draft 창을 열면 자동으로 실행됩니다. 음성을 듣고 <> 안에 맞는 단어를 넣으면 됩니다. 

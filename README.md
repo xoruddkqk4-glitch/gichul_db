@@ -1139,6 +1139,22 @@ CREATE TABLE user_sentence_status (
   - 일반 시험지(2020년 등): 독해 시작 18번 ~ 끝 45번 정상 유지 확인
   - 50문항 체제(2008년 등): 독해 시작 18번 ~ 끝 50번 정상 유지 확인
 
+### [2026-09-23 09:40] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **영어 듣기 영역 2x2 뷰어 및 ElevenLabs TTS & FELS(약형드랩) 시스템 종합 기획 및 설계 완료**:
+    - **참조 자료 등록 (`static/data/`)**: FELS(Function-Embedded Listening Skills) 청취 이론서(`current_English_listening.pdf`) 및 기능어 자동 괄호 삽입 가이드(`FELS.txt`) 추가.
+    - **듣기 2x2 뷰어 아키텍처 확정**:
+      - 좌상단: 문제지 캡처(위) + 대본 캡처(아래) 상하 수직 배열(Vertical Stacking)로 가로 폭 왜곡 방지 및 원본 칼럼 비율 100% 보존.
+      - 우상단: 영문 대본 텍스트 + ElevenLabs M/W 듀얼 보이스 TTS 플레이어 및 단일 MP3 다운로드, 전체 ZIP 일괄 다운로드.
+      - 좌하단: 7대 기능어 `<기능어>` 괄호 자동 삽입 FELS 교사용 텍스트 전문 렌더링 및 `[📋 FELS 텍스트 복사]` 원클릭 클립보드 복사 지원.
+      - 우하단: 독해와 완벽히 일관된 문항 메타정보(식별자, 문항번호, 유형, 정답&정답정정✏️, 정답률), 선지별 선택률 차트, 태그 관리자 유지.
+    - **지능형 해설 PDF 대본 크롭 파이프라인 설계**: 별도 대본 PDF가 없더라도 해설 PDF 내 `[대본]` 헤더 바운딩 박스를 정밀 감지하여 순수 스크립트 영역만 자동 크롭(`_script.png`)하는 Fallback 알고리즘 확정.
+    - **ElevenLabs 듀얼 보이스(M/W) 및 설정 통합 설계**: 기존 LLM 설정 모달(`modalAiSettings`) 내 API 키 및 남/여 기본 Voice ID 설정 통합, 화자 태그(`M:`, `W:`) 기반 남녀 음성 자동 분기 합성 및 MP3 결합 로직 확정.
+- **검증 결과**:
+  - `implementation_plan.md` 기술 계획서 작성 및 5대 세부 요구사항 전원 검토·반영 완료
+  - 참조 데이터 파일(`FELS.txt`, `current_English_listening.pdf`) 무결성 확인
+
+
 
 
 
