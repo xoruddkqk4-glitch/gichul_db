@@ -1198,7 +1198,7 @@ CREATE TABLE user_sentence_status (
 - **검증 결과**:
   - JavaScript 구문 검증(`node -c static/js/year-filter.js static/js/month-filter.js static/js/search.js static/js/main.js`): 오류 0건 통과
 
-### [2026-09-23 13:05] 업데이트 이력 (Commit ID: pending)
+### [2026-09-23 13:05] 업데이트 이력 (Commit ID: c165d71)
 - **수정 내용**:
   - **영어 듣기 영역 2x2 전용 뷰어 및 ElevenLabs 듀얼 보이스 TTS & FELS 약형드랩 시스템 구축**:
     - **2x2 듣기 뷰어 레이아웃 (`templates/index.html`, `static/js/results-passage.js`, `static/css/style.css`)**:
