@@ -1185,6 +1185,20 @@ CREATE TABLE user_sentence_status (
   - DB 다중 연도 쿼리 검증: 2024~2026 복수 연도 1,148건 정상 조회 확인
   - DB 기타 유형 마이그레이션 검증: `question_type = '기타'` 348건 정상 반영 확인
 
+### [2026-09-23 11:25] 업데이트 이력 (Commit ID: 36edbf5)
+- **수정 내용**:
+  - **버튼 내 텍스트 1행 표시(Single-Line Display) 전역 스타일 적용**:
+    - `style.css`: `button` 기본 태그 및 `.btn`, `.btn-header-flow`, `.btn-popover-action`, `.btn-popover-apply`, `.year-chip-item`, `.year-multiselect-trigger`에 `white-space: nowrap;` 및 `flex-shrink: 0;`을 적용하여 화면 폭 변화나 압축 시 버튼 내부 글자가 음절 단위로 2행 줄바꿈되는 현상 완전 차단.
+  - **연도 선택 팝오버 헤더 요소 줄바꿈 방지 및 너비 500px 확장**:
+    - `.popover-title`(`📅 연도 선택 (복수 선택 가능)`), `.popover-count-badge`(`전체 (21개년)`), `.popover-title-row`에 `white-space: nowrap;`과 `flex-shrink: 0;` 적용.
+    - 상단 빠른 액션 버튼 `.btn-popover-action`(`전체 선택`, `선택 초기화`) 패딩 및 폰트 렌더링 최적화.
+    - 팝오버 컨테이너 폭을 `420px~440px`에서 `500px`(`max-width: min(500px, calc(100vw - 32px))`)로 확장하여 헤더 요소들이 1행으로 여유롭게 정렬되도록 레이아웃 개선.
+  - **연도 팝오버 뷰포트 경계 자동 안전 보정 로직 고도화**:
+    - `year-filter.js`: 우측 화면 여백 부족으로 팝오버를 좌측으로 이동시킬 때도 좌측 최소 16px 안전 여백을 계산하여 좌/우 잘림 현상이 발생하지 않도록 계산식 보강.
+- **검증 결과**:
+  - JavaScript 구문 검증(`node -c static/js/year-filter.js static/js/month-filter.js static/js/search.js static/js/main.js`): 오류 0건 통과
+
+
 
 
 

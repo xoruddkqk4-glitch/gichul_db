@@ -297,8 +297,13 @@ function toggleYearPopover(menuId, triggerBtn) {
         menu.style.left = `${16 - rect.left}px`;
         menu.style.right = "auto";
       } else if (rect.right > viewportWidth - 16) {
-        menu.style.left = "auto";
-        menu.style.right = "0";
+        const overflow = rect.right - (viewportWidth - 16);
+        if (rect.left - overflow < 16) {
+          menu.style.left = `${16 - rect.left}px`;
+        } else {
+          menu.style.left = `-${overflow}px`;
+        }
+        menu.style.right = "auto";
       }
     });
   }
