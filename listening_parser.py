@@ -24,6 +24,103 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CAPTURES_DIR = os.path.join(BASE_DIR, "static", "captures")
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
+# 12대 듣기 문제 유형 정의 (+ 기타)
+LISTENING_QUESTION_TYPES = [
+    "화자의 목적/의견/요지",
+    "그림 불일치",
+    "화자의 할일",
+    "금액",
+    "이유",
+    "언급되지 않은 것",
+    "불일치",
+    "도표 불일치",
+    "짧은 응답",
+    "긴 응답",
+    "할 말",
+    "1담화 2문항",
+    "기타"
+]
+
+
+def classify_listening_question_type(title: str, q_num: int = 0) -> str:
+    """듣기 문항의 발문(title)과 문항 번호(q_num)에 따라 12대 듣기 문제유형 + 기타 분류"""
+    t = (title or "").strip()
+
+    # 1. 그림 불일치 (4번 또는 그림 키워드)
+    if "그림" in t and ("일치하지" in t or "불일치" in t or q_num == 4):
+        return "그림 불일치"
+
+    # 2. 도표 불일치 (10번 또는 표 키워드)
+    if ("표를" in t or "도표" in t) or (q_num == 10 and "표" in t):
+        return "도표 불일치"
+
+    # 3. 화자의 할일 (5번)
+    if "할 일" in t or "할일" in t:
+        return "화자의 할일"
+
+    # 4. 금액 (6번)
+    if "금액" in t or "지불" in t:
+        return "금액"
+
+    # 5. 이유 (7번)
+    if "이유" in t:
+        return "이유"
+
+    # 6. 언급되지 않은 것 (8번)
+    if "언급되지 않은" in t or "언급하지 않은" in t or "언급되지않은" in t:
+        return "언급되지 않은 것"
+
+    # 7. 화자의 목적/의견/요지 (1, 2, 3번)
+    if any(k in t for k in ["목적", "의견", "요지"]):
+        return "화자의 목적/의견/요지"
+
+    # 8. 상황 설명 -> 할 말 (15번)
+    if "할 말" in t or "할말" in t or "상황 설명" in t:
+        return "할 말"
+
+    # 9. 응답 (11, 12, 13, 14번)
+    if "응답" in t:
+        if q_num in (11, 12) or "짧은" in t:
+            return "짧은 응답"
+        elif q_num in (13, 14) or "긴" in t:
+            return "긴 응답"
+
+    # 10. 1담화 2문항 (16, 17번)
+    if q_num in (16, 17) or "16번" in t or "17번" in t or "16~17" in t or "1담화" in t:
+        return "1담화 2문항"
+
+    # 11. 불일치 (9번)
+    if "일치하지 않는" in t or "일치하지않는" in t or "불일치" in t:
+        return "불일치"
+
+    # 문항 번호 기반 안전 폴백
+    if q_num in (1, 2, 3):
+        return "화자의 목적/의견/요지"
+    elif q_num == 4:
+        return "그림 불일치"
+    elif q_num == 5:
+        return "화자의 할일"
+    elif q_num == 6:
+        return "금액"
+    elif q_num == 7:
+        return "이유"
+    elif q_num == 8:
+        return "언급되지 않은 것"
+    elif q_num == 9:
+        return "불일치"
+    elif q_num == 10:
+        return "도표 불일치"
+    elif q_num in (11, 12):
+        return "짧은 응답"
+    elif q_num in (13, 14):
+        return "긴 응답"
+    elif q_num == 15:
+        return "할 말"
+    elif q_num in (16, 17):
+        return "1담화 2문항"
+
+    return "기타"
+
 
 def clean_script_text(text: str) -> str:
     """영문 대본 텍스트 유니코드 및 문장부호 정제 (한국어 해석/어휘/화자 라인 완전 배제)"""
@@ -400,7 +497,7 @@ def sync_exam_listening(
             "exam_id": clean_id,
             "q_num": q,
             "question_title": q_title,
-            "question_type": "기타",
+            "question_type": classify_listening_question_type(q_title, q),
             "passage_text": script_txt or q_title,
             "answer_text": ans_val,
             "explanation_text": exp_text,

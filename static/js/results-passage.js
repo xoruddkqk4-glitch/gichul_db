@@ -998,7 +998,7 @@ function loadPassageDetail(p) {
 
   // [우측 상단]: TXT 지문 본문 / 듣기 스크립트 + ElevenLabs TTS
   if (isListening) {
-    const rawScript = p.script_text || p.passage_text || "대본 정보가 등록되지 않았습니다.";
+    const rawScript = (p.script_text || p.passage_text || "대본 정보가 등록되지 않았습니다.").trim();
     panelPassageText.dataset.rawText = rawScript;
 
     let formattedScript = escapeHtml(rawScript);
@@ -1016,6 +1016,7 @@ function loadPassageDetail(p) {
     if (currentQuery) {
       formattedScript = highlightTextKeyword(formattedScript, currentQuery, "passage-highlight");
     }
+    formattedScript = formattedScript.trim();
 
     const hasAudio = !!p.audio_file_path;
     const audioSrc = hasAudio ? `${p.audio_file_path}?t=${Date.now()}` : "";
@@ -1030,9 +1031,7 @@ function loadPassageDetail(p) {
             </span>
           </div>
         </div>
-        <div class="listening-script-text-box">
-          ${formattedScript}
-        </div>
+        <div class="listening-script-text-box">${formattedScript}</div>
       </div>
     `;
   } else {
@@ -1058,7 +1057,7 @@ function loadPassageDetail(p) {
 
   // [좌측 하단]: HWP 정답 및 해설 / FELS 교사용 텍스트
   if (isListening) {
-    const rawFels = p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.";
+    const rawFels = (p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.").trim();
     panelExplanation.dataset.rawFels = rawFels;
 
     let formattedFels = escapeHtml(rawFels);
@@ -1077,34 +1076,17 @@ function loadPassageDetail(p) {
         return `${p1}<span class="${cls}">${speaker}:</span> `;
       }
     );
+    formattedFels = formattedFels.trim();
 
     panelExplanation.innerHTML = `
       <div class="listening-fels-container">
-        <div class="fels-guide-banner" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <span class="fels-badge-icon">🎯</span>
-            <span><strong>FELS 기능어 약형드랩:</strong> 7대 기능어가 [단어]로 추출되었습니다. 용도에 맞게 선택하여 복사하세요:</span>
-          </div>
-          <div style="display: flex; gap: 6px; align-items: center;">
-            <button type="button" class="btn btn-primary btn-xs" id="btnBannerCopyBlank" style="font-size: 0.76rem; font-weight: 700; padding: 3px 10px; border-radius: 5px; cursor: pointer;">
-              📝 학생용 빈칸 복사 ([ ])
-            </button>
-            <button type="button" class="btn btn-secondary btn-xs" id="btnBannerCopyAnswer" style="font-size: 0.76rem; font-weight: 700; padding: 3px 10px; border-radius: 5px; cursor: pointer;">
-              🔑 교사용 정답 복사 ([단어])
-            </button>
-          </div>
+        <div class="fels-guide-banner" style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #f0fdf4; border-bottom: 1px solid #bbf7d0; font-size: 0.8rem; color: #166534;">
+          <span class="fels-badge-icon">🎯</span>
+          <span><strong>FELS 기능어 약형드랩:</strong> 7대 기능어가 [단어]로 추출되었습니다. 상단의 <strong>[FELS 빈칸 복사 (학생용)]</strong> 또는 <strong>[FELS 정답 복사 (교사용)]</strong> 버튼을 통해 복사할 수 있습니다.</span>
         </div>
-        <div class="fels-content-box">
-          ${formattedFels}
-        </div>
+        <div class="fels-content-box">${formattedFels}</div>
       </div>
     `;
-
-    // 인라인 FELS 복사 버튼 이벤트 연결
-    const bBlank = panelExplanation.querySelector("#btnBannerCopyBlank");
-    if (bBlank) bBlank.addEventListener("click", copyFelsBlankVersion);
-    const bAnswer = panelExplanation.querySelector("#btnBannerCopyAnswer");
-    if (bAnswer) bAnswer.addEventListener("click", copyFelsAnswerVersion);
   } else {
     panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
   }

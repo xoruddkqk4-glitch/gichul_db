@@ -137,17 +137,42 @@ def get_hwp_text(file_path: str) -> str:
     return extract_hwp_text_pyhwpx(file_path)
 
 
-# 표준 문제 유형 정의 (기타 포함)
+# 표준 문제 유형 정의 (독해 21대 유형)
 QUESTION_TYPES = [
     "글의목적", "심경변화", "주장", "어휘함축", "글의요지", "글의주제", "글의제목",
     "도표", "불일치", "실용문불일치", "실용문일치", "어법", "어휘", "빈칸",
     "문장빼기", "글의순서", "문장넣기", "글의요약", "1지문2문항", "1지문3문항", "기타"
 ]
 
+# 12대 듣기 문제 유형 정의 (+ 기타)
+LISTENING_QUESTION_TYPES = [
+    "화자의 목적/의견/요지",
+    "그림 불일치",
+    "화자의 할일",
+    "금액",
+    "이유",
+    "언급되지 않은 것",
+    "불일치",
+    "도표 불일치",
+    "짧은 응답",
+    "긴 응답",
+    "할 말",
+    "1담화 2문항",
+    "기타"
+]
+
 
 def classify_question_type(title: str, q_num: int = 0, is_50_questions: bool = False) -> str:
-    """발문(문제 제목)과 문항 번호를 기반으로 20대 문제 유형 자동 판별 (50문항 체제 지원)"""
+    """발문(문제 제목)과 문항 번호를 기반으로 독해 및 듣기 문제 유형 자동 판별 (50문항 체제 지원)"""
     t = title.strip()
+
+    # 듣기 문항(1~17번)인 경우 듣기 분류 엔진 연동
+    if 1 <= q_num <= 17:
+        try:
+            from listening_parser import classify_listening_question_type
+            return classify_listening_question_type(title, q_num)
+        except Exception:
+            pass
 
     # 복합 장문 우선 판별
     if is_50_questions:

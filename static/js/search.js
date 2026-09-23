@@ -51,6 +51,52 @@ import { resetAllGrammarFilters, updateGrammarBreadcrumbFilterUI } from "./gramm
 import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter } from "./year-filter.js";
 import { updateMonthOptionsByGrade, initMonthFilter } from "./month-filter.js";
 
+// 독해 21대 문제 유형
+export const READING_QUESTION_TYPES = [
+  "글의목적", "심경변화", "주장", "어휘함축", "글의요지", "글의주제", "글의제목",
+  "도표", "불일치", "실용문불일치", "실용문일치", "어법", "어휘", "빈칸",
+  "문장빼기", "글의순서", "문장넣기", "글의요약", "1지문2문항", "1지문3문항", "기타"
+];
+
+// 12대 듣기 문제 유형 (+ 기타)
+export const LISTENING_QUESTION_TYPES = [
+  "화자의 목적/의견/요지",
+  "그림 불일치",
+  "화자의 할일",
+  "금액",
+  "이유",
+  "언급되지 않은 것",
+  "불일치",
+  "도표 불일치",
+  "짧은 응답",
+  "긴 응답",
+  "할 말",
+  "1담화 2문항",
+  "기타"
+];
+
+/** 현재 선택된 영역(독해 vs 듣기)에 따라 홈 및 결과창의 문제유형 드롭다운 옵션 동적 갱신 */
+export function updateQuestionTypeOptions(area) {
+  const isListening = (area || appState.currentArea) === "listening";
+  const types = isListening ? LISTENING_QUESTION_TYPES : READING_QUESTION_TYPES;
+
+  const updateSelect = (selectEl, defaultLabel) => {
+    if (!selectEl) return;
+    const currentVal = selectEl.value;
+    selectEl.innerHTML = `<option value="">${defaultLabel}</option>` +
+      types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+    // 기존 선택값이 새 목록에 있으면 유지, 없으면 빈값으로 리셋
+    if (types.includes(currentVal)) {
+      selectEl.value = currentVal;
+    } else {
+      selectEl.value = "";
+    }
+  };
+
+  updateSelect(filterQuestionType, "전체 문제유형");
+  updateSelect(resultsFilterQuestionType, "문제유형");
+}
+
 let isWholeWordActive = false;
 // =========================================================================
 // 4. 통계 데이터 로드 및 통계 배지 클릭(전체 지문 보기)
@@ -552,6 +598,7 @@ export function setSearchArea(area, triggerSearch = true) {
     const bArea = btn.getAttribute("data-area");
     btn.classList.toggle("active", bArea === area);
   });
+  updateQuestionTypeOptions(area);
   if (triggerSearch) {
     const resultsScreen = document.getElementById("resultsScreen");
     if (resultsScreen && resultsScreen.style.display !== "none") {
@@ -563,6 +610,7 @@ export function setSearchArea(area, triggerSearch = true) {
 // ---- 이벤트 바인딩 및 초기화 (main.js 에서 원본 순서대로 호출) ----
 export function init() {
   loadStats();
+  updateQuestionTypeOptions(appState.currentArea || "reading");
 
   // [첫번째 첨부 이미지 클릭] : 통계 배지 클릭 시 -> 전체 지문이 결과창에 표시됨
   if (statsBadge) {

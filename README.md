@@ -1290,6 +1290,42 @@ CREATE TABLE user_sentence_status (
   - `고3-2026년-09월` 전체 17문항 일괄 음성 합성(`POST /api/exams/{id}/generate-listening-audio`) 성공 (HTTP 200 OK, 17/17개 성공, 실패 0건)
   - 11개 듣기 시험지 4번 캡처 이미지 정상 해상도(916~1040x507~710px) 렌더링 확인 완료
 
+### [2026-09-23 15:35] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **FELS 패널 본문 내 중복 복사 버튼 제거 및 상단 헤더 버튼 일원화 (`static/js/results-passage.js`, `templates/index.html`)**:
+    - 좌측 하단 FELS 패널의 상단 헤더 액션 바(`[📝 FELS 빈칸 복사 (학생용)]`, `[🔑 FELS 정답 복사 (교사용)]`, `[📋 대본 복사]`)와 본문 상단 가이드 배너 내부(`[학생용 빈칸 복사 ([ ])]`, `[교사용 정답 복사 ([단어])]`)에 동일한 기능의 버튼이 이중 배치되어 있던 문제 해결.
+    - 본문 내부 가이드 배너의 중복 버튼을 제거하고 단정한 안내 문구로 정돈하였으며, 상단 헤더 버튼에 직관적인 아이콘(`📝`, `🔑`)을 적용하여 원클릭 복사 인터페이스를 깔끔하게 규격화.
+  - **대본 및 FELS 첫 발화자(`W:`, `M:`) 들여쓰기 공백 제거 및 좌측 완전 정렬 (`static/js/results-passage.js`)**:
+    - 대본 박스(`.listening-script-text-box`)와 FELS 박스(`.fels-content-box`)에 `white-space: pre-wrap` 스타일이 적용된 상태에서, 템플릿 리터럴 내 줄바꿈 및 10칸 인덴트 공백(`\n          `)이 첫 줄에 포함되어 첫 발화자 앞에 불필요한 들여쓰기가 발생하던 버그 수정.
+    - 텍스트 앞뒤 공백 정제(`trim()`) 및 `<div class="listening-script-text-box">${formattedScript}</div>`, `<div class="fels-content-box">${formattedFels}</div>` 인라인 태그 결합으로 첫 발화자부터 이후 발화자까지 좌측 0px 마진선에 오차 없이 일치하여 렌더링되도록 개선.
+  - **듣기 영역 12대 문제유형 동적 분기 및 드롭다운 실시간 연동 (`static/js/search.js`, `listening_parser.py`, `hwp_parser.py`)**:
+    - 홈 검색창 및 결과창 필터바의 '문제유형' 드롭다운이 기존 독해 전용 유형으로 고정되어 있던 문제를 해결.
+    - 상단 영역 토글(📖 독해 vs 🎧 듣기) 전환 시 현재 영역에 맞추어 문제유형 드롭다운 메뉴가 실시간 동적 갱신되도록 구현 (`updateQuestionTypeOptions`).
+    - **12대 듣기 표준 문제유형 체계 구축**:
+      1. `화자의 목적/의견/요지` (1~3번)
+      2. `그림 불일치` (4번)
+      3. `화자의 할일` (5번)
+      4. `금액` (6번)
+      5. `이유` (7번)
+      6. `언급되지 않은 것` (8번)
+      7. `불일치` (9번)
+      8. `도표 불일치` (10번)
+      9. `짧은 응답` (11, 12번)
+      10. `긴 응답` (13, 14번)
+      11. `할 말` (15번)
+      12. `1담화 2문항` (16, 17번)
+      13. `기타` (구분이 어려운 경우)
+    - 듣기 발문 텍스트 패턴 및 문항 번호 기반 지능형 분류 엔진(`classify_listening_question_type`) 구축 및 업로드 파이프라인 연계.
+  - **기존 기출 DB 187개 듣기 문항 전수 유형 마이그레이션 (`gichul.db`)**:
+    - 11개 시험지 전체 187개 듣기 문항의 `question_type`을 새 12대 유형으로 100% 매칭 갱신 완료 (목적/의견/요지 33건, 짧은 응답 22건, 긴 응답 22건, 1담화 2문항 22건, 그림/할일/금액/이유/언급/불일치/도표/할말 각 11건).
+    - 독해 및 듣기 영역별 문제유형 REST API 필터링 정상 작동 검증 완료.
+- **검증 결과**:
+  - `python -m py_compile listening_parser.py hwp_parser.py app.py database.py`: 오류 0건 통과
+  - `node -c static/js/results-passage.js static/js/search.js static/js/main.js`: 오류 0건 통과
+  - 검색 API 실증 테스트 통과: `[LISTENING] 그림 불일치` 11건, `[LISTENING] 화자의 목적/의견/요지` 33건, `[READING] 글의목적` 155건, `[READING] 빈칸` 698건 정상 응답 확인
+  - DB 187개 듣기 문항 12대 유형 100% 마이그레이션 확인
+
+
 
 
 
