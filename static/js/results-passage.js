@@ -565,43 +565,54 @@ function extractQuestionChoicesOnly(text, questionTitle) {
   return questionTitle || cleaned;
 }
 
-/** 지문 객체에서 학년, 년도, 월, 시험 유형 추출 */
+/** 지문 객체에서 학년, 년도, 월, 시험 유형, 세부 유형(A형/B형) 추출 */
 function parsePassageHierarchy(p) {
   let grade = p.grade || "";
   let year = p.year ? `${p.year}년` : "";
   let month = p.month ? `${String(p.month).padStart(2, "0")}월` : "";
   let examType = p.exam_type || "";
+  let subtype = p.subtype || "";
 
   const rawId = p.display_id || p.id || "";
-  const match = rawId.match(/^\[?([^-]+)-(\d{4}년)-(\d{1,2}월)-(.+?)\]?$/);
+  const match = rawId.match(/^\[?([^-]+)-(\d{4}년)-(\d{1,2}월)(?:-([AB]형))?-(.+?)\]?$/i);
   if (match) {
     if (!grade) grade = match[1];
     if (!year) year = match[2];
     if (!month) month = match[3];
+    if (!subtype && match[4]) subtype = match[4].toUpperCase();
+  }
+  if (!subtype) {
+    const subMatch = (p.exam_id || rawId).match(/([AB]형)/i);
+    if (subMatch) {
+      subtype = subMatch[1].toUpperCase();
+    }
   }
   if (!grade) grade = "기타";
   if (!year) year = "기타";
   if (!month) month = "기타";
 
-  return { grade, year, month, examType };
+  return { grade, year, month, examType, subtype };
 }
 
-/** 전체 지문 목록을 학년 -> 년도 -> 월 계층 트리로 구성 */
+/** 전체 지문 목록을 학년 -> 년도 -> 월(및 세부 유형) 계층 트리로 구성 */
 function buildExamTree(items) {
   const tree = {};
   if (!items) return tree;
 
   items.forEach((p) => {
-    const { grade, year, month, examType } = parsePassageHierarchy(p);
+    const { grade, year, month, examType, subtype } = parsePassageHierarchy(p);
+    const monthKey = subtype ? `${month} [${subtype}]` : month;
     if (!tree[grade]) tree[grade] = {};
     if (!tree[grade][year]) tree[grade][year] = {};
-    if (!tree[grade][year][month]) {
-      tree[grade][year][month] = {
+    if (!tree[grade][year][monthKey]) {
+      tree[grade][year][monthKey] = {
         examType: examType,
+        subtype: subtype,
+        rawMonth: month,
         items: []
       };
     }
-    tree[grade][year][month].items.push(p);
+    tree[grade][year][monthKey].items.push(p);
   });
 
   return tree;
@@ -631,7 +642,7 @@ function sortYearsDescending(yearsList) {
   });
 }
 
-/** 월 정렬 헬퍼: 최신 월 내림차순 (11월 -> 9월 -> 6월 -> 3월 ...) */
+/** 월 정렬 헬퍼: 최신 월 내림차순 (11월 -> 9월 -> 6월 -> 3월 ... 동일 월은 A형 -> B형 순) */
 function sortMonthsDescending(monthsList) {
   return [...monthsList].sort((a, b) => {
     const numA = parseInt(String(a).replace(/[^0-9]/g, ""), 10) || 0;
@@ -639,7 +650,15 @@ function sortMonthsDescending(monthsList) {
     if (numB !== numA) {
       return numB - numA;
     }
-    return String(b).localeCompare(String(a));
+    const isA_a = a.includes("A형");
+    const isB_a = a.includes("B형");
+    const isA_b = b.includes("A형");
+    const isB_b = b.includes("B형");
+    if (isA_a && !isA_b) return -1;
+    if (!isA_a && isA_b) return 1;
+    if (isB_a && !isB_b) return 1;
+    if (!isB_a && isB_b) return -1;
+    return String(a).localeCompare(String(b));
   });
 }
 
@@ -684,7 +703,8 @@ export function renderPassageView(items, targetPassageId = null) {
           const ph = parsePassageHierarchy(p);
           const sameExam = (!idH.grade || ph.grade === idH.grade) &&
             (!idH.year || normalizeYear(ph.year) === normalizeYear(idH.year)) &&
-            (!idH.month || normalizeMonth(ph.month) === normalizeMonth(idH.month));
+            (!idH.month || normalizeMonth(ph.month) === normalizeMonth(idH.month)) &&
+            (!idH.subtype || ph.subtype === idH.subtype);
           if (!sameExam) return false;
           if (p.q_num === targetQ) return true;
           if (p.subItems && p.subItems.some(s => s.q_num === targetQ)) return true;
@@ -693,7 +713,8 @@ export function renderPassageView(items, targetPassageId = null) {
           const ph = parsePassageHierarchy(p);
           return (!idH.grade || ph.grade === idH.grade) &&
             (!idH.year || normalizeYear(ph.year) === normalizeYear(idH.year)) &&
-            (!idH.month || normalizeMonth(ph.month) === normalizeMonth(idH.month));
+            (!idH.month || normalizeMonth(ph.month) === normalizeMonth(idH.month)) &&
+            (!idH.subtype || ph.subtype === idH.subtype);
         });
       }
     }
@@ -701,7 +722,7 @@ export function renderPassageView(items, targetPassageId = null) {
       const h = parsePassageHierarchy(targetP);
       appState.treeNavState.grade = h.grade;
       appState.treeNavState.year = h.year;
-      appState.treeNavState.month = h.month;
+      appState.treeNavState.month = h.subtype ? `${h.month} [${h.subtype}]` : h.month;
     }
   } else if (totalExamsCount === 1 && singleExamCombo) {
     // 2) 검색 결과가 단 1개의 시험인 경우: 자동으로 즉시 최하위 문항 탭으로 직행!
@@ -862,9 +883,12 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
 
   let examData = tree[appState.treeNavState.grade]?.[appState.treeNavState.year]?.[appState.treeNavState.month];
   if (!examData && tree[appState.treeNavState.grade]?.[appState.treeNavState.year]) {
-    const mNum = parseInt(String(appState.treeNavState.month).replace(/[^0-9]/g, ""), 10);
+    const curM = String(appState.treeNavState.month || "");
+    const mNum = parseInt(curM.replace(/[^0-9]/g, ""), 10);
     const mKeys = Object.keys(tree[appState.treeNavState.grade][appState.treeNavState.year]);
-    const matchedM = mKeys.find((k) => parseInt(String(k).replace(/[^0-9]/g, ""), 10) === mNum);
+    const matchedM = mKeys.find((k) => k === curM) ||
+      mKeys.find((k) => curM.includes("B형") ? k.includes("B형") : (curM.includes("A형") ? k.includes("A형") : false)) ||
+      mKeys.find((k) => parseInt(String(k).replace(/[^0-9]/g, ""), 10) === mNum);
     if (matchedM) {
       appState.treeNavState.month = matchedM;
       examData = tree[appState.treeNavState.grade][appState.treeNavState.year][matchedM];

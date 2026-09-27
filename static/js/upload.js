@@ -112,15 +112,28 @@ function parseExamMetadataFromFilename(filename) {
 
   // 1. 대본/해설 PDF 판별
   const is_script_pdf = ext === ".pdf" && (/_script/i.test(nameWithoutExt) || /대본/i.test(nameWithoutExt) || /listening/i.test(nameWithoutExt));
-  const is_exp_pdf = ext === ".pdf" && (/[\s\-_]A$/i.test(nameWithoutExt) || /[\s\-_]exp$/i.test(nameWithoutExt) || /_exp_/i.test(nameWithoutExt));
+
+  // A/B형 분리 시험지 식별자 감지 (예: [2012-06-A], 고2-[2012-06-A], 2012-06-A형 등)
+  const is_ab_bracket = /\[\d{4}[-_]\d{1,2}[-_][AB]\]/i.test(nameWithoutExt);
+  const is_ab_type = is_ab_bracket || /[-_][AB](?:형)?(?:[-_]|$)/i.test(nameWithoutExt);
+
+  // A/B형 시험지 본문인 경우 교육청 해설(-A)로 오인되지 않도록 제외
+  const is_exp_pdf = ext === ".pdf" && !is_script_pdf && !is_ab_type && (/[\s\-_]A$/i.test(nameWithoutExt) || /[\s\-_]exp$/i.test(nameWithoutExt) || /_exp_/i.test(nameWithoutExt));
 
   // 2. 정답표 (JSON 또는 이미지)
   const is_json = ext === ".json";
-  const is_ans_img = [".png", ".jpg", ".jpeg"].includes(ext) && /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
+  const is_ans_img = [".png", ".jpg", ".jpeg"].includes(ext) && !is_ab_type && /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
   const is_ans = is_json || is_ans_img;
 
   // 3. 문제지 PDF: 스크립트, 해설, 정답이 아닌 순수 문제지 PDF
   const is_problem_pdf = ext === ".pdf" && !is_script_pdf && !is_exp_pdf;
+
+  // A/B형 subtype 감지 ("A형" | "B형" | null)
+  let subtype = null;
+  const subMatch = nameWithoutExt.match(/(?:[-_\[\s]|^)([AB])(?:형)?(?:[-_\]\s]|$)/i);
+  if (subMatch) {
+    subtype = `${subMatch[1].toUpperCase()}형`;
+  }
 
   // 4. 모의고사 식별자 추출을 위해 접미사 제거
   let cleanName = nameWithoutExt
@@ -138,7 +151,7 @@ function parseExamMetadataFromFilename(filename) {
 
   // 출제기관 규칙: 3학년의 6월, 9월, 11월만 '평가원' 출제. 3학년의 나머지 월과 1,2학년은 무조건 '교육청'
   const exam_type = (grade === "고3" && [6, 9, 11].includes(month)) ? "평가원" : "교육청";
-  const set_key = `${grade}-[${year}-${String(month).padStart(2, "0")}]`;
+  const set_key = subtype ? `${grade}-[${year}-${String(month).padStart(2, "0")}-${subtype}]` : `${grade}-[${year}-${String(month).padStart(2, "0")}]`;
 
   return {
     set_key,
@@ -146,6 +159,7 @@ function parseExamMetadataFromFilename(filename) {
     year,
     month,
     exam_type,
+    subtype,
     is_ans,
     is_script_pdf,
     is_exp_pdf,
@@ -154,7 +168,7 @@ function parseExamMetadataFromFilename(filename) {
 }
 
 // 10-3. 스마트 일괄 업로드 (복수 세트) 드롭존 & 페어링 (PDF + HWP + 대본/해설 PDF + 정답표 4종 이상)
-let batchSetsMap = {}; // { set_key: { set_key, grade, year, month, exam_type, pdfFile, hwpFile, scriptFile, ansFile, csvFile } }
+let batchSetsMap = {}; // { set_key: { set_key, grade, year, month, exam_type, subtype, pdfFile, hwpFile, scriptFile, ansFile, csvFile } }
 
 async function handleBatchFilesSelected(fileList) {
   if (!fileList || fileList.length === 0) return;
@@ -173,6 +187,7 @@ async function handleBatchFilesSelected(fileList) {
         year: meta.year,
         month: meta.month,
         exam_type: meta.exam_type,
+        subtype: meta.subtype,
         pdfFile: null,
         hwpFile: null,
         scriptFile: null,
@@ -181,15 +196,32 @@ async function handleBatchFilesSelected(fileList) {
       };
     }
 
+    if (meta.subtype && !batchSetsMap[key].subtype) {
+      batchSetsMap[key].subtype = meta.subtype;
+    }
+
     const lowerName = file.name.toLowerCase();
     if (meta.is_script_pdf) {
-      batchSetsMap[key].scriptFile = file;
+      const curScript = batchSetsMap[key].scriptFile;
+      if (!curScript) {
+        batchSetsMap[key].scriptFile = file;
+      } else {
+        // 문제지/해설지 타입과 일치하는 스크립트 파일 우선 배정 (A형 시험지에는 A-script 우선)
+        const curIsB = /[-_]b[-_]|[-_]b\.|[\[\-_]b[\]\-_]|b형/i.test(curScript.name);
+        const newIsA = /[-_]a[-_]|[-_]a\.|[\[\-_]a[\]\-_]|a형/i.test(file.name);
+        if (curIsB && newIsA) {
+          batchSetsMap[key].scriptFile = file;
+        }
+      }
     } else if (meta.is_exp_pdf) {
       if (!batchSetsMap[key].scriptFile) {
         batchSetsMap[key].scriptFile = file;
       }
     } else if (meta.is_problem_pdf) {
       batchSetsMap[key].pdfFile = file;
+      if (meta.subtype) {
+        batchSetsMap[key].subtype = meta.subtype;
+      }
     } else if (lowerName.endsWith(".hwp") || lowerName.endsWith(".hwpx")) {
       batchSetsMap[key].hwpFile = file;
     } else if (lowerName.endsWith(".csv")) {
@@ -1131,8 +1163,8 @@ export function init() {
             formData.append("grade", set.grade);
             formData.append("year", set.year);
             formData.append("month", set.month);
-            formData.append("exam_type", set.exam_type);
-            formData.append("reading_start", 18);
+            const defaultReadingStart = (set.year === 2013 || (set.year === 2012 && set.month >= 6) || (set.subtype && set.subtype.includes("형"))) ? 23 : 18;
+            formData.append("reading_start", defaultReadingStart);
             formData.append("reading_end", 45);
             formData.append("pdf_file", set.pdfFile);
             formData.append("hwp_file", set.hwpFile);

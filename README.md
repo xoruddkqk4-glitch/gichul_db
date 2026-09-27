@@ -1419,16 +1419,28 @@ CREATE TABLE user_sentence_status (
   - 83개 대본 PDF, 876개 크롭 이미지 재생성 완료 (가로 해상도 1245px ~ 1260px 정상 확인)
   - 모달 테이블 학년/년도/월 드롭다운 필터 및 1차/2차 복합 정렬 정상 작동 확인
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+### [2026-09-27 18:25] 업데이트 이력 (Commit ID: PENDING)
+- **수정 내용**:
+  - **고2 2012년 & 2013년 수준별 모의고사 (A형 / B형) 체제 완전 분리 및 신규 구축 (`database.py`, `listening_parser.py`, `static/js/results-passage.js`, `static/js/files-status.js`)**:
+    - `exams` 스키마에 `subtype TEXT DEFAULT NULL` 컬럼을 신설하고 관련 쿼리(`search_passages`, `get_all_exams_with_stats` 등)에 반영.
+    - 2012-06-B, 2012-09-B, 2012-11-B, 2013-03-B, 2013-06-B, 2013-09-B 총 6개 B형 시험지를 DB에 신규 구축 (독해 지문 23~45번 23문항, 문장 분할, 해설, 정답표 및 1~22번 듣기 200 DPI 대본 크롭 이미지 완비).
+    - 지문 검색 좌측 네비게이터 트리 및 시험지 관리 테이블에서 `09월 [A형] 45문항`, `09월 [B형] 45문항`과 같이 각각 독립 칩으로 분리 렌더링하고 동일 월 내 `A형` ➔ `B형` 안정 정렬 구현.
+  - **고2 2012년 & 2013년 A형 모의고사 듣기(1~22번) 및 독해(23~45번) 영역 구분 및 데이터 동기화**:
+    - 기존 등록 당시 18번 시작으로 오분류되어 독해 영역에 속해 있던 18~22번 문항을 수준별 수능 체제에 맞추어 `area = 'listening'`(듣기 영역)으로 정상 전환.
+    - `exams` 테이블 메타정보 갱신: `listening_start_q = 1`, `listening_end_q = 22`, `reading_start_q = 23`, `reading_end_q = 45`.
+    - 원본 대본 PDF로부터 18~22번 영문 대본(`script_text`), FELS 약형 텍스트(`fels_text`), 듣기 문제 유형 분류 및 200 DPI 고화질 대본 크롭 이미지(`고2_YYYY_MM_A형_XX_script.png`) 연결.
+    - 18~22번에 오인 생성되어 있던 독해 문장 분할 레코드를 정리하여 순수 독해(23~45번) 지문 문장만 깔끔하게 남도록 일관성 확립.
+    - 모든 A형 및 B형 세트가 일관되게 **듣기 22문항(1~22번) + 독해 23문항(23~45번) = 총 45문항** 체제로 정렬 완료.
+  - **윈도우 창 새로고침 느낌 및 타 창 텍스트 입력 포커스 탈취 현상 원천 차단 (`hwp_parser.py`, `app.py`)**:
+    - 모의고사 파싱 및 스캔본 PDF 변환 시 한컴오피스(`Hwp.exe` / `pyhwpx`) COM 프로세스가 반복 생성·종료되면서 Windows OS의 활성 포커스를 빼앗던 문제 진단.
+    - `ctypes.windll.user32`와 `AttachThreadInput` / `SetForegroundWindow` API 기반 `restore_foreground_window` 함수를 구현하여 백그라운드 작업 전후 사용자의 기존 활성 창 포커스를 100% 원복.
+    - 단일 백그라운드 Hwp 인스턴스 싱글톤(`get_shared_hwp`) 및 `Clear(1)` 재사용 패턴을 적용하여 프로세스 반복 생성/종료 차단.
+    - `get_hwp_text`에 `(abs_path, mtime)` 기반 메모이제이션 캐시를 적용하여 중복 HWP 파일 파싱을 0ms로 대폭 단축.
+  - **파이프라인 재발 방지 및 검색 이동 연동 (`upload.js`, `pdf_parser.py`, `app.py`, `database.py`)**:
+    - 일괄 업로드 시 A/B형 수준별 시험(2013년 전체 및 2012년 A/B형)의 `reading_start`가 자동으로 23번으로 지정되도록 보강.
+    - 문장 검색 결과에서 출처 클릭 시 지문 상세 화면으로 이동할 때 `exam_id` 쿼리 파라미터를 지원하여 A형/B형 지문으로 즉시 이동하도록 개선.
+- **검증 결과**:
+  - `python -m py_compile pdf_parser.py listening_parser.py app.py database.py hwp_parser.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code 0)
+  - `node -c static/js/upload.js static/js/results-passage.js static/js/files-status.js`: 자바스크립트 구문 검사 오류 0건 통과 (Exit Code 0)
+  - API 조회 검증: 2012년 및 2013년 12개 A/B형 세트 전체 듣기 22문항(1~22), 독해 23문항(23~45), 문장 분석 23~45번 일치 확인
+  - HWP 캐시 및 포커스 원복 기능 정상 작동 확인

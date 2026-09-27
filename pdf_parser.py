@@ -233,8 +233,8 @@ def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[
     if m_loose:
         return int(m_loose.group(1)) + 1, default_end
 
-    # 4. 연도 기본값 (2013년은 수준별 수능으로 듣기 22문항 -> 독해 23번 시작)
-    if year == 2013:
+    # 4. 연도 기본값 (2013년 전체 및 2012년 A/B형 수준별 시험은 듣기 22문항 -> 독해 23번 시작)
+    if year == 2013 or (year == 2012 and full_text and ("A형" in full_text or "B형" in full_text or "22번까지" in full_text or "22." in full_text)):
         return 23, default_end
 
     return 18, default_end

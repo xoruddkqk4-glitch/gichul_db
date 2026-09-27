@@ -106,6 +106,7 @@ def init_db():
             "ALTER TABLE passages ADD COLUMN audio_file_path TEXT DEFAULT NULL;",
             "ALTER TABLE exams ADD COLUMN listening_start_q INTEGER DEFAULT 1;",
             "ALTER TABLE exams ADD COLUMN listening_end_q INTEGER DEFAULT 17;",
+            "ALTER TABLE exams ADD COLUMN subtype TEXT DEFAULT NULL;",
         ):
             try:
                 cursor.execute(col_sql)
@@ -288,16 +289,19 @@ def save_exam(exam_data: dict) -> str:
         exam_data["listening_start_q"] = 1
     if "listening_end_q" not in exam_data:
         exam_data["listening_end_q"] = 17
+    if "subtype" not in exam_data:
+        exam_data["subtype"] = None
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO exams (id, grade, year, month, exam_type, reading_start_q, reading_end_q, listening_start_q, listening_end_q)
-            VALUES (:id, :grade, :year, :month, :exam_type, :reading_start_q, :reading_end_q, :listening_start_q, :listening_end_q)
+            INSERT INTO exams (id, grade, year, month, exam_type, subtype, reading_start_q, reading_end_q, listening_start_q, listening_end_q)
+            VALUES (:id, :grade, :year, :month, :exam_type, :subtype, :reading_start_q, :reading_end_q, :listening_start_q, :listening_end_q)
             ON CONFLICT(id) DO UPDATE SET
                 grade = excluded.grade,
                 year = excluded.year,
                 month = excluded.month,
                 exam_type = excluded.exam_type,
+                subtype = excluded.subtype,
                 reading_start_q = excluded.reading_start_q,
                 reading_end_q = excluded.reading_end_q,
                 listening_start_q = excluded.listening_start_q,
@@ -323,6 +327,7 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
                 e.year,
                 e.month,
                 e.exam_type,
+                e.subtype,
                 e.reading_start_q,
                 e.reading_end_q,
                 e.created_at,
@@ -933,6 +938,7 @@ def _apply_correct_rate_filter(range_key: str, table_alias: str = "p") -> str:
 
 def search_passages(
     keyword: str = "",
+    exam_id: str = "",
     grade: str = "",
     year: Optional[int] = None,
     years: Optional[List[int]] = None,
@@ -947,12 +953,19 @@ def search_passages(
 ) -> List[Dict[str, Any]]:
     """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원)"""
     query = """
-        SELECT p.*, e.grade, e.year, e.month, e.exam_type, e.reading_start_q, e.reading_end_q
+        SELECT p.*, e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q
         FROM passages p
         JOIN exams e ON p.exam_id = e.id
         WHERE 1=1
     """
     params = []
+
+    if exam_id:
+        clean_eid = exam_id.strip()
+        if not clean_eid.startswith("["):
+            clean_eid = f"[{clean_eid}]"
+        query += " AND p.exam_id = ?"
+        params.append(clean_eid)
 
     if keyword:
         k_strip = keyword.strip()
@@ -1300,7 +1313,7 @@ def search_sentences(
 ) -> List[Dict[str, Any]]:
     """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역 지원)"""
     query = """
-        SELECT s.*, p.q_num, p.correct_rate, p.question_type, p.area, e.grade, e.year, e.month, e.exam_type
+        SELECT s.*, p.q_num, p.correct_rate, p.question_type, p.area, e.grade, e.year, e.month, e.exam_type, e.subtype
         FROM sentences s
         JOIN passages p ON s.passage_id = p.id
         JOIN exams e ON p.exam_id = e.id

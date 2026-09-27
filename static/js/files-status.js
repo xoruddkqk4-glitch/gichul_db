@@ -282,7 +282,7 @@ function renderFilesStatusTable() {
         <td style="padding: 10px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">${escapeHtml(exam.id)}</td>
         <td style="padding: 10px 8px; text-align: center; white-space: nowrap;">${gradeBadgeHtml}</td>
         <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.year}년</td>
-        <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.month}월</td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${exam.month}월${exam.subtype ? ` <span style="font-size: 0.75rem; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; font-weight: 700;">${escapeHtml(exam.subtype)}</span>` : ""}</td>
         <td style="padding: 10px 10px; white-space: nowrap;">
           <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(exam.exam_type)}</span>
         </td>

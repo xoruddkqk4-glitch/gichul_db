@@ -34,10 +34,12 @@ if __name__ == "__main__":
         reload_dirs=[base_dir],
         reload_excludes=[
             ".git", ".git/*", ".git/**/*",
-            "uploads", "uploads/*",
-            "static", "static/*", "static/captures/*",
-            "scratch", "scratch/*",
+            "uploads", "uploads/*", "uploads/**/*",
+            "static", "static/*", "static/**/*", "static/captures/*",
+            "scratch", "scratch/*", "scratch/**/*",
             ".gemini", ".gemini/*",
-            "*.png", "*.jpg", "*.jpeg", "*.hwp", "*.hwpx", "*.pdf"
+            "data", "data/*", "data/**/*",
+            "gichul.db*", "*.db*", "*.db-wal", "*.db-shm", "*.sqlite*",
+            "*.png", "*.jpg", "*.jpeg", "*.hwp", "*.hwpx", "*.pdf", "*.json", "*.csv"
         ]
     )

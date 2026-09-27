@@ -22,7 +22,7 @@ import database as db
 import grammar_analyzer
 import pymupdf as fitz
 from pdf_parser import extract_pdf_columns_and_questions, detect_listening_range
-from hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP, get_hwp_text
+from hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP, get_hwp_text, convert_hwp_to_pdf
 import answer_keys
 import answer_resolver
 from validator import cross_validate_and_merge
@@ -155,14 +155,8 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
                 if not os.path.exists(hwp_pat):
                     hwp_pat = os.path.splitext(target_pdf)[0] + ".hwpx"
                 if os.path.exists(hwp_pat):
-                    import pyhwpx
-                    hwp_app = pyhwpx.Hwp(visible=False)
-                    try:
-                        hwp_app.Open(os.path.abspath(hwp_pat))
-                        hwp_app.SaveAs(os.path.abspath(target_pdf), "PDF")
+                    if convert_hwp_to_pdf(hwp_pat, target_pdf):
                         print(f"[Crops] 스캔본 PDF를 HWP 원본({hwp_pat})으로부터 디지털 PDF로 자동 재변환 완료")
-                    finally:
-                        hwp_app.Quit()
         except Exception as scan_err:
             print(f"[Crops] 스캔본 PDF 자동 치환 검사 중 경고: {scan_err}")
 
@@ -238,6 +232,7 @@ async def api_stats():
 @app.get("/api/search/passages")
 async def api_search_passages(
     keyword: str = "",
+    exam_id: str = "",
     grade: str = "",
     year: Optional[int] = None,
     years: Optional[str] = Query(None),
@@ -267,6 +262,7 @@ async def api_search_passages(
 
     results = db.search_passages(
         keyword=keyword,
+        exam_id=exam_id,
         grade=grade,
         year=year,
         years=years_list,

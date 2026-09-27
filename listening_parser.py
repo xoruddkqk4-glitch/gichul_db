@@ -279,7 +279,8 @@ def extract_listening_script_crops(
     month: int = 6,
     is_explanation_pdf: bool = False,
     listening_start_q: int = 1,
-    listening_end_q: int = 17
+    listening_end_q: int = 17,
+    subtype: Optional[str] = None
 ) -> Dict[int, str]:
     """
     대본 PDF 또는 해설 PDF에서 각 듣기 문항의 대본(Script) 인쇄 영역을
@@ -319,7 +320,10 @@ def extract_listening_script_crops(
             if b[0] < mid_x - 30 and b[2] > mid_x + 30
         ]
 
-        is_single_column = (len(spanning_blocks) >= 2) or (
+        # 우측 칼럼 영역(mid_x + 20 이상)에 유의미한 블록이 2개 미만이면 무조건 1단(Single Column)
+        right_blocks = [b for b in content_page_blocks if b[0] > mid_x + 20]
+
+        is_single_column = (len(right_blocks) < 2) or (len(spanning_blocks) >= 2) or (
             len(content_page_blocks) > 0 and (len(spanning_blocks) / len(content_page_blocks)) >= 0.20
         )
 
@@ -348,18 +352,68 @@ def extract_listening_script_crops(
                 if b[1] > height - 60 and len(b_text) <= 5:
                     continue
 
-                first_line = b_text.splitlines()[0].strip() if b_text.splitlines() else ""
-                
+                # 방송 안내 / 시그널 블록 제외
+                if any(k in b_text for k in ["ANN:", "Signal", "시그널", "안내방송", "듣기평가 안내"]):
+                    continue
+
+                # (10 seconds) 등 단순 대기 시간 블록 제외
+                if re.match(r"^\(\s*\d+\s*seconds?\s*\)$", b_text, re.IGNORECASE):
+                    continue
+
+                lines = [l.strip() for l in b_text.splitlines() if l.strip()]
+                first_line = lines[0] if lines else ""
+
                 # 세트 문항 확인 (예: [16 ~ 17])
-                sm = set_q_pattern.search(first_line)
-                qm = single_q_pattern.match(first_line)
+                sm = set_q_pattern.search(b_text)
+                
+                # 단일 문항 번호 감지 (다양한 대본 PDF 포맷 대응)
+                cand_q = None
+                for idx, l in enumerate(lines[:4]):
+                    # 1. "1.", "1. 대화를...", "1번", "1번 대화를..."
+                    m = re.match(r"^(\d{1,2})\s*[\.번](?:\s.*)?$", l)
+                    if m:
+                        cq = int(m.group(1))
+                        if listening_start_q <= cq <= listening_end_q:
+                            cand_q = cq
+                            break
+                    # 2. "번 1" 또는 "번1"
+                    m = re.match(r"^번\s*(\d{1,2})(?:\s.*)?$", l)
+                    if m:
+                        cq = int(m.group(1))
+                        if listening_start_q <= cq <= listening_end_q:
+                            cand_q = cq
+                            break
+                    # 3. 줄바꿈 분리형: 이번 줄이 "번", 다음 줄이 "1"
+                    if l == "번" and idx + 1 < len(lines):
+                        m = re.match(r"^(\d{1,2})(?:\s.*)?$", lines[idx + 1])
+                        if m:
+                            cq = int(m.group(1))
+                            if listening_start_q <= cq <= listening_end_q:
+                                cand_q = cq
+                                break
+                    # 4. 숫자만 단독으로 있는 줄
+                    m = re.match(r"^(\d{1,2})$", l)
+                    if m:
+                        cq = int(m.group(1))
+                        if listening_start_q <= cq <= listening_end_q:
+                            cand_q = cq
+                            break
+
+                if not cand_q:
+                    m = re.search(r'(?:^|\n)\s*(\d{1,2})\s*[\.번]', b_text)
+                    if m:
+                        cq = int(m.group(1))
+                        if listening_start_q <= cq <= listening_end_q:
+                            cand_q = cq
+
+                qm = cand_q
 
                 if sm:
                     start_s = int(sm.group(1))
                     end_s = int(sm.group(2))
                     if listening_start_q <= start_s <= listening_end_q:
                         if current_qs and script_rects:
-                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
+                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip, subtype=subtype)
                             script_rects = []
 
                         current_qs = list(range(start_s, min(end_s, listening_end_q) + 1))
@@ -368,10 +422,10 @@ def extract_listening_script_crops(
                             script_rects.append(b_rect)
                         continue
                 elif qm:
-                    q_num = int(qm.group(1))
+                    q_num = qm
                     if listening_start_q <= q_num <= listening_end_q:
                         if current_qs and script_rects:
-                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
+                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip, subtype=subtype)
                             script_rects = []
 
                         current_qs = [q_num]
@@ -388,7 +442,7 @@ def extract_listening_script_crops(
                             continue
                         elif end_header_pattern.search(b_text):
                             script_recording = False
-                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
+                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip, subtype=subtype)
                             script_rects = []
                             current_qs = []
                             continue
@@ -397,7 +451,7 @@ def extract_listening_script_crops(
                         script_rects.append(b_rect)
 
             if current_qs and script_rects:
-                _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
+                _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip, subtype=subtype)
 
     doc.close()
     return result_crops
@@ -412,7 +466,8 @@ def _save_script_crop(
     year: int,
     month: int,
     out_dict: Dict[int, str],
-    col_clip: Optional[fitz.Rect] = None
+    col_clip: Optional[fitz.Rect] = None,
+    subtype: Optional[str] = None
 ):
     """지정된 문항들의 대본 영역 Bounding Box를 200 DPI로 캡처하여 저장 (테두리 상자선 벡터 감지 포함)"""
     if not rects or not q_nums:
@@ -467,7 +522,8 @@ def _save_script_crop(
     pix = page.get_pixmap(clip=crop_rect, dpi=200)
 
     for q in target_qs:
-        img_filename = f"{grade}_{year}_{month:02d}_{q:02d}_script.png"
+        sub_part = f"_{subtype}" if subtype else ""
+        img_filename = f"{grade}_{year}_{month:02d}{sub_part}_{q:02d}_script.png"
         img_filepath = os.path.join(CAPTURES_DIR, img_filename)
         web_url = f"/static/captures/{img_filename}"
         pix.save(img_filepath)
