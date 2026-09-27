@@ -5916,4 +5916,68 @@ mark.passage-highlight {
   color: #cbd5e1;
 }
 
+/* =========================================================================
+   원본 파일 현황 5종 파일 인터랙티브 요약 배지 & 미등록 다중 필터 드롭다운
+   ========================================================================= */
+
+.badge-stat-interactive {
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+
+.badge-stat-interactive:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+  filter: brightness(0.96);
+}
+
+.badge-stat-interactive:active {
+  transform: translateY(0);
+}
+
+/* 개별 배지 활성화 상태 (해당 파일 미등록 필터 ON) */
+.badge-stat-interactive.active-filter {
+  background: #fff1f2 !important;
+  color: #be123c !important;
+  border-color: #f43f5e !important;
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.2), 0 2px 4px rgba(225, 29, 72, 0.12) !important;
+  font-weight: 700 !important;
+}
+
+.badge-stat-interactive.active-filter::before {
+  content: "⚠️ ";
+  font-size: 0.72rem;
+}
+
+.btn-filter-trigger {
+  transition: all 0.15s ease;
+}
+
+.btn-filter-trigger:hover {
+  background: #ffe4e6 !important;
+  border-color: #fb7185 !important;
+}
+
+.btn-filter-trigger.filter-active {
+  background: #f43f5e !important;
+  color: #ffffff !important;
+  border-color: #e11d48 !important;
+  box-shadow: 0 2px 4px rgba(225, 29, 72, 0.25);
+}
+
+.btn-filter-trigger.filter-active .active-filter-badge {
+  background: #ffffff !important;
+  color: #be123c !important;
+}
+
+.missing-chk-label:hover {
+  background: #f1f5f9;
+}
+
+
 

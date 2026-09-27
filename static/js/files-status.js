@@ -68,6 +68,29 @@ let filesStatusSort = filesStatusSortChain[0];
 // 업로드 모달 테이블 드랍다운 필터 상태 (학년, 년도, 월)
 let filesStatusFilters = { grade: "all", year: "all", month: "all" };
 
+// 미등록 파일 5종 다중 선택 필터 상태
+let missingFileFilters = {
+  types: {
+    pdf: false,
+    hwp: false,
+    script: false,
+    ans: false,
+    csv: false
+  },
+  matchAll: false
+};
+
+export function getActiveMissingTypes() {
+  return Object.keys(missingFileFilters.types).filter(k => missingFileFilters.types[k]);
+}
+
+export function clearMissingFileFilters() {
+  Object.keys(missingFileFilters.types).forEach(k => {
+    missingFileFilters.types[k] = false;
+  });
+  missingFileFilters.matchAll = false;
+}
+
 // =========================================================================
 // 10-X. 원본 파일 현황 전용 탭 (PDF / HWP / PNG / CSV 업로드 유무 테이블 및 개별 업로드)
 // =========================================================================
@@ -141,26 +164,41 @@ function renderFilesStatusTable() {
   }
 
   // 1. 드랍다운 필터 적용 (학년, 년도, 월)
-  let displayItems = items.filter(e => {
+  const matchedBeforeMissingFilter = items.filter(e => {
     if (filesStatusFilters.grade !== "all" && e.grade !== filesStatusFilters.grade) return false;
     if (filesStatusFilters.year !== "all" && String(e.year) !== String(filesStatusFilters.year)) return false;
     if (filesStatusFilters.month !== "all" && String(parseInt(e.month, 10)) !== String(parseInt(filesStatusFilters.month, 10))) return false;
     return true;
   });
 
-  // 2. 결측 파일 필터 적용
-  const filterMissing = chkFilterMissingFiles && chkFilterMissingFiles.checked;
+  let displayItems = matchedBeforeMissingFilter;
+
+  // 2. 결측 파일 5종 다중 선택 필터 적용
+  const activeMissingTypes = getActiveMissingTypes();
+  const filterMissing = activeMissingTypes.length > 0;
+
   if (filterMissing) {
     displayItems = displayItems.filter(e => {
       const fs = e.file_status || {};
-      const hasPdf = fs.pdf?.exists;
-      const hasHwp = fs.hwp?.exists;
-      const hasScript = fs.script?.exists;
-      const hasAns = fs.ans?.exists || (fs.ans?.answered_count > 0);
-      const hasCsv = fs.csv?.exists || (fs.csv?.rated_count > 0);
-      return !(hasPdf && hasHwp && hasScript && hasAns && hasCsv);
+      const hasMap = {
+        pdf: Boolean(fs.pdf?.exists),
+        hwp: Boolean(fs.hwp?.exists),
+        script: Boolean(fs.script?.exists),
+        ans: Boolean(fs.ans?.exists || (fs.ans?.answered_count > 0)),
+        csv: Boolean(fs.csv?.exists || (fs.csv?.rated_count > 0))
+      };
+      if (missingFileFilters.matchAll) {
+        // 선택된 모든 파일이 동시에 누락된 시험지만 매칭 (AND)
+        return activeMissingTypes.every(k => !hasMap[k]);
+      } else {
+        // 선택된 파일 중 1개라도 누락된 시험지 매칭 (OR, 기본값)
+        return activeMissingTypes.some(k => !hasMap[k]);
+      }
     });
   }
+
+  // 상단 요약 배지 활성화 상태 및 드롭다운 트리거 버튼 UI 동기화
+  syncMissingFilterUI(activeMissingTypes);
 
   // 헤더 정렬 UI 상태 갱신 (1차 기준 및 2차 보조 기준 표시)
   updateSortHeaders("files", filesStatusSortChain);
@@ -168,7 +206,32 @@ function renderFilesStatusTable() {
   const isFiltered = filesStatusFilters.grade !== "all" || filesStatusFilters.year !== "all" || filesStatusFilters.month !== "all";
 
   if (displayItems.length === 0) {
-    if (isFiltered) {
+    if (filterMissing && matchedBeforeMissingFilter.length > 0) {
+      const typeNames = {
+        pdf: "문제지(PDF)",
+        hwp: "해설지(HWP)",
+        script: "대본(PDF)",
+        ans: "정답표",
+        csv: "정답률(CSV)"
+      };
+      const activeLabels = activeMissingTypes.map(k => typeNames[k] || k).join(", ");
+      filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">
+        <div style="font-size: 1.05rem; margin-bottom: 6px;">🎉 선택하신 조건(${isFiltered ? `학년: ${escapeHtml(filesStatusFilters.grade)}, 년도: ${escapeHtml(filesStatusFilters.year)}, 월: ${escapeHtml(filesStatusFilters.month)}` : "전체"})의 시험지 (총 ${matchedBeforeMissingFilter.length}세트)는 선택된 파일 [${escapeHtml(activeLabels)}]이 모두 정상 등록되어 있습니다!</div>
+        <div style="font-size: 0.84rem; font-weight: normal; color: var(--text-muted); margin-bottom: 12px;">
+          미등록 파일 필터(${escapeHtml(activeLabels)} ${missingFileFilters.matchAll ? '동시 결측' : '1개 이상 결측'})가 활성화되어 있어 완비된 세트가 숨겨진 상태입니다.
+        </div>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="btnQuickResetMissing" style="font-size: 0.8rem; padding: 5px 14px;">
+          미등록 필터 해제하고 전체 ${matchedBeforeMissingFilter.length}세트 보기
+        </button>
+      </td></tr>`;
+      const quickBtn = document.getElementById("btnQuickResetMissing");
+      if (quickBtn) {
+        quickBtn.addEventListener("click", () => {
+          clearMissingFileFilters();
+          renderFilesStatusTable();
+        });
+      }
+    } else if (isFiltered) {
       filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">선택하신 필터 조건(학년: ${escapeHtml(filesStatusFilters.grade)}, 년도: ${escapeHtml(filesStatusFilters.year)}, 월: ${escapeHtml(filesStatusFilters.month)})에 일치하는 시험지가 없습니다.</td></tr>`;
     } else {
       filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률·대본(5종)이 완비되었습니다!</td></tr>`;
@@ -451,6 +514,54 @@ function validateSelectiveDeleteOptions() {
   }
 }
 
+// 미등록 파일 필터 드롭다운 및 상단 요약 배지 UI 동기화
+function syncMissingFilterUI(activeMissingTypes = getActiveMissingTypes()) {
+  const triggerBtn = document.getElementById("btnTriggerMissingFilter");
+  const countBadge = document.getElementById("badgeMissingFilterCount");
+  const resetBtn = document.getElementById("btnResetMissingBadges");
+
+  const count = activeMissingTypes.length;
+
+  if (count > 0) {
+    if (triggerBtn) triggerBtn.classList.add("filter-active");
+    if (countBadge) {
+      countBadge.style.display = "inline-block";
+      countBadge.textContent = count;
+    }
+    if (resetBtn) resetBtn.style.display = "inline-flex";
+  } else {
+    if (triggerBtn) triggerBtn.classList.remove("filter-active");
+    if (countBadge) countBadge.style.display = "none";
+    if (resetBtn) resetBtn.style.display = "none";
+  }
+
+  // 상단 5대 배지 활성화 상태 동기화
+  const badgeMap = {
+    pdf: document.getElementById("statBadgePdf"),
+    hwp: document.getElementById("statBadgeHwp"),
+    script: document.getElementById("statBadgeScript"),
+    ans: document.getElementById("statBadgeAns"),
+    csv: document.getElementById("statBadgeCsv")
+  };
+
+  Object.keys(badgeMap).forEach(key => {
+    const el = badgeMap[key];
+    if (!el) return;
+    if (missingFileFilters.types[key]) {
+      el.classList.add("active-filter");
+    } else {
+      el.classList.remove("active-filter");
+    }
+  });
+
+  // 드롭다운 내부 체크박스 동기화
+  document.querySelectorAll(".chk-missing-type").forEach(chk => {
+    chk.checked = Boolean(missingFileFilters.types[chk.value]);
+  });
+  const chkMatchAll = document.getElementById("chkMissingMatchAll");
+  if (chkMatchAll) chkMatchAll.checked = Boolean(missingFileFilters.matchAll);
+}
+
 // ---- 이벤트 바인딩 및 초기화 (main.js 에서 원본 순서대로 호출) ----
 export function init() {
 
@@ -506,6 +617,92 @@ export function init() {
   bindFilter("filterFilesMonth", (val) => {
     filesStatusFilters.month = val;
     renderFilesStatusTable();
+  });
+
+  // 미등록 파일 다중 필터 드롭다운 토글 및 바인딩
+  const triggerBtn = document.getElementById("btnTriggerMissingFilter");
+  const menuMissing = document.getElementById("menuMissingFilter");
+  if (triggerBtn && menuMissing) {
+    triggerBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isOpen = menuMissing.style.display === "block";
+      menuMissing.style.display = isOpen ? "none" : "block";
+    });
+  }
+
+  if (menuMissing) {
+    menuMissing.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#missingFilterContainer")) {
+      const menu = document.getElementById("menuMissingFilter");
+      if (menu) menu.style.display = "none";
+    }
+  });
+
+  document.querySelectorAll(".chk-missing-type").forEach(chk => {
+    chk.addEventListener("change", (e) => {
+      const type = e.target.value;
+      missingFileFilters.types[type] = e.target.checked;
+      renderFilesStatusTable();
+    });
+  });
+
+  const chkMatchAll = document.getElementById("chkMissingMatchAll");
+  if (chkMatchAll) {
+    chkMatchAll.addEventListener("change", (e) => {
+      missingFileFilters.matchAll = e.target.checked;
+      renderFilesStatusTable();
+    });
+  }
+
+  const btnSelectAll = document.getElementById("btnSelectAllMissing");
+  if (btnSelectAll) {
+    btnSelectAll.addEventListener("click", (e) => {
+      e.stopPropagation();
+      Object.keys(missingFileFilters.types).forEach(k => {
+        missingFileFilters.types[k] = true;
+      });
+      renderFilesStatusTable();
+    });
+  }
+
+  const btnClearAll = document.getElementById("btnClearAllMissing");
+  if (btnClearAll) {
+    btnClearAll.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearMissingFileFilters();
+      renderFilesStatusTable();
+    });
+  }
+
+  const btnResetBadges = document.getElementById("btnResetMissingBadges");
+  if (btnResetBadges) {
+    btnResetBadges.addEventListener("click", () => {
+      clearMissingFileFilters();
+      renderFilesStatusTable();
+    });
+  }
+
+  // 상단 5대 통계 배지 클릭 시 해당 파일 미등록 단독/토글 필터링
+  const interactiveBadges = [
+    { id: "statBadgePdf", type: "pdf" },
+    { id: "statBadgeHwp", type: "hwp" },
+    { id: "statBadgeScript", type: "script" },
+    { id: "statBadgeAns", type: "ans" },
+    { id: "statBadgeCsv", type: "csv" }
+  ];
+
+  interactiveBadges.forEach(({ id, type }) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("click", () => {
+      missingFileFilters.types[type] = !missingFileFilters.types[type];
+      renderFilesStatusTable();
+    });
   });
 
   // 필터 토글 및 새로고침 이벤트 바인딩

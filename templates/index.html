@@ -810,28 +810,72 @@
               <span class="badge-files-stat" id="statBadgeTotalExams" style="background: #f1f5f9; color: #334155; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 0.8rem; border: 1px solid #cbd5e1;">
                 📚 등록 모의고사: <strong id="filesTotalExamsCount">0</strong>세트
               </span>
-              <span class="badge-files-stat" id="statBadgePdf" style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #bbf7d0;">
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgePdf" title="클릭하여 문제지(PDF) 미등록 시험지만 모아보기">
                 📄 문제지(PDF): <strong id="filesTotalPdfCount">0</strong> / <span class="stat-total-ref">0</span>
-              </span>
-              <span class="badge-files-stat" id="statBadgeHwp" style="background: #f0fdf4; color: #166534; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #bbf7d0;">
+              </button>
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeHwp" title="클릭하여 해설지(HWP) 미등록 시험지만 모아보기">
                 📝 해설지(HWP): <strong id="filesTotalHwpCount">0</strong> / <span class="stat-total-ref">0</span>
-              </span>
-              <span class="badge-files-stat" id="statBadgeScript" style="background: #f0fdfa; color: #0f766e; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #99f6e4;">
+              </button>
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeScript" title="클릭하여 대본(PDF) 미등록 시험지만 모아보기">
                 📜 대본(PDF): <strong id="filesTotalScriptCount">0</strong> / <span class="stat-total-ref">0</span>
-              </span>
-              <span class="badge-files-stat" id="statBadgeAns" style="background: #faf5ff; color: #7e22ce; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #e9d5ff;">
+              </button>
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeAns" title="클릭하여 정답표(이미지/JSON) 미등록 시험지만 모아보기">
                 🖼️ 정답표(이미지): <strong id="filesTotalAnsCount">0</strong> / <span class="stat-total-ref">0</span>
-              </span>
-              <span class="badge-files-stat" id="statBadgeCsv" style="background: #fffbeb; color: #b45309; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.8rem; border: 1px solid #fde68a;">
+              </button>
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeCsv" title="클릭하여 정답률(CSV) 미등록 시험지만 모아보기">
                 📊 정답률(CSV): <strong id="filesTotalCsvCount">0</strong> / <span class="stat-total-ref">0</span>
-              </span>
+              </button>
+              <button type="button" class="btn btn-outline-danger btn-sm" id="btnResetMissingBadges" style="display: none; padding: 2px 8px; font-size: 0.74rem; border-radius: 6px; align-items: center; gap: 4px;" title="미등록 파일 필터 초기화">
+                ✕ 필터 해제
+              </button>
             </div>
 
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <label style="font-size: 0.78rem; color: #be123c; font-weight: 700; display: flex; align-items: center; gap: 5px; cursor: pointer; background: #fff1f2; padding: 4px 10px; border-radius: 6px; border: 1px solid #fecdd3; user-select: none;">
-                <input type="checkbox" id="chkFilterMissingFiles" style="cursor: pointer; width: 14px; height: 14px;">
-                ⚠️ 미등록 파일 있는 세트만 보기
-              </label>
+            <div style="display: flex; gap: 8px; align-items: center; position: relative;">
+              <!-- 미등록 파일 다중 선택 드롭다운 필터 컨테이너 -->
+              <div class="dropdown-filter-container" id="missingFilterContainer" style="position: relative;">
+                <button type="button" class="btn-filter-trigger" id="btnTriggerMissingFilter" style="font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; gap: 6px; cursor: pointer; background: #fff1f2; color: #be123c; padding: 4px 10px; border-radius: 6px; border: 1px solid #fecdd3; user-select: none;">
+                  <span>⚠️ 미등록 파일 필터</span>
+                  <span class="active-filter-badge" id="badgeMissingFilterCount" style="display: none; background: #be123c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 10px; font-weight: 700;">0</span>
+                  <span class="arrow-icon" style="font-size: 0.7rem;">▾</span>
+                </button>
+                <div class="dropdown-filter-menu" id="menuMissingFilter" style="display: none; position: absolute; right: 0; top: calc(100% + 4px); background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); width: 230px; z-index: 100; overflow: hidden;">
+                  <div style="padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.78rem; font-weight: 700; color: #334155;">누락 파일 다중 선택</span>
+                    <div style="display: flex; gap: 6px;">
+                      <button type="button" id="btnSelectAllMissing" style="background: none; border: none; font-size: 0.72rem; color: #2563eb; cursor: pointer; padding: 0;">전체</button>
+                      <span style="color: #cbd5e1; font-size: 0.72rem;">|</span>
+                      <button type="button" id="btnClearAllMissing" style="background: none; border: none; font-size: 0.72rem; color: #dc2626; cursor: pointer; padding: 0;">초기화</button>
+                    </div>
+                  </div>
+                  <div style="padding: 6px 10px; display: flex; flex-direction: column; gap: 4px;">
+                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
+                      <input type="checkbox" class="chk-missing-type" value="pdf" style="cursor: pointer;"> 📄 문제지 (PDF)
+                    </label>
+                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
+                      <input type="checkbox" class="chk-missing-type" value="hwp" style="cursor: pointer;"> 📝 해설지 (HWP)
+                    </label>
+                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
+                      <input type="checkbox" class="chk-missing-type" value="script" style="cursor: pointer;"> 📜 대본/해설 (PDF)
+                    </label>
+                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
+                      <input type="checkbox" class="chk-missing-type" value="ans" style="cursor: pointer;"> 🖼️ 정답표 (JSON/이미지)
+                    </label>
+                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
+                      <input type="checkbox" class="chk-missing-type" value="csv" style="cursor: pointer;"> 📊 정답률 (CSV)
+                    </label>
+                  </div>
+                  <div style="padding: 6px 10px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 0.73rem; color: #64748b;">
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                      <input type="checkbox" id="chkMissingMatchAll" style="cursor: pointer;">
+                      선택 파일 동시 결측만 (AND)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 레거시 호환용 숨김 체크박스 (기존 참조 보호) -->
+              <input type="checkbox" id="chkFilterMissingFiles" style="display: none;">
+
               <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshFilesStatus" style="font-size: 0.78rem; padding: 4px 10px;">
                 🔄 새로고침
               </button>
