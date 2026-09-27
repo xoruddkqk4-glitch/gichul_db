@@ -1373,7 +1373,7 @@ CREATE TABLE user_sentence_status (
   - 기존 등록 11개 시험지 전부에 대해 45개 전 문항(듣기 17개 + 독해 28개) 형광펜 크롭 재생성 완료
   - 로컬 서버 정상 기동 및 API 응답 확인: `{"exams":157,"passages":4683,"sentences":39511}` HTTP 200 OK
 
-### [2026-09-27 15:15] 업데이트 이력 (Commit ID: pending)
+### [2026-09-27 15:15] 업데이트 이력 (Commit ID: d465d4e)
 - **수정 내용**:
   - **스마트 일괄 업로드 모달창 크기 및 테이블 래퍼 대폭 확장 (`style.css`, `index.html`)**:
     - `.upload-modal-content`의 최대 너비를 기존 `1080px`에서 `1480px (width: 96%)`로 대폭 확장하여 와이드 모니터 환경에서 가로 스크롤 없이 모든 열이 쾌적하게 한눈에 보이도록 개선.
