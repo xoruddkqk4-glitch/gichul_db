@@ -1376,7 +1376,7 @@ async def api_upload_exam_single_file(
     # 1. 시험지 정보 조회
     with db.get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id, grade, year, month, reading_start_q, reading_end_q FROM exams WHERE id = ?", (clean_id,))
+        cursor.execute("SELECT id, grade, year, month, subtype, reading_start_q, reading_end_q FROM exams WHERE id = ?", (clean_id,))
         exam = cursor.fetchone()
 
     if not exam:
@@ -1385,6 +1385,7 @@ async def api_upload_exam_single_file(
     grade = exam["grade"]
     year = exam["year"]
     month = exam["month"]
+    subtype = exam["subtype"]
     reading_start = exam["reading_start_q"] or (23 if year == 2013 else 18)
     reading_end = exam["reading_end_q"] or (50 if 2006 <= year <= 2011 else 45)
 
@@ -1601,7 +1602,94 @@ async def api_upload_exam_single_file(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"듣기 대본 처리 중 오류: {str(e)}")
 
-    # 6. PDF 또는 HWP 파일 단독 교체 시
+    # 6. HWP 해설지 단독 업로드 / 갱신 시
+    elif file_type == "hwp":
+        try:
+            hwp_exps = parse_hwp_explanations(save_path)
+            updated_count = 0
+            if hwp_exps:
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT id, q_num, answer_text, explanation_text, answer_source FROM passages WHERE exam_id = ?",
+                        (clean_id,)
+                    )
+                    passages = cursor.fetchall()
+                    for p in passages:
+                        q_int = int(p["q_num"])
+                        if q_int in hwp_exps:
+                            exp_info = hwp_exps[q_int]
+                            new_exp = (exp_info.get("explanation") or "").strip()
+                            hwp_ans = (exp_info.get("answer") or "").strip()
+
+                            cur_ans = p["answer_text"] or ""
+                            cur_src = p["answer_source"] or ""
+                            update_ans = cur_ans
+                            update_src = cur_src
+
+                            # 기존에 정답이 비어있으면 HWP 해설에서 추출된 정답 보충
+                            if not cur_ans and hwp_ans:
+                                update_ans = hwp_ans
+                                update_src = "hwp"
+
+                            if new_exp:
+                                cursor.execute(
+                                    "UPDATE passages SET explanation_text = ?, answer_text = ?, answer_source = ? WHERE id = ?",
+                                    (new_exp, update_ans, update_src, p["id"])
+                                )
+                                updated_count += 1
+                    conn.commit()
+
+            # 원본 PDF가 있으면 형광펜 재생성 시도
+            pdf_highlighted = False
+            try:
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (clean_id,))
+                    rows = cursor.fetchall()
+                    answers_dict = {int(r["q_num"]): r["answer_text"] for r in rows if r["answer_text"]}
+                pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict, subtype=subtype)
+            except Exception as cr_err:
+                print(f"[Upload HWP] 크롭 갱신 경고: {cr_err}")
+
+            return {
+                "status": "success",
+                "exam_id": clean_id,
+                "file_type": "hwp",
+                "updated_count": updated_count,
+                "pdf_highlighted": pdf_highlighted,
+                "message": f"HWP 해설지가 성공적으로 업로드되었습니다." + (f" ({updated_count}개 문항 해설 갱신)" if updated_count else "")
+            }
+        except Exception as e:
+            return {
+                "status": "success",
+                "exam_id": clean_id,
+                "file_type": "hwp",
+                "message": f"HWP 파일이 성공적으로 업로드되었습니다. (해설 파싱 참고: {str(e)})"
+            }
+
+    # 7. PDF 문제지 단독 업로드 / 교체 시
+    elif file_type == "pdf":
+        pdf_highlighted = False
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (clean_id,))
+                rows = cursor.fetchall()
+                answers_dict = {int(r["q_num"]): r["answer_text"] for r in rows if r["answer_text"]}
+            pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict, subtype=subtype)
+        except Exception as cr_err:
+            print(f"[Upload PDF] 크롭 갱신 경고: {cr_err}")
+
+        return {
+            "status": "success",
+            "exam_id": clean_id,
+            "file_type": "pdf",
+            "pdf_highlighted": pdf_highlighted,
+            "message": f"PDF 문제지가 성공적으로 업로드되었습니다." + (" (정답 형광펜 크롭 재생성 완료)" if pdf_highlighted else "")
+        }
+
+    # 8. 기타 파일 교체 시
     return {
         "status": "success",
         "exam_id": clean_id,

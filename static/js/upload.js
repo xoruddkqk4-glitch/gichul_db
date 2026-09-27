@@ -391,10 +391,31 @@ export function renderBatchSetsTable() {
   let scriptOnlyCount = 0;
   let ansOnlyCount = 0;
   let csvOnlyCount = 0;
+  let hwpOnlyCount = 0;
+  let pdfOnlyCount = 0;
   let fullUploadCount = 0;
 
   allSets.forEach(set => {
-    const examId = `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월]`;
+    let examId = null;
+    if (set.subtype && registeredExamsSet.has(`[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월-${set.subtype}]`)) {
+      examId = `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월-${set.subtype}]`;
+    }
+    if (!examId && set.subtype) {
+      for (const [id, ex] of registeredExamsMap.entries()) {
+        if (ex.grade === set.grade && ex.year === set.year && ex.month === set.month && ex.subtype === set.subtype) {
+          examId = id;
+          break;
+        }
+      }
+    }
+    if (!examId) {
+      const baseId = `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월]`;
+      if (registeredExamsSet.has(baseId)) {
+        examId = baseId;
+      } else {
+        examId = set.subtype ? `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월-${set.subtype}]` : baseId;
+      }
+    }
     set.exam_id = examId;
 
     const regExam = registeredExamsMap.get(examId);
@@ -418,6 +439,8 @@ export function renderBatchSetsTable() {
       readyCount++;
     } else if (isAlreadyRegistered) {
       const droppedItems = [];
+      if (hasHwp) droppedItems.push("해설지");
+      if (hasPdf) droppedItems.push("문제지");
       if (hasScript) droppedItems.push("대본");
       if (hasAns) droppedItems.push("정답표");
       if (hasCsv) droppedItems.push("정답률");
@@ -426,9 +449,11 @@ export function renderBatchSetsTable() {
         isReady = true;
         mode = "registered_update";
         readyCount++;
-        if (hasScript && !hasAns && !hasCsv) scriptOnlyCount++;
-        else if (hasAns && !hasScript && !hasCsv) ansOnlyCount++;
-        else if (hasCsv && !hasScript && !hasAns) csvOnlyCount++;
+        if (hasHwp && !hasPdf && !hasScript && !hasAns && !hasCsv) hwpOnlyCount++;
+        else if (hasPdf && !hasHwp && !hasScript && !hasAns && !hasCsv) pdfOnlyCount++;
+        else if (hasScript && !hasHwp && !hasPdf && !hasAns && !hasCsv) scriptOnlyCount++;
+        else if (hasAns && !hasHwp && !hasPdf && !hasScript && !hasCsv) ansOnlyCount++;
+        else if (hasCsv && !hasHwp && !hasPdf && !hasScript && !hasAns) csvOnlyCount++;
       } else {
         isReady = false;
         mode = "already_registered";
@@ -468,14 +493,20 @@ export function renderBatchSetsTable() {
         statusHtml = `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료${extraText}</span>`;
       } else if (set.mode === "registered_update") {
         const droppedItems = [];
+        if (hasHwp) droppedItems.push("해설지");
+        if (hasPdf) droppedItems.push("문제지");
         if (hasScript) droppedItems.push("대본");
         if (hasAns) droppedItems.push("정답표");
         if (hasCsv) droppedItems.push("정답률");
-        if (hasScript && !hasAns && !hasCsv) {
+        if (hasHwp && !hasPdf && !hasScript && !hasAns && !hasCsv) {
+          statusHtml = `<span class="badge-match-ready" style="background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8; font-weight: 700;">📝 해설지 갱신 (준비 완료)</span>`;
+        } else if (hasPdf && !hasHwp && !hasScript && !hasAns && !hasCsv) {
+          statusHtml = `<span class="badge-match-ready" style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 700;">📄 문제지 갱신 (준비 완료)</span>`;
+        } else if (hasScript && !hasHwp && !hasPdf && !hasAns && !hasCsv) {
           statusHtml = `<span class="badge-match-ready" style="background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; font-weight: 700;">📜 대본 갱신 (준비 완료)</span>`;
-        } else if (hasAns && !hasScript && !hasCsv) {
+        } else if (hasAns && !hasHwp && !hasPdf && !hasScript && !hasCsv) {
           statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
-        } else if (hasCsv && !hasScript && !hasAns) {
+        } else if (hasCsv && !hasHwp && !hasPdf && !hasScript && !hasAns) {
           statusHtml = `<span class="badge-match-ready" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;">📊 정답률 갱신 (준비 완료)</span>`;
         } else {
           statusHtml = `<span class="badge-match-ready" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">🔄 ${droppedItems.join("+")} 갱신 (준비 완료)</span>`;
@@ -547,11 +578,15 @@ export function renderBatchSetsTable() {
     btnStartBatchUpload.style.pointerEvents = (readyCount === 0) ? "none" : "auto";
     if (readyCount === 0) {
       btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
-    } else if (scriptOnlyCount > 0 && fullUploadCount === 0 && ansOnlyCount === 0 && csvOnlyCount === 0) {
+    } else if (hwpOnlyCount > 0 && fullUploadCount === 0 && pdfOnlyCount === 0 && scriptOnlyCount === 0 && ansOnlyCount === 0 && csvOnlyCount === 0) {
+      btnStartBatchUpload.textContent = `📝 해설지 HWP ${hwpOnlyCount}개 세트 일괄 갱신 시작`;
+    } else if (pdfOnlyCount > 0 && fullUploadCount === 0 && hwpOnlyCount === 0 && scriptOnlyCount === 0 && ansOnlyCount === 0 && csvOnlyCount === 0) {
+      btnStartBatchUpload.textContent = `📄 문제지 PDF ${pdfOnlyCount}개 세트 일괄 갱신 시작`;
+    } else if (scriptOnlyCount > 0 && fullUploadCount === 0 && hwpOnlyCount === 0 && pdfOnlyCount === 0 && ansOnlyCount === 0 && csvOnlyCount === 0) {
       btnStartBatchUpload.textContent = `📜 대본 PDF ${scriptOnlyCount}개 세트 일괄 반영 시작`;
-    } else if (ansOnlyCount > 0 && fullUploadCount === 0 && csvOnlyCount === 0 && scriptOnlyCount === 0) {
+    } else if (ansOnlyCount > 0 && fullUploadCount === 0 && hwpOnlyCount === 0 && pdfOnlyCount === 0 && csvOnlyCount === 0 && scriptOnlyCount === 0) {
       btnStartBatchUpload.textContent = `🔄 정답표 ${ansOnlyCount}개 세트 일괄 분석 및 반영 시작`;
-    } else if (csvOnlyCount > 0 && fullUploadCount === 0 && ansOnlyCount === 0 && scriptOnlyCount === 0) {
+    } else if (csvOnlyCount > 0 && fullUploadCount === 0 && hwpOnlyCount === 0 && pdfOnlyCount === 0 && ansOnlyCount === 0 && scriptOnlyCount === 0) {
       btnStartBatchUpload.textContent = `📊 정답률 CSV ${csvOnlyCount}개 세트 일괄 반영 시작`;
     } else {
       btnStartBatchUpload.textContent = `🚀 ${readyCount}개 세트 일괄 업로드/갱신 시작`;
@@ -1185,6 +1220,8 @@ export function init() {
           if (batchProgressSubtext) {
             if (set.mode === "registered_update" || set.mode === "script_only" || set.mode === "ans_only" || set.mode === "csv_only" || set.mode === "ans_and_csv") {
               const subParts = [];
+              if (set.hwpFile) subParts.push("📝해설지");
+              if (set.pdfFile) subParts.push("📄문제지");
               if (set.scriptFile) subParts.push("📜대본");
               if (set.ansFile) subParts.push("🖼️정답표");
               if (set.csvFile) subParts.push("📊정답률");
@@ -1204,12 +1241,48 @@ export function init() {
 
           try {
             if (set.mode === "registered_update" || set.mode === "script_only" || set.mode === "ans_only" || set.mode === "csv_only" || set.mode === "ans_and_csv") {
-              // 기존 등록 시험지에 대한 개별/복합 파일(대본, 정답표, 정답률 CSV) 갱신
+              // 기존 등록 시험지에 대한 개별/복합 파일(해설지 HWP, 문제지 PDF, 대본, 정답표, 정답률 CSV) 갱신
               let allOk = true;
               const updateSummary = [];
               const errSummary = [];
 
-              // (1) 대본 PDF 단독 또는 복합 갱신
+              // (1) 해설지 HWP 단독 또는 복합 갱신
+              if (set.hwpFile) {
+                const fdHwp = new FormData();
+                fdHwp.append("file_type", "hwp");
+                fdHwp.append("file", set.hwpFile);
+                const rHwp = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+                  method: "POST",
+                  body: fdHwp
+                });
+                const dHwp = await rHwp.json();
+                if (rHwp.ok) {
+                  updateSummary.push(`📝해설지${dHwp.updated_count ? `(${dHwp.updated_count}문항)` : ""}`);
+                } else {
+                  allOk = false;
+                  errSummary.push(`해설지: ${dHwp.detail || "실패"}`);
+                }
+              }
+
+              // (2) 문제지 PDF 단독 또는 복합 갱신
+              if (set.pdfFile) {
+                const fdPdf = new FormData();
+                fdPdf.append("file_type", "pdf");
+                fdPdf.append("file", set.pdfFile);
+                const rPdf = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+                  method: "POST",
+                  body: fdPdf
+                });
+                const dPdf = await rPdf.json();
+                if (rPdf.ok) {
+                  updateSummary.push(`📄문제지${dPdf.pdf_highlighted ? "(형광펜)" : ""}`);
+                } else {
+                  allOk = false;
+                  errSummary.push(`문제지: ${dPdf.detail || "실패"}`);
+                }
+              }
+
+              // (3) 대본 PDF 단독 또는 복합 갱신
               if (set.scriptFile) {
                 const fdScript = new FormData();
                 fdScript.append("file_type", "script");
@@ -1227,7 +1300,7 @@ export function init() {
                 }
               }
 
-              // (2) 정답표 단독 또는 복합 갱신
+              // (4) 정답표 단독 또는 복합 갱신
               if (set.ansFile) {
                 const fdAns = new FormData();
                 fdAns.append("file_type", "ans");
@@ -1245,7 +1318,7 @@ export function init() {
                 }
               }
 
-              // (3) 정답률 CSV 단독 또는 복합 갱신
+              // (5) 정답률 CSV 단독 또는 복합 갱신
               if (set.csvFile) {
                 const fdCsv = new FormData();
                 fdCsv.append("file_type", "csv");

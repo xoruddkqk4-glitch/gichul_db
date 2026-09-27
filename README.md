@@ -1528,5 +1528,22 @@ CREATE TABLE user_sentence_status (
   - 해설지(HWP) 배지 클릭 시 1건, 대본(PDF) 배지 클릭 시 6건, 정답률(CSV) 배지 클릭 시 251건 단독/복합 필터링 정합성 검증 완료
   - 다중 체크박스 드롭다운 팝오버 및 외부 클릭 시 닫기, 필터 해제 버튼 정상 동작 확인
 
+### [2026-09-27 22:00] 업데이트 이력 (Commit ID: 5320afe3)
+- **수정 내용**:
+  - **스마트 일괄 업로드 단독 해설지(HWP) 및 문제지(PDF) 갱신 활성화 및 자동 파싱 연동 (`static/js/upload.js`, `app.py`)**:
+    - **1) 기존 등록 시험지에 대한 단독 HWP/PDF 드롭 감지 및 시작 버튼 활성화 (`static/js/upload.js`)**:
+      - 기존 시험지(`고2-[2012-09-A] 등록됨` 등)에 HWP 해설지나 PDF 문제지만 단독 드롭했을 때 변경 항목(`droppedItems`)에 누락되어 '변경 없음(isReady=false)'으로 처리되고 업로드 버튼이 비활성화되던 버그 수정.
+      - 단독 HWP 드롭 시 테이블 상태 배지를 `📝 해설지 갱신 (준비 완료)`로 표시하고, 하단 시작 버튼을 `📝 해설지 HWP N개 세트 일괄 갱신 시작`으로 활성화.
+      - A/B형(`subtype`) 모의고사 세트의 시험지 ID 매핑을 고도화하여 기존 DB의 식별자와 완벽하게 연동되도록 개선.
+    - **2) 일괄 업로드 전송 파이프라인 확장 (`static/js/upload.js`)**:
+      - `uploadBatchSet()`의 `registered_update` 실행 루프에 HWP(`file_type="hwp"`) 및 PDF(`file_type="pdf"`) 전송 분기를 추가하여 단독 또는 복합 파일 갱신 지원.
+    - **3) 단독 HWP 업로드 시 해설 자동 파싱 및 PDF 형광펜 크롭 연쇄 갱신 (`app.py`)**:
+      - `POST /api/exams/{exam_id}/upload-file` 엔드포인트에서 HWP 파일 수신 시, HWP 본문에서 문항별 해설(`parse_hwp_explanations`)을 자동 추출하여 DB `passages.explanation_text` 및 정답 텍스트를 즉시 갱신.
+      - 문제지 PDF가 보관되어 있는 경우 정답 형광펜 하이라이트 크롭 이미지(`_regenerate_exam_crops`)까지 연쇄 자동 재생성되도록 연동.
+- **검증 결과**:
+  - `node -c static/js/upload.js static/js/main.js static/js/files-status.js`: 자바스크립트 문법 오류 0건 통과 (Exit Code 0)
+  - `python -m py_compile app.py database.py`: 파이썬 구문 오류 0건 통과 (Exit Code 0)
+  - `고2-[2012-09-A].hwp` 단독 드롭 시 `📝 해설지 갱신 (준비 완료)` 상태 전환 및 업로드 버튼 활성화 정합성 확인
+
 
 
