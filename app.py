@@ -1464,9 +1464,10 @@ async def api_upload_exam_single_file(
 
             # (1) 기존 DB 정답과 교차검증: 다른 시험의 CSV면 반영 거부, 정답률이 유일하게 가리키는 정답은 정정/확인
             with db.get_connection() as conn:
-                rows = conn.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (clean_id,)).fetchall()
+                rows = conn.execute("SELECT q_num, answer_text, answer_source FROM passages WHERE exam_id = ?", (clean_id,)).fetchall()
             current = {int(r["q_num"]): r["answer_text"] or "" for r in rows}
-            check = answer_resolver.check_csv_against_answers(rates_dict, current)
+            sources = {int(r["q_num"]): r["answer_source"] or "" for r in rows}
+            check = answer_resolver.check_csv_against_answers(rates_dict, current, sources)
             if check["suspect"]:
                 raise HTTPException(status_code=422, detail=(
                     f"정답률 CSV가 다른 시험의 데이터로 의심되어 반영하지 않았습니다 "
@@ -1476,9 +1477,14 @@ async def api_upload_exam_single_file(
             # (2) 정답률/선택률 저장
             res_data = db.save_exam_correct_rates(clean_id, rates_dict)
 
-            # (3) CSV가 결정적으로 확정한 정답: 기존 정답 정정 + 검증 상태 기록
-            decided = {q: new for q, (_old, new) in check["corrections"].items()}
-            decided.update({q: current[q] for q in check["confirmed"]})
+            # (3) CSV가 결정적으로 확정한 정답: 정답 JSON(uploaded_json) 출처의 정답은 절대 덮어쓰지 않고 최우선 유지!
+            decided = {}
+            for q, (_old, new) in check["corrections"].items():
+                if sources.get(q) != "uploaded_json":
+                    decided[q] = new
+            for q in check["confirmed"]:
+                if sources.get(q) not in ("uploaded_json", "verified_key"):
+                    decided[q] = current[q]
             if decided:
                 db.update_passage_answers(clean_id, decided, source="csv", verified=1)
             pdf_highlighted = False
@@ -1517,13 +1523,18 @@ async def api_upload_exam_single_file(
     # 5. 듣기 대본 파일 단독 등록/교체 시
     elif file_type == "script":
         try:
-            synced_count = listening_parser.sync_exam_listening(clean_id, script_pdf_path=save_path)
+            # 파일명이 -A.pdf 등 해설 PDF인지 판별
+            is_exp = bool(re.search(r"[-_]A\.pdf$", file.filename, re.I) or "_exp" in file.filename.lower())
+            sync_res = listening_parser.sync_exam_listening(clean_id, script_pdf_path=save_path, is_explanation_pdf=is_exp)
+            synced_count = sync_res.get("synced_count", 0) if isinstance(sync_res, dict) else (sync_res or 0)
+            desc_type = "해설(대본)" if is_exp else "대본"
             return {
                 "status": "success",
                 "exam_id": clean_id,
                 "file_type": "script",
                 "synced_count": synced_count,
-                "message": f"듣기 대본 파일 등록 및 {synced_count}개 듣기 문항(1~17번) 대본/FELS 추출이 완료되었습니다."
+                "is_exp": is_exp,
+                "message": f"{desc_type} PDF 파일 등록 및 {synced_count}개 듣기 문항 대본/FELS 추출이 완료되었습니다."
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"듣기 대본 처리 중 오류: {str(e)}")

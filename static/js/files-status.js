@@ -28,6 +28,7 @@ import {
   filesTotalExamsCount,
   filesTotalHwpCount,
   filesTotalPdfCount,
+  filesTotalScriptCount,
   manageExamsTableBody,
   selDelCoreBadge,
   selDelMetaBadge,
@@ -72,7 +73,7 @@ export async function loadFilesStatusList() {
     renderFilesStatusTable();
   } catch (err) {
     console.error(err);
-    filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
   }
 }
 
@@ -84,12 +85,14 @@ function renderFilesStatusTable() {
   // 통계 계산
   const pdfCount = items.filter(e => e.file_status?.pdf?.exists).length;
   const hwpCount = items.filter(e => e.file_status?.hwp?.exists).length;
+  const scriptCount = items.filter(e => e.file_status?.script?.exists).length;
   const ansCount = items.filter(e => e.file_status?.ans?.exists || (e.file_status?.ans?.answered_count > 0)).length;
   const csvCount = items.filter(e => e.file_status?.csv?.exists || (e.file_status?.csv?.rated_count > 0)).length;
 
   if (filesTotalExamsCount) filesTotalExamsCount.textContent = totalCount;
   if (filesTotalPdfCount) filesTotalPdfCount.textContent = pdfCount;
   if (filesTotalHwpCount) filesTotalHwpCount.textContent = hwpCount;
+  if (filesTotalScriptCount) filesTotalScriptCount.textContent = scriptCount;
   if (filesTotalAnsCount) filesTotalAnsCount.textContent = ansCount;
   if (filesTotalCsvCount) filesTotalCsvCount.textContent = csvCount;
 
@@ -98,7 +101,7 @@ function renderFilesStatusTable() {
   });
 
   if (items.length === 0) {
-    filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
     return;
   }
 
@@ -108,14 +111,15 @@ function renderFilesStatusTable() {
         const fs = e.file_status || {};
         const hasPdf = fs.pdf?.exists;
         const hasHwp = fs.hwp?.exists;
+        const hasScript = fs.script?.exists;
         const hasAns = fs.ans?.exists || (fs.ans?.answered_count > 0);
         const hasCsv = fs.csv?.exists || (fs.csv?.rated_count > 0);
-        return !(hasPdf && hasHwp && hasAns && hasCsv);
+        return !(hasPdf && hasHwp && hasScript && hasAns && hasCsv);
       })
     : items;
 
   if (displayItems.length === 0) {
-    filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률(4종)이 완비되었습니다!</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률·대본(5종)이 완비되었습니다!</td></tr>`;
     return;
   }
 
@@ -132,6 +136,7 @@ function renderFilesStatusTable() {
     const fStat = exam.file_status || {};
     const pdfStat = fStat.pdf || {};
     const hwpStat = fStat.hwp || {};
+    const scriptStat = fStat.script || {};
     const ansStat = fStat.ans || {};
     const csvStat = fStat.csv || {};
 
@@ -151,7 +156,18 @@ function renderFilesStatusTable() {
       hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 업로드</button>`;
     }
 
-    // 3. 정답표 이미지 (-A) 버튼
+    // 3. 대본/해설 PDF 버튼
+    let scriptBtnHtml = "";
+    if (scriptStat.exists) {
+      const isExp = scriptStat.is_exp;
+      const typeLabel = isExp ? "📑 해설(대본)" : "📜 대본PDF";
+      const chipTitle = `${escapeHtml(scriptStat.filename)} (${isExp ? "해설 PDF 대본 연동" : "대본 전용 PDF"}, 클릭 시 파일 교체)`;
+      scriptBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="${chipTitle}" style="background: #f0fdfa; color: #0f766e; border-color: #99f6e4;">${typeLabel}</button>`;
+    } else {
+      scriptBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="클릭하여 대본 PDF(_script) 또는 해설 PDF(-A) 단독 업로드">➕ 대본 업로드</button>`;
+    }
+
+    // 4. 정답표 이미지 (-A) 버튼
     let ansBtnHtml = "";
     const answeredCount = ansStat.answered_count || 0;
     const totalCount = exam.passage_count || 28;
@@ -163,7 +179,7 @@ function renderFilesStatusTable() {
       ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답 JSON(.json) 또는 이미지 등록 (1순위 정답 반영 & PDF 형광펜 갱신)">➕ 정답표 업로드</button>`;
     }
 
-    // 4. 정답률 CSV 버튼
+    // 5. 정답률 CSV 버튼
     let csvBtnHtml = "";
     const ratedCount = csvStat.rated_count || 0;
     if (csvStat.exists) {
@@ -176,16 +192,19 @@ function renderFilesStatusTable() {
       csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="클릭하여 정답률 CSV 업로드">➕ 정답률 업로드</button>`;
     }
 
-    // 5. 종합 상태 배지
+    // 6. 종합 상태 배지
     let overallStatusHtml = "";
     const hasPdf = pdfStat.exists;
     const hasHwp = hwpStat.exists;
+    const hasScript = scriptStat.exists;
     const hasAns = ansStat.exists || (answeredCount > 0);
     const hasCsv = csvStat.exists || (ratedCount > 0);
 
-    if (hasPdf && hasHwp && hasAns && hasCsv) {
-      overallStatusHtml = `<span style="font-size: 0.74rem; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟢 4종 완비</span>`;
-    } else if (hasPdf && hasHwp && hasAns && !hasCsv) {
+    if (hasPdf && hasHwp && hasScript && hasAns && hasCsv) {
+      overallStatusHtml = `<span style="font-size: 0.74rem; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟢 5종 완비</span>`;
+    } else if (hasPdf && hasHwp && hasAns && hasCsv && !hasScript) {
+      overallStatusHtml = `<span style="font-size: 0.74rem; background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">📜 대본 필요</span>`;
+    } else if (hasPdf && hasHwp && hasScript && hasAns && !hasCsv) {
       overallStatusHtml = `<span style="font-size: 0.74rem; background: #fffbeb; color: #b45309; border: 1px solid #fde68a; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟡 정답률 필요</span>`;
     } else if (hasPdf && hasHwp && !hasAns) {
       overallStatusHtml = `<span style="font-size: 0.74rem; background: #faf5ff; color: #6b21a8; border: 1px solid #e9d5ff; padding: 2px 8px; border-radius: 4px; font-weight: 700; white-space: nowrap;">🟣 정답표 필요</span>`;
@@ -208,6 +227,7 @@ function renderFilesStatusTable() {
         </td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${scriptBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${csvBtnHtml}</td>
         <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">${overallStatusHtml}</td>

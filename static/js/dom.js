@@ -251,6 +251,7 @@ export const examSingleFileInput = document.getElementById("examSingleFileInput"
 export const filesTotalExamsCount = document.getElementById("filesTotalExamsCount");
 export const filesTotalPdfCount = document.getElementById("filesTotalPdfCount");
 export const filesTotalHwpCount = document.getElementById("filesTotalHwpCount");
+export const filesTotalScriptCount = document.getElementById("filesTotalScriptCount");
 export const filesTotalAnsCount = document.getElementById("filesTotalAnsCount");
 export const filesTotalCsvCount = document.getElementById("filesTotalCsvCount");
 export const chkFilterMissingFiles = document.getElementById("chkFilterMissingFiles");

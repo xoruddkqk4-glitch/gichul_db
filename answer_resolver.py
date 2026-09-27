@@ -18,6 +18,7 @@ from typing import Dict, Any, Iterable, List, Optional
 
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
 CIRCLED_SET = set(CIRCLED_MAP.values())
+CIRCLE_TO_NUM = {v: k for k, v in CIRCLED_MAP.items()}
 VERIFIED_SOURCES = {"uploaded_json", "verified_key", "csv", "image_consensus", "manual"}
 SOURCE_LABELS = {
     "uploaded_json": "정답 JSON 파일",
@@ -54,6 +55,34 @@ def csv_rate_candidates(item: Dict[str, Any], tolerance: float = RATE_TOLERANCE)
     return cands
 
 
+def recalculate_attractive_wrong(item: Dict[str, Any], correct_circle: str):
+    """올바른 정답 기준으로 매력적 오답(attractive_wrong) 재계산"""
+    correct_num = CIRCLE_TO_NUM.get(correct_circle)
+    ch_rates = item.get("choice_rates")
+    if not isinstance(ch_rates, dict):
+        return
+    wrong_choices = []
+    for num in ["1", "2", "3", "4", "5"]:
+        if num != correct_num:
+            r = ch_rates.get(num)
+            if r is not None:
+                try:
+                    wrong_choices.append((num, float(r)))
+                except (ValueError, TypeError):
+                    pass
+    if wrong_choices:
+        wrong_choices.sort(key=lambda x: x[1], reverse=True)
+        top_num, top_rate = wrong_choices[0]
+        if top_rate >= 15.0:
+            ch_rates["attractive_wrong"] = {
+                "choice": top_num,
+                "choice_circle": CIRCLED_MAP.get(top_num, top_num),
+                "rate": top_rate
+            }
+        else:
+            ch_rates["attractive_wrong"] = None
+
+
 def csv_answer_tables(csv_rates: Optional[Dict[int, Dict[str, Any]]]):
     """(확정 정답 {q: ans}, 정답률 후보 {q: [ans...]}) - 확정 = 정답 컬럼 값 또는 유일한 정답률 후보"""
     decided: Dict[int, str] = {}
@@ -71,10 +100,31 @@ def csv_answer_tables(csv_rates: Optional[Dict[int, Dict[str, Any]]]):
     return decided, candidates
 
 
-def detect_csv_mismatch(csv_decided: Dict[int, str], reference: Dict[int, str]) -> Dict[str, Any]:
-    """CSV 확정 정답을 신뢰 가능한 참조 정답과 비교하여 '다른 시험의 CSV' 여부 판정"""
-    common = [q for q in csv_decided if q in reference]
-    mismatch = [q for q in common if csv_decided[q] != reference[q]]
+def detect_csv_mismatch(
+    csv_decided: Dict[int, str],
+    reference: Dict[int, str],
+    candidates: Optional[Dict[int, List[str]]] = None
+) -> Dict[str, Any]:
+    """
+    CSV 확정 정답을 신뢰 가능한 참조 정답(정답 JSON 최우선)과 비교하여 '다른 시험의 CSV' 여부 판정.
+    스마트 보정:
+      - CSV의 텍스트 '정답' 컬럼이 reference와 다르더라도,
+        reference 정답이 CSV의 실제 정답률 후보(candidates)에 속해 있다면
+        이는 CSV 텍스트 컬럼의 오기재일 뿐 해당 시험의 통계 데이터가 맞으므로 불일치(mismatch)로 간주하지 않는다.
+    """
+    candidates = candidates or {}
+    common = [q for q in reference if q in csv_decided or q in candidates]
+    mismatch = []
+    for q in common:
+        ref_ans = reference[q]
+        dec_ans = csv_decided.get(q)
+        cands = candidates.get(q, [])
+        if dec_ans == ref_ans:
+            continue
+        if ref_ans in cands:
+            continue
+        mismatch.append(q)
+
     suspect = len(common) >= CSV_SUSPECT_MIN_OVERLAP and len(mismatch) / len(common) > CSV_SUSPECT_RATIO
     return {"checked": len(common), "mismatch": sorted(mismatch), "suspect": suspect}
 
@@ -100,9 +150,14 @@ def resolve_answers(
 
     csv_decided, csv_candidates = csv_answer_tables(csv_rates)
     reference = {**consensus, **verified_key, **uploaded_json_clean}
-    csv_check = detect_csv_mismatch(csv_decided, reference)
+    csv_check = detect_csv_mismatch(csv_decided, reference, csv_candidates)
     if csv_check["suspect"]:
         csv_decided, csv_candidates = {}, {}
+    else:
+        # 스마트 보정: reference(정답 JSON 등) 정답이 csv_candidates에 속하면 csv_decided를 reference 정답으로 동기화
+        for q, ref_ans in reference.items():
+            if q in csv_candidates and ref_ans in csv_candidates[q]:
+                csv_decided[q] = ref_ans
 
     ordered_sources = (
         ("uploaded_json", uploaded_json_clean),
@@ -203,29 +258,53 @@ def resolve_answers(
 def check_csv_against_answers(
     csv_rates: Dict[int, Dict[str, Any]],
     current_answers: Dict[int, str],
+    current_sources: Optional[Dict[int, str]] = None,
 ) -> Dict[str, Any]:
     """
-    기존 DB 정답에 대해 새 CSV를 교차검증한다 (CSV 단독 재업로드용).
+    기존 DB 정답(정답 JSON 최우선)에 대해 새 CSV를 교차검증한다 (CSV 단독 재업로드용).
     반환: suspect(다른 시험 CSV 여부), corrections {q: (old, new)}, confirmed [q], violations [q]
+    스마트 보정:
+      - DB 정답(특히 정답 JSON)이 CSV의 candidates(정답률 후보)와 일치하면 CSV의 correct_ans를
+        DB 정답으로 스마트 자동 보정하고 confirmed로 인정한다.
     """
     decided, candidates = csv_answer_tables(csv_rates)
     current = {int(q): normalize_answer(a) for q, a in current_answers.items() if normalize_answer(a)}
-    check = detect_csv_mismatch(decided, current)
-    corrections, confirmed = {}, []
+    sources = current_sources or {}
+
+    check = detect_csv_mismatch(decided, current, candidates)
+    corrections, confirmed, smart_corrected = {}, [], []
+
     if not check["suspect"]:
-        for q, ans in decided.items():
-            if q not in current:
+        for q, ref_ans in current.items():
+            item = csv_rates.get(q) or csv_rates.get(str(q))
+            if not item:
                 continue
-            if current[q] == ans:
+            cands = candidates.get(q, [])
+            dec_ans = decided.get(q)
+
+            # Case A: DB 정답(정답 JSON 등)이 CSV의 정답률 후보(cands)에 속하는 경우 -> 스마트 일치!
+            if ref_ans in cands:
                 confirmed.append(q)
-            else:
-                corrections[q] = (current[q], ans)
-    violations = [q for q, cands in candidates.items() if q in current and q not in decided and current[q] not in cands]
+                if dec_ans != ref_ans:
+                    item["correct_ans"] = CIRCLE_TO_NUM.get(ref_ans, ref_ans)
+                    item["correct_ans_circle"] = ref_ans
+                    recalculate_attractive_wrong(item, ref_ans)
+                    smart_corrected.append(q)
+            # Case B: candidates가 비어있고(단순 정답률) 텍스트 정답만 있는 경우
+            elif not cands and dec_ans == ref_ans:
+                confirmed.append(q)
+            # Case C: 기존 DB 정답이 미검증(HWP 등)이고, CSV 정답률이 명백히 다른 정답을 가리키는 경우
+            elif dec_ans and dec_ans != ref_ans and sources.get(q) != "uploaded_json":
+                # 정답 JSON 출처는 절대 덮어쓰지 않음
+                corrections[q] = (ref_ans, dec_ans)
+
+    violations = [q for q, cands in candidates.items() if q in current and current[q] not in cands]
     return {
         "suspect": check["suspect"],
         "checked": check["checked"],
         "mismatch": check["mismatch"],
         "corrections": corrections,
         "confirmed": sorted(confirmed),
+        "smart_corrected": sorted(smart_corrected),
         "violations": sorted(violations),
     }

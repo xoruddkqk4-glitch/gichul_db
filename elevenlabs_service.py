@@ -312,6 +312,26 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
     relative_url = f"/static/audio/{filename}"
     db.update_passage_audio(passage_id, relative_url)
 
+    # 1담화 2문항(16~17번, 22~23번 등) 자매 문항에도 동일 오디오 URL 동기화
+    try:
+        m = re.match(r"^\[?(.+?)-(\d+)번?\]?$", passage_id)
+        if m:
+            exam_pfx, q_val = m.group(1), int(m.group(2))
+            sib_q = None
+            if q_val == 16:
+                sib_q = 17
+            elif q_val == 17:
+                sib_q = 16
+            elif q_val == 22:
+                sib_q = 23
+            elif q_val == 23:
+                sib_q = 22
+            if sib_q:
+                sib_id = f"[{exam_pfx}-{sib_q}번]"
+                db.update_passage_audio(sib_id, relative_url)
+    except Exception as sib_err:
+        logger.warning(f"자매 문항 오디오 동기화 실패: {sib_err}")
+
     return {
         "success": True,
         "passage_id": passage_id,

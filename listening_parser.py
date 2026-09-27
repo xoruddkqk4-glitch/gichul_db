@@ -19,6 +19,7 @@ import pdf_parser
 import fels_engine
 import database as db
 import hwp_parser
+import answer_keys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CAPTURES_DIR = os.path.join(BASE_DIR, "static", "captures")
@@ -85,8 +86,8 @@ def classify_listening_question_type(title: str, q_num: int = 0) -> str:
         elif q_num in (13, 14) or "긴" in t:
             return "긴 응답"
 
-    # 10. 1담화 2문항 (16, 17번)
-    if q_num in (16, 17) or "16번" in t or "17번" in t or "16~17" in t or "1담화" in t:
+    # 10. 1담화 2문항 (16, 17번 및 22, 23번, 21~22번 등)
+    if q_num in (16, 17, 21, 22, 23) or any(k in t for k in ["16번", "17번", "22번", "23번", "16~17", "22~23", "21~22", "1담화"]):
         return "1담화 2문항"
 
     # 11. 불일치 (9번)
@@ -116,7 +117,7 @@ def classify_listening_question_type(title: str, q_num: int = 0) -> str:
         return "긴 응답"
     elif q_num == 15:
         return "할 말"
-    elif q_num in (16, 17):
+    elif q_num in (16, 17, 21, 22, 23):
         return "1담화 2문항"
 
     return "기타"
@@ -435,9 +436,29 @@ def sync_exam_listening(
     end_q = exam_row["listening_end_q"] if "listening_end_q" in exam_row.keys() and exam_row["listening_end_q"] else 17
 
     uploads_dir = os.path.join(BASE_DIR, "uploads")
-    pdf_files = [p for p in glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.pdf")) if "_ans_" not in p]
+    def _is_prob_pdf(p: str) -> bool:
+        pl = p.lower()
+        if "_ans_" in pl or "_script" in pl or "대본" in pl or "_exp_" in pl:
+            return False
+        if re.search(r"[-_]A\.pdf$", p, re.I):
+            return False
+        return True
+
+    pdf_files = [p for p in glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.pdf")) if _is_prob_pdf(p)]
     if not pdf_files:
-        pdf_files = [p for p in glob.glob(os.path.join(uploads_dir, f"*{year}*{month:02d}*.pdf")) if "_ans_" not in p]
+        pdf_files = [p for p in glob.glob(os.path.join(uploads_dir, f"*{year}*{month:02d}*.pdf")) if _is_prob_pdf(p)]
+
+    # script_pdf_path가 지정되지 않았을 때 uploads/ 폴더에서 대본 또는 해설 PDF 자동 감지
+    if not script_pdf_path:
+        cand_scripts = [p for p in glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.pdf")) if "_script" in p.lower() or "대본" in p]
+        if cand_scripts:
+            script_pdf_path = cand_scripts[0]
+            is_explanation_pdf = False
+        else:
+            cand_exps = [p for p in glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.pdf")) if re.search(r"[-_]A\.pdf$", p, re.I) or "_exp" in p.lower()]
+            if cand_exps:
+                script_pdf_path = cand_exps[0]
+                is_explanation_pdf = True
 
     hwp_files = glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.hwp"))
     if not hwp_files:
@@ -479,12 +500,22 @@ def sync_exam_listening(
         except Exception as e:
             print(f"[Sync Listening Warning] 대본 크롭 실패: {e}")
 
+    # 정답표(answer_keys) 로드하여 정답 매핑
+    verified_key = answer_keys.load_answer_key(grade, year, month)
+
     saved_count = 0
     for q in range(start_q, end_q + 1):
         p_id = f"[{grade}-{year}년-{month:02d}월-{q:02d}번]"
         exp_info = explanations.get(q, {})
         ans_val = exp_info.get("answer", "")
+        # 1. verified_key 파일에 정답이 있으면 최우선 적용
+        if q in verified_key and verified_key[q]:
+            ans_val = verified_key[q]
+
         exp_text = exp_info.get("explanation", "")
+        if ans_val and not re.search(r"^\s*\[\s*정답\s*\]", exp_text):
+            exp_text = f"[정답] {ans_val}\n\n{exp_text}".strip()
+
         q_title = pdf_questions.get(q, {}).get("question_title", f"{q}. 문항")
         crop_img = pdf_questions.get(q, {}).get("pdf_crop_image", "")
         script_crop_img = script_crops.get(q, None)
@@ -517,8 +548,50 @@ def sync_exam_listening(
         "success": True,
         "exam_id": clean_id,
         "saved_count": saved_count,
+        "synced_count": saved_count,
         "has_pdf": bool(pdf_files),
         "has_hwp": bool(hwp_files),
         "script_crops_count": len(script_crops)
     }
+
+
+def sync_all_missing_listening_answers() -> int:
+    """
+    DB 내 전체 듣기 문항(area='listening') 중 answer_text가 비어있는 문항들에 대해
+    answer_keys 키 파일의 정답(1~17번)을 매칭하여 즉시 일괄 동기화
+    """
+    updated_count = 0
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, grade, year, month FROM exams")
+        exams = cursor.fetchall()
+        for ex in exams:
+            grade, year, month = ex["grade"], ex["year"], ex["month"]
+            clean_id = ex["id"]
+            verified_key = answer_keys.load_answer_key(grade, year, month)
+            if not verified_key:
+                continue
+
+            cursor.execute(
+                "SELECT id, q_num, answer_text, explanation_text FROM passages WHERE exam_id = ? AND area = 'listening'",
+                (clean_id,)
+            )
+            passages = cursor.fetchall()
+            for p in passages:
+                q = int(p["q_num"])
+                current_ans = (p["answer_text"] or "").strip()
+                if not current_ans and q in verified_key and verified_key[q]:
+                    target_ans = verified_key[q]
+                    exp_text = p["explanation_text"] or ""
+                    if not re.search(r"^\s*\[\s*정답\s*\]", exp_text):
+                        new_exp = f"[정답] {target_ans}\n\n{exp_text}".strip()
+                    else:
+                        new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {target_ans}", exp_text)
+                    cursor.execute(
+                        "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = 'verified_key', answer_verified = 1 WHERE id = ?",
+                        (target_ans, new_exp, p["id"])
+                    )
+                    updated_count += 1
+        conn.commit()
+    return updated_count
 

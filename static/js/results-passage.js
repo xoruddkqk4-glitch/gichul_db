@@ -71,6 +71,11 @@ import { copyToClipboard, escapeHtml, showToast } from "./utils.js";
 import { triggerSingleFileUpload } from "./upload.js";
 
 let currentDetailPassage = null;
+
+export function getCurrentDetailPassage() {
+  return currentDetailPassage;
+}
+
 const ANSWER_SOURCE_LABELS = { uploaded_json: "정답 JSON", verified_key: "검증 키 파일", csv: "정답률 CSV", image_consensus: "이미지 모델 합의", image_single: "이미지 단일 모델", hwp: "HWP 해설", manual: "수동 확정", none: "출처 없음" };
 // =========================================================================
 // 6. [지문 검색 결과] 상단 문항별 탭 & 2x2 그리드 렌더링
@@ -141,7 +146,161 @@ function resolveCompoundGroupsFor50(examId, itemMap) {
   return [[46, 48], [49, 50]];
 }
 
-/** 41~42번/43~45번(45문항 체제) 또는 46~48번/49~50번/46~47번/48~50번 등(50문항 체제) 복합 지문을 발문 분석을 통해 동적으로 단일 탭으로 병합 */
+/**
+ * 해설 텍스트를 대괄호 섹션 헤더([출제의도], [어휘] 등) 또는 빈 줄 단위로 의미 블록 분할
+ */
+function splitExplanationBlocks(text) {
+  if (!text) return [];
+  const clean = text.replace(/^\[정답\][^\n]*\n*/, "").trim();
+  if (!clean) return [];
+
+  // 섹션 헤더 앞을 기준으로 1차 분할 (예: [출제의도], [출제 의도], [해설], [풀이], [어휘], [해석], [Words and Phrases] 등)
+  const sectionSplitPattern = /(?=(?:^|\n)\s*(?:\[|［)[^\]］\n]+(?:\]|］))/g;
+  const rawSections = clean.split(sectionSplitPattern);
+
+  const blocks = [];
+  rawSections.forEach((sec) => {
+    const s = sec.trim();
+    if (!s) return;
+    // 빈 줄 2개 이상으로 문단이 나뉘어 있는 경우 세부 블록으로 추가 분할
+    const paras = s.split(/\n\s*\n/);
+    paras.forEach((p) => {
+      const pt = p.trim();
+      if (pt) blocks.push(pt);
+    });
+  });
+  return blocks;
+}
+
+/** 블록 간 내용 일치 및 포함 비교를 위한 정규화 (공백/줄바꿈 단순화) */
+function normalizeExplanationBlock(text) {
+  return (text || "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * 1지문 2문항, 1지문 3문항 등 복합 문항의 해설을 각 문항별로 온전하게 결합
+ * - 첫 번째 문항 해설에 전문 해석/공통 어휘 등을 1회만 표시
+ * - 두 번째 문항부터는 이전 문항에서 이미 노출된 중복 블록을 동적으로 감지하여 제거
+ */
+function combineGroupExplanations(subItems) {
+  if (!subItems || subItems.length === 0) return "";
+
+  // 1. 전체 정답 헤더
+  const ansParts = subItems.map((si) => `${si.q_num}. ${si.answer_text || "-"}`);
+  const combinedAns = `[정답] ` + ansParts.join("   ");
+
+  // 2. 문항별 해설 블록 동적 중복 제거
+  const seenNormalizedBlocks = new Set();
+  const cleanedExps = [];
+
+  subItems.forEach((si, idx) => {
+    const raw = si.explanation_text || "";
+    const blocks = splitExplanationBlocks(raw);
+
+    const filteredBlocks = [];
+    blocks.forEach((b) => {
+      const norm = normalizeExplanationBlock(b);
+      let isDup = false;
+
+      // 두 번째 문항부터는 이전 문항에서 이미 나온 블록 검사
+      if (idx > 0) {
+        for (const seen of seenNormalizedBlocks) {
+          // 완전 일치하거나, 20자 이상의 긴 블록(지문 해석, 어휘 목록 등)이 상호 포함되는 경우 중복으로 판정
+          if (norm === seen || (norm.length >= 20 && seen.includes(norm)) || (seen.length >= 20 && norm.includes(seen))) {
+            isDup = true;
+            break;
+          }
+        }
+      }
+
+      if (!isDup) {
+        filteredBlocks.push(b);
+        seenNormalizedBlocks.add(norm);
+      }
+    });
+
+    cleanedExps.push({
+      q_num: si.q_num,
+      ans: si.answer_text || "-",
+      text: filteredBlocks.join("\n\n").trim()
+    });
+  });
+
+  // 모든 문항의 해설 내용이 100% 동일하여 2번째 문항에 남는 내용이 없는 특수 케이스
+  const nonEmptyExps = cleanedExps.filter((ce) => ce.text);
+  if (nonEmptyExps.length <= 1) {
+    const base = nonEmptyExps[0]?.text || "";
+    return base ? `${combinedAns}\n\n${base}` : combinedAns;
+  }
+
+  // 각 문항별로 명확하게 구분선 및 문항 헤더를 달아 출력
+  const blocks = [combinedAns];
+  cleanedExps.forEach((ce) => {
+    const t = ce.text || "해설 정보가 등록되지 않았습니다.";
+    blocks.push(
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n【 ${ce.q_num}번 해설 】 (정답: ${ce.ans})\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${t}`
+    );
+  });
+
+  return blocks.join("\n\n");
+}
+
+/** 듣기 영역 1담화 2문항(16~17번, 22~23번 등) 복합 객체 생성 헬퍼 */
+function createGroupedListeningItem(subItems, handledIds) {
+  const p = subItems[0];
+  subItems.forEach((si) => handledIds.add(si.id));
+
+  const gStart = subItems[0].q_num;
+  const gEnd = subItems[subItems.length - 1].q_num;
+  const rangeLabel = `${gStart}~${gEnd}번`;
+  const groupType = `${gStart}-${gEnd}`;
+
+  const examPrefix = p.id.replace(new RegExp(`-${gStart}번?\\]?$`), "").replace(/^\[/, "");
+  const ansLabel = subItems.map((si) => `${si.q_num}.${si.answer_text || "-"}`).join(" / ");
+  const expText = combineGroupExplanations(subItems);
+
+  // 발문 결합
+  const titleList = subItems.map((si) => si.question_title).filter(Boolean);
+  const combinedTitle = titleList.length > 0 ? titleList.join(" / ") : `[${rangeLabel}] 다음을 듣고 물음에 답하시오.`;
+
+  // 문제지 크롭 이미지 목록
+  const qCropImages = Array.from(new Set(subItems.map((si) => si.pdf_crop_image).filter(Boolean)));
+
+  // 대본 크롭 이미지 목록
+  const sCropImages = Array.from(new Set(subItems.map((si) => si.script_crop_image).filter(Boolean)));
+
+  // 대본 텍스트 및 FELS 텍스트
+  const scriptText = subItems.map((si) => si.script_text).filter(Boolean)[0] || subItems.map((si) => si.passage_text).filter(Boolean)[0] || "";
+  const felsText = subItems.map((si) => si.fels_text).filter(Boolean)[0] || "";
+
+  // 오디오 파일 경로
+  const audioFilePath = subItems.map((si) => si.audio_file_path).filter(Boolean)[0] || null;
+
+  return {
+    ...p,
+    area: "listening",
+    isGroup: true,
+    groupType: groupType,
+    q_num_label: rangeLabel,
+    display_id: `[${examPrefix}-${rangeLabel}]`,
+    all_ids: subItems.map((si) => si.id),
+    subItems: subItems,
+    question_type: "1담화 2문항",
+    question_title: combinedTitle,
+    answer_text: ansLabel,
+    answer_verified: subItems.every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+    pdf_crop_images: qCropImages,
+    pdf_crop_image: qCropImages[0] || p.pdf_crop_image || null,
+    script_crop_image: sCropImages[0] || p.script_crop_image || null,
+    script_crop_images: sCropImages,
+    script_text: scriptText,
+    fels_text: felsText,
+    audio_file_path: audioFilePath,
+    explanation_text: expText
+  };
+}
+
+/** 41~42번/43~45번(45문항 체제), 46~48번/49~50번 등(50문항 체제), 및 듣기 16~17번/22~23번 복합 지문을 동적으로 단일 탭으로 병합 */
 export function groupPassageItems(rawItems) {
   if (!rawItems || rawItems.length === 0) return [];
 
@@ -161,14 +320,24 @@ export function groupPassageItems(rawItems) {
     }
   }
 
-  // 대량 데이터 고속 처리를 위해 exam_id + q_num 인덱스 Map 사전 구축
+  // 대량 데이터 고속 처리를 위해 exam_id + q_num 인덱스 Map 사전 구축 (영역별 인덱스 병행)
   const itemMap = new Map();
   for (let i = 0; i < rawItems.length; i++) {
     const it = rawItems[i];
     if (it.exam_id && it.q_num !== undefined) {
       itemMap.set(`${it.exam_id}_${it.q_num}`, it);
+      if (it.area) {
+        itemMap.set(`${it.area}_${it.exam_id}_${it.q_num}`, it);
+      }
     }
   }
+
+  const getItem = (examId, qNum, area) => {
+    if (area && itemMap.has(`${area}_${examId}_${qNum}`)) {
+      return itemMap.get(`${area}_${examId}_${qNum}`);
+    }
+    return itemMap.get(`${examId}_${qNum}`);
+  };
 
   // 50문항 체제 시험별 동적 복합 지문 그룹 캐시
   const examCompoundGroupsMap = new Map();
@@ -178,6 +347,62 @@ export function groupPassageItems(rawItems) {
     if (handledIds.has(p.id)) continue;
 
     const is50Exam = examIs50Map.get(p.exam_id) || false;
+
+    // =======================================================================
+    // [듣기 영역 복합 문항 통합]:
+    // 1) 17문항 세트: 16~17번 (1담화 2문항)
+    // 2) 22문항/23문항 세트: 22~23번 (1담화 2문항) (또는 21~22번)
+    // 3) 동일 스크립트 기반 연속 문항 동적 통합
+    // =======================================================================
+    const isListening = (p.area === "listening") ||
+      (p.question_type === "1담화 2문항") ||
+      (p.question_type === "1담화2문항") ||
+      (p.script_text && p.script_text.trim().length > 0) ||
+      (p.q_num <= 17 && !is50Exam && p.area !== "reading");
+
+    if (isListening) {
+      // 16~17번 통합 (17문항 체제)
+      if (p.q_num === 16) {
+        const p17 = getItem(p.exam_id, 17, p.area);
+        if (p17) {
+          result.push(createGroupedListeningItem([p, p17], handledIds));
+          continue;
+        }
+      }
+
+      // 22~23번 통합 (22/23문항 체제)
+      if (p.q_num === 22) {
+        const p23 = getItem(p.exam_id, 23, p.area);
+        if (p23) {
+          result.push(createGroupedListeningItem([p, p23], handledIds));
+          continue;
+        }
+      }
+
+      // 21~22번 통합 (총 22문항 세트에서 21~22번이 묶인 경우 안전 대응)
+      if (p.q_num === 21) {
+        const p22 = getItem(p.exam_id, 22, p.area);
+        const p23 = getItem(p.exam_id, 23, p.area);
+        if (p22 && !p23) {
+          const isComp21 = (p.question_type === "1담화 2문항" || p.question_type === "1담화2문항") ||
+            (p.script_text && p22.script_text && p.script_text.trim() === p22.script_text.trim()) ||
+            /21\s*[~～\-]\s*22/.test(p.question_title || "");
+          if (isComp21) {
+            result.push(createGroupedListeningItem([p, p22], handledIds));
+            continue;
+          }
+        }
+      }
+
+      // 동일 스크립트 기반 연속 문항 일반 대응
+      if (p.script_text && p.script_text.trim().length > 20) {
+        const pNext = getItem(p.exam_id, p.q_num + 1, p.area);
+        if (pNext && pNext.script_text && pNext.script_text.trim() === p.script_text.trim()) {
+          result.push(createGroupedListeningItem([p, pNext], handledIds));
+          continue;
+        }
+      }
+    }
 
     if (is50Exam) {
       // =======================================================================
@@ -208,9 +433,7 @@ export function groupPassageItems(rawItems) {
 
           const examPrefix = p.id.replace(new RegExp(`-${gStart}번\\]$`), "").replace(/^\[/, "");
           const ansLabel = subItems.map((si) => `${si.q_num}.${si.answer_text || "-"}`).join(" / ");
-          const combinedAns = `[정답] ` + subItems.map((si) => `${si.q_num}. ${si.answer_text || "-"}`).join("   ");
-          const baseExp = (subItems.map((si) => si.explanation_text).filter(Boolean)[0] || "").replace(/^\[정답\][^\n]*\n*/, "");
-          const expText = `${combinedAns}\n\n${baseExp.trim()}`;
+          const expText = combineGroupExplanations(subItems);
           const qCount = subItems.length;
           const groupTypeLabel = `1지문${qCount}문항`;
           const rangeLabel = `${gStart}~${gEnd}번`;
@@ -249,9 +472,7 @@ export function groupPassageItems(rawItems) {
           const ans41 = p.answer_text || "-";
           const ans42 = p42.answer_text || "-";
           const ansLabel = `41.${ans41} / 42.${ans42}`;
-          const combinedAns41_42 = `[정답] 41. ${ans41}   42. ${ans42}`;
-          const baseExp41_42 = (p.explanation_text || p42.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
-          const expText41_42 = `${combinedAns41_42}\n\n${baseExp41_42.trim()}`;
+          const expText41_42 = combineGroupExplanations([p, p42]);
 
           result.push({
             ...p,
@@ -285,9 +506,7 @@ export function groupPassageItems(rawItems) {
           const ans44 = p44.answer_text || "-";
           const ans45 = p45.answer_text || "-";
           const ansLabel = `43.${ans43} / 44.${ans44} / 45.${ans45}`;
-          const combinedAns43_45 = `[정답] 43. ${ans43}   44. ${ans44}   45. ${ans45}`;
-          const baseExp43_45 = (p.explanation_text || p44.explanation_text || p45.explanation_text || "").replace(/^\[정답\][^\n]*\n*/, "");
-          const expText43_45 = `${combinedAns43_45}\n\n${baseExp43_45.trim()}`;
+          const expText43_45 = combineGroupExplanations([p, p44, p45]);
 
           result.push({
             ...p,
@@ -451,9 +670,33 @@ export function renderPassageView(items, targetPassageId = null) {
     });
   });
 
-  // 1) 특정 targetPassageId로 직접 이동하는 경우 (예: 문장 검색에서 넘어온 경우)
+  // 1) 특정 targetPassageId로 직접 이동하는 경우 (예: 문장 검색에서 넘어온 경우 or 영역 전환)
   if (targetPassageId) {
-    const targetP = items.find((p) => p.id === targetPassageId || (p.all_ids && p.all_ids.includes(targetPassageId)));
+    let targetP = items.find((p) => p.id === targetPassageId || (p.all_ids && p.all_ids.includes(targetPassageId)));
+    if (!targetP) {
+      const qMatch = targetPassageId.match(/-(\d{1,2})번/);
+      if (qMatch) {
+        const targetQ = parseInt(qMatch[1], 10);
+        const idH = parsePassageHierarchy({ id: targetPassageId });
+        const normalizeMonth = (m) => parseInt(String(m).replace(/[^0-9]/g, ""), 10) || 0;
+        const normalizeYear = (y) => parseInt(String(y).replace(/[^0-9]/g, ""), 10) || 0;
+        targetP = items.find((p) => {
+          const ph = parsePassageHierarchy(p);
+          const sameExam = (!idH.grade || ph.grade === idH.grade) &&
+            (!idH.year || normalizeYear(ph.year) === normalizeYear(idH.year)) &&
+            (!idH.month || normalizeMonth(ph.month) === normalizeMonth(idH.month));
+          if (!sameExam) return false;
+          if (p.q_num === targetQ) return true;
+          if (p.subItems && p.subItems.some(s => s.q_num === targetQ)) return true;
+          return false;
+        }) || items.find((p) => {
+          const ph = parsePassageHierarchy(p);
+          return (!idH.grade || ph.grade === idH.grade) &&
+            (!idH.year || normalizeYear(ph.year) === normalizeYear(idH.year)) &&
+            (!idH.month || normalizeMonth(ph.month) === normalizeMonth(idH.month));
+        });
+      }
+    }
     if (targetP) {
       const h = parsePassageHierarchy(targetP);
       appState.treeNavState.grade = h.grade;
@@ -617,7 +860,16 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
   treeStepSelector.style.display = "none";
   passageTabBar.style.display = "grid";
 
-  const examData = tree[appState.treeNavState.grade][appState.treeNavState.year][appState.treeNavState.month];
+  let examData = tree[appState.treeNavState.grade]?.[appState.treeNavState.year]?.[appState.treeNavState.month];
+  if (!examData && tree[appState.treeNavState.grade]?.[appState.treeNavState.year]) {
+    const mNum = parseInt(String(appState.treeNavState.month).replace(/[^0-9]/g, ""), 10);
+    const mKeys = Object.keys(tree[appState.treeNavState.grade][appState.treeNavState.year]);
+    const matchedM = mKeys.find((k) => parseInt(String(k).replace(/[^0-9]/g, ""), 10) === mNum);
+    if (matchedM) {
+      appState.treeNavState.month = matchedM;
+      examData = tree[appState.treeNavState.grade][appState.treeNavState.year][matchedM];
+    }
+  }
   appState.currentExamQuestions = (examData && examData.items) ? examData.items : [];
 
   // 문항 탭 렌더링
@@ -626,7 +878,18 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
   // 대상 문항 선택
   let activeIdx = 0;
   if (targetPassageId) {
-    const fIdx = appState.currentExamQuestions.findIndex((p) => p.id === targetPassageId || (p.all_ids && p.all_ids.includes(targetPassageId)));
+    let fIdx = appState.currentExamQuestions.findIndex((p) => p.id === targetPassageId || (p.all_ids && p.all_ids.includes(targetPassageId)));
+    if (fIdx < 0) {
+      const qMatch = targetPassageId.match(/-(\d{1,2})번/);
+      if (qMatch) {
+        const targetQ = parseInt(qMatch[1], 10);
+        fIdx = appState.currentExamQuestions.findIndex((p) => {
+          if (p.q_num === targetQ) return true;
+          if (p.subItems && p.subItems.some(s => s.q_num === targetQ)) return true;
+          return false;
+        });
+      }
+    }
     if (fIdx >= 0) activeIdx = fIdx;
   }
   selectPassageTab(activeIdx, appState.currentExamQuestions);
@@ -908,23 +1171,60 @@ function loadPassageDetail(p) {
 
   if (isListening) {
     // 듣기 모드: 문제지 크롭(위) + 구분선 + 대본 크롭(아래) 상하 수직 배열
-    const qImgSrc = (images.length > 0) ? images[0] : "";
-    let sImgSrc = p.script_crop_image || "";
-    if (sImgSrc) {
-      const sep = sImgSrc.includes("?") ? "&" : "?";
-      sImgSrc = `${sImgSrc}${sep}t=${Date.now()}`;
+    let qCropHtml = "";
+    if (images.length === 1) {
+      qCropHtml = `<div class="listening-crop-img-wrapper"><img src="${images[0]}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} 문제지 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기"></div>`;
+    } else if (images.length > 1) {
+      qCropHtml = `
+        <div class="listening-multi-crop-list" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+          ${images.map((imgUrl, i) => {
+            const subQ = (p.subItems && p.subItems[i] && p.subItems[i].q_num) ? `${p.subItems[i].q_num}번 ` : `[${i+1}] `;
+            return `
+              <div class="listening-crop-img-wrapper">
+                <div style="font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                  <span style="display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #2563eb;"></span>
+                  ${subQ}문제지 캡처
+                </div>
+                <img src="${imgUrl}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} ${subQ}문제지 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } else {
+      qCropHtml = `<div class="pdf-placeholder" style="padding: 1.5rem 1rem; min-height: 100px;">🖼️ 문제지 캡처 이미지가 생성되지 않았습니다.</div>`;
     }
 
-    const qCropHtml = qImgSrc
-      ? `<div class="listening-crop-img-wrapper"><img src="${qImgSrc}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} 문제지 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기"></div>`
-      : `<div class="pdf-placeholder" style="padding: 1.5rem 1rem; min-height: 100px;">🖼️ 문제지 캡처 이미지가 생성되지 않았습니다.</div>`;
+    let rawScriptImages = [];
+    if (p.isGroup && p.subItems) {
+      rawScriptImages = Array.from(new Set(p.subItems.map((si) => si.script_crop_image).filter(Boolean)));
+    } else if (p.script_crop_image) {
+      rawScriptImages = [p.script_crop_image];
+    }
+    const scriptImages = rawScriptImages.map((url) => {
+      const sep = url.includes("?") ? "&" : "?";
+      return `${url}${sep}t=${Date.now()}`;
+    });
 
-    const sCropHtml = sImgSrc
-      ? `<div class="listening-crop-img-wrapper"><img src="${sImgSrc}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} 대본 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기"></div>`
-      : `<div class="pdf-placeholder" style="padding: 1.25rem 1rem; min-height: 100px;">
+    let sCropHtml = "";
+    if (scriptImages.length === 1) {
+      sCropHtml = `<div class="listening-crop-img-wrapper"><img src="${scriptImages[0]}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} 대본 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기"></div>`;
+    } else if (scriptImages.length > 1) {
+      sCropHtml = `
+        <div class="listening-multi-crop-list" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+          ${scriptImages.map((imgUrl, i) => `
+            <div class="listening-crop-img-wrapper">
+              <img src="${imgUrl}" class="pdf-crop-img listening-crop-img" alt="${escapeHtml(p.display_id || p.id)} [${i+1}] 대본 캡처" title="클릭 시 새 창에서 원본 크기 확대 보기">
+            </div>
+          `).join('')}
+        </div>
+      `;
+    } else {
+      sCropHtml = `<div class="pdf-placeholder" style="padding: 1.25rem 1rem; min-height: 100px;">
            <div style="font-size: 0.88rem; font-weight: 600; color: #64748b;">📜 대본 크롭 이미지가 아직 등록되지 않았습니다.</div>
            <div style="font-size: 0.78rem; color: #94a3b8; margin-top: 4px;">대본 PDF 파일 또는 해설 PDF 파일을 업로드하면 대본 섹션이 자동 크롭됩니다.</div>
          </div>`;
+    }
 
     panelPdfImageContainer.innerHTML = `
       <div class="listening-crops-container">
@@ -1088,7 +1388,11 @@ function loadPassageDetail(p) {
       </div>
     `;
   } else {
-    panelExplanation.textContent = p.explanation_text || "해설 정보가 등록되지 않았습니다.";
+    let expText = p.explanation_text || "";
+    if (p.isGroup && Array.isArray(p.subItems) && p.subItems.length > 1) {
+      expText = combineGroupExplanations(p.subItems);
+    }
+    panelExplanation.textContent = expText || "해설 정보가 등록되지 않았습니다.";
   }
 
   // [우측 하단]: 지문 메타 정보, 문제 유형, 태그 관리
@@ -1728,6 +2032,11 @@ export function init() {
 
         if (res.ok && resData.success) {
           currentDetailPassage.audio_file_path = resData.audio_url;
+          if (currentDetailPassage.isGroup && currentDetailPassage.subItems) {
+            currentDetailPassage.subItems.forEach((si) => {
+              si.audio_file_path = resData.audio_url;
+            });
+          }
           showToast("🎙️ 문항 듣기 음성이 성공적으로 생성되었습니다!", "success");
           const player = document.getElementById("listeningAudioPlayer");
           const chip = document.getElementById("audioStatusChip");
@@ -1754,7 +2063,7 @@ export function init() {
   if (btnGenerateAllListeningAudio) {
     btnGenerateAllListeningAudio.addEventListener("click", async () => {
       if (!currentDetailPassage) return;
-      if (!confirm(`[${currentDetailPassage.exam_id}] 전체 듣기 문항(1~17번)의 음성을 일괄 생성하시겠습니까?\n\n(Edge-TTS 엔진 선택 시 비용 없이 완전 무료로 생성됩니다)`)) {
+      if (!confirm(`[${currentDetailPassage.exam_id}] 전체 듣기 문항의 음성을 일괄 생성하시겠습니까?\n\n(Edge-TTS 엔진 선택 시 비용 없이 완전 무료로 생성됩니다)`)) {
         return;
       }
       btnGenerateAllListeningAudio.disabled = true;
@@ -1776,6 +2085,11 @@ export function init() {
           if (freshRes.ok) {
             const freshData = await freshRes.json();
             currentDetailPassage.audio_file_path = freshData.audio_file_path;
+            if (currentDetailPassage.isGroup && currentDetailPassage.subItems) {
+              currentDetailPassage.subItems.forEach((si) => {
+                si.audio_file_path = freshData.audio_file_path;
+              });
+            }
             const player = document.getElementById("listeningAudioPlayer");
             const chip = document.getElementById("audioStatusChip");
             if (player && currentDetailPassage.audio_file_path) {
@@ -1807,7 +2121,8 @@ export function init() {
       }
       const a = document.createElement("a");
       a.href = currentDetailPassage.audio_file_path;
-      a.download = `${currentDetailPassage.id.replace(/[\[\]]/g, '')}.mp3`;
+      const safeId = (currentDetailPassage.display_id || currentDetailPassage.id).replace(/[\[\]]/g, '');
+      a.download = `${safeId}.mp3`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

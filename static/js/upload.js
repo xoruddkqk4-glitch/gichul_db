@@ -97,13 +97,33 @@ export const closeUploadModal = () => {
   }
 };
 
-// 10-2. 스마트 파일명 메타데이터 파서 및 출제기관 판별 규칙 (정답표 -A 접미사 지원)
+// 10-2. 스마트 파일명 메타데이터 파서 및 출제기관 판별 규칙
+// - 해설 PDF: '고O-[OOOO-OO]-A.pdf' (또는 *_exp*.pdf)
+// - 스크립트 PDF: '고O-[OOOO-OO]_script.pdf' (또는 *대본*.pdf)
+// - 정답표: .json 또는 이미지(.png, .jpg, .jpeg)의 -A / ans
 function parseExamMetadataFromFilename(filename) {
   if (!filename) return null;
+  const lower = filename.toLowerCase();
+  const extMatch = lower.match(/\.[^/.]+$/);
+  const ext = extMatch ? extMatch[0] : "";
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
-  const is_json = filename.toLowerCase().endsWith(".json");
-  const is_ans = is_json || /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
-  const cleanName = nameWithoutExt.replace(/[\s\-_]?(A|ans|정답)$/i, "");
+
+  // 1. 대본/해설 PDF 판별
+  const is_script_pdf = ext === ".pdf" && (/_script/i.test(nameWithoutExt) || /대본/i.test(nameWithoutExt));
+  const is_exp_pdf = ext === ".pdf" && (/[\s\-_]A$/i.test(nameWithoutExt) || /[\s\-_]exp$/i.test(nameWithoutExt) || /_exp_/i.test(nameWithoutExt));
+
+  // 2. 정답표 (JSON 또는 이미지)
+  const is_json = ext === ".json";
+  const is_ans_img = [".png", ".jpg", ".jpeg"].includes(ext) && /[\s\-_]?(A|ans|정답)$/i.test(nameWithoutExt);
+  const is_ans = is_json || is_ans_img;
+
+  // 3. 문제지 PDF: 스크립트, 해설, 정답이 아닌 순수 문제지 PDF
+  const is_problem_pdf = ext === ".pdf" && !is_script_pdf && !is_exp_pdf;
+
+  // 4. 모의고사 식별자 추출을 위해 접미사 제거
+  let cleanName = nameWithoutExt
+    .replace(/[\s\-_]?(script|대본)$/i, "")
+    .replace(/[\s\-_]?(A|ans|정답|exp)$/i, "");
 
   // 지원 패턴 예: 고3-[2026-07], 고3-[2026-7], 고3-2026-07, 고3_2026_07, 고3 2026년 7월 등
   const match = cleanName.match(/(고[1-3]|[1-3]학년)[\s\-_]?\[?(\d{4})[년\s\-_]+(\d{1,2})월?\]?/i);
@@ -118,11 +138,21 @@ function parseExamMetadataFromFilename(filename) {
   const exam_type = (grade === "고3" && [6, 9, 11].includes(month)) ? "평가원" : "교육청";
   const set_key = `${grade}-[${year}-${String(month).padStart(2, "0")}]`;
 
-  return { set_key, grade, year, month, exam_type, is_ans };
+  return {
+    set_key,
+    grade,
+    year,
+    month,
+    exam_type,
+    is_ans,
+    is_script_pdf,
+    is_exp_pdf,
+    is_problem_pdf
+  };
 }
 
-// 10-3. 스마트 일괄 업로드 (복수 세트) 드롭존 & 페어링 (PDF + HWP + 정답 이미지 3종)
-let batchSetsMap = {}; // { set_key: { set_key, grade, year, month, exam_type, pdfFile, hwpFile, ansFile } }
+// 10-3. 스마트 일괄 업로드 (복수 세트) 드롭존 & 페어링 (PDF + HWP + 대본/해설 PDF + 정답표 4종 이상)
+let batchSetsMap = {}; // { set_key: { set_key, grade, year, month, exam_type, pdfFile, hwpFile, scriptFile, ansFile, csvFile } }
 
 async function handleBatchFilesSelected(fileList) {
   if (!fileList || fileList.length === 0) return;
@@ -143,22 +173,26 @@ async function handleBatchFilesSelected(fileList) {
         exam_type: meta.exam_type,
         pdfFile: null,
         hwpFile: null,
+        scriptFile: null,
         ansFile: null,
         csvFile: null,
       };
     }
 
     const lowerName = file.name.toLowerCase();
-    const isScript = /대본|script/i.test(lowerName);
-    if (isScript) {
+    if (meta.is_script_pdf) {
       batchSetsMap[key].scriptFile = file;
-    } else if (lowerName.endsWith(".pdf")) {
+    } else if (meta.is_exp_pdf) {
+      if (!batchSetsMap[key].scriptFile) {
+        batchSetsMap[key].scriptFile = file;
+      }
+    } else if (meta.is_problem_pdf) {
       batchSetsMap[key].pdfFile = file;
     } else if (lowerName.endsWith(".hwp") || lowerName.endsWith(".hwpx")) {
       batchSetsMap[key].hwpFile = file;
     } else if (lowerName.endsWith(".csv")) {
       batchSetsMap[key].csvFile = file;
-    } else if (lowerName.endsWith(".json") || lowerName.endsWith(".png") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || meta.is_ans) {
+    } else if (meta.is_ans) {
       batchSetsMap[key].ansFile = file;
     }
   }
@@ -370,7 +404,7 @@ export async function loadExamsManagerList() {
     renderManageExamsTable();
   } catch (err) {
     console.error(err);
-    manageExamsTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: #dc2626;">시험지 목록을 불러오지 못했습니다.</td></tr>`;
+    manageExamsTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2rem; color: #dc2626;">시험지 목록을 불러오지 못했습니다.</td></tr>`;
   }
 }
 
@@ -378,7 +412,7 @@ export function renderManageExamsTable() {
   if (!manageExamsTableBody) return;
 
   if (!appState.loadedExamsCache || appState.loadedExamsCache.length === 0) {
-    manageExamsTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: var(--text-muted);">등록된 시험지가 없습니다.</td></tr>`;
+    manageExamsTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2rem; color: var(--text-muted);">등록된 시험지가 없습니다.</td></tr>`;
     updateExamsSelectionState();
     return;
   }
@@ -401,6 +435,7 @@ export function renderManageExamsTable() {
     const fStat = exam.file_status || {};
     const pdfStat = fStat.pdf || {};
     const hwpStat = fStat.hwp || {};
+    const scriptStat = fStat.script || {};
     const ansStat = fStat.ans || {};
     const csvStat = fStat.csv || {};
 
@@ -420,7 +455,18 @@ export function renderManageExamsTable() {
       hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 등록</button>`;
     }
 
-    // 3. 정답표 이미지 (-A) 칩 버튼
+    // 3. 대본/해설 PDF 칩 버튼
+    let scriptBtnHtml = "";
+    if (scriptStat.exists) {
+      const isExp = scriptStat.is_exp;
+      const typeLabel = isExp ? "📑 해설(대본)" : "📜 대본 등록됨";
+      const chipTitle = `${escapeHtml(scriptStat.filename)} (${isExp ? "해설 PDF 대본 연동" : "대본 전용 PDF"}, 클릭 시 파일 교체)`;
+      scriptBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="${chipTitle}" style="background: #f0fdfa; color: #0f766e; border-color: #99f6e4;">${typeLabel}</button>`;
+    } else {
+      scriptBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="클릭하여 대본 PDF(_script) 또는 해설 PDF(-A) 단독 업로드">➕ 대본 등록</button>`;
+    }
+
+    // 4. 정답표 이미지 (-A) 칩 버튼
     let ansBtnHtml = "";
     const answeredCount = ansStat.answered_count || 0;
     const totalCount = ansStat.total_count || exam.passage_count || 28;
@@ -432,7 +478,7 @@ export function renderManageExamsTable() {
       ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답 JSON(.json) 또는 이미지 등록 (1순위 정답 반영 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
     }
 
-    // 4. 정답률 CSV 칩 버튼
+    // 5. 정답률 CSV 칩 버튼
     let csvBtnHtml = "";
     const ratedCount = csvStat.rated_count || 0;
     if (csvStat.exists) {
@@ -445,7 +491,7 @@ export function renderManageExamsTable() {
       csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="클릭하여 정답률 CSV 업로드">➕ CSV 등록</button>`;
     }
 
-    // 5. 코어 본문 / 메타데이터 요약 배지
+    // 6. 코어 본문 / 메타데이터 요약 배지
     const coreMetaHtml = `
         <div style="display: flex; flex-direction: column; gap: 3px;">
           <span class="badge-tier badge-tier-core" style="font-size: 0.72rem; padding: 2px 6px;">📄 ${exam.passage_count}지문 / ${exam.sentence_count}문장</span>
@@ -472,6 +518,7 @@ export function renderManageExamsTable() {
         </td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${pdfBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${hwpBtnHtml}</td>
+        <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${scriptBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${csvBtnHtml}</td>
         <td style="padding: 10px 10px; white-space: nowrap;">${coreMetaHtml}</td>
@@ -526,6 +573,8 @@ export function triggerSingleFileUpload(examId, fileType, btnElement) {
   } else if (fileType === "csv") {
     examSingleFileInput.accept = ".csv";
   } else if (fileType === "pdf") {
+    examSingleFileInput.accept = ".pdf";
+  } else if (fileType === "script") {
     examSingleFileInput.accept = ".pdf";
   } else if (fileType === "hwp") {
     examSingleFileInput.accept = ".hwp,.hwpx";
@@ -636,6 +685,7 @@ export function init() {
       if (sets.length === 0) return;
 
       btnStartBatchUpload.disabled = true;
+      btnStartBatchUpload.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 데이터 처리 중... (0/${sets.length})`;
       if (btnCancelBatchModal) btnCancelBatchModal.disabled = true;
       if (batchProgressBox) batchProgressBox.style.display = "block";
 
@@ -650,6 +700,10 @@ export function init() {
 
         if (statusCell) {
           statusCell.innerHTML = `<span style="color: var(--primary); font-weight: 600;">⏳ 처리 중...</span>`;
+        }
+
+        if (btnStartBatchUpload) {
+          btnStartBatchUpload.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 데이터 반영 중... (${i + 1}/${sets.length})`;
         }
 
         const pct = Math.round(((i + 1) / sets.length) * 100);
@@ -818,34 +872,43 @@ export function init() {
       }
       showToast(`총 ${successCount}개 세트 처리가 완료되었습니다!`, "success");
 
-      loadStats();
-      await fetchRegisteredExamsSet();
-      if (typeof loadFilesStatusList === 'function') await loadFilesStatusList();
-      if (typeof loadExamsManagerList === 'function') await loadExamsManagerList();
-      if (resultsView && resultsView.style.display !== "none") {
-        executeSearch("results");
+      // 후속 데이터 갱신 중에도 버튼에 동적 회전 아이콘 유지
+      if (btnStartBatchUpload) {
+        btnStartBatchUpload.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 최종 데이터 동기화 중...`;
       }
 
-      // 지문 뷰어에 띄워져 있는 이미지 캐시 버스팅
-      const activePanelImgs = document.querySelectorAll("#panelPdfImageContainer img");
-      activePanelImgs.forEach(img => {
-        if (img && img.src) {
-          const cleanSrc = img.src.split("?")[0];
-          img.src = `${cleanSrc}?t=${Date.now()}`;
+      try {
+        loadStats();
+        await fetchRegisteredExamsSet();
+        if (typeof loadFilesStatusList === 'function') await loadFilesStatusList();
+        if (typeof loadExamsManagerList === 'function') await loadExamsManagerList();
+        if (resultsView && resultsView.style.display !== "none") {
+          executeSearch("results");
         }
-      });
 
-      if (btnCancelBatchModal) {
-        btnCancelBatchModal.disabled = false;
-        btnCancelBatchModal.textContent = "닫기";
+        // 지문 뷰어에 띄워져 있는 이미지 캐시 버스팅
+        const activePanelImgs = document.querySelectorAll("#panelPdfImageContainer img");
+        activePanelImgs.forEach(img => {
+          if (img && img.src) {
+            const cleanSrc = img.src.split("?")[0];
+            img.src = `${cleanSrc}?t=${Date.now()}`;
+          }
+        });
+      } catch (postSyncErr) {
+        console.error("후속 데이터 갱신 중 오류 (무시 가능):", postSyncErr);
+      } finally {
+        if (btnCancelBatchModal) {
+          btnCancelBatchModal.disabled = false;
+          btnCancelBatchModal.textContent = "닫기";
+        }
+
+        // 처리 완료 상태로 변경 및 활성화 (클릭 시 모달 닫기 수행)
+        btnStartBatchUpload.disabled = false;
+        btnStartBatchUpload.dataset.state = "finished";
+        btnStartBatchUpload.innerHTML = "✔ 처리 완료 (닫기)";
+        btnStartBatchUpload.style.background = "#059669";
+        btnStartBatchUpload.style.borderColor = "#059669";
       }
-
-      // 처리 완료 상태로 변경 및 활성화 (클릭 시 모달 닫기 수행)
-      btnStartBatchUpload.disabled = false;
-      btnStartBatchUpload.dataset.state = "finished";
-      btnStartBatchUpload.textContent = "✔ 처리 완료 (닫기)";
-      btnStartBatchUpload.style.background = "#059669";
-      btnStartBatchUpload.style.borderColor = "#059669";
     });
   }
 
@@ -913,7 +976,9 @@ export function init() {
           ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> AI 분석 중...`
           : (activeSingleTargetType === "csv"
             ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> 파싱 중...`
-            : `⏳ 업로드 중...`);
+            : (activeSingleTargetType === "script"
+              ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> 대본 파싱 중...`
+              : `⏳ 업로드 중...`));
       }
 
       const formData = new FormData();

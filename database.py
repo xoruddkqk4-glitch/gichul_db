@@ -371,8 +371,25 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
             raw_basenames = [os.path.basename(f) for f in raw_files]
             ex["raw_files"] = raw_basenames
 
-            # 4대 파일(PDF, HWP, 정답표 이미지, 정답률 CSV) 개별 유무 판별
-            pdf_file = next((f for f in raw_basenames if f.lower().endswith(".pdf")), None)
+            # 5대 파일(PDF 문제지, HWP 해설지, 대본/해설 PDF, 정답표 이미지, 정답률 CSV) 개별 유무 판별
+            # 1) 대본 PDF 판별 (1순위: *_script.pdf, *대본*.pdf, 2순위: *-A.pdf, *_exp_*.pdf)
+            script_file = next((f for f in raw_basenames if f.lower().endswith(".pdf") and ("_script" in f.lower() or "대본" in f.lower())), None)
+            exp_pdf_file = next((f for f in raw_basenames if f.lower().endswith(".pdf") and (re.search(r"[-_]A\.pdf$", f, re.I) or "_exp_" in f.lower() or "_exp.pdf" in f.lower())), None)
+            script_target = script_file or exp_pdf_file
+            script_type = "script" if script_file else ("exp_pdf" if exp_pdf_file else None)
+
+            # 2) 문제지 PDF: 스크립트/해설/정답 관련 PDF를 제외한 순수 문제지 PDF
+            def _is_problem_pdf(fn: str) -> bool:
+                fl = fn.lower()
+                if not fl.endswith(".pdf"):
+                    return False
+                if "_script" in fl or "대본" in fl or "_ans_" in fl or "_exp_" in fl:
+                    return False
+                if re.search(r"[-_]A\.pdf$", fn, re.I):
+                    return False
+                return True
+
+            pdf_file = next((f for f in raw_basenames if _is_problem_pdf(f)), None)
             hwp_file = next((f for f in raw_basenames if f.lower().endswith((".hwp", ".hwpx")) and "_exp_" not in f), None)
             ans_file = next((f for f in raw_basenames if "_ans_" in f or f.lower().endswith((".png", ".jpg", ".jpeg"))), None)
             csv_file = next((f for f in raw_basenames if f.lower().endswith(".csv")), None)
@@ -401,6 +418,12 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
                 "hwp": {
                     "exists": bool(hwp_file),
                     "filename": hwp_file or ""
+                },
+                "script": {
+                    "exists": bool(script_target),
+                    "filename": script_target or "",
+                    "type": script_type,
+                    "is_exp": bool(exp_pdf_file and not script_file)
                 },
                 "ans": {
                     "exists": bool(ans_file),
@@ -1426,7 +1449,7 @@ def get_listening_passages_by_exam(exam_id: str) -> List[Dict[str, Any]]:
             SELECT p.*, e.grade, e.year, e.month, e.exam_type
             FROM passages p
             JOIN exams e ON p.exam_id = e.id
-            WHERE p.exam_id = ? AND (p.area = 'listening' OR p.q_num <= 17)
+            WHERE p.exam_id = ? AND (p.area = 'listening' OR p.q_num <= COALESCE(e.listening_end_q, 17))
             ORDER BY p.q_num ASC
         """, (clean_id,))
         rows = cursor.fetchall()

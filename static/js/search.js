@@ -44,11 +44,11 @@ import {
   statSentences,
 } from "./dom.js";
 import { setHeaderSlotState, setMode, showResultsScreen, updateGrammarFiltersVisibility } from "./navigation.js";
-import { groupPassageItems, renderPassageView } from "./results-passage.js";
+import { groupPassageItems, renderPassageView, getCurrentDetailPassage } from "./results-passage.js";
 import { renderSentenceView } from "./results-sentence.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { resetAllGrammarFilters, updateGrammarBreadcrumbFilterUI } from "./grammar.js";
-import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter } from "./year-filter.js";
+import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter, setYearSelection } from "./year-filter.js";
 import { updateMonthOptionsByGrade, initMonthFilter } from "./month-filter.js";
 
 // 독해 21대 문제 유형
@@ -165,7 +165,7 @@ export function highlightSentenceKeyword(text, rawQuery) {
 // =========================================================================
 
 /** 통합 검색 실행 */
-export async function executeSearch(source = "home") {
+export async function executeSearch(source = "home", targetPassageId = null) {
   let keyword = "";
   let grade = "";
   let year = "";
@@ -285,13 +285,15 @@ export async function executeSearch(source = "home") {
 
   try {
     if (appState.currentMode === "passage") {
-      appState.treeNavState = { grade: null, year: null, month: null };
+      if (!targetPassageId) {
+        appState.treeNavState = { grade: null, year: null, month: null };
+      }
       const res = await fetch(`/api/search/passages?${params.toString()}`);
       const data = await res.json();
       appState.passagesData = groupPassageItems(data.items || []);
       appState.rawPassagesData = [...appState.passagesData]; // 원본 캐시 갱신
       resultsTotalCount.textContent = appState.passagesData.length;
-      renderPassageView(appState.passagesData);
+      renderPassageView(appState.passagesData, targetPassageId);
       setHeaderSlotState("passage");
       updateGrammarFiltersVisibility();
     } else {
@@ -367,7 +369,9 @@ export function executeSearchWithinResults() {
         if (p.isGroup && p.subItems) {
           inSub = p.subItems.some(si => 
             checkTextMatch(si.passage_text, kwRaw, isWholeWordActive) ||
-            checkTextMatch(si.question_title, kwRaw, isWholeWordActive)
+            checkTextMatch(si.question_title, kwRaw, isWholeWordActive) ||
+            checkTextMatch(si.script_text, kwRaw, isWholeWordActive) ||
+            checkTextMatch(si.fels_text, kwRaw, isWholeWordActive)
           );
         }
 
@@ -600,9 +604,41 @@ export function setSearchArea(area, triggerSearch = true) {
   });
   updateQuestionTypeOptions(area);
   if (triggerSearch) {
-    const resultsScreen = document.getElementById("resultsScreen");
-    if (resultsScreen && resultsScreen.style.display !== "none") {
-      executeSearch("results");
+    const isResultsVisible = resultsView && (resultsView.style.display === "flex" || resultsView.style.display === "block" || resultsView.offsetHeight > 0);
+    if (isResultsVisible) {
+      let targetPassageId = null;
+      // 1. 현재 보고 있는 지문(상세 화면 또는 문항 탭) 또는 트리 선택 상태에서 동일 시험지 정보 정확히 추출
+      const detailP = (typeof getCurrentDetailPassage === "function") ? getCurrentDetailPassage() : null;
+      const questionP = (appState.currentExamQuestions && appState.currentPassageIndex >= 0 && appState.currentExamQuestions[appState.currentPassageIndex]) || null;
+      const currentP = detailP || questionP;
+      const p = (currentP && currentP.isGroup && currentP.subItems) ? currentP.subItems[0] : currentP;
+
+      const grade = p?.grade || appState.treeNavState.grade || (resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value);
+      const year = p?.year || appState.treeNavState.year || (resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value);
+      const month = p?.month || appState.treeNavState.month || (resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value);
+
+      if (grade && year && month) {
+        const yearNum = parseInt(String(year).replace(/[^0-9]/g, ""), 10);
+        const monthNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
+        if (yearNum && monthNum) {
+          // 듣기 영역 -> 1번 문항, 독해 영역 -> 18번 문항 (23번 등 시작 시험은 fallback으로 자동 처리)
+          const targetQ = (area === "listening") ? 1 : 18;
+          targetPassageId = `[${grade}-${yearNum}년-${String(monthNum).padStart(2, "0")}월-${String(targetQ).padStart(2, "0")}번]`;
+          appState.treeNavState.grade = grade;
+          appState.treeNavState.year = `${yearNum}년`;
+          appState.treeNavState.month = `${String(monthNum).padStart(2, "0")}월`;
+
+          // 특정 문항(1번 ↔ 18번)으로의 안전한 전환을 위해 문항 개별 필터(검색어, 문제유형, 정답률) 리셋
+          if (resultsSearchInput) resultsSearchInput.value = "";
+          if (mainSearchInput) mainSearchInput.value = "";
+          if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+          if (filterQuestionType) filterQuestionType.value = "";
+          if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
+          if (filterCorrectRate) filterCorrectRate.value = "";
+        }
+      }
+
+      executeSearch("results", targetPassageId);
     }
   }
 }
