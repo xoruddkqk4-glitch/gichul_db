@@ -1419,7 +1419,7 @@ CREATE TABLE user_sentence_status (
   - 83개 대본 PDF, 876개 크롭 이미지 재생성 완료 (가로 해상도 1245px ~ 1260px 정상 확인)
   - 모달 테이블 학년/년도/월 드롭다운 필터 및 1차/2차 복합 정렬 정상 작동 확인
 
-### [2026-09-27 18:25] 업데이트 이력 (Commit ID: PENDING)
+### [2026-09-27 18:25] 업데이트 이력 (Commit ID: 398d54e)
 - **수정 내용**:
   - **고2 2012년 & 2013년 수준별 모의고사 (A형 / B형) 체제 완전 분리 및 신규 구축 (`database.py`, `listening_parser.py`, `static/js/results-passage.js`, `static/js/files-status.js`)**:
     - `exams` 스키마에 `subtype TEXT DEFAULT NULL` 컬럼을 신설하고 관련 쿼리(`search_passages`, `get_all_exams_with_stats` 등)에 반영.
