@@ -282,8 +282,8 @@ def extract_listening_script_crops(
     listening_end_q: int = 17
 ) -> Dict[int, str]:
     """
-    대본 PDF 또는 해설 PDF에서 각 듣기 문항의 대본(Script) 인쇄 영역만 고화질 크롭하여
-    /static/captures/{grade}_{year}_{month:02d}_{q_num:02d}_script.png 로 저장
+    대본 PDF 또는 해설 PDF에서 각 듣기 문항의 대본(Script) 인쇄 영역을
+    1단/2단 레이아웃 자동 판별 및 벡터 테두리선(Drawings) 감지를 통해 온전하게 200 DPI로 크롭
     
     반환: {1: "/static/captures/..._01_script.png", 2: ...}
     """
@@ -293,29 +293,48 @@ def extract_listening_script_crops(
     doc = fitz.open(script_or_exp_pdf_path)
     result_crops = {}
 
-    q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?$")
+    single_q_pattern = re.compile(r"^\s*(\d{1,2})\s*\.(?:\s*(.*))?$")
+    set_q_pattern = re.compile(r"\[\s*(\d{1,2})\s*[-~～]\s*(\d{1,2})\s*\]")
     script_header_pattern = re.compile(r"(?:\[\s*대본\s*\]|【\s*대본\s*】|Script\b|\[Script\])", re.IGNORECASE)
     end_header_pattern = re.compile(r"(?:\[\s*해석\s*\]|【\s*해석\s*】|\[\s*해설\s*\]|【\s*해설\s*】|\[\s*어휘\s*\]|【\s*어휘\s*】)", re.IGNORECASE)
 
-    # 해설 PDF의 경우 대본은 보통 앞쪽 1~4페이지 내에 위치
-    max_scan_pages = min(len(doc), 6 if is_explanation_pdf else len(doc))
+    # 해설 PDF의 경우 대본은 보통 앞쪽 1~8페이지 내에 위치
+    max_scan_pages = min(len(doc), 8 if is_explanation_pdf else len(doc))
 
     for page_num in range(max_scan_pages):
         page = doc[page_num]
         rect = page.rect
         width, height = rect.width, rect.height
-
-        # 페이지가 2단(좌/우 칼럼) 구조인지 판별
         mid_x = width / 2.0
-        left_clip = fitz.Rect(30, 40, mid_x - 5, height - 35)
-        right_clip = fitz.Rect(mid_x + 5, 40, width - 30, height - 35)
 
-        # 칼럼 분할 분석
-        for col_clip in [left_clip, right_clip]:
+        # 페이지 내 텍스트 블록으로 1단(Single column) vs 2단(Two columns) 레이아웃 자동 판별
+        raw_page_blocks = page.get_text("blocks")
+        content_page_blocks = [
+            b for b in raw_page_blocks
+            if len(b[4].strip()) >= 8 and b[1] > 35 and b[3] < height - 40
+        ]
+
+        spanning_blocks = [
+            b for b in content_page_blocks
+            if b[0] < mid_x - 30 and b[2] > mid_x + 30
+        ]
+
+        is_single_column = (len(spanning_blocks) >= 2) or (
+            len(content_page_blocks) > 0 and (len(spanning_blocks) / len(content_page_blocks)) >= 0.20
+        )
+
+        if is_single_column:
+            col_clips = [fitz.Rect(15, 35, width - 15, height - 45)]
+        else:
+            left_clip = fitz.Rect(15, 35, mid_x - 5, height - 35)
+            right_clip = fitz.Rect(mid_x + 5, 35, width - 15, height - 35)
+            col_clips = [left_clip, right_clip]
+
+        for col_clip in col_clips:
             raw_blocks = page.get_text("blocks", clip=col_clip)
             blocks = sorted(raw_blocks, key=lambda b: (b[1], b[0]))
 
-            current_q = None
+            current_qs = []
             script_recording = False
             script_rects = []
 
@@ -325,27 +344,43 @@ def extract_listening_script_crops(
                 if not b_text:
                     continue
 
-                # 문항 번호 확인 (예: 1., 2.)
-                first_line = b_text.splitlines()[0].strip() if b_text.splitlines() else ""
-                qm = q_pattern.match(first_line)
+                # 하단 푸터 및 페이지 번호 제외
+                if b[1] > height - 60 and len(b_text) <= 5:
+                    continue
 
-                if qm:
-                    q_num = int(qm.group(1))
-                    if listening_start_q <= q_num <= listening_end_q:
-                        # 이전 문항 크롭 완료 저장
-                        if current_q and script_rects:
-                            _save_script_crop(doc, page_num, current_q, script_rects, grade, year, month, result_crops)
+                first_line = b_text.splitlines()[0].strip() if b_text.splitlines() else ""
+                
+                # 세트 문항 확인 (예: [16 ~ 17])
+                sm = set_q_pattern.search(first_line)
+                qm = single_q_pattern.match(first_line)
+
+                if sm:
+                    start_s = int(sm.group(1))
+                    end_s = int(sm.group(2))
+                    if listening_start_q <= start_s <= listening_end_q:
+                        if current_qs and script_rects:
+                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
                             script_rects = []
 
-                        current_q = q_num
-                        # 단독 대본 PDF인 경우 문항 시작부터가 바로 대본
+                        current_qs = list(range(start_s, min(end_s, listening_end_q) + 1))
+                        script_recording = not is_explanation_pdf
+                        if script_recording:
+                            script_rects.append(b_rect)
+                        continue
+                elif qm:
+                    q_num = int(qm.group(1))
+                    if listening_start_q <= q_num <= listening_end_q:
+                        if current_qs and script_rects:
+                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
+                            script_rects = []
+
+                        current_qs = [q_num]
                         script_recording = not is_explanation_pdf
                         if script_recording:
                             script_rects.append(b_rect)
                         continue
 
-                if current_q and listening_start_q <= current_q <= listening_end_q:
-                    # 해설 PDF 모드인 경우 [대본] 헤더 시작 감지
+                if current_qs:
                     if is_explanation_pdf:
                         if script_header_pattern.search(b_text):
                             script_recording = True
@@ -353,18 +388,16 @@ def extract_listening_script_crops(
                             continue
                         elif end_header_pattern.search(b_text):
                             script_recording = False
-                            _save_script_crop(doc, page_num, current_q, script_rects, grade, year, month, result_crops)
+                            _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
                             script_rects = []
-                            current_q = None
+                            current_qs = []
                             continue
 
                     if script_recording:
-                        # M:, W: 대본 텍스트 블록 포함
                         script_rects.append(b_rect)
 
-            # 칼럼 끝에서 진행 중인 문항 저장
-            if current_q and script_rects:
-                _save_script_crop(doc, page_num, current_q, script_rects, grade, year, month, result_crops)
+            if current_qs and script_rects:
+                _save_script_crop(doc, page_num, current_qs, script_rects, grade, year, month, result_crops, col_clip)
 
     doc.close()
     return result_crops
@@ -373,35 +406,72 @@ def extract_listening_script_crops(
 def _save_script_crop(
     doc: fitz.Document,
     page_num: int,
-    q_num: int,
+    q_nums: List[int],
     rects: List[fitz.Rect],
     grade: str,
     year: int,
     month: int,
-    out_dict: Dict[int, str]
+    out_dict: Dict[int, str],
+    col_clip: Optional[fitz.Rect] = None
 ):
-    """지정된 문항의 대본 영역 Bounding Box를 200 DPI로 캡처하여 저장"""
-    if not rects:
+    """지정된 문항들의 대본 영역 Bounding Box를 200 DPI로 캡처하여 저장 (테두리 상자선 벡터 감지 포함)"""
+    if not rects or not q_nums:
+        return
+
+    # 이미 처리된 문항들만 있으면 스킵
+    target_qs = [q for q in q_nums if q not in out_dict]
+    if not target_qs:
         return
 
     page = doc[page_num]
-    min_x = max(0, min(r.x0 for r in rects) - 6)
-    min_y = max(0, min(r.y0 for r in rects) - 6)
-    max_x = min(page.rect.width, max(r.x1 for r in rects) + 6)
-    max_y = min(page.rect.height, max(r.y1 for r in rects) + 6)
+    w, h = page.rect.width, page.rect.height
+
+    min_x = min(r.x0 for r in rects)
+    min_y = min(r.y0 for r in rects)
+    max_x = max(r.x1 for r in rects)
+    max_y = max(r.y1 for r in rects)
+
+    # 대본 박스를 둘러싼 벡터 드로잉 사각형 선 감지하여 Bbox 확장
+    try:
+        drawings = page.get_drawings()
+        for d in drawings:
+            dr = d.get("rect")
+            if not dr:
+                continue
+            # 문항 영역과 수직으로 교차하고 적절한 너비의 사각형 선
+            if dr.y1 >= min_y - 12 and dr.y0 <= max_y + 12 and dr.width >= 60:
+                # 2단 레이아웃인 경우 다른 칼럼을 침범하지 않도록 확인
+                if col_clip is None or (dr.x0 >= col_clip.x0 - 15 and dr.x1 <= col_clip.x1 + 15):
+                    min_x = min(min_x, dr.x0 - 4)
+                    max_x = max(max_x, dr.x1 + 4)
+                    min_y = min(min_y, dr.y0 - 4)
+                    max_y = max(max_y, dr.y1 + 4)
+    except Exception:
+        pass
+
+    # 여유 있는 패딩 적용 (좌우 최소 10pt, 상하 8pt)
+    min_x = max(0, min_x - 10)
+    min_y = max(0, min_y - 8)
+    max_x = min(w, max_x + 10)
+    max_y = min(h, max_y + 8)
+
+    # 칼럼 클립이 있으면 안전하게 제한
+    if col_clip:
+        min_x = max(col_clip.x0, min_x)
+        max_x = min(col_clip.x1, max_x)
 
     crop_rect = fitz.Rect(min_x, min_y, max_x, max_y)
     if crop_rect.width < 50 or crop_rect.height < 20:
         return
 
-    img_filename = f"{grade}_{year}_{month:02d}_{q_num:02d}_script.png"
-    img_filepath = os.path.join(CAPTURES_DIR, img_filename)
-    web_url = f"/static/captures/{img_filename}"
-
     pix = page.get_pixmap(clip=crop_rect, dpi=200)
-    pix.save(img_filepath)
 
-    out_dict[q_num] = web_url
+    for q in target_qs:
+        img_filename = f"{grade}_{year}_{month:02d}_{q:02d}_script.png"
+        img_filepath = os.path.join(CAPTURES_DIR, img_filename)
+        web_url = f"/static/captures/{img_filename}"
+        pix.save(img_filepath)
+        out_dict[q] = web_url
 
 
 def sync_exam_listening(

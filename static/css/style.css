@@ -5201,6 +5201,72 @@ mark.passage-highlight {
   font-weight: 900;
 }
 
+/* 2차 정렬 기준 표시 스타일 */
+.sortable-th.secondary-sort {
+  background-color: #f1f5f9 !important;
+  color: #1e3a8a !important;
+  font-weight: 600 !important;
+}
+
+.sortable-th.secondary-sort .sort-icon {
+  opacity: 0.85 !important;
+  color: #2563eb !important;
+  font-weight: 700;
+}
+
+/* 테이블 헤더 정렬 라벨 & 드랍다운 필터 선택상자 */
+.sortable-th .th-sort-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  width: 100%;
+}
+
+.sortable-th .th-sort-label:hover {
+  color: var(--primary, #2563eb);
+}
+
+.th-filter-select {
+  display: block;
+  width: 100%;
+  font-size: 0.72rem;
+  font-family: inherit;
+  padding: 2px 3px;
+  margin-top: 3px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  outline: none;
+  text-align: center;
+  text-align-last: center;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.th-filter-select:hover {
+  border-color: #94a3b8;
+}
+
+.th-filter-select:focus {
+  border-color: var(--primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.th-filter-select.filter-active {
+  background-color: #eff6ff !important;
+  border-color: #3b82f6 !important;
+  color: #1d4ed8 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
 /* 학년/연도/월 전용 배지 및 텍스트 스타일 */
 .badge-grade-sub {
   display: inline-block;

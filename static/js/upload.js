@@ -217,19 +217,73 @@ async function fetchRegisteredExamsSet() {
   }
 }
 
-function renderBatchSetsTable() {
+export let batchSetsFilters = { grade: "all", year: "all", month: "all" };
+export let batchSetsSortChain = [
+  { key: "year", order: "desc" },
+  { key: "month", order: "desc" },
+  { key: "grade", order: "asc" }
+];
+export let batchSetsSort = batchSetsSortChain[0];
+
+export function populateBatchSetsFilterOptions(sets = Object.values(batchSetsMap)) {
+  const selYear = document.getElementById("filterBatchYear");
+  const selMonth = document.getElementById("filterBatchMonth");
+  if (!selYear || !selMonth) return;
+
+  const currentYear = selYear.value;
+  const currentMonth = selMonth.value;
+
+  const years = Array.from(new Set(sets.map(s => s.year).filter(Boolean))).sort((a, b) => b - a);
+  const months = Array.from(new Set(sets.map(s => parseInt(s.month, 10)).filter(Boolean))).sort((a, b) => a - b);
+
+  selYear.innerHTML = `<option value="all">전체</option>` + years.map(y => `<option value="${y}">${y}년</option>`).join("");
+  selMonth.innerHTML = `<option value="all">전체</option>` + months.map(m => `<option value="${m}">${m}월</option>`).join("");
+
+  if (currentYear && years.some(y => String(y) === String(currentYear))) {
+    selYear.value = currentYear;
+  }
+  if (currentMonth && months.some(m => String(m) === String(currentMonth))) {
+    selMonth.value = currentMonth;
+  }
+}
+
+export function renderBatchSetsTable() {
   if (!batchSetsTableBody) return;
   batchSetsTableBody.innerHTML = "";
-  const sets = Object.values(batchSetsMap);
+  const allSets = Object.values(batchSetsMap);
 
-  if (sets.length === 0) {
+  if (allSets.length === 0) {
     if (batchPreviewContainer) batchPreviewContainer.style.display = "none";
     if (btnStartBatchUpload) btnStartBatchUpload.disabled = true;
     return;
   }
 
+  populateBatchSetsFilterOptions(allSets);
+
   if (batchPreviewContainer) batchPreviewContainer.style.display = "block";
-  if (batchSetsCount) batchSetsCount.textContent = sets.length;
+
+  // 필터 적용
+  const filteredSets = allSets.filter(s => {
+    if (batchSetsFilters.grade !== "all" && s.grade !== batchSetsFilters.grade) return false;
+    if (batchSetsFilters.year !== "all" && String(s.year) !== String(batchSetsFilters.year)) return false;
+    if (batchSetsFilters.month !== "all" && String(parseInt(s.month, 10)) !== String(parseInt(batchSetsFilters.month, 10))) return false;
+    return true;
+  });
+
+  const isFiltered = batchSetsFilters.grade !== "all" || batchSetsFilters.year !== "all" || batchSetsFilters.month !== "all";
+
+  if (batchSetsCount) {
+    if (isFiltered) {
+      batchSetsCount.innerHTML = `${filteredSets.length} <span style="font-size: 0.75rem; color: #64748b; font-weight: normal;">(전체 ${allSets.length})</span>`;
+    } else {
+      batchSetsCount.textContent = allSets.length;
+    }
+  }
+
+  updateSortHeaders("batch", batchSetsSortChain);
+
+  // 정렬 적용 (다중 정렬 체인 기준)
+  const sortedSets = [...filteredSets].sort((a, b) => compareExams(a, b, batchSetsSortChain));
 
   let readyCount = 0;
   let scriptOnlyCount = 0;
@@ -237,7 +291,7 @@ function renderBatchSetsTable() {
   let csvOnlyCount = 0;
   let fullUploadCount = 0;
 
-  sets.forEach(set => {
+  allSets.forEach(set => {
     const examId = `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월]`;
     set.exam_id = examId;
 
@@ -249,27 +303,18 @@ function renderBatchSetsTable() {
     const hasCsv = Boolean(set.csvFile);
     const isAlreadyRegistered = registeredExamsSet.has(examId);
 
-    // 기존 DB 파일 보유 상태
     const dbPdfExists = isAlreadyRegistered && (regExam?.file_status?.pdf ? regExam.file_status.pdf.exists : true);
     const dbHwpExists = isAlreadyRegistered && (regExam?.file_status?.hwp ? regExam.file_status.hwp.exists : true);
-    const dbScriptExists = isAlreadyRegistered && (regExam?.file_status?.script ? regExam.file_status.script.exists : false);
 
     let isReady = false;
-    let mode = ""; // "full" | "registered_update" | "already_registered" | "incomplete"
-    let statusHtml = "";
+    let mode = "";
 
     if (hasPdf && hasHwp) {
       isReady = true;
       mode = "full";
       fullUploadCount++;
-      const extras = [];
-      if (hasScript) extras.push("대본");
-      if (hasAns) extras.push("정답표");
-      if (hasCsv) extras.push("정답률");
-      const extraText = extras.length > 0 ? ` (${extras.join("·")} 포함)` : "";
-      statusHtml = `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료${extraText}</span>`;
+      readyCount++;
     } else if (isAlreadyRegistered) {
-      // 이미 등록된 시험지인 경우: 대본, 정답표, 정답률 CSV 중 드롭된 항목 갱신
       const droppedItems = [];
       if (hasScript) droppedItems.push("대본");
       if (hasAns) droppedItems.push("정답표");
@@ -278,88 +323,122 @@ function renderBatchSetsTable() {
       if (droppedItems.length > 0) {
         isReady = true;
         mode = "registered_update";
-        if (hasScript && !hasAns && !hasCsv) {
-          scriptOnlyCount++;
-          statusHtml = `<span class="badge-match-ready" style="background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; font-weight: 700;">📜 대본 갱신 (준비 완료)</span>`;
-        } else if (hasAns && !hasScript && !hasCsv) {
-          ansOnlyCount++;
-          statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
-        } else if (hasCsv && !hasScript && !hasAns) {
-          csvOnlyCount++;
-          statusHtml = `<span class="badge-match-ready" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;">📊 정답률 갱신 (준비 완료)</span>`;
-        } else {
-          statusHtml = `<span class="badge-match-ready" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">🔄 ${droppedItems.join("+")} 갱신 (준비 완료)</span>`;
-        }
+        readyCount++;
+        if (hasScript && !hasAns && !hasCsv) scriptOnlyCount++;
+        else if (hasAns && !hasScript && !hasCsv) ansOnlyCount++;
+        else if (hasCsv && !hasScript && !hasAns) csvOnlyCount++;
       } else {
-        // 이미 등록된 시험지이나 신규 드롭된 파일이 없음
         isReady = false;
         mode = "already_registered";
-        statusHtml = `<span style="color: #0284c7; background: #f0f9ff; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 4px; font-weight: 600;">💾 기존 DB 보관 중 (변경 없음)</span>`;
       }
     } else {
       isReady = false;
       mode = "incomplete";
-      statusHtml = (hasAns || hasCsv || hasScript)
-        ? `<span class="badge-match-warn" style="color: #dc2626; border-color: #fecaca; background: #fef2f2;">⚠️ 미등록 시험지 (PDF/HWP 필요)</span>`
-        : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
     }
 
     set.isReady = isReady;
     set.mode = mode;
-    if (isReady) readyCount++;
-
-    const tr = document.createElement("tr");
-    tr.id = `batch-row-${set.set_key.replace(/[\[\]\-]/g, "_")}`;
-
-    const instClass = (set.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
-    const instIcon = (set.exam_type === "평가원") ? "🏛️" : "🏫";
-
-    const pdfCellHtml = hasPdf 
-      ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.pdfFile.name)}</span>` 
-      : (dbPdfExists ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
-
-    const hwpCellHtml = hasHwp 
-      ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.hwpFile.name)}</span>` 
-      : (dbHwpExists ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
-
-    const scriptCellHtml = hasScript
-      ? `<span style="color: #0284c7; font-weight: 700;">📜 ${escapeHtml(set.scriptFile.name)}</span>`
-      : (dbScriptExists 
-          ? `<span style="color: #64748b;">💾 기존 DB (${regExam?.file_status?.script?.is_exp ? '해설PDF' : '대본PDF'})</span>` 
-          : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`);
-
-    const ansCellHtml = hasAns
-      ? `<span style="color: #7e22ce; font-weight: 700;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
-      : `<span style="color: #94a3b8;">⚪ 미포함 (HWP 사용)</span>`;
-
-    const csvCellHtml = hasCsv
-      ? `<span style="color: #15803d; font-weight: 700;">📊 ${escapeHtml(set.csvFile.name)}</span>`
-      : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`;
-
-    // 학년 배지 스타일 (시험지 관리 탭과 통일)
-    const gradeBadgeClass = set.grade === "고3" ? "badge-grade-g3" : (set.grade === "고2" ? "badge-grade-g2" : "badge-grade-g1");
-    const gradeBadgeHtml = `<span class="badge-grade-sub ${gradeBadgeClass}">${escapeHtml(set.grade)}</span>`;
-
-    tr.innerHTML = `
-        <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">
-          ${escapeHtml(set.set_key)}
-          ${isAlreadyRegistered ? `<span style="font-size: 0.72rem; color: #0284c7; background: #e0f2fe; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">등록됨</span>` : ''}
-        </td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${gradeBadgeHtml}</td>
-        <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${set.year}년</td>
-        <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${set.month}월</td>
-        <td style="padding: 8px 10px; white-space: nowrap;">
-          <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(set.exam_type)}</span>
-        </td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${pdfCellHtml}</td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${hwpCellHtml}</td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${scriptCellHtml}</td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${ansCellHtml}</td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${csvCellHtml}</td>
-        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">${statusHtml}</td>
-      `;
-    batchSetsTableBody.appendChild(tr);
   });
+
+  if (sortedSets.length === 0) {
+    batchSetsTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">선택하신 필터 조건에 일치하는 세트가 없습니다.</td></tr>`;
+  } else {
+    sortedSets.forEach(set => {
+      const regExam = registeredExamsMap.get(set.exam_id);
+      const hasPdf = Boolean(set.pdfFile);
+      const hasHwp = Boolean(set.hwpFile);
+      const hasScript = Boolean(set.scriptFile);
+      const hasAns = Boolean(set.ansFile);
+      const hasCsv = Boolean(set.csvFile);
+      const isAlreadyRegistered = registeredExamsSet.has(set.exam_id);
+
+      const dbPdfExists = isAlreadyRegistered && (regExam?.file_status?.pdf ? regExam.file_status.pdf.exists : true);
+      const dbHwpExists = isAlreadyRegistered && (regExam?.file_status?.hwp ? regExam.file_status.hwp.exists : true);
+      const dbScriptExists = isAlreadyRegistered && (regExam?.file_status?.script ? regExam.file_status.script.exists : false);
+
+      let statusHtml = "";
+      if (set.mode === "full") {
+        const extras = [];
+        if (hasScript) extras.push("대본");
+        if (hasAns) extras.push("정답표");
+        if (hasCsv) extras.push("정답률");
+        const extraText = extras.length > 0 ? ` (${extras.join("·")} 포함)` : "";
+        statusHtml = `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료${extraText}</span>`;
+      } else if (set.mode === "registered_update") {
+        const droppedItems = [];
+        if (hasScript) droppedItems.push("대본");
+        if (hasAns) droppedItems.push("정답표");
+        if (hasCsv) droppedItems.push("정답률");
+        if (hasScript && !hasAns && !hasCsv) {
+          statusHtml = `<span class="badge-match-ready" style="background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; font-weight: 700;">📜 대본 갱신 (준비 완료)</span>`;
+        } else if (hasAns && !hasScript && !hasCsv) {
+          statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
+        } else if (hasCsv && !hasScript && !hasAns) {
+          statusHtml = `<span class="badge-match-ready" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;">📊 정답률 갱신 (준비 완료)</span>`;
+        } else {
+          statusHtml = `<span class="badge-match-ready" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">🔄 ${droppedItems.join("+")} 갱신 (준비 완료)</span>`;
+        }
+      } else if (set.mode === "already_registered") {
+        statusHtml = `<span style="color: #0284c7; background: #f0f9ff; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 4px; font-weight: 600;">💾 기존 DB 보관 중 (변경 없음)</span>`;
+      } else {
+        statusHtml = (hasAns || hasCsv || hasScript)
+          ? `<span class="badge-match-warn" style="color: #dc2626; border-color: #fecaca; background: #fef2f2;">⚠️ 미등록 시험지 (PDF/HWP 필요)</span>`
+          : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
+      }
+
+      const tr = document.createElement("tr");
+      tr.id = `batch-row-${set.set_key.replace(/[\[\]\-]/g, "_")}`;
+
+      const instClass = (set.exam_type === "평가원") ? "badge-inst-pyeong" : "badge-inst-gyo";
+      const instIcon = (set.exam_type === "평가원") ? "🏛️" : "🏫";
+
+      const pdfCellHtml = hasPdf 
+        ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.pdfFile.name)}</span>` 
+        : (dbPdfExists ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+
+      const hwpCellHtml = hasHwp 
+        ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.hwpFile.name)}</span>` 
+        : (dbHwpExists ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+
+      const scriptCellHtml = hasScript
+        ? `<span style="color: #0284c7; font-weight: 700;">📜 ${escapeHtml(set.scriptFile.name)}</span>`
+        : (dbScriptExists 
+            ? `<span style="color: #64748b;">💾 기존 DB (${regExam?.file_status?.script?.is_exp ? '해설PDF' : '대본PDF'})</span>` 
+            : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`);
+
+      const ansCellHtml = hasAns
+        ? `<span style="color: #7e22ce; font-weight: 700;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
+        : `<span style="color: #94a3b8;">⚪ 미포함 (HWP 사용)</span>`;
+
+      const csvCellHtml = hasCsv
+        ? `<span style="color: #15803d; font-weight: 700;">📊 ${escapeHtml(set.csvFile.name)}</span>`
+        : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`;
+
+      // 학년 배지 스타일 (시험지 관리 탭과 통일)
+      const gradeBadgeClass = set.grade === "고3" ? "badge-grade-g3" : (set.grade === "고2" ? "badge-grade-g2" : "badge-grade-g1");
+      const gradeBadgeHtml = `<span class="badge-grade-sub ${gradeBadgeClass}">${escapeHtml(set.grade)}</span>`;
+
+      tr.innerHTML = `
+          <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">
+            ${escapeHtml(set.set_key)}
+            ${isAlreadyRegistered ? `<span style="font-size: 0.72rem; color: #0284c7; background: #e0f2fe; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">등록됨</span>` : ''}
+          </td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${gradeBadgeHtml}</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${set.year}년</td>
+          <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${set.month}월</td>
+          <td style="padding: 8px 10px; white-space: nowrap;">
+            <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(set.exam_type)}</span>
+          </td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${pdfCellHtml}</td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${hwpCellHtml}</td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${scriptCellHtml}</td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${ansCellHtml}</td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${csvCellHtml}</td>
+          <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">${statusHtml}</td>
+        `;
+      batchSetsTableBody.appendChild(tr);
+    });
+  }
 
   if (btnStartBatchUpload) {
     btnStartBatchUpload.disabled = (readyCount === 0);
@@ -378,60 +457,176 @@ function renderBatchSetsTable() {
   }
 }
 
-// 공통 시험지 정렬 비교 함수 (학년 고1<고2<고3, 연도 숫자, 월 숫자, 보조 정렬)
-export function compareExams(a, b, key, order) {
-  let result = 0;
-  if (key === "grade") {
-    const gradeOrder = { "고1": 1, "고2": 2, "고3": 3 };
-    const rA = gradeOrder[a.grade] || 9;
-    const rB = gradeOrder[b.grade] || 9;
-    result = rA - rB;
-  } else if (key === "year") {
-    result = (parseInt(a.year, 10) || 0) - (parseInt(b.year, 10) || 0);
-  } else if (key === "month") {
-    result = (parseInt(a.month, 10) || 0) - (parseInt(b.month, 10) || 0);
-  } else if (key === "id") {
-    result = (a.id || "").localeCompare(b.id || "");
+// 다중 기준 정렬 컬럼 토글 함수 (1차 정렬 변경 시 직전 1차 정렬이 2차 정렬로 유지됨)
+export function toggleColumnSort(currentChain, sortKey) {
+  let chain = (currentChain && currentChain.length > 0)
+    ? currentChain.map(c => ({ ...c }))
+    : [
+        { key: "year", order: "desc" },
+        { key: "month", order: "desc" },
+        { key: "grade", order: "asc" },
+        { key: "id", order: "asc" }
+      ];
+
+  const primary = chain[0];
+  if (primary.key === sortKey) {
+    // 이미 1차 기준인 열을 다시 클릭한 경우: 방향만 토글 (asc <-> desc)
+    primary.order = primary.order === "asc" ? "desc" : "asc";
+  } else {
+    // 다른 열을 클릭하여 새로운 1차 기준으로 올리는 경우:
+    const existingIdx = chain.findIndex(c => c.key === sortKey);
+    let targetOrder;
+    if (existingIdx > 0) {
+      // 2순위 이하에 이미 있던 열: 학년/월은 직관적인 오름차순(asc) 우선, 연도/식별자는 내림차순(desc) 우선
+      targetOrder = (sortKey === "grade" || sortKey === "month") ? "asc" : "desc";
+      chain.splice(existingIdx, 1);
+    } else {
+      targetOrder = (sortKey === "grade" || sortKey === "month") ? "asc" : "desc";
+    }
+    // 새 1차 기준으로 unshift -> 직전 1차 기준은 2차 기준(secondary sort)으로 그대로 보존!
+    chain.unshift({ key: sortKey, order: targetOrder });
   }
 
-  // 기본 보조 정렬: 연도 내림차순 -> 월 내림차순 -> 학년 내림차순 -> id 오름차순
-  if (result === 0) {
-    const yDiff = (parseInt(b.year, 10) || 0) - (parseInt(a.year, 10) || 0);
-    if (yDiff !== 0) return yDiff;
-    const mDiff = (parseInt(b.month, 10) || 0) - (parseInt(a.month, 10) || 0);
-    if (mDiff !== 0) return mDiff;
-    const gradeOrder = { "고1": 1, "고2": 2, "고3": 3 };
-    const gDiff = (gradeOrder[b.grade] || 9) - (gradeOrder[a.grade] || 9);
-    if (gDiff !== 0) return gDiff;
-    return (a.id || "").localeCompare(b.id || "");
+  // 필수 키 누락 방지
+  const coreKeys = ["year", "month", "grade", "id"];
+  for (const k of coreKeys) {
+    if (!chain.some(c => c.key === k)) {
+      chain.push({ key: k, order: (k === "grade" || k === "month") ? "asc" : "desc" });
+    }
   }
 
-  return order === "desc" ? -result : result;
+  return chain;
 }
 
-// 테이블 헤더 정렬 아이콘(▲/▼/⇅) 및 활성 클래스 갱신
-export function updateSortHeaders(tableType, currentKey, currentOrder) {
+// 공통 시험지 다중 정렬 비교 함수 (1차 기준, 2차 기준 체인 순서대로 평가)
+export function compareExams(a, b, sortInput, fallbackOrder) {
+  let chain = [];
+  if (Array.isArray(sortInput)) {
+    chain = sortInput;
+  } else if (typeof sortInput === "string") {
+    // 단일 문자열 키 레거시 호출 호환: compareExams(a, b, key, order)
+    const key = sortInput;
+    const order = fallbackOrder || "desc";
+    chain = [{ key, order }];
+    if (key !== "year") chain.push({ key: "year", order: "desc" });
+    if (key !== "month") chain.push({ key: "month", order: "desc" });
+    if (key !== "grade") chain.push({ key: "grade", order: "asc" });
+  } else if (sortInput && sortInput.key) {
+    chain = [sortInput];
+  } else {
+    chain = [
+      { key: "year", order: "desc" },
+      { key: "month", order: "desc" },
+      { key: "grade", order: "asc" }
+    ];
+  }
+
+  for (const criterion of chain) {
+    const { key, order } = criterion;
+    let diff = 0;
+    if (key === "grade") {
+      const gradeOrder = { "고1": 1, "고2": 2, "고3": 3 };
+      diff = (gradeOrder[a.grade] || 9) - (gradeOrder[b.grade] || 9);
+    } else if (key === "year") {
+      diff = (parseInt(a.year, 10) || 0) - (parseInt(b.year, 10) || 0);
+    } else if (key === "month") {
+      diff = (parseInt(a.month, 10) || 0) - (parseInt(b.month, 10) || 0);
+    } else if (key === "id") {
+      diff = (a.id || "").localeCompare(b.id || "");
+    }
+
+    if (diff !== 0) {
+      return order === "desc" ? -diff : diff;
+    }
+  }
+
+  return (a.id || "").localeCompare(b.id || "");
+}
+
+// 테이블 헤더 정렬 아이콘(▲/▼/△/▽/⇅) 및 1차·2차 기준 활성 클래스 갱신
+export function updateSortHeaders(tableType, sortChain) {
+  let chain = [];
+  if (Array.isArray(sortChain)) {
+    chain = sortChain;
+  } else if (typeof sortChain === "string") {
+    const key = sortChain;
+    const order = arguments[2] || "desc";
+    chain = [{ key, order }];
+  } else if (sortChain && sortChain.key) {
+    chain = [sortChain];
+  } else {
+    chain = [{ key: "year", order: "desc" }];
+  }
+
+  const primary = chain[0] || { key: "year", order: "desc" };
+  const secondary = chain[1] || null;
+
+  const colNames = {
+    grade: "학년",
+    year: "년도",
+    month: "월",
+    id: "시험지 식별자"
+  };
+
   const selector = `.sortable-th[data-table="${tableType}"]`;
   document.querySelectorAll(selector).forEach(th => {
     const sortKey = th.dataset.sort;
     const iconSpan = th.querySelector(".sort-icon");
-    if (sortKey === currentKey) {
+    const name = colNames[sortKey] || sortKey;
+
+    if (sortKey === primary.key) {
       th.classList.add("active-sort");
+      th.classList.remove("secondary-sort");
       if (iconSpan) {
-        iconSpan.textContent = currentOrder === "asc" ? "▲" : "▼";
+        iconSpan.textContent = primary.order === "asc" ? "▲" : "▼";
       }
+      const secDesc = secondary ? ` (2차 정렬: ${colNames[secondary.key] || secondary.key} ${secondary.order === "asc" ? "오름차순" : "내림차순"})` : "";
+      th.title = `1차 정렬: ${name} ${primary.order === "asc" ? "오름차순" : "내림차순"}${secDesc} - 클릭 시 반대 순서로 정렬`;
+    } else if (secondary && sortKey === secondary.key) {
+      th.classList.remove("active-sort");
+      th.classList.add("secondary-sort");
+      if (iconSpan) {
+        iconSpan.textContent = secondary.order === "asc" ? "△" : "▽";
+      }
+      th.title = `2차 정렬: ${name} ${secondary.order === "asc" ? "오름차순" : "내림차순"} - 클릭 시 1차 정렬로 변경`;
     } else {
       th.classList.remove("active-sort");
+      th.classList.remove("secondary-sort");
       if (iconSpan) {
         iconSpan.textContent = "⇅";
       }
+      th.title = `클릭하여 ${name} 정렬`;
     }
   });
 }
 
+export let manageExamsFilters = { grade: "all", year: "all", month: "all" };
+
+export function populateManageExamsFilterOptions(items = appState.loadedExamsCache || []) {
+  const selYear = document.getElementById("filterManageYear");
+  const selMonth = document.getElementById("filterManageMonth");
+  if (!selYear || !selMonth) return;
+
+  const currentYear = selYear.value;
+  const currentMonth = selMonth.value;
+
+  const years = Array.from(new Set(items.map(e => e.year).filter(Boolean))).sort((a, b) => b - a);
+  const months = Array.from(new Set(items.map(e => parseInt(e.month, 10)).filter(Boolean))).sort((a, b) => a - b);
+
+  selYear.innerHTML = `<option value="all">전체</option>` + years.map(y => `<option value="${y}">${y}년</option>`).join("");
+  selMonth.innerHTML = `<option value="all">전체</option>` + months.map(m => `<option value="${m}">${m}월</option>`).join("");
+
+  if (currentYear && years.some(y => String(y) === String(currentYear))) {
+    selYear.value = currentYear;
+  }
+  if (currentMonth && months.some(m => String(m) === String(currentMonth))) {
+    selMonth.value = currentMonth;
+  }
+}
+
 export async function loadExamsManagerList() {
   if (!manageExamsTableBody) return;
-  manageExamsTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: var(--text-muted);">시험지 목록 및 4대 데이터 영역 통계를 불러오는 중...</td></tr>`;
+  manageExamsTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 시험지 목록 및 4대 데이터 영역 통계를 불러오는 중...</td></tr>`;
 
   try {
     const res = await fetch("/api/exams");
@@ -439,8 +634,7 @@ export async function loadExamsManagerList() {
     const items = data.items || [];
     appState.loadedExamsCache = items;
 
-    if (manageExamsTotalCount) manageExamsTotalCount.textContent = items.length;
-
+    populateManageExamsFilterOptions(items);
     renderManageExamsTable();
   } catch (err) {
     console.error(err);
@@ -451,18 +645,48 @@ export async function loadExamsManagerList() {
 export function renderManageExamsTable() {
   if (!manageExamsTableBody) return;
 
-  if (!appState.loadedExamsCache || appState.loadedExamsCache.length === 0) {
+  const allItems = appState.loadedExamsCache || [];
+  const totalCount = allItems.length;
+
+  if (totalCount === 0) {
+    if (manageExamsTotalCount) manageExamsTotalCount.textContent = "0";
     manageExamsTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2rem; color: var(--text-muted);">등록된 시험지가 없습니다.</td></tr>`;
     updateExamsSelectionState();
     return;
   }
 
-  // 이전에 체크되어 있던 exam.id 보존 (정렬 전환 시에도 체크 유지)
+  // 필터 적용
+  const filteredItems = allItems.filter(e => {
+    if (manageExamsFilters.grade !== "all" && e.grade !== manageExamsFilters.grade) return false;
+    if (manageExamsFilters.year !== "all" && String(e.year) !== String(manageExamsFilters.year)) return false;
+    if (manageExamsFilters.month !== "all" && String(parseInt(e.month, 10)) !== String(parseInt(manageExamsFilters.month, 10))) return false;
+    return true;
+  });
+
+  const isFiltered = manageExamsFilters.grade !== "all" || manageExamsFilters.year !== "all" || manageExamsFilters.month !== "all";
+
+  if (manageExamsTotalCount) {
+    if (isFiltered) {
+      manageExamsTotalCount.innerHTML = `${filteredItems.length}개 <span style="font-size: 0.75rem; color: #64748b; font-weight: normal;">(전체 ${totalCount}개 중)</span>`;
+    } else {
+      manageExamsTotalCount.textContent = totalCount;
+    }
+  }
+
+  // 이전에 체크되어 있던 exam.id 보존 (정렬/필터 전환 시에도 체크 유지)
   const previouslyChecked = new Set(
     Array.from(manageExamsTableBody.querySelectorAll(".chk-exam-row:checked")).map(c => c.dataset.id)
   );
 
-  const sortedItems = [...appState.loadedExamsCache].sort((a, b) => compareExams(a, b, appState.manageExamsSort.key, appState.manageExamsSort.order));
+  updateSortHeaders("manage", appState.manageExamsSortChain);
+
+  if (filteredItems.length === 0) {
+    manageExamsTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">선택하신 필터 조건(학년: ${escapeHtml(manageExamsFilters.grade)}, 년도: ${escapeHtml(manageExamsFilters.year)}, 월: ${escapeHtml(manageExamsFilters.month)})에 일치하는 시험지가 없습니다.</td></tr>`;
+    updateExamsSelectionState();
+    return;
+  }
+
+  const sortedItems = [...filteredItems].sort((a, b) => compareExams(a, b, appState.manageExamsSortChain));
 
   manageExamsTableBody.innerHTML = "";
   sortedItems.forEach(exam => {
@@ -634,6 +858,50 @@ export function init() {
   if (tabBtnFilesStatus) tabBtnFilesStatus.addEventListener("click", () => switchUploadTab("files"));
   if (tabBtnSingleUpload) tabBtnSingleUpload.addEventListener("click", () => switchUploadTab("single"));
   if (tabBtnManageExams) tabBtnManageExams.addEventListener("click", () => switchUploadTab("manage"));
+
+  // 드랍다운 필터 바인딩 헬퍼
+  const bindFilter = (id, onFilterChange) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("click", (e) => e.stopPropagation());
+    el.addEventListener("change", (e) => {
+      const val = e.target.value;
+      if (val !== "all") {
+        el.classList.add("filter-active");
+      } else {
+        el.classList.remove("filter-active");
+      }
+      onFilterChange(val);
+    });
+  };
+
+  // 1) 등록된 시험지 관리 탭 필터 바인딩
+  bindFilter("filterManageGrade", (val) => {
+    manageExamsFilters.grade = val;
+    renderManageExamsTable();
+  });
+  bindFilter("filterManageYear", (val) => {
+    manageExamsFilters.year = val;
+    renderManageExamsTable();
+  });
+  bindFilter("filterManageMonth", (val) => {
+    manageExamsFilters.month = val;
+    renderManageExamsTable();
+  });
+
+  // 2) 스마트 일괄 업로드 탭 필터 바인딩
+  bindFilter("filterBatchGrade", (val) => {
+    batchSetsFilters.grade = val;
+    renderBatchSetsTable();
+  });
+  bindFilter("filterBatchYear", (val) => {
+    batchSetsFilters.year = val;
+    renderBatchSetsTable();
+  });
+  bindFilter("filterBatchMonth", (val) => {
+    batchSetsFilters.month = val;
+    renderBatchSetsTable();
+  });
 
   btnOpenUploadModal.addEventListener("click", () => {
     uploadModal.classList.add("show");

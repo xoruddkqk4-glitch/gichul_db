@@ -1399,6 +1399,27 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code 0)
   - 3개 탭 열 순서, 헤더 라벨, 아이콘, 텍스트 정렬 및 셀 렌더링 무결성 검증 완료
 
+### [2026-09-27 16:10] 업데이트 이력 (Commit ID: <pending>)
+- **수정 내용**:
+  - **시험지 관리 및 파일 현황 테이블 학년/년도/월 다중 체크박스 드롭다운 필터 신설 (`files-status.js`, `style.css`, `state.js`)**:
+    - 「등록된 시험지 관리 및 삭제」 및 「원본 파일 현황 & 개별 업로드」 탭의 테이블 헤더(학년, 년도, 월)에 깔끔한 필터 깔때기 아이콘(`fa-filter`) 및 인터랙티브 드롭다운 필터 메뉴 구축.
+    - 전체 선택/해제 원클릭 기능, 항목별 개별 체크박스 토글, 활성 필터 개수 배지(`active-filter-badge`) 표시 및 동적 스타일링(`.th-filtered`) 적용.
+    - 필터 외부 클릭 시 팝업 자동 닫기 및 필터 변경 시 테이블 즉시 재렌더링 연동.
+  - **다중 기준 안정 정렬(Multi-level Stable Sorting) 구현 (`files-status.js`)**:
+    - 기존 단일 열 정렬 시 이전 정렬 기준이 풀리던 문제를 해결하기 위해, 1차 정렬 기준 선택 시 2차/3차 기준(학년, 년도, 월)이 자연스럽게 유지되는 다중 기준 안정 정렬 알고리즘 적용.
+    - 예: 월 정렬 시 동일 월 내에서 년도 내림/오름차순이 안정적으로 유지되며, 년도 정렬 시 동일 년도 내에서 월이 질서 있게 배열되도록 정렬 로직 고도화.
+  - **대본 PDF 1단/2단 레이아웃 자동 판별 및 오른쪽 잘림 현상 원천 해결 (`listening_parser.py`)**:
+    - 교육청 대본 등 1단 전면 레이아웃 PDF가 중앙 분할(`mid_x ≈ 297pt`)로 인해 오른쪽 50%가 잘리던 문제를 해결하기 위해, 페이지 내 텍스트 블록의 중앙선 관통 여부를 기반으로 1단 vs 2단 칼럼 레이아웃을 자동 판별하도록 엔진 전면 개편.
+    - `page.get_drawings()`를 통한 대본 외곽 테두리선(Vector Drawings) 자동 감지 및 Bounding Box 확장(좌우 10pt, 상하 8pt 여백)으로 박스 테두리선 및 텍스트 전체를 여유롭게 캡처.
+    - 세트 문항(`[16 ~ 17]`) 감지 및 복수 문항 공통 대본 매핑 완비.
+    - 기존 등록된 83개 시험지 총 876개의 대본 크롭 이미지(`static/captures/*_script.png`)를 새로운 알고리즘으로 모두 일괄 재생성 완료 (가로 625px → 1260px 해상도 정상 복원).
+- **검증 결과**:
+  - `python -m py_compile listening_parser.py app.py database.py run.py`: 파이썬 구문 오류 0건 통과 (Exit Code 0)
+  - `node --check static/js/upload.js static/js/files-status.js static/js/state.js static/js/main.js`: 자바스크립트 구문 오류 0건 통과 (Exit Code 0)
+  - 83개 대본 PDF, 876개 크롭 이미지 재생성 완료 (가로 해상도 1245px ~ 1260px 정상 확인)
+  - 모달 테이블 학년/년도/월 드롭다운 필터 및 1차/2차 복합 정렬 정상 작동 확인
+
+
 
 
 

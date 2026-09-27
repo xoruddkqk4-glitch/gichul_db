@@ -44,36 +44,71 @@ import { loadStats } from "./search.js";
 import { renderChoiceRates } from "./results-passage.js";
 import { escapeHtml, showToast } from "./utils.js";
 import {
+  batchSetsSortChain,
   closeUploadModal,
   compareExams,
   loadExamsManagerList,
+  renderBatchSetsTable,
   renderManageExamsTable,
+  toggleColumnSort,
   triggerSingleFileUpload,
   updateSortHeaders,
 } from "./upload.js";
 
 let pendingDeleteExamIds = [];
 
-// 업로드 모달 테이블 정렬 상태 (기본: 연도 내림차순 최신순)
-let filesStatusSort = { key: "year", order: "desc" };
+// 업로드 모달 테이블 다중 정렬 상태 체인 (1차: 연도 최신순, 2차: 월 최신순, 3차: 학년 오름차순)
+let filesStatusSortChain = [
+  { key: "year", order: "desc" },
+  { key: "month", order: "desc" },
+  { key: "grade", order: "asc" }
+];
+let filesStatusSort = filesStatusSortChain[0];
+
+// 업로드 모달 테이블 드랍다운 필터 상태 (학년, 년도, 월)
+let filesStatusFilters = { grade: "all", year: "all", month: "all" };
+
 // =========================================================================
 // 10-X. 원본 파일 현황 전용 탭 (PDF / HWP / PNG / CSV 업로드 유무 테이블 및 개별 업로드)
 // =========================================================================
 
 let cachedFilesStatusItems = [];
 
+export function populateFilesStatusFilterOptions(items = cachedFilesStatusItems) {
+  const selYear = document.getElementById("filterFilesYear");
+  const selMonth = document.getElementById("filterFilesMonth");
+  if (!selYear || !selMonth) return;
+
+  const currentYear = selYear.value;
+  const currentMonth = selMonth.value;
+
+  const years = Array.from(new Set(items.map(e => e.year).filter(Boolean))).sort((a, b) => b - a);
+  const months = Array.from(new Set(items.map(e => parseInt(e.month, 10)).filter(Boolean))).sort((a, b) => a - b);
+
+  selYear.innerHTML = `<option value="all">전체</option>` + years.map(y => `<option value="${y}">${y}년</option>`).join("");
+  selMonth.innerHTML = `<option value="all">전체</option>` + months.map(m => `<option value="${m}">${m}월</option>`).join("");
+
+  if (currentYear && years.some(y => String(y) === String(currentYear))) {
+    selYear.value = currentYear;
+  }
+  if (currentMonth && months.some(m => String(m) === String(currentMonth))) {
+    selMonth.value = currentMonth;
+  }
+}
+
 export async function loadFilesStatusList() {
   if (!filesStatusTableBody) return;
-  filesStatusTableBody.innerHTML = `<tr><td colspan="11" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
+  filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: var(--text-muted);"><span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 모의고사 세트별 원본 파일 현황을 불러오는 중...</td></tr>`;
 
   try {
     const res = await fetch("/api/exams");
     const data = await res.json();
     cachedFilesStatusItems = data.items || [];
+    populateFilesStatusFilterOptions(cachedFilesStatusItems);
     renderFilesStatusTable();
   } catch (err) {
     console.error(err);
-    filesStatusTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2rem; color: #dc2626;">파일 현황을 불러오지 못했습니다.</td></tr>`;
   }
 }
 
@@ -82,7 +117,7 @@ function renderFilesStatusTable() {
   const items = cachedFilesStatusItems || [];
   const totalCount = items.length;
 
-  // 통계 계산
+  // 통계 계산 (전체 DB 등록 세트 기준)
   const pdfCount = items.filter(e => e.file_status?.pdf?.exists).length;
   const hwpCount = items.filter(e => e.file_status?.hwp?.exists).length;
   const scriptCount = items.filter(e => e.file_status?.script?.exists).length;
@@ -101,29 +136,47 @@ function renderFilesStatusTable() {
   });
 
   if (items.length === 0) {
-    filesStatusTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">등록된 시험지가 없습니다. [스마트 일괄 업로드] 탭에서 시험지를 등록해 주세요.</td></tr>`;
     return;
   }
 
+  // 1. 드랍다운 필터 적용 (학년, 년도, 월)
+  let displayItems = items.filter(e => {
+    if (filesStatusFilters.grade !== "all" && e.grade !== filesStatusFilters.grade) return false;
+    if (filesStatusFilters.year !== "all" && String(e.year) !== String(filesStatusFilters.year)) return false;
+    if (filesStatusFilters.month !== "all" && String(parseInt(e.month, 10)) !== String(parseInt(filesStatusFilters.month, 10))) return false;
+    return true;
+  });
+
+  // 2. 결측 파일 필터 적용
   const filterMissing = chkFilterMissingFiles && chkFilterMissingFiles.checked;
-  const displayItems = filterMissing
-    ? items.filter(e => {
-        const fs = e.file_status || {};
-        const hasPdf = fs.pdf?.exists;
-        const hasHwp = fs.hwp?.exists;
-        const hasScript = fs.script?.exists;
-        const hasAns = fs.ans?.exists || (fs.ans?.answered_count > 0);
-        const hasCsv = fs.csv?.exists || (fs.csv?.rated_count > 0);
-        return !(hasPdf && hasHwp && hasScript && hasAns && hasCsv);
-      })
-    : items;
+  if (filterMissing) {
+    displayItems = displayItems.filter(e => {
+      const fs = e.file_status || {};
+      const hasPdf = fs.pdf?.exists;
+      const hasHwp = fs.hwp?.exists;
+      const hasScript = fs.script?.exists;
+      const hasAns = fs.ans?.exists || (fs.ans?.answered_count > 0);
+      const hasCsv = fs.csv?.exists || (fs.csv?.rated_count > 0);
+      return !(hasPdf && hasHwp && hasScript && hasAns && hasCsv);
+    });
+  }
+
+  // 헤더 정렬 UI 상태 갱신 (1차 기준 및 2차 보조 기준 표시)
+  updateSortHeaders("files", filesStatusSortChain);
+
+  const isFiltered = filesStatusFilters.grade !== "all" || filesStatusFilters.year !== "all" || filesStatusFilters.month !== "all";
 
   if (displayItems.length === 0) {
-    filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률·대본(5종)이 완비되었습니다!</td></tr>`;
+    if (isFiltered) {
+      filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: var(--text-muted);">선택하신 필터 조건(학년: ${escapeHtml(filesStatusFilters.grade)}, 년도: ${escapeHtml(filesStatusFilters.year)}, 월: ${escapeHtml(filesStatusFilters.month)})에 일치하는 시험지가 없습니다.</td></tr>`;
+    } else {
+      filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률·대본(5종)이 완비되었습니다!</td></tr>`;
+    }
     return;
   }
 
-  const sortedItems = [...displayItems].sort((a, b) => compareExams(a, b, filesStatusSort.key, filesStatusSort.order));
+  const sortedItems = [...displayItems].sort((a, b) => compareExams(a, b, filesStatusSortChain));
 
   filesStatusTableBody.innerHTML = "";
   sortedItems.forEach((exam, index) => {
@@ -403,6 +456,9 @@ export function init() {
 
   // 테이블 헤더 정렬 클릭 이벤트 (이벤트 위임 방식으로 견고하게 처리)
   document.addEventListener("click", (e) => {
+    // 드랍다운 셀렉트 내부 클릭 시 정렬 토글 방지
+    if (e.target.closest(".th-filter-select")) return;
+
     const th = e.target.closest(".sortable-th");
     if (!th) return;
     const tableType = th.dataset.table;
@@ -410,22 +466,46 @@ export function init() {
     if (!tableType || !sortKey) return;
 
     if (tableType === "files") {
-      if (filesStatusSort.key === sortKey) {
-        filesStatusSort.order = filesStatusSort.order === "asc" ? "desc" : "asc";
-      } else {
-        filesStatusSort.key = sortKey;
-        filesStatusSort.order = (sortKey === "grade") ? "asc" : "desc";
-      }
+      filesStatusSortChain = toggleColumnSort(filesStatusSortChain, sortKey);
+      filesStatusSort = filesStatusSortChain[0];
       renderFilesStatusTable();
     } else if (tableType === "manage") {
-      if (appState.manageExamsSort.key === sortKey) {
-        appState.manageExamsSort.order = appState.manageExamsSort.order === "asc" ? "desc" : "asc";
-      } else {
-        appState.manageExamsSort.key = sortKey;
-        appState.manageExamsSort.order = (sortKey === "grade") ? "asc" : "desc";
-      }
+      appState.manageExamsSortChain = toggleColumnSort(appState.manageExamsSortChain, sortKey);
+      appState.manageExamsSort = appState.manageExamsSortChain[0];
       renderManageExamsTable();
+    } else if (tableType === "batch") {
+      batchSetsSortChain = toggleColumnSort(batchSetsSortChain, sortKey);
+      renderBatchSetsTable();
     }
+  });
+
+  // 원본 파일 현황 드랍다운 필터 바인딩 헬퍼
+  const bindFilter = (id, onFilterChange) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("click", (e) => e.stopPropagation());
+    el.addEventListener("change", (e) => {
+      const val = e.target.value;
+      if (val !== "all") {
+        el.classList.add("filter-active");
+      } else {
+        el.classList.remove("filter-active");
+      }
+      onFilterChange(val);
+    });
+  };
+
+  bindFilter("filterFilesGrade", (val) => {
+    filesStatusFilters.grade = val;
+    renderFilesStatusTable();
+  });
+  bindFilter("filterFilesYear", (val) => {
+    filesStatusFilters.year = val;
+    renderFilesStatusTable();
+  });
+  bindFilter("filterFilesMonth", (val) => {
+    filesStatusFilters.month = val;
+    renderFilesStatusTable();
   });
 
   // 필터 토글 및 새로고침 이벤트 바인딩
