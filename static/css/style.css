@@ -4544,6 +4544,10 @@ mark.passage-highlight {
   transform: scale(1.01);
 }
 
+.batch-upload-dropzone.dragover * {
+  pointer-events: none !important;
+}
+
 .dropzone-icon {
   font-size: 2.2rem;
   margin-bottom: 0.4rem;

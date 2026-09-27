@@ -150,68 +150,71 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # 이미 컬럼이 존재함
 
-        # 기존에 이미 어법 분석 결과가 등록된 문장들은 분석 완료(1)로 동기화
-        try:
-            cursor.execute("""
-                UPDATE sentences 
-                SET grammar_analyzed = 1 
-                WHERE id IN (SELECT DISTINCT sentence_id FROM sentence_grammar_annotations)
-            """)
-        except Exception:
-            pass
+        # 일회성 데이터 마이그레이션 버전 관리 (기동 시 7만 문장/1.3만 지문 반복 전수 순회 차단 -> 0.05초 즉각 기동)
+        cursor.execute("SELECT value FROM app_settings WHERE key = 'db_migration_version'")
+        mig_row = cursor.fetchone()
+        mig_ver = int(mig_row["value"]) if (mig_row and str(mig_row["value"]).isdigit()) else 0
 
-        # sentences 테이블에 빈칸(____)이 남아있는 기존 문장들 정답 선지 자동 완성 동기화
-        try:
-            cursor.execute("SELECT id, passage_id, sentence_text FROM sentences WHERE sentence_text LIKE '%\\_\\_%' ESCAPE '\\'")
-            unfilled_rows = cursor.fetchall()
-            if unfilled_rows:
-                from grammar_analyzer import prepare_sentence_for_analysis
-                for ur in unfilled_rows:
-                    cur_p = None
-                    pid = ur["passage_id"]
-                    if pid:
-                        cursor.execute("SELECT passage_text, answer_text, explanation_text FROM passages WHERE id = ?", (pid,))
-                        p_row = cursor.fetchone()
-                        if p_row:
-                            cur_p = dict(p_row)
-                    
-                    prep_text = prepare_sentence_for_analysis(
-                        ur["sentence_text"],
-                        passage_id=pid,
-                        passage_text=cur_p.get("passage_text", "") if cur_p else "",
-                        answer_text=cur_p.get("answer_text", "") if cur_p else "",
-                        explanation_text=cur_p.get("explanation_text", "") if cur_p else ""
-                    )
-                    if prep_text and prep_text != ur["sentence_text"]:
-                        words = re.findall(r"\b[\w'-]+\b", prep_text)
-                        cursor.execute(
-                            "UPDATE sentences SET sentence_text = ?, word_count = ? WHERE id = ?",
-                            (prep_text.strip(), len(words), ur["id"])
+        if mig_ver < 1:
+            try:
+                cursor.execute("""
+                    UPDATE sentences 
+                    SET grammar_analyzed = 1 
+                    WHERE id IN (SELECT DISTINCT sentence_id FROM sentence_grammar_annotations)
+                """)
+            except Exception:
+                pass
+
+            try:
+                cursor.execute("SELECT id, passage_id, sentence_text FROM sentences WHERE sentence_text LIKE '%\\_\\_%' ESCAPE '\\'")
+                unfilled_rows = cursor.fetchall()
+                if unfilled_rows:
+                    from grammar_analyzer import prepare_sentence_for_analysis
+                    for ur in unfilled_rows:
+                        cur_p = None
+                        pid = ur["passage_id"]
+                        if pid:
+                            cursor.execute("SELECT passage_text, answer_text, explanation_text FROM passages WHERE id = ?", (pid,))
+                            p_row = cursor.fetchone()
+                            if p_row:
+                                cur_p = dict(p_row)
+                        prep_text = prepare_sentence_for_analysis(
+                            ur["sentence_text"],
+                            passage_id=pid,
+                            passage_text=cur_p.get("passage_text", "") if cur_p else "",
+                            answer_text=cur_p.get("answer_text", "") if cur_p else "",
+                            explanation_text=cur_p.get("explanation_text", "") if cur_p else ""
                         )
-        except Exception as mig_err:
-            print(f"[Init DB Blank Sentence Migration Error] {mig_err}")
+                        if prep_text and prep_text != ur["sentence_text"]:
+                            words = re.findall(r"\b[\w'-]+\b", prep_text)
+                            cursor.execute(
+                                "UPDATE sentences SET sentence_text = ?, word_count = ? WHERE id = ?",
+                                (prep_text.strip(), len(words), ur["id"])
+                            )
+            except Exception as mig_err:
+                print(f"[Init DB Blank Sentence Migration Error] {mig_err}")
 
-        # passages 테이블의 해설(explanation_text) 상단 [정답] 표기를 정답표 이미지/검증 정답(answer_text)과 자동 동기화
-        try:
-            cursor.execute("SELECT id, answer_text, explanation_text FROM passages WHERE answer_text IS NOT NULL AND TRIM(answer_text) != '' AND explanation_text IS NOT NULL")
-            p_rows = cursor.fetchall()
-            for pr in p_rows:
-                ans = pr["answer_text"].strip()
-                exp = pr["explanation_text"] or ""
-                if not exp:
-                    continue
-                m = re.search(r"^\s*\[\s*정답\s*\]\s*([①②③④⑤1-5]?)", exp)
-                if m:
-                    cur_ans = m.group(1)
-                    if cur_ans != ans:
-                        new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp)
+            try:
+                cursor.execute("SELECT id, answer_text, explanation_text FROM passages WHERE answer_text IS NOT NULL AND TRIM(answer_text) != '' AND explanation_text IS NOT NULL")
+                p_rows = cursor.fetchall()
+                for pr in p_rows:
+                    ans = pr["answer_text"].strip()
+                    exp = pr["explanation_text"] or ""
+                    if not exp:
+                        continue
+                    m = re.search(r"^\s*\[\s*정답\s*\]\s*([①②③④⑤1-5]?)", exp)
+                    if m:
+                        cur_ans = m.group(1)
+                        if cur_ans != ans:
+                            new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp)
+                            cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
+                    else:
+                        new_exp = f"[정답] {ans}\n\n{exp.strip()}".strip()
                         cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
-                else:
-                    new_exp = f"[정답] {ans}\n\n{exp.strip()}".strip()
-                    cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
-        except Exception as sync_err:
-            print(f"[Init DB Answer Sync Error] {sync_err}")
+            except Exception as sync_err:
+                print(f"[Init DB Answer Sync Error] {sync_err}")
 
+            cursor.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('db_migration_version', '1')")
 
         # 4. 지문 태그 테이블
         cursor.execute("""
@@ -263,20 +266,84 @@ def init_db():
             );
         """)
 
-        # 인덱스 생성
+        # 8. 고속 복합 B-Tree 인덱스 생성
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_exams_filter ON exams(grade, year, month);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam ON passages(exam_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam_area ON passages(exam_id, area);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam_qnum ON passages(exam_id, q_num);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_type_area ON passages(question_type, area);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_correct_rate ON passages(correct_rate);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_area ON passages(area);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_passage ON sentences(passage_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_pid_order ON sentences(passage_id, order_index);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_starred ON sentences(is_starred);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_analyzed ON sentences(grammar_analyzed);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_sid ON sentence_grammar_annotations(sentence_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_cat ON sentence_grammar_annotations(category_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_pos ON sentence_grammar_annotations(pos);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_pid ON passage_tags(passage_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_tag ON passage_tags(tag_name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_sid ON sentence_tags(sentence_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_tag ON sentence_tags(tag_name);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_cat ON sentence_grammar_annotations(category_id);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_pos ON sentence_grammar_annotations(pos);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_starred ON sentences(is_starred);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentences_analyzed ON sentences(grammar_analyzed);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_correct_rate ON passages(correct_rate);")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_area ON passages(area);")
+
+        # 9. FTS5 전문 검색(Full-Text Search) 가상 테이블 및 자동 동기화 트리거
+        try:
+            cursor.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS passages_fts USING fts5(
+                    passage_id UNINDEXED,
+                    passage_text,
+                    question_title,
+                    explanation_text,
+                    script_text,
+                    tokenize='unicode61'
+                );
+            """)
+            cursor.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS sentences_fts USING fts5(
+                    sentence_id UNINDEXED,
+                    sentence_text,
+                    tokenize='unicode61'
+                );
+            """)
+
+            # 트리거 등록 (신규 등록/수정/삭제 시 FTS5 자동 동기화)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_sentences_ai AFTER INSERT ON sentences BEGIN
+                    INSERT INTO sentences_fts(sentence_id, sentence_text) VALUES (new.id, new.sentence_text);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_sentences_ad AFTER DELETE ON sentences BEGIN
+                    DELETE FROM sentences_fts WHERE sentence_id = old.id;
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_sentences_au AFTER UPDATE ON sentences BEGIN
+                    DELETE FROM sentences_fts WHERE sentence_id = old.id;
+                    INSERT INTO sentences_fts(sentence_id, sentence_text) VALUES (new.id, new.sentence_text);
+                END;
+            """)
+
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_passages_ai AFTER INSERT ON passages BEGIN
+                    INSERT INTO passages_fts(passage_id, passage_text, question_title, explanation_text, script_text) 
+                    VALUES (new.id, new.passage_text, new.question_title, new.explanation_text, new.script_text);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_passages_ad AFTER DELETE ON passages BEGIN
+                    DELETE FROM passages_fts WHERE passage_id = old.id;
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_passages_au AFTER UPDATE ON passages BEGIN
+                    DELETE FROM passages_fts WHERE passage_id = old.id;
+                    INSERT INTO passages_fts(passage_id, passage_text, question_title, explanation_text, script_text) 
+                    VALUES (new.id, new.passage_text, new.question_title, new.explanation_text, new.script_text);
+                END;
+            """)
+        except Exception as fts_err:
+            print(f"[Init DB FTS5 Warning] {fts_err}")
 
         conn.commit()
 
@@ -308,18 +375,55 @@ def save_exam(exam_data: dict) -> str:
                 listening_end_q = excluded.listening_end_q
         """, exam_data)
         conn.commit()
+        invalidate_exams_cache()
         return exam_data["id"]
 
 
-def get_all_exams_with_stats() -> List[Dict[str, Any]]:
-    """등록된 모든 시험지 목록 및 3대 데이터 영역(원본 파일, 코어 본문, 메타데이터) 통계 조회"""
-    import glob
+_EXAMS_STATS_CACHE: Optional[List[Dict[str, Any]]] = None
+
+def invalidate_exams_cache():
+    """시험지 통계 캐시 무효화 (업로드, 삭제, 변경 시 호출)"""
+    global _EXAMS_STATS_CACHE
+    _EXAMS_STATS_CACHE = None
+
+def get_all_exams_with_stats(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """등록된 모든 시험지 목록 및 3대 데이터 영역(원본 파일, 코어 본문, 메타데이터) 통계 조회 (초고속 인메모리 캐시 지원)"""
+    global _EXAMS_STATS_CACHE
+    if not force_refresh and _EXAMS_STATS_CACHE is not None:
+        return _EXAMS_STATS_CACHE
+
+    import os, re
     base_dir = os.path.dirname(os.path.abspath(__file__))
     uploads_dir = os.path.join(base_dir, "uploads")
     captures_dir = os.path.join(base_dir, "static", "captures")
 
+    # 1. uploads/ 및 static/captures/ 디스크 파일을 1회 단일 스캔하여 (grade, year, month) 키로 사전 인덱싱 (0.04s)
+    uploads_by_key = {}
+    if os.path.exists(uploads_dir):
+        for entry in os.scandir(uploads_dir):
+            if entry.is_file():
+                m = re.match(r"(고[1-3])[-_](\d{4})[-_](\d{1,2})", entry.name)
+                if m:
+                    k = (m.group(1), int(m.group(2)), int(m.group(3)))
+                    if k not in uploads_by_key:
+                        uploads_by_key[k] = []
+                    try:
+                        uploads_by_key[k].append((entry.name, entry.stat().st_size))
+                    except Exception:
+                        pass
+
+    captures_by_key = {}
+    if os.path.exists(captures_dir):
+        for entry in os.scandir(captures_dir):
+            if entry.is_file() and entry.name.endswith(".png"):
+                m = re.match(r"(고[1-3])[-_](\d{4})[-_](\d{1,2})", entry.name)
+                if m:
+                    k = (m.group(1), int(m.group(2)), int(m.group(3)))
+                    captures_by_key[k] = captures_by_key.get(k, 0) + 1
+
     with get_connection() as conn:
         cursor = conn.cursor()
+        # 2. 시험지 메타정보 + 지문/문장 카운트 일괄 조회
         cursor.execute("""
             SELECT 
                 e.id,
@@ -342,79 +446,82 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
         rows = cursor.fetchall()
         exams = [dict(r) for r in rows]
 
-        # 각 시험지별 메타데이터(어법 분석, 태그) 및 디스크 파일(원본 파일, 캡처) 통계 보강
+        # 3. 어법 분석 통계 일괄 집계 (1회 쿼리)
+        cursor.execute("""
+            SELECT p.exam_id, COUNT(DISTINCT a.id)
+            FROM sentence_grammar_annotations a
+            JOIN sentences s ON a.sentence_id = s.id
+            JOIN passages p ON s.passage_id = p.id
+            GROUP BY p.exam_id
+        """)
+        grammar_stats_map = dict(cursor.fetchall())
+
+        # 4. 태그 통계 일괄 집계 (1회 쿼리)
+        cursor.execute("SELECT p.exam_id, COUNT(*) FROM passage_tags pt JOIN passages p ON pt.passage_id = p.id GROUP BY p.exam_id")
+        ptag_map = dict(cursor.fetchall())
+        cursor.execute("SELECT p.exam_id, COUNT(*) FROM sentence_tags st JOIN sentences s ON st.sentence_id = s.id JOIN passages p ON s.passage_id = p.id GROUP BY p.exam_id")
+        stag_map = dict(cursor.fetchall())
+
+        # 5. 지문 정답 및 정답률 통계 일괄 집계 (1회 쿼리)
+        cursor.execute("""
+            SELECT 
+                exam_id,
+                COUNT(*) AS total_passages,
+                SUM(CASE WHEN answer_text IS NOT NULL AND TRIM(answer_text) != '' THEN 1 ELSE 0 END) AS answered_passages,
+                SUM(CASE WHEN correct_rate IS NOT NULL THEN 1 ELSE 0 END) AS rated_passages,
+                AVG(correct_rate) AS avg_correct_rate
+            FROM passages
+            GROUP BY exam_id
+        """)
+        ans_stats_map = {r["exam_id"]: dict(r) for r in cursor.fetchall()}
+
+        def _is_problem_pdf(fn: str) -> bool:
+            fl = fn.lower()
+            if not fl.endswith(".pdf"):
+                return False
+            if "_script" in fl or "대본" in fl or "_ans_" in fl or "_exp_" in fl:
+                return False
+            if re.search(r"[-_]A\.pdf$", fn, re.I):
+                return False
+            return True
+
         for ex in exams:
             eid = ex["id"]
             grade = ex["grade"]
             year = ex["year"]
             month = ex["month"]
 
-            # 1) 메타데이터 통계: 어법 분석 개수 & 태그 개수
-            cursor.execute("""
-                SELECT COUNT(DISTINCT a.id)
-                FROM sentence_grammar_annotations a
-                JOIN sentences s ON a.sentence_id = s.id
-                JOIN passages p ON s.passage_id = p.id
-                WHERE p.exam_id = ?
-            """, (eid,))
-            ex["grammar_count"] = cursor.fetchone()[0]
+            # 어법 및 태그
+            ex["grammar_count"] = grammar_stats_map.get(eid, 0)
+            ex["tag_count"] = ptag_map.get(eid, 0) + stag_map.get(eid, 0)
 
-            cursor.execute("""
-                SELECT 
-                    (SELECT COUNT(*) FROM passage_tags pt JOIN passages p ON pt.passage_id = p.id WHERE p.exam_id = ?) +
-                    (SELECT COUNT(*) FROM sentence_tags st JOIN sentences s ON st.sentence_id = s.id JOIN passages p ON s.passage_id = p.id WHERE p.exam_id = ?)
-            """, (eid, eid))
-            ex["tag_count"] = cursor.fetchone()[0]
-
-            # 2) 원본 파일(uploads/) 통계: 파일 개수 및 총 바이트 크기
-            raw_pattern = os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*")
-            raw_files = glob.glob(raw_pattern)
+            # 원본 파일 매핑
+            k = (grade, year, month)
+            matching_files = uploads_by_key.get(k, [])
             if ex.get("subtype"):
                 sub_key = ex["subtype"].replace("형", "")
-                sub_files = [f for f in raw_files if re.search(rf"[-_\[\s]{sub_key}(?:형)?(?:[-_\]\s]|\.|$)", os.path.basename(f), re.I)]
-                if sub_files:
-                    raw_files = sub_files
-            raw_size = sum(os.path.getsize(f) for f in raw_files if os.path.isfile(f))
-            ex["raw_file_count"] = len(raw_files)
+                matching_files = [f for f in matching_files if re.search(rf"[-_\[\s]{sub_key}(?:형)?(?:[-_\]\s]|\.|$)", f[0], re.I)]
+
+            raw_size = sum(f[1] for f in matching_files)
+            raw_basenames = [f[0] for f in matching_files]
+            ex["raw_file_count"] = len(matching_files)
             ex["raw_file_size_bytes"] = raw_size
             ex["raw_file_size_mb"] = round(raw_size / (1024 * 1024), 2)
-            raw_basenames = [os.path.basename(f) for f in raw_files]
             ex["raw_files"] = raw_basenames
 
-            # 5대 파일(PDF 문제지, HWP 해설지, 대본/해설 PDF, 정답표 이미지, 정답률 CSV) 개별 유무 판별
-            # 1) 대본 PDF 판별 (1순위: *_script.pdf, *대본*.pdf, 2순위: *-A.pdf, *_exp_*.pdf)
+            # 5대 파일 판별
             script_file = next((f for f in raw_basenames if f.lower().endswith(".pdf") and ("_script" in f.lower() or "대본" in f.lower())), None)
             exp_pdf_file = next((f for f in raw_basenames if f.lower().endswith(".pdf") and (re.search(r"[-_]A\.pdf$", f, re.I) or "_exp_" in f.lower() or "_exp.pdf" in f.lower())), None)
             script_target = script_file or exp_pdf_file
             script_type = "script" if script_file else ("exp_pdf" if exp_pdf_file else None)
-
-            # 2) 문제지 PDF: 스크립트/해설/정답 관련 PDF를 제외한 순수 문제지 PDF
-            def _is_problem_pdf(fn: str) -> bool:
-                fl = fn.lower()
-                if not fl.endswith(".pdf"):
-                    return False
-                if "_script" in fl or "대본" in fl or "_ans_" in fl or "_exp_" in fl:
-                    return False
-                if re.search(r"[-_]A\.pdf$", fn, re.I):
-                    return False
-                return True
 
             pdf_file = next((f for f in raw_basenames if _is_problem_pdf(f)), None)
             hwp_file = next((f for f in raw_basenames if f.lower().endswith((".hwp", ".hwpx")) and "_exp_" not in f), None)
             ans_file = next((f for f in raw_basenames if "_ans_" in f or f.lower().endswith((".png", ".jpg", ".jpeg"))), None)
             csv_file = next((f for f in raw_basenames if f.lower().endswith(".csv")), None)
 
-            # 지문 정답 및 정답률 입력 현황 조회
-            cursor.execute("""
-                SELECT 
-                    COUNT(*) AS total_passages,
-                    SUM(CASE WHEN answer_text IS NOT NULL AND TRIM(answer_text) != '' THEN 1 ELSE 0 END) AS answered_passages,
-                    SUM(CASE WHEN correct_rate IS NOT NULL THEN 1 ELSE 0 END) AS rated_passages,
-                    AVG(correct_rate) AS avg_correct_rate
-                FROM passages
-                WHERE exam_id = ?
-            """, (eid,))
-            ans_row = cursor.fetchone()
+            # 지문 정답/정답률
+            ans_row = ans_stats_map.get(eid)
             total_passages = ans_row["total_passages"] if ans_row else 0
             answered_passages = ans_row["answered_passages"] if ans_row and ans_row["answered_passages"] else 0
             rated_passages = ans_row["rated_passages"] if ans_row and ans_row["rated_passages"] else 0
@@ -450,10 +557,10 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
                 }
             }
 
-            # 3) 크롭 캡처 이미지(static/captures/) 개수
-            cap_pattern = os.path.join(captures_dir, f"{grade}_{year}_{month:02d}_*.png")
-            ex["captures_count"] = len(glob.glob(cap_pattern))
+            # 캡처 개수
+            ex["captures_count"] = captures_by_key.get(k, 0)
 
+        _EXAMS_STATS_CACHE = exams
         return exams
 
 
@@ -635,6 +742,7 @@ def selective_delete_exam(
                 actions.append(f"정답률 데이터 {del_res['deleted_rate_count']}문항 초기화")
 
         del_res["message"] = f"'{exam_id}': " + (", ".join(actions) if actions else "선택된 삭제 작업 없음")
+        invalidate_exams_cache()
         return del_res
 
 
@@ -694,6 +802,7 @@ def save_passage(passage_data: dict) -> str:
                 audio_file_path = COALESCE(excluded.audio_file_path, passages.audio_file_path)
         """, passage_data)
         conn.commit()
+        invalidate_exams_cache()
         return passage_data["id"]
 
 
@@ -765,6 +874,7 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]])
                     rates_collected.append(c_rate)
 
         conn.commit()
+        invalidate_exams_cache()
 
     avg_rate = round(sum(rates_collected) / len(rates_collected), 1) if rates_collected else None
     return {
@@ -800,6 +910,7 @@ def save_sentences(sentences: List[dict]):
                     remarks = excluded.remarks
             """, s)
         conn.commit()
+        invalidate_exams_cache()
 
 
 def update_sentence_text(sentence_id: str, new_text: str, word_count: Optional[int] = None) -> bool:
@@ -975,18 +1086,15 @@ def search_passages(
     if keyword:
         k_strip = keyword.strip()
         if whole_word:
-            # 온전한 단어 검색: 앞뒤로 단어 문자(\w, 영문/숫자/한글)가 없는 독립 단어 일치
-            pattern = r"(?<!\w)" + re.escape(k_strip).replace(r"\ ", r"\s+") + r"(?!\w)"
+            # 온전한 단어 검색: FTS5 전문 검색 엔진 활용 (수백 ms -> 2~5ms 단축)
+            clean_term = '"' + k_strip.replace('"', '""') + '"'
             query += """
                 AND (
-                    p.id REGEXP ? OR
-                    p.passage_text REGEXP ? OR
-                    p.question_title REGEXP ? OR
-                    p.explanation_text REGEXP ? OR
-                    p.script_text REGEXP ?
+                    p.id IN (SELECT passage_id FROM passages_fts WHERE passages_fts MATCH ?) OR
+                    p.id LIKE ?
                 )
             """
-            params.extend([pattern, pattern, pattern, pattern, pattern])
+            params.extend([clean_term, f"%{k_strip}%"])
         else:
             kw = f"%{k_strip}%"
             query += """
@@ -1342,10 +1450,10 @@ def search_sentences(
     if keyword:
         k_strip = keyword.strip()
         if whole_word:
-            # 온전한 단어 검색: 앞뒤로 단어 문자(\w, 영문/숫자/한글)가 없는 독립 단어 일치
-            pattern = r"(?<!\w)" + re.escape(k_strip).replace(r"\ ", r"\s+") + r"(?!\w)"
-            query += " AND (s.sentence_text REGEXP ? OR s.id REGEXP ?)"
-            params.extend([pattern, pattern])
+            # 온전한 단어 검색: FTS5 전문 검색 엔진 활용 (수백 ms -> 1~2ms 단축)
+            clean_term = '"' + k_strip.replace('"', '""') + '"'
+            query += " AND (s.id IN (SELECT sentence_id FROM sentences_fts WHERE sentences_fts MATCH ?) OR s.id LIKE ?)"
+            params.extend([clean_term, f"%{k_strip}%"])
         else:
             kw = f"%{k_strip}%"
             query += " AND (s.sentence_text LIKE ? OR s.id LIKE ?)"

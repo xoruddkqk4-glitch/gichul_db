@@ -132,14 +132,14 @@ function parseExamMetadataFromFilename(filename) {
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
 
   // 1. 대본/해설 PDF 판별
-  const is_script_pdf = ext === ".pdf" && (/_script/i.test(nameWithoutExt) || /대본/i.test(nameWithoutExt) || /listening/i.test(nameWithoutExt));
+  const is_script_pdf = ext === ".pdf" && (/_script/i.test(nameWithoutExt) || /대본/i.test(nameWithoutExt) || /listening/i.test(nameWithoutExt) || /듣기/i.test(nameWithoutExt));
 
   // A/B형 분리 시험지 식별자 감지 (예: [2012-06-A], 고2-[2012-06-A], 2012-06-A형 등)
   const is_ab_bracket = /\[\d{4}[-_]\d{1,2}[-_][AB]\]/i.test(nameWithoutExt);
-  const is_ab_type = is_ab_bracket || /[-_][AB](?:형)?(?:[-_]|$)/i.test(nameWithoutExt);
+  const is_ab_type = is_ab_bracket || /[-_][AB](?:형)?(?:[-_]|$)/i.test(nameWithoutExt) || /[AB]형/i.test(nameWithoutExt);
 
   // A/B형 시험지 본문인 경우 교육청 해설(-A)로 오인되지 않도록 제외
-  const is_exp_pdf = ext === ".pdf" && !is_script_pdf && !is_ab_type && (/[\s\-_]A$/i.test(nameWithoutExt) || /[\s\-_]exp$/i.test(nameWithoutExt) || /_exp_/i.test(nameWithoutExt));
+  const is_exp_pdf = ext === ".pdf" && !is_script_pdf && !is_ab_type && (/[\s\-_]A$/i.test(nameWithoutExt) || /[\s\-_]exp$/i.test(nameWithoutExt) || /_exp_/i.test(nameWithoutExt) || /해설/i.test(nameWithoutExt));
 
   // 2. 정답표 (JSON 또는 이미지)
   const is_json = ext === ".json";
@@ -156,19 +156,47 @@ function parseExamMetadataFromFilename(filename) {
     subtype = `${subMatch[1].toUpperCase()}형`;
   }
 
-  // 4. 모의고사 식별자 추출을 위해 접미사 제거
-  let cleanName = nameWithoutExt
-    .replace(/[\s\-_]?(script|대본|듣기대본|듣기|listening)$/i, "")
-    .replace(/[\s\-_]?(A|ans|정답|exp|해설지|해설|문제지|문제)$/i, "");
+  // 4. 학년(Grade), 연도(Year), 월(Month) 유연한 다방향 추출
+  // 4-1. 학년: 고1, 고2, 고3, 1학년, 2학년, 3학년, H1, H2, H3 등
+  let grade = null;
+  const gradeMatch = nameWithoutExt.match(/(?:^|[^가-힣a-zA-Z0-9])(?:고\s*([1-3])|([1-3])\s*학년|h\s*([1-3]))/i);
+  if (gradeMatch) {
+    const gNum = gradeMatch[1] || gradeMatch[2] || gradeMatch[3];
+    grade = `고${gNum}`;
+  }
 
-  // 지원 패턴 예: 고3-[2026-07], 고3-[2026-7], 고3-2026-07, 고3_2026_07, 고3 2026년 7월 등
-  const match = cleanName.match(/(고[1-3]|[1-3]학년)[\s\-_]?\[?(\d{4})[년\s\-_]+(\d{1,2})월?\]?/i);
-  if (!match) return null;
+  // 4-2. 연도 (1990~2035)
+  let year = null;
+  const yearMatch = nameWithoutExt.match(/(?:^|[^0-9])(199\d|20[0-3]\d)(?:년|학년도|[-_\[\s]|$)/);
+  if (yearMatch) {
+    year = parseInt(yearMatch[1], 10);
+  }
 
-  const rawGrade = match[1];
-  const grade = rawGrade.includes("3") ? "고3" : (rawGrade.includes("2") ? "고2" : "고1");
-  const year = parseInt(match[2], 10);
-  const month = parseInt(match[3], 10);
+  // 4-3. 시행월 (1~12)
+  let month = null;
+  // 1순위: 명시적 'N월', '0N월'
+  const m1 = nameWithoutExt.match(/(?:^|[^0-9])(0?[1-9]|1[0-2])\s*월/);
+  if (m1) {
+    month = parseInt(m1[1], 10);
+  } else if (year) {
+    // 2순위: 연도 뒤에 붙은 월 (2026-06, 2026_06, [2026-06] 등)
+    const m2 = nameWithoutExt.match(new RegExp(String(year) + "[-_.\\s]+(0?[1-9]|1[0-2])(?:[-_.\\s\\]]|$)"));
+    if (m2) {
+      month = parseInt(m2[1], 10);
+    } else {
+      // 3순위: 연도와 학년을 제외한 1~12 사이의 숫자
+      const gNum = grade ? grade.replace("고", "") : "";
+      const stripped = nameWithoutExt.replace(new RegExp(String(year), "g"), "").replace(new RegExp("(?:고\\s*|" + gNum + "\\s*학년)" + gNum, "g"), "");
+      const m3 = stripped.match(/(?:^|[^0-9])(0?[1-9]|1[0-2])(?:[^0-9]|$)/);
+      if (m3) {
+        month = parseInt(m3[1], 10);
+      }
+    }
+  }
+
+  if (!grade || !year || !month) {
+    return null;
+  }
 
   // 출제기관 규칙: 3학년의 6월, 9월, 11월만 '평가원' 출제. 3학년의 나머지 월과 1,2학년은 무조건 '교육청'
   const exam_type = (grade === "고3" && [6, 9, 11].includes(month)) ? "평가원" : "교육청";
@@ -191,15 +219,21 @@ function parseExamMetadataFromFilename(filename) {
 // 10-3. 스마트 일괄 업로드 (복수 세트) 드롭존 & 페어링 (PDF + HWP + 대본/해설 PDF + 정답표 4종 이상)
 let batchSetsMap = {}; // { set_key: { set_key, grade, year, month, exam_type, subtype, pdfFile, hwpFile, scriptFile, ansFile, csvFile } }
 
-async function handleBatchFilesSelected(fileList) {
+function handleBatchFilesSelected(fileList) {
   if (!fileList || fileList.length === 0) return;
-  await fetchRegisteredExamsSet();
+
+  const unparsedFiles = [];
+  let parsedCount = 0;
 
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i];
     const meta = parseExamMetadataFromFilename(file.name);
-    if (!meta) continue;
+    if (!meta) {
+      unparsedFiles.push(file);
+      continue;
+    }
 
+    parsedCount++;
     const key = meta.set_key;
     if (!batchSetsMap[key]) {
       batchSetsMap[key] = {
@@ -252,7 +286,22 @@ async function handleBatchFilesSelected(fileList) {
     }
   }
 
+  // 1. UI 즉시 렌더링 (0ms 동기 처리: 파일 드롭 즉시 목록 표시)
   renderBatchSetsTable();
+
+  // 2. 미인식 파일 안내 토스트
+  if (unparsedFiles.length > 0) {
+    const fileSample = unparsedFiles.slice(0, 2).map(f => f.name).join(", ");
+    const moreText = unparsedFiles.length > 2 ? ` 외 ${unparsedFiles.length - 2}개` : "";
+    showToast(`⚠️ ${unparsedFiles.length}개 파일 자동 분류 실패: ${fileSample}${moreText} (파일명에 학년, 연도, 월 정보가 필요합니다)`, "warning");
+  } else if (parsedCount > 0) {
+    showToast(`📂 ${parsedCount}개 파일이 감지되어 시험지 세트 테이블에 반영되었습니다.`, "success");
+  }
+
+  // 3. 백그라운드에서 최신 시험지 목록 비동기 동기화 (UI 블로킹 없음)
+  fetchRegisteredExamsSet().then(() => {
+    renderBatchSetsTable();
+  }).catch(err => console.error(err));
 }
 
 let registeredExamsSet = new Set();
@@ -993,30 +1042,68 @@ export function init() {
     }
   });
 
-  // 드롭존 이벤트 바인딩
+  // 윈도우 전역 드래그 기본 동작 방지 (브라우저가 외부 PDF 파일로 이동해버리는 현상 원천 차단)
+  window.addEventListener("dragover", (e) => {
+    e.preventDefault();
+  });
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
+  });
+
+  // 드롭존 이벤트 바인딩 (dragCounter 상태 머신으로 자식 요소 진입 시 깜빡임/취소 방지)
   if (batchDropzone) {
-    ["dragenter", "dragover"].forEach(evt => {
-      batchDropzone.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        batchDropzone.classList.add("dragover");
-      });
+    let dropzoneCounter = 0;
+
+    batchDropzone.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzoneCounter++;
+      batchDropzone.classList.add("dragover");
     });
 
-    ["dragleave", "dragend"].forEach(evt => {
-      batchDropzone.addEventListener(evt, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+    batchDropzone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = "copy";
+      }
+      batchDropzone.classList.add("dragover");
+    });
+
+    batchDropzone.addEventListener("dragleave", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropzoneCounter--;
+      if (dropzoneCounter <= 0) {
+        dropzoneCounter = 0;
         batchDropzone.classList.remove("dragover");
-      });
+      }
     });
 
     batchDropzone.addEventListener("drop", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      dropzoneCounter = 0;
       batchDropzone.classList.remove("dragover");
-      if (e.dataTransfer && e.dataTransfer.files) {
-        handleBatchFilesSelected(e.dataTransfer.files);
+      const files = e.dataTransfer ? e.dataTransfer.files : null;
+      if (files && files.length > 0) {
+        handleBatchFilesSelected(files);
+      }
+    });
+  }
+
+  // 일괄 업로드 탭 전체 영역(paneBatchUpload)에서도 드롭을 허용하여 테두리 밖 모달 여백에 놓아도 정상 등록
+  if (paneBatchUpload) {
+    paneBatchUpload.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
+    paneBatchUpload.addEventListener("drop", (e) => {
+      e.preventDefault();
+      if (batchDropzone) batchDropzone.classList.remove("dragover");
+      const files = e.dataTransfer ? e.dataTransfer.files : null;
+      if (files && files.length > 0) {
+        handleBatchFilesSelected(files);
       }
     });
   }
