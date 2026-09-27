@@ -163,6 +163,7 @@ export const btnSaveAiSettings = document.getElementById("btnSaveAiSettings");
 export const uploadModal = document.getElementById("uploadModal");
 export const uploadForm = document.getElementById("uploadForm");
 export const btnCloseUploadModal = document.getElementById("btnCloseUploadModal");
+export const btnToggleUploadFullscreen = document.getElementById("btnToggleUploadFullscreen");
 export const btnCancelUpload = document.getElementById("btnCancelUpload");
 export const modalExamType = document.getElementById("modalExamType");
 export const modalMonth = document.getElementById("modalMonth");

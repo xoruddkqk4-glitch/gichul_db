@@ -317,6 +317,7 @@ def extract_pdf_columns_and_questions(
     start_q: Optional[int] = None,
     end_q: Optional[int] = None,
     answers_dict: Optional[Dict[int, str]] = None,
+    subtype: Optional[str] = None,
     **kwargs
 ) -> Dict[int, Dict]:
     """
@@ -361,11 +362,25 @@ def extract_pdf_columns_and_questions(
         page = doc[page_num]
         rect = page.rect
         width, height = rect.width, rect.height
-        mid_x = width / 2.0
+        # 세로 단 분할선(Vector Drawing) 탐색 (비대칭 여백 및 HWP 변환 문서 지원)
+        divider_x = None
+        try:
+            v_lines = [
+                d["rect"].x0 for d in page.get_drawings()
+                if d.get("rect") and (d["rect"].y1 - d["rect"].y0) > (height * 0.4) and (d["rect"].x1 - d["rect"].x0) < 5
+            ]
+            mid_candidates = [x for x in v_lines if width * 0.35 <= x <= width * 0.65]
+            if mid_candidates:
+                divider_x = sum(mid_candidates) / len(mid_candidates)
+        except Exception:
+            pass
+
+        if divider_x is None:
+            divider_x = width / 2.0
 
         # 헤더(상단 50pt)와 푸터(하단 40pt)를 제외한 칼럼 클립 영역 (HWP 변환 문서 및 상단 발문 지원)
-        left_clip = fitz.Rect(35, 50, mid_x - 5, height - 40)
-        right_clip = fitz.Rect(mid_x + 5, 50, width - 35, height - 40)
+        left_clip = fitz.Rect(35, 50, divider_x - 3, height - 40)
+        right_clip = fitz.Rect(divider_x + 3, 50, width - 35, height - 40)
 
         for col_idx, col_clip in [("L", left_clip), ("R", right_clip)]:
             raw_blocks = page.get_text("blocks", clip=col_clip)
@@ -418,7 +433,8 @@ def extract_pdf_columns_and_questions(
                             grade, year, month, questions_data, shared_group_cache,
                             answer_symbol=ans_sym,
                             next_top_y=b_rect.y0,
-                            col_clip=col_clip
+                            col_clip=col_clip,
+                            subtype=subtype
                         )
                         current_q = None
                         current_text_lines = []
@@ -456,7 +472,8 @@ def extract_pdf_columns_and_questions(
                                 grade, year, month, questions_data, shared_group_cache,
                                 answer_symbol=ans_sym,
                                 next_top_y=b_rect.y0,
-                                col_clip=col_clip
+                                col_clip=col_clip,
+                                subtype=subtype
                             )
 
                         current_q = q_num
@@ -483,7 +500,8 @@ def extract_pdf_columns_and_questions(
                     grade, year, month, questions_data, shared_group_cache,
                     answer_symbol=ans_sym,
                     next_top_y=col_clip.y1,
-                    col_clip=col_clip
+                    col_clip=col_clip,
+                    subtype=subtype
                 )
 
             # 칼럼 끝에 공유 지문이 걸려있을 경우 캐시 저장
@@ -496,7 +514,7 @@ def extract_pdf_columns_and_questions(
 
     # 45문항 체제에서만 1지문 3문항 (43~45번) 전용 고화질 크롭 & 세로 이어붙이기 수행
     if not is_50:
-        merged_43_45_url = crop_and_merge_43_45(doc, grade, year, month, answers_dict)
+        merged_43_45_url = crop_and_merge_43_45(doc, grade, year, month, answers_dict, subtype=subtype)
         if merged_43_45_url:
             for q_target in (43, 44, 45):
                 if q_target in questions_data:
@@ -518,7 +536,8 @@ def save_extracted_question(
     shared_group_cache: dict,
     answer_symbol: str = "",
     next_top_y: Optional[float] = None,
-    col_clip: Optional[fitz.Rect] = None
+    col_clip: Optional[fitz.Rect] = None,
+    subtype: Optional[str] = None
 ):
     """문항 텍스트 정제, 정답 선지 형광펜 하이라이트 및 고화질 이미지 크롭 저장"""
     full_q_text = "\n".join(text_lines)
@@ -553,9 +572,13 @@ def save_extracted_question(
     else:
         full_passage_text = question_title
 
-    # 지문 식별자: [고3-2024년-06월-21번]
-    passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
-    img_filename = f"{grade}_{year}_{month:02d}_{q_num:02d}.png"
+    # 지문 식별자: [고3-2024년-06월-21번] 또는 [고3-2013년-03월-A형-21번]
+    if subtype:
+        passage_id = f"[{grade}-{year}년-{month:02d}월-{subtype}-{q_num:02d}번]"
+        img_filename = f"{grade}_{year}_{month:02d}_{subtype}_{q_num:02d}.png"
+    else:
+        passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
+        img_filename = f"{grade}_{year}_{month:02d}_{q_num:02d}.png"
     img_filepath = os.path.join(CAPTURES_DIR, img_filename)
     web_img_url = f"/static/captures/{img_filename}"
 
@@ -661,15 +684,14 @@ def crop_and_merge_43_45(
     grade: str,
     year: int,
     month: int,
-    answers_dict: dict = None
+    answers_dict: dict = None,
+    subtype: Optional[str] = None
 ) -> Optional[str]:
     """
     1지문 3문항(43~45번) 전용 고화질 크롭 & 세로 이어붙이기:
-    - 지문 (좌측 칼럼 [43~45] + (A) 영역 & 우측 칼럼 (B)~(D) 영역)
-    - 43번 문항 (정답 선지 형광펜 하이라이트)
-    - 44번 문항 (정답 선지 형광펜 하이라이트)
-    - 45번 문항 (정답 선지 형광펜 하이라이트)
-    각 영역을 고화질로 따로 캡처하여 위에서 아래로 세로로 이어붙인 단일 이미지 생성
+    - 지문 (좌/우 칼럼의 지문 영역만 정확히 캡처, 문항 번호 및 보기 중복 침범 방지)
+    - 43번, 44번, 45번 문항을 각각 독립된 영역으로 크롭하고 정답 선지 형광펜 하이라이트 적용
+    - 위에서 아래로 [지문, 43번, 44번, 45번] 순으로 세로 결합한 단일 고화질 이미지 생성
     """
     answers_dict = answers_dict or {}
 
@@ -677,7 +699,11 @@ def crop_and_merge_43_45(
     target_page = None
     for p_idx in range(len(doc) - 1, -1, -1):
         p = doc[p_idx]
-        if p.search_for("[43~45]") or p.search_for("43~45") or p.search_for("(A)"):
+        if (
+            p.search_for("[43~45]") or p.search_for("43~45") or
+            p.search_for("[43～45]") or p.search_for("43～45") or
+            p.search_for("(A)")
+        ):
             target_page = p
             break
 
@@ -686,96 +712,158 @@ def crop_and_merge_43_45(
 
     page = target_page
     width, height = page.rect.width, page.rect.height
-    mid_x = width / 2.0
 
-    # 1. 좌측 칼럼 [43~45] 및 (A) 영역 Bounding Box
-    r_grp = page.search_for("[43~45]") or page.search_for("43~45")
-    y_start_left = 880
-    if r_grp:
-        y_start_left = max(160, r_grp[0].y0 - 8)
-    rect_a = fitz.Rect(75, y_start_left, mid_x - 5, height - 60)
+    # 세로 단 분할선 동적 감지
+    divider_x = None
+    try:
+        v_lines = [
+            d["rect"].x0 for d in page.get_drawings()
+            if d.get("rect") and (d["rect"].y1 - d["rect"].y0) > (height * 0.4) and (d["rect"].x1 - d["rect"].x0) < 5
+        ]
+        mid_cands = [x for x in v_lines if width * 0.35 <= x <= width * 0.65]
+        if mid_cands:
+            divider_x = sum(mid_cands) / len(mid_cands)
+    except Exception:
+        pass
+    if divider_x is None:
+        divider_x = width / 2.0
 
-    # 2. 우측 칼럼 (B), (C), (D) 지문 영역 및 43, 44, 45번 문항 영역
-    r_bcd = page.search_for("(B)")
-    r_43 = page.search_for("43.")
-    r_44 = page.search_for("44.")
-    r_45 = page.search_for("45.")
+    # 43, 44, 45번 문항 시작 위치 및 칼럼 소속(L/R) 정밀 탐색
+    q_locs = {}
+    for q in [43, 44, 45]:
+        hits = (
+            page.search_for(f"{q}.") or
+            page.search_for(f"{q} .") or
+            page.search_for(f"{q}\n.")
+        )
+        if hits:
+            top_hit = min(hits, key=lambda r: r.y0)
+            side = "L" if top_hit.x0 < divider_x else "R"
+            q_locs[q] = {"side": side, "y0": top_hit.y0 - 6, "hit": top_hit}
 
-    y_start_right = 165
-    if r_bcd:
-        r_bcd_right = [r for r in r_bcd if r.x0 > mid_x]
-        if r_bcd_right:
-            y_start_right = max(160, r_bcd_right[0].y0 - 8)
+    if not q_locs:
+        return None
 
-    y_43_start = 728
-    if r_43:
-        r_43_right = [r for r in r_43 if r.x0 > mid_x]
-        if r_43_right:
-            y_43_start = r_43_right[0].y0 - 6
+    # 각 문항별 정확한 Bounding Box 산출 (문항 간 침범 및 중복 방지)
+    q_clips = {}
+    for q, data in sorted(q_locs.items()):
+        side = data["side"]
+        y0 = data["y0"]
+        x0 = 35 if side == "L" else divider_x + 3
+        x1 = divider_x - 3 if side == "L" else width - 35
 
-    y_44_start = 833
-    if r_44:
-        r_44_right = [r for r in r_44 if r.x0 > mid_x]
-        if r_44_right:
-            y_44_start = r_44_right[0].y0 - 6
+        # 같은 칼럼에서 이후에 시작하는 다음 문항이 있는지 확인
+        subseq = [d["y0"] for k, d in q_locs.items() if d["side"] == side and d["y0"] > y0 + 10]
+        if subseq:
+            y1 = min(subseq)
+        else:
+            # 칼럼 하단 '확인사항' 박스 확인
+            nb = [
+                r for r in (page.search_for("확인") + page.search_for("답안지"))
+                if (r.x0 < divider_x if side == "L" else r.x0 >= divider_x)
+            ]
+            if nb and any(r.y0 > y0 for r in nb):
+                y1_limit = min(r.y0 for r in nb if r.y0 > y0) - 5
+            else:
+                y1_limit = height - 40
 
-    y_45_start = 888
-    if r_45:
-        r_45_right = [r for r in r_45 if r.x0 > mid_x]
-        if r_45_right:
-            y_45_start = r_45_right[0].y0 - 6
+            # 실제 텍스트 블록의 바닥 좌표로 타이트하게 정밀 보정
+            c_blocks = [
+                b for b in page.get_text("blocks")
+                if (b[0] < divider_x if side == "L" else b[0] >= divider_x)
+                and b[1] >= y0 and b[3] <= y1_limit + 5
+            ]
+            if c_blocks:
+                y1 = min(y1_limit, max(b[3] for b in c_blocks) + 10)
+            else:
+                y1 = y1_limit
 
-    y_45_end = height - 60
-    notice_top = find_notice_box_top(page, min_x=mid_x + 5, min_y=y_45_start)
-    if notice_top and notice_top > y_45_start + 30:
-        y_45_end = min(y_45_end, notice_top)
+        q_clips[q] = fitz.Rect(x0, y0, x1, y1)
 
-    rect_bcd = fitz.Rect(mid_x + 5, y_start_right, width - 35, y_43_start)
-    rect_43 = fitz.Rect(mid_x + 5, y_43_start, width - 35, y_44_start)
-    rect_44 = fitz.Rect(mid_x + 5, y_44_start, width - 35, y_45_start)
-    rect_45 = fitz.Rect(mid_x + 5, y_45_start, width - 35, y_45_end)
+    # 지문 영역 Bounding Box 산출 (문항이 시작되기 전 순수 지문 본문만 추출)
+    r_grp = (
+        page.search_for("[43~45]") or page.search_for("43~45") or
+        page.search_for("[43～45]") or page.search_for("43～45")
+    )
+    y_start_l = max(60, r_grp[0].y0 - 8) if r_grp else 60
 
-    # 정답 선지 형광펜 하이라이트 주석 적용 (엄격한 기하학적 매칭 적용)
+    # 1. 좌측 칼럼 지문 영역
+    l_qs = [d["y0"] for d in q_locs.values() if d["side"] == "L"]
+    if l_qs:
+        y_end_l = min(l_qs)
+    else:
+        l_blocks = [
+            b for b in page.get_text("blocks")
+            if b[0] < divider_x and b[1] >= y_start_l and b[3] < height - 30
+        ]
+        y_end_l = max(b[3] for b in l_blocks) + 10 if l_blocks else height - 40
+    rect_p_left = fitz.Rect(35, y_start_l, divider_x - 3, y_end_l)
+
+    # 2. 우측 칼럼 지문 영역 (우측 문항 시작 전 지문 본문이 있는 경우에만 포함)
+    rect_p_right = None
+    r_qs = [d["y0"] for d in q_locs.values() if d["side"] == "R"]
+    if r_qs:
+        min_r_q = min(r_qs)
+        r_blocks = [
+            b for b in page.get_text("blocks")
+            if b[0] >= divider_x and b[1] < min_r_q - 5 and b[3] > 60
+        ]
+        real_r = [
+            b for b in r_blocks
+            if not any(h in b[4] for h in ["홀수형", "짝수형", "영어 영역", "8", "문제지"])
+        ]
+        if real_r:
+            y_start_r = max(60, min(b[1] for b in real_r) - 6)
+            rect_p_right = fitz.Rect(divider_x + 3, y_start_r, width - 35, min_r_q)
+
+    # 정답 선지 형광펜 하이라이트 주석 적용
     annots = []
-    for r_clip, q_idx in [(rect_43, 43), (rect_44, 44), (rect_45, 45)]:
-        ans_val = answers_dict.get(q_idx, "")
-        if ans_val:
-            try:
-                annots.extend(highlight_answer_choice(page, r_clip, ans_val))
-            except Exception as e:
-                print(f"[{q_idx}번 정답 하이라이트 경고] {e}")
+    for q_idx in [43, 44, 45]:
+        if q_idx in q_clips:
+            ans_val = answers_dict.get(q_idx, "")
+            if ans_val:
+                try:
+                    annots.extend(highlight_answer_choice(page, q_clips[q_idx], ans_val))
+                except Exception as e:
+                    print(f"[{q_idx}번 정답 하이라이트 경고] {e}")
 
     # 고화질(200 DPI) 렌더링
     parts = []
-    for r in [rect_a, rect_bcd, rect_43, rect_44, rect_45]:
-        pix = page.get_pixmap(clip=r, dpi=200)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        parts.append(img)
+    for pr in [rect_p_left, rect_p_right]:
+        if pr and pr.y1 > pr.y0 + 5:
+            pix = page.get_pixmap(clip=pr, dpi=200)
+            parts.append(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
 
-    # 1. 지문 세로 결합 (A + BCD)
-    pw = max(parts[0].width, parts[1].width)
-    ph = parts[0].height + parts[1].height + 16
-    img_passage = Image.new("RGB", (pw, ph), (255, 255, 255))
-    img_passage.paste(parts[0], ((pw - parts[0].width) // 2, 0))
-    img_passage.paste(parts[1], ((pw - parts[1].width) // 2, parts[0].height + 16))
+    for q in [43, 44, 45]:
+        if q in q_clips and q_clips[q].y1 > q_clips[q].y0 + 5:
+            pix = page.get_pixmap(clip=q_clips[q], dpi=200)
+            parts.append(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
 
-    # 2. 전체 세로 결합: [지문, 43번, 44번, 45번]
-    final_items = [img_passage, parts[2], parts[3], parts[4]]
-    max_w = max(im.width for im in final_items)
-    total_h = sum(im.height for im in final_items) + 20 * (len(final_items) - 1)
+    if not parts:
+        return None
+
+    # 전체 세로 결합: [지문(L), 지문(R)(있을 시), 43번, 44번, 45번]
+    max_w = max(im.width for im in parts)
+    total_h = sum(im.height for im in parts) + 20 * (len(parts) - 1)
     final_img = Image.new("RGB", (max_w, total_h), (255, 255, 255))
     curr_y = 0
-    for im in final_items:
+    for im in parts:
         final_img.paste(im, ((max_w - im.width) // 2, curr_y))
         curr_y += im.height + 20
 
-    img_filename = f"{grade}_{year}_{month:02d}_43.png"
+    if subtype:
+        img_filename = f"{grade}_{year}_{month:02d}_{subtype}_43.png"
+    else:
+        img_filename = f"{grade}_{year}_{month:02d}_43.png"
     img_filepath = os.path.join(CAPTURES_DIR, img_filename)
     final_img.save(img_filepath)
 
     # 44번, 45번 문항 파일도 일관성을 위해 동일한 통합 이미지로 저장
     for q_n in (44, 45):
-        q_file = os.path.join(CAPTURES_DIR, f"{grade}_{year}_{month:02d}_{q_n:02d}.png")
+        if subtype:
+            q_file = os.path.join(CAPTURES_DIR, f"{grade}_{year}_{month:02d}_{subtype}_{q_n:02d}.png")
+        else:
+            q_file = os.path.join(CAPTURES_DIR, f"{grade}_{year}_{month:02d}_{q_n:02d}.png")
         final_img.save(q_file)
 
     for a in annots:

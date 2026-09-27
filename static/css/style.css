@@ -4740,26 +4740,130 @@ mark.passage-highlight {
   border-color: #94a3b8;
 }
 
-/* --- 모달 너비 확장 및 테이블 셀 한 줄 표시 보장 규칙 --- */
+/* --- 모달 너비/높이 대폭 확장 및 전체 화면, 테이블 스크롤 최적화 규칙 --- */
 .upload-modal-content {
-  max-width: 1480px !important;
-  width: 96% !important;
+  max-width: 1720px !important;
+  width: 98vw !important;
+  height: 90vh !important;
+  max-height: 94vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  margin: auto;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.upload-modal-content.is-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+
+.upload-modal-content .modal-header {
+  flex-shrink: 0;
+}
+
+.upload-modal-content .upload-tabs-bar {
+  flex-shrink: 0;
+}
+
+.upload-modal-content .upload-tab-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.upload-modal-content .upload-tab-pane > .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.upload-modal-content #paneSingleUpload {
+  overflow-y: auto;
+}
+
+.upload-modal-content #paneSingleUpload > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.upload-modal-content #paneSingleUpload .modal-body {
+  overflow-y: auto;
+}
+
+.upload-modal-content .modal-footer {
+  flex-shrink: 0;
+}
+
+.btn-modal-fullscreen {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.btn-modal-fullscreen:hover {
+  background: #f1f5f9;
+  color: var(--primary);
+  border-color: #cbd5e1;
+}
+
+.batch-preview-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .batch-sets-table-wrapper {
-  max-height: 480px;
+  flex: 1 1 auto;
+  max-height: 520px;
+  min-height: 220px;
   overflow-y: auto;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 
-.manage-exams-table-wrapper {
-  max-height: 380px;
-  overflow-y: auto;
-  overflow-x: auto;
+.manage-exams-table-wrapper,
+.files-status-table-wrapper {
+  flex: 1 1 auto !important;
+  height: calc(90vh - 240px) !important;
+  max-height: 720px !important;
+  min-height: 420px !important;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.upload-modal-content.is-fullscreen .manage-exams-table-wrapper,
+.upload-modal-content.is-fullscreen .files-status-table-wrapper {
+  height: calc(100vh - 220px) !important;
+  max-height: none !important;
+}
+
+.upload-modal-content.is-fullscreen .batch-sets-table-wrapper {
+  max-height: calc(100vh - 350px) !important;
 }
 
 .manage-exams-table {

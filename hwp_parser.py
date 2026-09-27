@@ -729,13 +729,16 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
     # 해설 마커가 명확히 분리되었으면 exp_text 사용, 아니면 full_text 전체에서 해설 패턴 탐색
     target_text = exp_text if exp_text != full_text else full_text
 
-    # 문항 번호 헤더 감지 패턴 (18. 또는 41~42. 등)
+    # 문항 번호 헤더 감지 패턴
+    # 1. 단일 문항 헤더: 18., [18], 18번 등
+    # 2. 복합 장문 헤더: 41~42, [41~42], 41-42, 43~45 장문독해 등
     header_pattern = re.compile(
-        r"(?:^|\n)\s*(?:\[|\b)?(\d{1,2}(?:\s*[~～\-]\s*\d{1,2})?)(?:번|\.|\s*\])(?:\s*(?:정답|\[정답\])\s*([①②③④⑤1-5]))?"
+        r"(?:^|\n)\s*(?:\[|\b)?(\d{1,2}(?:\s*[~～\-]\s*\d{1,2})?)(?:번|\.|\s*\]|\s*(?:장문|단문|문항|독해|대화)|(?=\s*\[출제의도\])|(?=\s*\[정답\]))(?:\s*(?:정답|\[정답\])\s*([①②③④⑤1-5]))?"
     )
 
     matches = list(header_pattern.finditer(target_text))
     explanations = {}
+    group_shared_exps = {}
 
     for i in range(len(matches)):
         m = matches[i]
@@ -753,31 +756,36 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
             if ans_match:
                 answer = ans_match.group(1)
 
-        # 번호 범위 처리 (예: 41~42 -> 41, 42)
+        # 번호 범위 처리 (예: 41~42, 43~45 복합 지문 공통 해석/어구)
         range_match = re.match(r"^(\d{1,2})[~～\-](\d{1,2})$", raw_q)
         if range_match:
             s_q = int(range_match.group(1))
             e_q = int(range_match.group(2))
-            for sub_q in range(s_q, e_q + 1):
-                if sub_q not in explanations or len(explanations[sub_q].get("explanation", "")) < len(content):
-                    explanations[sub_q] = {
-                        "answer": answer,
-                        "explanation": content
-                    }
+            group_shared_exps[(s_q, e_q)] = content
         else:
             try:
                 q_num = int(raw_q)
-                # 기존 범위 해설이 있으면 내용 병합
-                if q_num in explanations and explanations[q_num].get("explanation"):
-                    prev_exp = explanations[q_num]["explanation"]
-                    if content not in prev_exp:
-                        content = f"{prev_exp}\n\n{content}"
                 explanations[q_num] = {
-                    "answer": answer or explanations.get(q_num, {}).get("answer", ""),
+                    "answer": answer,
                     "explanation": content
                 }
             except ValueError:
                 pass
+
+    # 복합 지문 공통 해석/어구를 해당 범위 문항들에만 결합 (이전/이후 문항 침범 원천 차단)
+    for (s_q, e_q), shared_text in group_shared_exps.items():
+        if not shared_text:
+            continue
+        for sub_q in range(s_q, e_q + 1):
+            if sub_q in explanations:
+                curr_exp = explanations[sub_q].get("explanation", "")
+                if shared_text not in curr_exp:
+                    explanations[sub_q]["explanation"] = f"{curr_exp}\n\n{shared_text}".strip()
+            else:
+                explanations[sub_q] = {
+                    "answer": "",
+                    "explanation": shared_text
+                }
 
     # 정답 정보 표준화 및 해설 상단에 [정답] 라벨 명시
     for q_num, exp_info in explanations.items():

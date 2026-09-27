@@ -121,8 +121,12 @@ class BatchSetGrammarAnnotationsRequest(BaseModel):
 
 
 
-def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_end, answers_dict) -> bool:
+def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_end, answers_dict, subtype=None) -> bool:
     """원본 PDF가 있으면 정답 선지 형광펜 하이라이트 크롭 이미지를 재생성하고 경로를 DB에 동기화"""
+    if not subtype:
+        m_sub = re.search(r"-([AB]형)", exam_id)
+        if m_sub:
+            subtype = m_sub.group(1)
     search_patterns = [
         os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_*.pdf"),
         os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month}_*.pdf"),
@@ -132,8 +136,14 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
     ]
     pdf_candidates = []
     for pat in search_patterns:
-        matched = [p for p in glob.glob(pat) if "_ans_" not in os.path.basename(p)]
-        if matched:
+        matched = [p for p in glob.glob(pat) if "_ans_" not in os.path.basename(p) and "_script" not in os.path.basename(p)]
+        if subtype:
+            sub_key = subtype.replace("형", "")
+            sub_matched = [p for p in matched if re.search(rf"[-_\[\s]{sub_key}(?:형)?(?:[-_\]\s]|\.|$)", os.path.basename(p), re.I)]
+            if sub_matched:
+                pdf_candidates = sub_matched
+                break
+        if matched and not pdf_candidates:
             pdf_candidates = matched
             break
     if not pdf_candidates:
@@ -177,7 +187,8 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
         # 1. 독해 문항 크롭 생성 (정답 형광펜 포함)
         crop_results = extract_pdf_columns_and_questions(
             pdf_path=target_pdf, grade=grade, year=year, month=month,
-            start_q=reading_start, end_q=reading_end, answers_dict=full_answers
+            start_q=reading_start, end_q=reading_end, answers_dict=full_answers,
+            subtype=subtype
         )
 
         # 2. 듣기 문항(1~17번) 크롭도 정답 형광펜 주석을 포함하여 함께 재생성
@@ -1049,6 +1060,7 @@ async def api_upload_exam(
     year: int = Form(2024),
     month: int = Form(6),
     exam_type: str = Form("평가원"),
+    subtype: Optional[str] = Form(None),
     reading_start: Optional[int] = Form(None),
     reading_end: Optional[int] = Form(None),
     pdf_file: UploadFile = File(...),
@@ -1095,8 +1107,20 @@ async def api_upload_exam(
             shutil.copyfileobj(csv_file.file, buffer)
 
     try:
+        # subtype 자동 판별 보완
+        if not subtype:
+            for fn in (pdf_file.filename if pdf_file else "", hwp_file.filename if hwp_file else ""):
+                m_sub = re.search(r"[-_\[\s]([AB])(?:형)?(?:[-_\]\s]|$)", fn, re.I)
+                if m_sub:
+                    subtype = f"{m_sub.group(1).upper()}형"
+                    break
+
         # 2. 시험지 정보 DB 등록
-        exam_id = f"[{grade}-{year}년-{month:02d}월]"
+        if subtype:
+            exam_id = f"[{grade}-{year}년-{month:02d}월-{subtype}]"
+        else:
+            exam_id = f"[{grade}-{year}년-{month:02d}월]"
+
         # 출제기관 자동 판별 규칙 적용 (3학년 6, 9, 11월: 평가원, 그 외 3학년 월 및 1, 2학년 전체: 교육청)
         if grade in ("고3", "3학년") and month in (6, 9, 11):
             exam_type = "평가원"
@@ -1104,23 +1128,32 @@ async def api_upload_exam(
             exam_type = "교육청"
 
         # 독해 시작 및 종료 문항 번호 자동 감지 (발문 기반 분기: 18~45, 23~45, 18~50)
-        sample_text = ""
-        if pdf_save_path and os.path.exists(pdf_save_path):
-            try:
-                tdoc = fitz.open(pdf_save_path)
-                sample_text = "".join(p.get_text() for p in tdoc)
-                tdoc.close()
-            except Exception:
-                pass
-        if not sample_text and hwp_save_path and os.path.exists(hwp_save_path):
-            try:
-                sample_text = get_hwp_text(hwp_save_path)
-            except Exception:
-                pass
+        is_ab_period = (year == 2013 or (year == 2012 and month >= 6) or (subtype and "형" in subtype))
+        if is_ab_period and reading_start is None:
+            effective_reading_start = 23
+            effective_reading_end = reading_end if reading_end is not None else 45
+            listening_start = 1
+            listening_end = 22
+        else:
+            sample_text = ""
+            if pdf_save_path and os.path.exists(pdf_save_path):
+                try:
+                    tdoc = fitz.open(pdf_save_path)
+                    sample_text = "".join(p.get_text() for p in tdoc)
+                    tdoc.close()
+                except Exception:
+                    pass
+            if not sample_text and hwp_save_path and os.path.exists(hwp_save_path):
+                try:
+                    sample_text = get_hwp_text(hwp_save_path)
+                except Exception:
+                    pass
 
-        detected_start, detected_end = detect_listening_range(sample_text, year=year)
-        effective_reading_start = reading_start if reading_start is not None else detected_start
-        effective_reading_end = reading_end if reading_end is not None else detected_end
+            detected_start, detected_end = detect_listening_range(sample_text, year=year)
+            effective_reading_start = reading_start if reading_start is not None else detected_start
+            effective_reading_end = reading_end if reading_end is not None else detected_end
+            listening_start = 1
+            listening_end = (effective_reading_start - 1) if effective_reading_start > 1 else 17
 
         db.save_exam({
             "id": exam_id,
@@ -1128,8 +1161,11 @@ async def api_upload_exam(
             "year": year,
             "month": month,
             "exam_type": exam_type,
+            "subtype": subtype,
             "reading_start_q": effective_reading_start,
-            "reading_end_q": effective_reading_end
+            "reading_end_q": effective_reading_end,
+            "listening_start_q": listening_start,
+            "listening_end_q": listening_end
         })
 
         # 3. 정답 소스 수집
@@ -1212,7 +1248,8 @@ async def api_upload_exam(
             month=month,
             start_q=effective_reading_start,
             end_q=effective_reading_end,
-            answers_dict=answers_dict
+            answers_dict=answers_dict,
+            subtype=subtype
         )
 
         # 5. HWP 문제지 파싱 (독해 지문 문항)
@@ -1233,7 +1270,8 @@ async def api_upload_exam(
             explanations=explanations,
             grade=grade,
             year=year,
-            month=month
+            month=month,
+            subtype=subtype
         )
 
         # 7. SQLite DB 일괄 저장

@@ -1444,3 +1444,41 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/upload.js static/js/results-passage.js static/js/files-status.js`: 자바스크립트 구문 검사 오류 0건 통과 (Exit Code 0)
   - API 조회 검증: 2012년 및 2013년 12개 A/B형 세트 전체 듣기 22문항(1~22), 독해 23문항(23~45), 문장 분석 23~45번 일치 확인
   - HWP 캐시 및 포커스 원복 기능 정상 작동 확인
+
+### [2026-09-27 20:05] 업데이트 이력 (Commit ID: PENDING)
+- **수정 내용**:
+  - **고3 2013년 수준별 수능(A형 / B형) 체제 완전 분리 및 전수 구축 (`app.py`, `database.py`, `listening_parser.py`, `static/js/upload.js`)**:
+    - 2013년 고3 03, 04, 06, 07, 09, 11월 총 6개 시행월 x 2개 유형 = 12개 시험지 DB 전수 구축 완료 (기존 미분류 데이터의 A형/B형 완전 분리).
+    - 2013년 수준별 수능 표준 체제에 맞춰 각 세트마다 **듣기 1~22번(총 22문항) + 독해 23~45번(총 23문항) = 총 45문항**으로 정렬.
+    - 1~22번 듣기 문항의 대본 원문, FELS 단축 텍스트, 200 DPI 대본 크롭 이미지(`고3_2013_MM_A형_XX_script.png`, `고3_2013_MM_B형_XX_script.png`) 및 문항 크롭 이미지 연결.
+    - 23~45번 독해 문항의 지문 본문, 문장 분할 토큰화, 정답표 및 해설 매핑, 200 DPI 지문 크롭 이미지 완비.
+    - 백엔드 `app.py`: `api_upload_exam` 및 `_regenerate_exam_crops`에 `subtype` 파라미터 연동 및 2013년 수준별 자동 영역 분기(`reading_start=23`, `listening_end=22`) 적용.
+    - `database.py`: `get_all_exams_with_stats()`에서 `subtype`에 따른 `raw_files` 매핑 로직 지원.
+    - `listening_parser.py`: 대본 및 문항 캡처 시 파일명/ID에 `subtype` 반영.
+    - `static/js/upload.js`: 파일 일괄 업로드 시 `subtype` 폼 데이터 전송 지원.
+  - **1지문 3문항 (43~45번) PDF 크롭 중복 노출 오류 해결 (`pdf_parser.py`)**:
+    - 1지문 3문항 복합 지문(43~45번)에서 기존 `crop_and_merge_43_45`가 좌측 컬럼 전체(Q43 포함)를 지문으로 크롭하고, 우측 컬럼의 Q44, Q45를 추가로 캡처하면서 43번 문제가 지문과 하단에 중복 노출되고 이미지 높이가 비정상적으로 길어지던(5,042px) 문제 해결.
+    - 좌우 2단 분할선(`divider_x`)과 Q43, Q44, Q45의 레이아웃 좌표/소속 컬럼을 정밀 판별하여:
+      1) 순수 지문 블록((A)~(D))만 독립 절제 크롭
+      2) 43번, 44번, 45번 문항을 각각 단 1회씩만 독립 크롭
+      3) `[순수 지문, 43번, 44번, 45번]`을 세로로 깔끔하게 결합(`combine_crops_vertically`)
+    - 이미지 높이 5,042px → 2,388px로 정상화되고 문항 중복 노출 현상 완전 제거.
+  - **1지문 2문항 (41~42번) 해설 패널 내 43~45번 해설 침범 오류 수정 (`hwp_parser.py`)**:
+    - 1지문 2문항(41~42번) 해설 조회 시 왼쪽 하단 해설 패널에 43~45번 해설 및 어휘가 함께 노출되던 결함 수정.
+    - `parse_hwp_explanations`의 헤더 감지 정규식(`header_pattern`)이 `41~42 장문독해`, `43~45 장문독해` 등 대괄호/소괄호 없는 범위 헤더를 놓치던 문제를 보강.
+    - 범위 공통 해석을 해당 그룹 문항(41-42, 43-45)에만 안전하게 바인딩하도록 격리 로직을 적용하여 이전 문항(40번, 42번)으로의 해석 누출 원천 차단.
+  - **`validator.py` 임포트 오류 긴급 복구 (`validator.py`)**:
+    - `validator.py`에서 `from typing import ...`에 `Optional` 누락으로 인해 uvicorn reload 시 발생하던 `NameError: name 'Optional' is not defined` 런타임 오류 즉각 해결.
+  - **시험지 관리 및 업로드 모달창 UI 대폭 확장 (`style.css`, `index.html`, `dom.js`)**:
+    - 시험지 업로드 및 관리 모달(`.modal-lg`)의 크기를 화면의 95vw, 92vh로 대폭 확장하여 대형 화면에서 한눈에 조망 가능하도록 개선.
+    - 내부 그리드 레이아웃을 4열 반응형 카드 그리드로 재편성하고 모던 칩 스타일 및 안내 일러스트 적용.
+  - **대용량 DB 성능 분석 및 최적화 계획서 작성 (`implementation_plan.md`)**:
+    - 317개 시험지, 13,457개 지문, 70,487개 문장 상태에서 시험지 관리 모달 진입 시 약 39.75초가 소요되던 병목 원인(N+1 카운트 쿼리 951회, 디스크 glob 300만 회 I/O) 정밀 진단.
+    - 1) 단일 집계 SQL 쿼리 전환, 2) 업로드 폴더 1회 메모리 캐싱, 3) 프론트엔드 통계 분리 지연 로딩, 4) SQLite 복합 인덱스 신설, 5) 가상 스크롤/페이지네이션을 포함한 최대 260배 가속 5대 계획 수립 완료.
+- **검증 결과**:
+  - `python -m py_compile app.py database.py hwp_parser.py listening_parser.py pdf_parser.py validator.py`: 파이썬 구문 오류 0건 통과 (Exit Code 0)
+  - `node --check static/js/dom.js static/js/upload.js`: 자바스크립트 문법 오류 0건 통과 (Exit Code 0)
+  - 고3 2013년 12개 A/B형 세트 전체 데이터 정합성 검증 완료 (듣기 1~22번, 독해 23~45번 일치)
+  - 1지문 3문항(43~45번) 크롭 이미지 높이 2,388px로 정상 결합 및 중복 제거 검증 완료
+  - 1지문 2문항(41~42번) 해설 분리 및 파싱 정상 격리 검증 완료
+

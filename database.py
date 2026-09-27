@@ -369,6 +369,11 @@ def get_all_exams_with_stats() -> List[Dict[str, Any]]:
             # 2) 원본 파일(uploads/) 통계: 파일 개수 및 총 바이트 크기
             raw_pattern = os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*")
             raw_files = glob.glob(raw_pattern)
+            if ex.get("subtype"):
+                sub_key = ex["subtype"].replace("형", "")
+                sub_files = [f for f in raw_files if re.search(rf"[-_\[\s]{sub_key}(?:형)?(?:[-_\]\s]|\.|$)", os.path.basename(f), re.I)]
+                if sub_files:
+                    raw_files = sub_files
             raw_size = sum(os.path.getsize(f) for f in raw_files if os.path.isfile(f))
             ex["raw_file_count"] = len(raw_files)
             ex["raw_file_size_bytes"] = raw_size

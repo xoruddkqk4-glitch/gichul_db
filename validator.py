@@ -7,7 +7,7 @@
 
 import re
 import difflib
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from sentence_tokenizer import create_sentence_records
 
 
@@ -43,7 +43,8 @@ def cross_validate_and_merge(
     explanations: Dict[int, Dict[str, str]],
     grade: str,
     year: int,
-    month: int
+    month: int,
+    subtype: Optional[str] = None
 ) -> List[Dict]:
     """
     HWP 데이터와 PDF 데이터를 문항별로 교차 검증하고,
@@ -56,7 +57,12 @@ def cross_validate_and_merge(
         hwp_item = hwp_data.get(q_num, {})
         pdf_item = pdf_data.get(q_num, {})
         exp_item = explanations.get(q_num, {})
-        passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
+        if subtype:
+            exam_id = f"[{grade}-{year}년-{month:02d}월-{subtype}]"
+            passage_id = f"[{grade}-{year}년-{month:02d}월-{subtype}-{q_num:02d}번]"
+        else:
+            exam_id = f"[{grade}-{year}년-{month:02d}월]"
+            passage_id = f"[{grade}-{year}년-{month:02d}월-{q_num:02d}번]"
 
         # 문제 발문
         question_title = (
@@ -113,7 +119,7 @@ def cross_validate_and_merge(
         merged_results.append({
             "passage_data": {
                 "id": passage_id,
-                "exam_id": f"[{grade}-{year}년-{month:02d}월]",
+                "exam_id": exam_id,
                 "q_num": q_num,
                 "question_title": question_title,
                 "question_type": hwp_item.get("question_type", ""),

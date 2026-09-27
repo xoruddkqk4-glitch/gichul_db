@@ -21,6 +21,7 @@ import {
   btnCloseFilesStatusModal,
   btnCloseManageModal,
   btnCloseUploadModal,
+  btnToggleUploadFullscreen,
   btnOpenUploadModal,
   btnSeedSample,
   btnStartBatchUpload,
@@ -61,10 +62,22 @@ function switchUploadTab(tabName) {
   [tabBtnBatchUpload, tabBtnFilesStatus, tabBtnSingleUpload, tabBtnManageExams].forEach(btn => {
     if (btn) btn.classList.toggle("active", btn.dataset.tab === tabName);
   });
-  if (paneBatchUpload) paneBatchUpload.style.display = (tabName === "batch") ? "block" : "none";
-  if (paneFilesStatus) paneFilesStatus.style.display = (tabName === "files") ? "block" : "none";
-  if (paneSingleUpload) paneSingleUpload.style.display = (tabName === "single") ? "block" : "none";
-  if (paneManageExams) paneManageExams.style.display = (tabName === "manage") ? "block" : "none";
+  if (paneBatchUpload) {
+    paneBatchUpload.style.display = (tabName === "batch") ? "flex" : "none";
+    paneBatchUpload.classList.toggle("active", tabName === "batch");
+  }
+  if (paneFilesStatus) {
+    paneFilesStatus.style.display = (tabName === "files") ? "flex" : "none";
+    paneFilesStatus.classList.toggle("active", tabName === "files");
+  }
+  if (paneSingleUpload) {
+    paneSingleUpload.style.display = (tabName === "single") ? "block" : "none";
+    paneSingleUpload.classList.toggle("active", tabName === "single");
+  }
+  if (paneManageExams) {
+    paneManageExams.style.display = (tabName === "manage") ? "flex" : "none";
+    paneManageExams.classList.toggle("active", tabName === "manage");
+  }
 
   if (tabName === "files") {
     loadFilesStatusList();
@@ -75,6 +88,14 @@ function switchUploadTab(tabName) {
 
 export const closeUploadModal = () => {
   uploadModal.classList.remove("show");
+  const modalContent = uploadModal ? uploadModal.querySelector(".upload-modal-content") : null;
+  if (modalContent) {
+    modalContent.classList.remove("is-fullscreen");
+  }
+  if (btnToggleUploadFullscreen) {
+    btnToggleUploadFullscreen.textContent = "⛶";
+    btnToggleUploadFullscreen.title = "전체 화면으로 확대";
+  }
   // 홈 검색 화면이 표시 중일 때 헤더 액션 슬롯을 확실하게 홈 상태(통계 배지)로 복원
   if (homeSearchView && homeSearchView.style.display !== "none") {
     setHeaderSlotState("home");
@@ -942,6 +963,15 @@ export function init() {
   });
 
   btnCloseUploadModal.addEventListener("click", closeUploadModal);
+  if (btnToggleUploadFullscreen) {
+    btnToggleUploadFullscreen.addEventListener("click", () => {
+      const modalContent = uploadModal ? uploadModal.querySelector(".upload-modal-content") : null;
+      if (!modalContent) return;
+      const isFs = modalContent.classList.toggle("is-fullscreen");
+      btnToggleUploadFullscreen.textContent = isFs ? "🗗" : "⛶";
+      btnToggleUploadFullscreen.title = isFs ? "기본 창 크기로 복원" : "전체 화면으로 확대";
+    });
+  }
   btnCancelUpload.addEventListener("click", closeUploadModal);
   if (btnCancelBatchModal) btnCancelBatchModal.addEventListener("click", closeUploadModal);
   if (btnCloseManageModal) btnCloseManageModal.addEventListener("click", closeUploadModal);
@@ -1163,6 +1193,9 @@ export function init() {
             formData.append("grade", set.grade);
             formData.append("year", set.year);
             formData.append("month", set.month);
+            if (set.subtype) {
+              formData.append("subtype", set.subtype);
+            }
             const defaultReadingStart = (set.year === 2013 || (set.year === 2012 && set.month >= 6) || (set.subtype && set.subtype.includes("형"))) ? 23 : 18;
             formData.append("reading_start", defaultReadingStart);
             formData.append("reading_end", 45);

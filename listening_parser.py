@@ -243,7 +243,8 @@ def extract_listening_question_crops(
     month: int = 6,
     listening_start_q: int = 1,
     listening_end_q: int = 17,
-    answers_dict: Optional[Dict[int, str]] = None
+    answers_dict: Optional[Dict[int, str]] = None,
+    subtype: Optional[str] = None
 ) -> Dict[int, Dict[str, Any]]:
     """
     문제지 PDF의 1~2페이지에서 듣기 문항(1~17번) 크롭 이미지 및 메타데이터 추출
@@ -260,7 +261,8 @@ def extract_listening_question_crops(
         reading_end=listening_end_q,
         start_q=listening_start_q,
         end_q=listening_end_q,
-        answers_dict=answers_dict
+        answers_dict=answers_dict,
+        subtype=subtype
     )
 
     # 듣기 문항 범위(1~17번)만 엄격 필터링
@@ -562,6 +564,11 @@ def sync_exam_listening(
     grade = exam_row["grade"]
     year = exam_row["year"]
     month = exam_row["month"]
+    subtype = exam_row["subtype"] if "subtype" in exam_row.keys() else None
+    if not subtype:
+        m_sub = re.search(r"-([AB]형)", clean_id)
+        if m_sub:
+            subtype = m_sub.group(1)
     start_q = exam_row["listening_start_q"] if "listening_start_q" in exam_row.keys() and exam_row["listening_start_q"] else 1
     end_q = exam_row["listening_end_q"] if "listening_end_q" in exam_row.keys() and exam_row["listening_end_q"] else 17
 
@@ -642,7 +649,8 @@ def sync_exam_listening(
                 month=month,
                 listening_start_q=start_q,
                 listening_end_q=end_q,
-                answers_dict=listening_answers
+                answers_dict=listening_answers,
+                subtype=subtype
             )
         except Exception as e:
             print(f"[Sync Listening Warning] PDF 듣기 크롭 실패: {e}")
@@ -657,14 +665,18 @@ def sync_exam_listening(
                 month=month,
                 is_explanation_pdf=is_explanation_pdf,
                 listening_start_q=start_q,
-                listening_end_q=end_q
+                listening_end_q=end_q,
+                subtype=subtype
             )
         except Exception as e:
             print(f"[Sync Listening Warning] 대본 크롭 실패: {e}")
 
     saved_count = 0
     for q in range(start_q, end_q + 1):
-        p_id = f"[{grade}-{year}년-{month:02d}월-{q:02d}번]"
+        if subtype:
+            p_id = f"[{grade}-{year}년-{month:02d}월-{subtype}-{q:02d}번]"
+        else:
+            p_id = f"[{grade}-{year}년-{month:02d}월-{q:02d}번]"
         exp_info = explanations.get(q, {})
         ans_val = listening_answers.get(q, "")
         if not ans_val:
