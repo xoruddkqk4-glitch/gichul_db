@@ -166,10 +166,37 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
         except Exception as scan_err:
             print(f"[Crops] 스캔본 PDF 자동 치환 검사 중 경고: {scan_err}")
 
+        # 정답 사전 보완 (verified_key 및 DB 저장값 결합)
+        full_answers = dict(answer_keys.load_answer_key(grade, year, month) or {})
+        if answers_dict:
+            full_answers.update(answers_dict)
+        try:
+            with db.get_connection() as conn:
+                cur = conn.cursor()
+                rows = cur.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (exam_id,)).fetchall()
+                for r in rows:
+                    if r["answer_text"] and r["q_num"] not in full_answers:
+                        full_answers[r["q_num"]] = r["answer_text"]
+        except Exception:
+            pass
+
+        # 1. 독해 문항 크롭 생성 (정답 형광펜 포함)
         crop_results = extract_pdf_columns_and_questions(
             pdf_path=target_pdf, grade=grade, year=year, month=month,
-            start_q=reading_start, end_q=reading_end, answers_dict=answers_dict
+            start_q=reading_start, end_q=reading_end, answers_dict=full_answers
         )
+
+        # 2. 듣기 문항(1~17번) 크롭도 정답 형광펜 주석을 포함하여 함께 재생성
+        listening_end = (reading_start - 1) if (reading_start and reading_start > 1) else 17
+        try:
+            listening_crops = extract_pdf_columns_and_questions(
+                pdf_path=target_pdf, grade=grade, year=year, month=month,
+                start_q=1, end_q=listening_end, answers_dict=full_answers
+            )
+            crop_results.update(listening_crops)
+        except Exception as l_crop_err:
+            print(f"[Crops] {exam_id} 듣기 문항 형광펜 크롭 생성 중 경고: {l_crop_err}")
+
         with db.get_connection() as conn:
             cursor = conn.cursor()
             for q_n, q_data in crop_results.items():
@@ -180,7 +207,7 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
                         (crop_url, exam_id, q_n)
                     )
             conn.commit()
-        print(f"[Crops] {exam_id} 정답 형광펜 크롭 {len(crop_results)}개 재생성 완료")
+        print(f"[Crops] {exam_id} 정답 형광펜 크롭 {len(crop_results)}개(듣기+독해) 재생성 완료")
         return True
     except Exception as crop_err:
         import traceback
@@ -1241,7 +1268,8 @@ async def api_upload_exam(
                 exam_id=exam_id,
                 question_pdf_path=pdf_save_path,
                 script_pdf_path=script_save_path,
-                explanation_hwp_path=exp_save_path or hwp_save_path
+                explanation_hwp_path=exp_save_path or hwp_save_path,
+                answers_dict=answers_dict
             )
             print(f"[Upload] {exam_id} 듣기 문항 {listening_count}개 동기화 완료")
         except Exception as l_err:

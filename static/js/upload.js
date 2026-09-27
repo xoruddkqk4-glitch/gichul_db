@@ -87,10 +87,12 @@ export const closeUploadModal = () => {
     btnStartBatchUpload.dataset.state = "";
     btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
     btnStartBatchUpload.disabled = true;
+    btnStartBatchUpload.style.pointerEvents = "none";
     btnStartBatchUpload.style.background = "";
     btnStartBatchUpload.style.borderColor = "";
     if (btnCancelBatchModal) {
       btnCancelBatchModal.disabled = false;
+      btnCancelBatchModal.style.pointerEvents = "auto";
       btnCancelBatchModal.textContent = "취소";
     }
     renderBatchSetsTable();
@@ -326,6 +328,7 @@ function renderBatchSetsTable() {
 
   if (btnStartBatchUpload) {
     btnStartBatchUpload.disabled = (readyCount === 0);
+    btnStartBatchUpload.style.pointerEvents = (readyCount === 0) ? "none" : "auto";
     if (readyCount === 0) {
       btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
     } else if (ansOnlyCount > 0 && fullUploadCount === 0 && csvOnlyCount === 0) {
@@ -667,9 +670,13 @@ export function init() {
     });
   }
 
+  let isBatchUploading = false;
+
   // 일괄 업로드 순차 실행
   if (btnStartBatchUpload) {
     btnStartBatchUpload.addEventListener("click", async () => {
+      if (isBatchUploading) return;
+
       // 이미 처리가 완료된 상태에서 버튼을 누른 경우 -> 모달을 닫고 홈 검색 갱신
       if (btnStartBatchUpload.dataset.state === "finished") {
         closeUploadModal();
@@ -684,37 +691,43 @@ export function init() {
       const sets = Object.values(batchSetsMap).filter(s => s.isReady);
       if (sets.length === 0) return;
 
+      isBatchUploading = true;
       btnStartBatchUpload.disabled = true;
-      btnStartBatchUpload.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 데이터 처리 중... (0/${sets.length})`;
-      if (btnCancelBatchModal) btnCancelBatchModal.disabled = true;
+      btnStartBatchUpload.style.pointerEvents = "none";
+      btnStartBatchUpload.innerHTML = `<span class="btn-spinner">⏳</span> 데이터 처리 중... (0/${sets.length})`;
+      if (btnCancelBatchModal) {
+        btnCancelBatchModal.disabled = true;
+        btnCancelBatchModal.style.pointerEvents = "none";
+      }
       if (batchProgressBox) batchProgressBox.style.display = "block";
 
       let successCount = 0;
       let failCount = 0;
 
-      for (let i = 0; i < sets.length; i++) {
-        const set = sets[i];
-        const rowId = `batch-row-${set.set_key.replace(/[\[\]\-]/g, "_")}`;
-        const row = document.getElementById(rowId);
-        const statusCell = row ? row.querySelector(".batch-row-status") : null;
+      try {
+        for (let i = 0; i < sets.length; i++) {
+          const set = sets[i];
+          const rowId = `batch-row-${set.set_key.replace(/[\[\]\-]/g, "_")}`;
+          const row = document.getElementById(rowId);
+          const statusCell = row ? row.querySelector(".batch-row-status") : null;
 
-        if (statusCell) {
-          statusCell.innerHTML = `<span style="color: var(--primary); font-weight: 600;">⏳ 처리 중...</span>`;
-        }
+          if (statusCell) {
+            statusCell.innerHTML = `<span style="color: var(--primary); font-weight: 600;">⏳ 처리 중...</span>`;
+          }
 
-        if (btnStartBatchUpload) {
-          btnStartBatchUpload.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 데이터 반영 중... (${i + 1}/${sets.length})`;
-        }
+          if (btnStartBatchUpload) {
+            btnStartBatchUpload.innerHTML = `<span class="btn-spinner">⏳</span> 데이터 반영 중... (${i + 1}/${sets.length})`;
+          }
 
-        const pct = Math.round(((i + 1) / sets.length) * 100);
-        if (batchProgressBarFill) {
-          batchProgressBarFill.style.width = `${pct}%`;
-          batchProgressBarFill.classList.add("progress-bar-animated");
-        }
-        if (batchProgressCount) batchProgressCount.textContent = `${i + 1} / ${sets.length}`;
-        if (batchProgressTitle) {
-          batchProgressTitle.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> [${escapeHtml(set.set_key)}] 처리 중...`;
-        }
+          const pct = Math.round(((i + 1) / sets.length) * 100);
+          if (batchProgressBarFill) {
+            batchProgressBarFill.style.width = `${pct}%`;
+            batchProgressBarFill.classList.add("progress-bar-animated");
+          }
+          if (batchProgressCount) batchProgressCount.textContent = `${i + 1} / ${sets.length}`;
+          if (batchProgressTitle) {
+            batchProgressTitle.innerHTML = `<span class="btn-spinner">⏳</span> [${escapeHtml(set.set_key)}] 처리 중...`;
+          }
         if (batchProgressSubtext) {
           if (set.mode === "ans_only") {
             batchProgressSubtext.textContent = `🖼️ 정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`;
@@ -874,7 +887,7 @@ export function init() {
 
       // 후속 데이터 갱신 중에도 버튼에 동적 회전 아이콘 유지
       if (btnStartBatchUpload) {
-        btnStartBatchUpload.innerHTML = `<span style="display:inline-block; animation:spin 1s linear infinite; margin-right:6px;">⏳</span> 최종 데이터 동기화 중...`;
+        btnStartBatchUpload.innerHTML = `<span class="btn-spinner">⏳</span> 최종 데이터 동기화 중...`;
       }
 
       try {
@@ -896,19 +909,26 @@ export function init() {
         });
       } catch (postSyncErr) {
         console.error("후속 데이터 갱신 중 오류 (무시 가능):", postSyncErr);
-      } finally {
-        if (btnCancelBatchModal) {
-          btnCancelBatchModal.disabled = false;
-          btnCancelBatchModal.textContent = "닫기";
-        }
-
-        // 처리 완료 상태로 변경 및 활성화 (클릭 시 모달 닫기 수행)
-        btnStartBatchUpload.disabled = false;
-        btnStartBatchUpload.dataset.state = "finished";
-        btnStartBatchUpload.innerHTML = "✔ 처리 완료 (닫기)";
-        btnStartBatchUpload.style.background = "#059669";
-        btnStartBatchUpload.style.borderColor = "#059669";
       }
+    } catch (uploadErr) {
+      console.error("일괄 처리 중 예기치 않은 오류:", uploadErr);
+      showToast("일괄 처리 도중 오류가 발생했습니다.", "error");
+    } finally {
+      isBatchUploading = false;
+      if (btnCancelBatchModal) {
+        btnCancelBatchModal.disabled = false;
+        btnCancelBatchModal.style.pointerEvents = "auto";
+        btnCancelBatchModal.textContent = "닫기";
+      }
+
+      // 처리 완료 상태로 변경 및 활성화 (클릭 시 모달 닫기 수행)
+      btnStartBatchUpload.disabled = false;
+      btnStartBatchUpload.style.pointerEvents = "auto";
+      btnStartBatchUpload.dataset.state = "finished";
+      btnStartBatchUpload.innerHTML = "✔ 처리 완료 (닫기)";
+      btnStartBatchUpload.style.background = "#059669";
+      btnStartBatchUpload.style.borderColor = "#059669";
+    }
     });
   }
 
@@ -931,8 +951,11 @@ export function init() {
     e.preventDefault();
     const formData = new FormData(uploadForm);
     const submitBtn = document.getElementById("btnSubmitUpload");
-    submitBtn.disabled = true;
-    submitBtn.textContent = "⏳ 파싱 및 보안 승인 검증 중...";
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.style.pointerEvents = "none";
+      submitBtn.innerHTML = `<span class="btn-spinner">⏳</span> 파싱 및 보안 승인 검증 중...`;
+    }
 
     try {
       const res = await fetch("/api/upload", {
@@ -958,8 +981,11 @@ export function init() {
       console.error(err);
       alert("서버 통신 중 오류가 발생했습니다.");
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "🚀 단일 세트 상호 검증 및 DB 저장";
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.style.pointerEvents = "auto";
+        submitBtn.innerHTML = "🚀 단일 세트 상호 검증 및 DB 저장";
+      }
     }
   });
 
@@ -972,13 +998,14 @@ export function init() {
       const originalBtnHtml = targetBtn ? targetBtn.innerHTML : "";
       if (targetBtn) {
         targetBtn.disabled = true;
+        targetBtn.style.pointerEvents = "none";
         targetBtn.innerHTML = activeSingleTargetType === "ans"
-          ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> AI 분석 중...`
+          ? `<span class="btn-spinner">⏳</span> AI 분석 중...`
           : (activeSingleTargetType === "csv"
-            ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> 파싱 중...`
+            ? `<span class="btn-spinner">⏳</span> 파싱 중...`
             : (activeSingleTargetType === "script"
-              ? `<span style="display:inline-block; animation:spin 1s linear infinite;">⏳</span> 대본 파싱 중...`
-              : `⏳ 업로드 중...`));
+              ? `<span class="btn-spinner">⏳</span> 대본 파싱 중...`
+              : `<span class="btn-spinner">⏳</span> 업로드 중...`));
       }
 
       const formData = new FormData();
@@ -1024,6 +1051,7 @@ export function init() {
           alert(`❌ 업로드 실패: ${data.detail || '오류가 발생했습니다.'}`);
           if (targetBtn) {
             targetBtn.disabled = false;
+            targetBtn.style.pointerEvents = "auto";
             targetBtn.innerHTML = originalBtnHtml;
           }
         }
@@ -1032,6 +1060,7 @@ export function init() {
         alert(`❌ 통신 오류가 발생했습니다: ${err.message}`);
         if (targetBtn) {
           targetBtn.disabled = false;
+          targetBtn.style.pointerEvents = "auto";
           targetBtn.innerHTML = originalBtnHtml;
         }
       } finally {

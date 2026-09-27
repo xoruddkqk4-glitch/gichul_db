@@ -407,14 +407,18 @@ def _save_script_crop(
 def sync_exam_listening(
     exam_id: str,
     script_pdf_path: Optional[str] = None,
-    is_explanation_pdf: bool = False
+    is_explanation_pdf: bool = False,
+    question_pdf_path: Optional[str] = None,
+    explanation_hwp_path: Optional[str] = None,
+    answers_dict: Optional[Dict[int, str]] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
     특정 시험지에 대해 듣기 문항(1~17번) 자동 파싱 및 DB 동기화:
     1. uploads/ 내 해당 시험지의 PDF(문제지)와 HWP(해설지) 탐색
-    2. HWP 해설에서 1~17번 정답, 해설, 영문 대본(script_text) 추출
+    2. HWP 해설 및 answer_keys에서 1~17번 정답, 해설, 영문 대본(script_text) 추출
     3. FELS 엔진을 통해 영문 대본을 FELS 텍스트(기능어 <괄호>)로 변환
-    4. PDF 문제지에서 1~17번 고화질 크롭 이미지 생성
+    4. PDF 문제지에서 1~17번 고화질 크롭 이미지 생성 (정답 선지 파스텔톤 노란색 형광펜 주석 연동)
     5. 대본 PDF(또는 해설 PDF)가 주어지면 스크립트 크롭 이미지(_script.png) 생성
     6. passages 테이블에 area='listening'으로 문항 정보 등록/갱신
     """
@@ -460,27 +464,59 @@ def sync_exam_listening(
                 script_pdf_path = cand_exps[0]
                 is_explanation_pdf = True
 
-    hwp_files = glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.hwp"))
-    if not hwp_files:
-        hwp_files = glob.glob(os.path.join(uploads_dir, f"*{year}*{month:02d}*.hwp"))
+    target_hwp = explanation_hwp_path if (explanation_hwp_path and os.path.exists(explanation_hwp_path)) else None
+    if not target_hwp:
+        hwp_files = glob.glob(os.path.join(uploads_dir, f"{grade}_{year}_{month:02d}_*.hwp"))
+        if not hwp_files:
+            hwp_files = glob.glob(os.path.join(uploads_dir, f"*{year}*{month:02d}*.hwp"))
+        if hwp_files:
+            target_hwp = hwp_files[0]
 
     explanations = {}
-    if hwp_files:
+    if target_hwp:
         try:
-            explanations = hwp_parser.parse_hwp_explanations(hwp_files[0])
+            explanations = hwp_parser.parse_hwp_explanations(target_hwp)
         except Exception as e:
             print(f"[Sync Listening Warning] HWP 해설 파싱 실패: {e}")
 
+    # 정답 사전 사전 구축 (verified_key 우선, answers_dict 결합, DB 기존값 및 HWP 해설 보완)
+    verified_key = answer_keys.load_answer_key(grade, year, month)
+    db_answers = {}
+    try:
+        cur = conn.cursor()
+        rows = cur.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ? AND area = 'listening'", (clean_id,)).fetchall()
+        for r in rows:
+            if r["answer_text"]:
+                db_answers[r["q_num"]] = r["answer_text"]
+    except Exception:
+        pass
+
+    listening_answers = {}
+    for q in range(start_q, end_q + 1):
+        ans_val = ""
+        if answers_dict and q in answers_dict and answers_dict[q]:
+            ans_val = str(answers_dict[q])
+        elif q in verified_key and verified_key[q]:
+            ans_val = str(verified_key[q])
+        elif q in db_answers and db_answers[q]:
+            ans_val = str(db_answers[q])
+        elif q in explanations and explanations[q].get("answer"):
+            ans_val = str(explanations[q]["answer"])
+        if ans_val:
+            listening_answers[q] = ans_val
+
     pdf_questions = {}
-    if pdf_files:
+    target_prob_pdf = question_pdf_path if (question_pdf_path and os.path.exists(question_pdf_path)) else (pdf_files[0] if pdf_files else None)
+    if target_prob_pdf:
         try:
             pdf_questions = extract_listening_question_crops(
-                pdf_path=pdf_files[0],
+                pdf_path=target_prob_pdf,
                 grade=grade,
                 year=year,
                 month=month,
                 listening_start_q=start_q,
-                listening_end_q=end_q
+                listening_end_q=end_q,
+                answers_dict=listening_answers
             )
         except Exception as e:
             print(f"[Sync Listening Warning] PDF 듣기 크롭 실패: {e}")
@@ -500,17 +536,15 @@ def sync_exam_listening(
         except Exception as e:
             print(f"[Sync Listening Warning] 대본 크롭 실패: {e}")
 
-    # 정답표(answer_keys) 로드하여 정답 매핑
-    verified_key = answer_keys.load_answer_key(grade, year, month)
-
     saved_count = 0
     for q in range(start_q, end_q + 1):
         p_id = f"[{grade}-{year}년-{month:02d}월-{q:02d}번]"
         exp_info = explanations.get(q, {})
-        ans_val = exp_info.get("answer", "")
-        # 1. verified_key 파일에 정답이 있으면 최우선 적용
-        if q in verified_key and verified_key[q]:
-            ans_val = verified_key[q]
+        ans_val = listening_answers.get(q, "")
+        if not ans_val:
+            ans_val = exp_info.get("answer", "")
+            if q in verified_key and verified_key[q]:
+                ans_val = verified_key[q]
 
         exp_text = exp_info.get("explanation", "")
         if ans_val and not re.search(r"^\s*\[\s*정답\s*\]", exp_text):

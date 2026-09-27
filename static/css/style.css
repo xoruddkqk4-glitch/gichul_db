@@ -173,9 +173,26 @@ button {
   background-color: var(--primary);
   color: white;
 }
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
   box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+}
+
+/* 전역 버튼 비활성화 시각 효과 및 마우스 클릭 차단 */
+.btn:disabled,
+.btn[disabled],
+.btn-primary:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  box-shadow: none !important;
+  filter: grayscale(20%);
+}
+
+.btn-spinner {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  margin-right: 6px;
 }
 
 .btn-secondary {

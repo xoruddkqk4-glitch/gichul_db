@@ -1350,6 +1350,30 @@ CREATE TABLE user_sentence_status (
   - `고3 2025년 03월 41~42번` (태그 없는 해석 + 공통 어휘) 42번 해설 중복 100% 제거 확인
   - 10개 시험지 정답률 CSV 일괄 업로드 시뮬레이션 및 완료 버튼 전환 무결성 검증 완료
 
+### [2026-09-27 14:30] 업데이트 이력 (Commit ID: 6c58e4e)
+- **수정 내용**:
+  - **모의고사 일괄 업로드 시 버튼 비활성화 CSS 시각화 및 중복 클릭 원천 방지 (`style.css`, `upload.js`, `index.html`)**:
+    - `.btn:disabled`, `.btn[disabled]`, `.btn-primary:disabled`에 `opacity: 0.55 !important; cursor: not-allowed !important; pointer-events: none !important; box-shadow: none !important; filter: grayscale(20%);` 전역 CSS를 추가하여 자바스크립트에서 `disabled = true` 부여 즉시 시각적으로 반투명 흐림 및 마우스 클릭을 물리적으로 차단.
+    - `@keyframes spin` 연동 `.btn-spinner` 클래스 및 회전 모래시계(`⏳`) 동적 애니메이션 추가.
+    - `upload.js` 내 `isBatchUploading` 전역 가드 플래그 및 마우스 클릭 차단 `pointer-events: none`을 추가하여 비동기 처리 중 연타나 중복 실행을 원천 차단.
+    - 전체 프로세스를 포괄하는 outer `try ... catch ... finally` 블록을 확립하여 중간 실패나 후속 동기화와 무관하게 무조건 `isBatchUploading = false`, `pointerEvents = "auto"`, `state = "finished"` 및 초록색 `✔ 처리 완료 (닫기)` 버튼으로 안전하게 복구/전환 보장.
+    - 모달 닫기(`closeUploadModal`) 시 `pointerEvents` 및 버튼 상태 정상 초기화.
+    - 단일 세트 수동 업로드(`submitBtn`) 및 개별 파일 교체 칩 버튼(`targetBtn`)에도 동일한 비활성화 및 스피너 로직 일관 적용.
+    - `templates/index.html` 내 `style.css?v=20260927_1415` 및 `main.js?v=20260927_1415` 캐시 버스팅 파라미터 갱신으로 브라우저가 최신 CSS/JS를 즉시 반영하도록 보장.
+  - **듣기 영역(1~17번) 정답 선지 번호 파스텔톤 노란색(#FFE853) 형광펜 주석 연동 및 일괄 갱신 (`listening_parser.py`, `app.py`)**:
+    - `listening_parser.py`의 `sync_exam_listening` 함수에서 듣기 문항 크롭 생성 전 `answer_keys` 검증 정답표, HWP 해설 정답, 인자로 전달된 정답을 결합한 `listening_answers` 사전을 먼저 구축.
+    - `extract_listening_question_crops(..., answers_dict=listening_answers)`로 정답 정보를 전달하여, `pdf_parser.py`의 `highlight_answer_choice`가 1~17번 선지 기호(①~⑤) 위에도 독해 영역과 완전히 동일한 파스텔톤 노란색(#FFE853) 형광펜 주석을 적용한 뒤 캡처하도록 연동.
+    - `app.py`의 `_regenerate_exam_crops` 함수를 확장하여 독해 문항(18~45번)뿐만 아니라 듣기 문항(1~17번)도 `answers_dict`를 전달하여 함께 형광펜 주석 크롭 이미지를 재생성하고 DB `passages` 테이블의 `pdf_crop_image` 경로를 동기화.
+    - `app.py`의 `/api/upload` 엔드포인트에서 듣기 동기화 호출 시 `answers_dict=answers_dict`를 전달하도록 보완.
+    - 기존 등록 시험지 11종(총 187개 듣기 문항)에 대해서도 형광펜 주석 크롭 이미지를 즉시 일괄 재생성하여 반영 완료.
+- **검증 결과**:
+  - `python -m py_compile listening_parser.py app.py`: 파이썬 구문 오류 0건 통과
+  - `node --check static/js/upload.js static/js/main.js`: 자바스크립트 구문 오류 0건 통과
+  - Pillow 픽셀 단위 분석 검증: 듣기 문항(예: `고3-2026-09` 6번) 캡처 이미지 내 파스텔톤 노란색(#FFE853) 형광펜 픽셀 2,150개 정상 검출 확인 (기존 0개에서 완벽 개선)
+  - 기존 등록 11개 시험지 전부에 대해 45개 전 문항(듣기 17개 + 독해 28개) 형광펜 크롭 재생성 완료
+  - 로컬 서버 정상 기동 및 API 응답 확인: `{"exams":157,"passages":4683,"sentences":39511}` HTTP 200 OK
+
+
 
 
 
