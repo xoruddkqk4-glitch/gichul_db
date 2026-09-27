@@ -1509,7 +1509,7 @@ CREATE TABLE user_sentence_status (
   - 317개 시험지 실측 벤치마크: 최초 로딩 0.118초, 캐시 히트 0.000초, FTS5 단어 검색 1ms~47ms, 복합 필터 1ms 이내 검증 완료
   - 드래그 앤 드롭 UI 및 파일 파싱 정상 동작 확인
 
-### [2026-09-27 21:45] 업데이트 이력 (Commit ID: pending)
+### [2026-09-27 21:45] 업데이트 이력 (Commit ID: 3a776034)
 - **수정 내용**:
   - **원본 파일 현황 5종 파일(문제지, 해설지, 대본, 정답표, 정답률) 미등록 다중 선택 필터링 구축 (`templates/index.html`, `static/js/files-status.js`, `static/css/style.css`)**:
     - **1) 미등록 파일 다중 선택 드롭다운 팝오버 (`#missingFilterContainer`)**:
