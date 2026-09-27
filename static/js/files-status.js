@@ -119,7 +119,7 @@ function renderFilesStatusTable() {
     : items;
 
   if (displayItems.length === 0) {
-    filesStatusTableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률·대본(5종)이 완비되었습니다!</td></tr>`;
+    filesStatusTableBody.innerHTML = `<tr><td colspan="13" style="text-align: center; padding: 2.5rem; color: #059669; font-weight: 600;">🎉 모든 세트의 원본 파일 및 정답률·대본(5종)이 완비되었습니다!</td></tr>`;
     return;
   }
 
@@ -145,7 +145,7 @@ function renderFilesStatusTable() {
     if (pdfStat.exists) {
       pdfBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="${escapeHtml(pdfStat.filename)} (클릭 시 파일 교체)">📄 등록됨</button>`;
     } else {
-      pdfBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="클릭하여 PDF 문제지 단독 업로드">➕ PDF 업로드</button>`;
+      pdfBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="pdf" title="클릭하여 PDF 문제지 단독 업로드">➕ PDF 등록</button>`;
     }
 
     // 2. HWP 해설지 버튼
@@ -153,18 +153,18 @@ function renderFilesStatusTable() {
     if (hwpStat.exists) {
       hwpBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="${escapeHtml(hwpStat.filename)} (클릭 시 파일 교체)">📝 등록됨</button>`;
     } else {
-      hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 업로드</button>`;
+      hwpBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="hwp" title="클릭하여 HWP 해설지 단독 업로드">➕ HWP 등록</button>`;
     }
 
     // 3. 대본/해설 PDF 버튼
     let scriptBtnHtml = "";
     if (scriptStat.exists) {
       const isExp = scriptStat.is_exp;
-      const typeLabel = isExp ? "📑 해설(대본)" : "📜 대본PDF";
+      const typeLabel = isExp ? "📑 해설(대본)" : "📜 대본 등록됨";
       const chipTitle = `${escapeHtml(scriptStat.filename)} (${isExp ? "해설 PDF 대본 연동" : "대본 전용 PDF"}, 클릭 시 파일 교체)`;
       scriptBtnHtml = `<button type="button" class="btn-file-chip chip-exists btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="${chipTitle}" style="background: #f0fdfa; color: #0f766e; border-color: #99f6e4;">${typeLabel}</button>`;
     } else {
-      scriptBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="클릭하여 대본 PDF(_script) 또는 해설 PDF(-A) 단독 업로드">➕ 대본 업로드</button>`;
+      scriptBtnHtml = `<button type="button" class="btn-file-chip chip-empty btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="script" title="클릭하여 대본 PDF(_script) 또는 해설 PDF(-A) 단독 업로드">➕ 대본 등록</button>`;
     }
 
     // 4. 정답표 이미지 (-A) 버튼
@@ -176,7 +176,7 @@ function renderFilesStatusTable() {
     } else if (answeredCount > 0) {
       ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="DB 정답 등록 완료 (${answeredCount}/${totalCount}문항), 클릭 시 정답표/JSON 추가 등록">🔵 정답 (${answeredCount}/${totalCount})</button>`;
     } else {
-      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답 JSON(.json) 또는 이미지 등록 (1순위 정답 반영 & PDF 형광펜 갱신)">➕ 정답표 업로드</button>`;
+      ansBtnHtml = `<button type="button" class="btn-file-chip chip-ans-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="ans" title="클릭하여 정답 JSON(.json) 또는 이미지 등록 (1순위 정답 반영 & PDF 형광펜 갱신)">➕ 정답표 등록</button>`;
     }
 
     // 5. 정답률 CSV 버튼
@@ -189,10 +189,18 @@ function renderFilesStatusTable() {
       const avgText = csvStat.avg_rate != null ? ` (평균 ${csvStat.avg_rate}%)` : ` (${ratedCount}/${totalCount})`;
       csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-done btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="DB 정답률 등록 완료 (${ratedCount}/${totalCount}문항), 클릭 시 새 CSV 등록">📊 등록됨${avgText}</button>`;
     } else {
-      csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="클릭하여 정답률 CSV 업로드">➕ 정답률 업로드</button>`;
+      csvBtnHtml = `<button type="button" class="btn-file-chip chip-rate-needed btn-upload-single-file" data-id="${escapeHtml(exam.id)}" data-type="csv" title="클릭하여 정답률 CSV 업로드">➕ CSV 등록</button>`;
     }
 
-    // 6. 종합 상태 배지
+    // 6. 코어 본문 / 메타데이터 요약 배지 (시험지 관리 탭과 100% 동일)
+    const coreMetaHtml = `
+        <div style="display: flex; flex-direction: column; gap: 3px;">
+          <span class="badge-tier badge-tier-core" style="font-size: 0.72rem; padding: 2px 6px;">📄 ${exam.passage_count || 0}지문 / ${exam.sentence_count || 0}문장</span>
+          <span class="badge-tier ${(exam.grammar_count || 0) > 0 ? 'badge-tier-meta' : 'badge-tier-empty'}" style="font-size: 0.72rem; padding: 2px 6px;">🏷️ 어법 ${exam.grammar_count || 0} / 태그 ${exam.tag_count || 0}</span>
+        </div>
+      `;
+
+    // 7. 종합 상태 배지
     let overallStatusHtml = "";
     const hasPdf = pdfStat.exists;
     const hasHwp = hwpStat.exists;
@@ -230,6 +238,7 @@ function renderFilesStatusTable() {
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${scriptBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${ansBtnHtml}</td>
         <td style="padding: 10px 10px; text-align: center; white-space: nowrap;">${csvBtnHtml}</td>
+        <td style="padding: 10px 10px; white-space: nowrap;">${coreMetaHtml}</td>
         <td style="padding: 10px 12px; text-align: center; white-space: nowrap;">${overallStatusHtml}</td>
       `;
     filesStatusTableBody.appendChild(tr);

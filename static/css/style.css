@@ -4742,8 +4742,16 @@ mark.passage-highlight {
 
 /* --- 모달 너비 확장 및 테이블 셀 한 줄 표시 보장 규칙 --- */
 .upload-modal-content {
-  max-width: 1080px !important;
+  max-width: 1480px !important;
   width: 96% !important;
+}
+
+.batch-sets-table-wrapper {
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .manage-exams-table-wrapper {

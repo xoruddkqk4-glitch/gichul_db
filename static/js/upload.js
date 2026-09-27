@@ -111,7 +111,7 @@ function parseExamMetadataFromFilename(filename) {
   const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
 
   // 1. 대본/해설 PDF 판별
-  const is_script_pdf = ext === ".pdf" && (/_script/i.test(nameWithoutExt) || /대본/i.test(nameWithoutExt));
+  const is_script_pdf = ext === ".pdf" && (/_script/i.test(nameWithoutExt) || /대본/i.test(nameWithoutExt) || /listening/i.test(nameWithoutExt));
   const is_exp_pdf = ext === ".pdf" && (/[\s\-_]A$/i.test(nameWithoutExt) || /[\s\-_]exp$/i.test(nameWithoutExt) || /_exp_/i.test(nameWithoutExt));
 
   // 2. 정답표 (JSON 또는 이미지)
@@ -124,8 +124,8 @@ function parseExamMetadataFromFilename(filename) {
 
   // 4. 모의고사 식별자 추출을 위해 접미사 제거
   let cleanName = nameWithoutExt
-    .replace(/[\s\-_]?(script|대본)$/i, "")
-    .replace(/[\s\-_]?(A|ans|정답|exp)$/i, "");
+    .replace(/[\s\-_]?(script|대본|듣기대본|듣기|listening)$/i, "")
+    .replace(/[\s\-_]?(A|ans|정답|exp|해설지|해설|문제지|문제)$/i, "");
 
   // 지원 패턴 예: 고3-[2026-07], 고3-[2026-7], 고3-2026-07, 고3_2026_07, 고3 2026년 7월 등
   const match = cleanName.match(/(고[1-3]|[1-3]학년)[\s\-_]?\[?(\d{4})[년\s\-_]+(\d{1,2})월?\]?/i);
@@ -203,6 +203,7 @@ async function handleBatchFilesSelected(fileList) {
 }
 
 let registeredExamsSet = new Set();
+let registeredExamsMap = new Map();
 
 async function fetchRegisteredExamsSet() {
   try {
@@ -210,6 +211,7 @@ async function fetchRegisteredExamsSet() {
     const data = await res.json();
     const items = data.items || [];
     registeredExamsSet = new Set(items.map(e => e.id));
+    registeredExamsMap = new Map(items.map(e => [e.id, e]));
   } catch (e) {
     console.error(e);
   }
@@ -230,6 +232,7 @@ function renderBatchSetsTable() {
   if (batchSetsCount) batchSetsCount.textContent = sets.length;
 
   let readyCount = 0;
+  let scriptOnlyCount = 0;
   let ansOnlyCount = 0;
   let csvOnlyCount = 0;
   let fullUploadCount = 0;
@@ -238,14 +241,21 @@ function renderBatchSetsTable() {
     const examId = `[${set.grade}-${set.year}년-${String(set.month).padStart(2, "0")}월]`;
     set.exam_id = examId;
 
+    const regExam = registeredExamsMap.get(examId);
     const hasPdf = Boolean(set.pdfFile);
     const hasHwp = Boolean(set.hwpFile);
+    const hasScript = Boolean(set.scriptFile);
     const hasAns = Boolean(set.ansFile);
     const hasCsv = Boolean(set.csvFile);
     const isAlreadyRegistered = registeredExamsSet.has(examId);
 
+    // 기존 DB 파일 보유 상태
+    const dbPdfExists = isAlreadyRegistered && (regExam?.file_status?.pdf ? regExam.file_status.pdf.exists : true);
+    const dbHwpExists = isAlreadyRegistered && (regExam?.file_status?.hwp ? regExam.file_status.hwp.exists : true);
+    const dbScriptExists = isAlreadyRegistered && (regExam?.file_status?.script ? regExam.file_status.script.exists : false);
+
     let isReady = false;
-    let mode = ""; // "full" | "ans_only" | "csv_only" | "ans_and_csv" | "incomplete"
+    let mode = ""; // "full" | "registered_update" | "already_registered" | "incomplete"
     let statusHtml = "";
 
     if (hasPdf && hasHwp) {
@@ -253,30 +263,43 @@ function renderBatchSetsTable() {
       mode = "full";
       fullUploadCount++;
       const extras = [];
+      if (hasScript) extras.push("대본");
       if (hasAns) extras.push("정답표");
       if (hasCsv) extras.push("정답률");
       const extraText = extras.length > 0 ? ` (${extras.join("·")} 포함)` : "";
       statusHtml = `<span class="badge-match-ready" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✅ 준비 완료${extraText}</span>`;
-    } else if (hasAns && hasCsv && isAlreadyRegistered) {
-      isReady = true;
-      mode = "ans_and_csv";
-      statusHtml = `<span class="badge-match-ready" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">🔄 정답표+정답률 갱신 (준비 완료)</span>`;
-    } else if (hasAns && isAlreadyRegistered) {
-      // PDF/HWP가 없더라도 이미 DB에 등록된 시험지라면 정답표 단독 갱신 모드로 준비 완료!
-      isReady = true;
-      mode = "ans_only";
-      ansOnlyCount++;
-      statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
-    } else if (hasCsv && isAlreadyRegistered) {
-      // PDF/HWP가 없더라도 이미 DB에 등록된 시험지라면 정답률 CSV 단독 갱신 모드로 준비 완료!
-      isReady = true;
-      mode = "csv_only";
-      csvOnlyCount++;
-      statusHtml = `<span class="badge-match-ready" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;">📊 정답률 갱신 (준비 완료)</span>`;
+    } else if (isAlreadyRegistered) {
+      // 이미 등록된 시험지인 경우: 대본, 정답표, 정답률 CSV 중 드롭된 항목 갱신
+      const droppedItems = [];
+      if (hasScript) droppedItems.push("대본");
+      if (hasAns) droppedItems.push("정답표");
+      if (hasCsv) droppedItems.push("정답률");
+
+      if (droppedItems.length > 0) {
+        isReady = true;
+        mode = "registered_update";
+        if (hasScript && !hasAns && !hasCsv) {
+          scriptOnlyCount++;
+          statusHtml = `<span class="badge-match-ready" style="background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; font-weight: 700;">📜 대본 갱신 (준비 완료)</span>`;
+        } else if (hasAns && !hasScript && !hasCsv) {
+          ansOnlyCount++;
+          statusHtml = `<span class="badge-match-ready" style="background: #faf5ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700;">🔄 정답표 갱신 (준비 완료)</span>`;
+        } else if (hasCsv && !hasScript && !hasAns) {
+          csvOnlyCount++;
+          statusHtml = `<span class="badge-match-ready" style="background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;">📊 정답률 갱신 (준비 완료)</span>`;
+        } else {
+          statusHtml = `<span class="badge-match-ready" style="background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 700;">🔄 ${droppedItems.join("+")} 갱신 (준비 완료)</span>`;
+        }
+      } else {
+        // 이미 등록된 시험지이나 신규 드롭된 파일이 없음
+        isReady = false;
+        mode = "already_registered";
+        statusHtml = `<span style="color: #0284c7; background: #f0f9ff; border: 1px solid #bae6fd; padding: 2px 8px; border-radius: 4px; font-weight: 600;">💾 기존 DB 보관 중 (변경 없음)</span>`;
+      }
     } else {
       isReady = false;
       mode = "incomplete";
-      statusHtml = (hasAns || hasCsv)
+      statusHtml = (hasAns || hasCsv || hasScript)
         ? `<span class="badge-match-warn" style="color: #dc2626; border-color: #fecaca; background: #fef2f2;">⚠️ 미등록 시험지 (PDF/HWP 필요)</span>`
         : `<span class="badge-match-warn">⚠️ HWP/PDF 누락</span>`;
     }
@@ -293,11 +316,17 @@ function renderBatchSetsTable() {
 
     const pdfCellHtml = hasPdf 
       ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.pdfFile.name)}</span>` 
-      : (isAlreadyRegistered ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+      : (dbPdfExists ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
 
     const hwpCellHtml = hasHwp 
       ? `<span style="color: #059669; font-weight: 600;">✅ ${escapeHtml(set.hwpFile.name)}</span>` 
-      : (isAlreadyRegistered ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+      : (dbHwpExists ? `<span style="color: #64748b;">💾 기존 DB 보관</span>` : `<span style="color: #dc2626;">❌ 누락</span>`);
+
+    const scriptCellHtml = hasScript
+      ? `<span style="color: #0284c7; font-weight: 700;">📜 ${escapeHtml(set.scriptFile.name)}</span>`
+      : (dbScriptExists 
+          ? `<span style="color: #64748b;">💾 기존 DB (${regExam?.file_status?.script?.is_exp ? '해설PDF' : '대본PDF'})</span>` 
+          : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`);
 
     const ansCellHtml = hasAns
       ? `<span style="color: #7e22ce; font-weight: 700;">🖼️ ${escapeHtml(set.ansFile.name)}</span>`
@@ -307,20 +336,26 @@ function renderBatchSetsTable() {
       ? `<span style="color: #15803d; font-weight: 700;">📊 ${escapeHtml(set.csvFile.name)}</span>`
       : `<span style="color: #94a3b8;">⚪ 미포함 (선택)</span>`;
 
+    // 학년 배지 스타일 (시험지 관리 탭과 통일)
+    const gradeBadgeClass = set.grade === "고3" ? "badge-grade-g3" : (set.grade === "고2" ? "badge-grade-g2" : "badge-grade-g1");
+    const gradeBadgeHtml = `<span class="badge-grade-sub ${gradeBadgeClass}">${escapeHtml(set.grade)}</span>`;
+
     tr.innerHTML = `
         <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; white-space: nowrap;">
           ${escapeHtml(set.set_key)}
           ${isAlreadyRegistered ? `<span style="font-size: 0.72rem; color: #0284c7; background: #e0f2fe; padding: 1px 5px; border-radius: 4px; margin-left: 4px;">등록됨</span>` : ''}
         </td>
-        <td style="padding: 8px 10px; white-space: nowrap;">${escapeHtml(set.grade)}</td>
-        <td style="padding: 8px 10px; white-space: nowrap;">${set.year}년 ${set.month}월</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${gradeBadgeHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${set.year}년</td>
+        <td style="padding: 8px 10px; text-align: center; font-weight: 600; color: #334155; white-space: nowrap;">${set.month}월</td>
         <td style="padding: 8px 10px; white-space: nowrap;">
-          <span class="badge-inst ${instClass}">${instIcon} ${escapeHtml(set.exam_type)}</span>
+          <span class="badge-inst ${instClass}" style="white-space: nowrap;">${instIcon} ${escapeHtml(set.exam_type)}</span>
         </td>
-        <td style="padding: 8px 10px; white-space: nowrap;">${pdfCellHtml}</td>
-        <td style="padding: 8px 10px; white-space: nowrap;">${hwpCellHtml}</td>
-        <td style="padding: 8px 10px; white-space: nowrap;">${ansCellHtml}</td>
-        <td style="padding: 8px 10px; white-space: nowrap;">${csvCellHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${pdfCellHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${hwpCellHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${scriptCellHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${ansCellHtml}</td>
+        <td style="padding: 8px 10px; text-align: center; white-space: nowrap;">${csvCellHtml}</td>
         <td style="padding: 8px 10px; text-align: center; white-space: nowrap;" class="batch-row-status">${statusHtml}</td>
       `;
     batchSetsTableBody.appendChild(tr);
@@ -331,9 +366,11 @@ function renderBatchSetsTable() {
     btnStartBatchUpload.style.pointerEvents = (readyCount === 0) ? "none" : "auto";
     if (readyCount === 0) {
       btnStartBatchUpload.textContent = "🚀 일괄 업로드 및 상호 검증 시작";
-    } else if (ansOnlyCount > 0 && fullUploadCount === 0 && csvOnlyCount === 0) {
+    } else if (scriptOnlyCount > 0 && fullUploadCount === 0 && ansOnlyCount === 0 && csvOnlyCount === 0) {
+      btnStartBatchUpload.textContent = `📜 대본 PDF ${scriptOnlyCount}개 세트 일괄 반영 시작`;
+    } else if (ansOnlyCount > 0 && fullUploadCount === 0 && csvOnlyCount === 0 && scriptOnlyCount === 0) {
       btnStartBatchUpload.textContent = `🔄 정답표 ${ansOnlyCount}개 세트 일괄 분석 및 반영 시작`;
-    } else if (csvOnlyCount > 0 && fullUploadCount === 0 && ansOnlyCount === 0) {
+    } else if (csvOnlyCount > 0 && fullUploadCount === 0 && ansOnlyCount === 0 && scriptOnlyCount === 0) {
       btnStartBatchUpload.textContent = `📊 정답률 CSV ${csvOnlyCount}개 세트 일괄 반영 시작`;
     } else {
       btnStartBatchUpload.textContent = `🚀 ${readyCount}개 세트 일괄 업로드/갱신 시작`;
@@ -728,107 +765,99 @@ export function init() {
           if (batchProgressTitle) {
             batchProgressTitle.innerHTML = `<span class="btn-spinner">⏳</span> [${escapeHtml(set.set_key)}] 처리 중...`;
           }
-        if (batchProgressSubtext) {
-          if (set.mode === "ans_only") {
-            batchProgressSubtext.textContent = `🖼️ 정답표 Vision AI 분석 및 PDF 정답 형광펜 갱신 중 (${i + 1}/${sets.length})`;
-          } else if (set.mode === "csv_only") {
-            batchProgressSubtext.textContent = `📊 정답률 CSV 파싱 및 문항별 선택률 반영 중 (${i + 1}/${sets.length})`;
-          } else if (set.mode === "ans_and_csv") {
-            batchProgressSubtext.textContent = `🖼️ 정답표 AI 분석 및 📊 정답률 CSV 동시 반영 중 (${i + 1}/${sets.length})`;
-          } else {
-            const hasAns = !!set.ansFile;
-            const hasCsv = !!set.csvFile;
-            const extra = (hasAns && hasCsv) ? " + 🖼️정답표AI + 📊정답률" : (hasAns ? " + 🖼️정답표AI" : (hasCsv ? " + 📊정답률" : ""));
-            batchProgressSubtext.textContent = `📄 PDF 2단 분할 & HWP 교차 검증${extra} 진행 중 (약 10~25초)... (${i + 1}/${sets.length})`;
+          if (batchProgressSubtext) {
+            if (set.mode === "registered_update" || set.mode === "script_only" || set.mode === "ans_only" || set.mode === "csv_only" || set.mode === "ans_and_csv") {
+              const subParts = [];
+              if (set.scriptFile) subParts.push("📜대본");
+              if (set.ansFile) subParts.push("🖼️정답표");
+              if (set.csvFile) subParts.push("📊정답률");
+              batchProgressSubtext.textContent = `🔄 기존 시험지 ${subParts.join("+")} 갱신 반영 중 (${i + 1}/${sets.length})`;
+            } else {
+              const hasScript = !!set.scriptFile;
+              const hasAns = !!set.ansFile;
+              const hasCsv = !!set.csvFile;
+              const extraParts = [];
+              if (hasScript) extraParts.push("📜대본");
+              if (hasAns) extraParts.push("🖼️정답표AI");
+              if (hasCsv) extraParts.push("📊정답률");
+              const extra = extraParts.length > 0 ? ` + ${extraParts.join("·")}` : "";
+              batchProgressSubtext.textContent = `📄 PDF 2단 분할 & HWP 교차 검증${extra} 진행 중 (약 10~25초)... (${i + 1}/${sets.length})`;
+            }
           }
-        }
 
-        try {
-          if (set.mode === "csv_only") {
-            // 기존 등록 시험지에 대한 정답률 CSV 단독 일괄 갱신
-            const formData = new FormData();
-            formData.append("file_type", "csv");
-            formData.append("file", set.csvFile);
+          try {
+            if (set.mode === "registered_update" || set.mode === "script_only" || set.mode === "ans_only" || set.mode === "csv_only" || set.mode === "ans_and_csv") {
+              // 기존 등록 시험지에 대한 개별/복합 파일(대본, 정답표, 정답률 CSV) 갱신
+              let allOk = true;
+              const updateSummary = [];
+              const errSummary = [];
 
-            const res = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
-              method: "POST",
-              body: formData
-            });
-            const resData = await res.json();
-            if (!res.ok && statusCell) {
-              statusCell.title = resData.detail || "";
-            }
-            if (res.ok) {
-              successCount++;
-              if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답률 (${resData.updated_count || resData.parsed_count || 0}문항)</span>`
-                  + ((resData.warnings || []).length ? ` <span style="color: #d97706; font-weight: 700;" title="${resData.warnings.join('\n')}">⚠ ${resData.corrections ? Object.keys(resData.corrections).length : 0}건 정정</span>` : "");
+              // (1) 대본 PDF 단독 또는 복합 갱신
+              if (set.scriptFile) {
+                const fdScript = new FormData();
+                fdScript.append("file_type", "script");
+                fdScript.append("file", set.scriptFile);
+                const rScript = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+                  method: "POST",
+                  body: fdScript
+                });
+                const dScript = await rScript.json();
+                if (rScript.ok) {
+                  updateSummary.push(`📜대본(${dScript.synced_count || 17}문항)`);
+                } else {
+                  allOk = false;
+                  errSummary.push(`대본: ${dScript.detail || "실패"}`);
+                }
+              }
+
+              // (2) 정답표 단독 또는 복합 갱신
+              if (set.ansFile) {
+                const fdAns = new FormData();
+                fdAns.append("file_type", "ans");
+                fdAns.append("file", set.ansFile);
+                const rAns = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+                  method: "POST",
+                  body: fdAns
+                });
+                const dAns = await rAns.json();
+                if (rAns.ok) {
+                  updateSummary.push(`🖼️정답(${dAns.extracted_count || 0}문항)`);
+                } else {
+                  allOk = false;
+                  errSummary.push(`정답: ${dAns.detail || "실패"}`);
+                }
+              }
+
+              // (3) 정답률 CSV 단독 또는 복합 갱신
+              if (set.csvFile) {
+                const fdCsv = new FormData();
+                fdCsv.append("file_type", "csv");
+                fdCsv.append("file", set.csvFile);
+                const rCsv = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
+                  method: "POST",
+                  body: fdCsv
+                });
+                const dCsv = await rCsv.json();
+                if (rCsv.ok) {
+                  updateSummary.push(`📊정답률(${dCsv.updated_count || dCsv.parsed_count || 0}문항)`);
+                } else {
+                  allOk = false;
+                  errSummary.push(`정답률: ${dCsv.detail || "실패"}`);
+                }
+              }
+
+              if (allOk && updateSummary.length > 0) {
+                successCount++;
+                if (statusCell) {
+                  statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ ${updateSummary.join("·")} 갱신 완료</span>`;
+                }
+              } else {
+                failCount++;
+                if (statusCell) {
+                  statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;" title="${escapeHtml(errSummary.join(', ') || '처리 실패')}">❌ 실패</span>`;
+                }
               }
             } else {
-              failCount++;
-              if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;">❌ 실패</span>`;
-              }
-            }
-          } else if (set.mode === "ans_and_csv") {
-            // 정답표와 정답률 CSV를 순차적으로 단독 갱신
-            let ok1 = false;
-            let ok2 = false;
-            let cntAns = 0;
-            let cntCsv = 0;
-            if (set.ansFile) {
-              const fdAns = new FormData();
-              fdAns.append("file_type", "ans");
-              fdAns.append("file", set.ansFile);
-              const r1 = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, { method: "POST", body: fdAns });
-              const d1 = await r1.json();
-              if (r1.ok) { ok1 = true; cntAns = d1.extracted_count || 45; }
-            }
-            if (set.csvFile) {
-              const fdCsv = new FormData();
-              fdCsv.append("file_type", "csv");
-              fdCsv.append("file", set.csvFile);
-              const r2 = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, { method: "POST", body: fdCsv });
-              const d2 = await r2.json();
-              if (r2.ok) { ok2 = true; cntCsv = d2.updated_count || 0; }
-            }
-            if (ok1 || ok2) {
-              successCount++;
-              if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답+정답률 (${cntCsv || cntAns}문항)</span>`;
-              }
-            } else {
-              failCount++;
-              if (statusCell) {
-                const errMsg = (d1 && d1.detail) || (d2 && d2.detail) || "처리 실패";
-                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;" title="${escapeHtml(errMsg)}">❌ 실패</span>`;
-              }
-            }
-          } else if (set.mode === "ans_only") {
-            // 기존 등록 시험지에 대한 정답표 단독 일괄 갱신
-            const formData = new FormData();
-            formData.append("file_type", "ans");
-            formData.append("file", set.ansFile);
-
-            const res = await fetch(`/api/exams/${encodeURIComponent(set.exam_id)}/upload-file`, {
-              method: "POST",
-              body: formData
-            });
-            const resData = await res.json();
-            if (res.ok) {
-              successCount++;
-              if (statusCell) {
-                statusCell.innerHTML = `<span style="color: #059669; font-weight: 700;">✅ 정답 갱신 (${resData.extracted_count || 0}문항)</span>`
-                  + ((resData.warnings || []).length ? ` <span style="color: #d97706; font-weight: 700;" title="${resData.warnings.join('\n')}">⚠ ${resData.image_status}</span>` : "");
-              }
-            } else {
-              failCount++;
-              if (statusCell) {
-                const errMsg = resData.detail || "서버 처리 오류";
-                statusCell.innerHTML = `<span style="color: #dc2626; font-weight: 700;" title="${escapeHtml(errMsg)}">❌ 실패</span>`;
-              }
-            }
-          } else {
             // 신규/전체 모의고사 세트 일괄 업로드 파이프라인
             const formData = new FormData();
             formData.append("grade", set.grade);

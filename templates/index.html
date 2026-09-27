@@ -673,7 +673,7 @@
        시험지 업로드 및 DB 관리 모달창 (스마트 일괄 업로드 / 단일 업로드 / 시험지 관리 및 삭제)
        ==================================================================== -->
   <div class="modal-backdrop" id="uploadModal">
-    <div class="modal-content upload-modal-content" style="max-width: 1080px; width: 96%;">
+    <div class="modal-content upload-modal-content" style="max-width: 1480px; width: 96%;">
       <div class="modal-header">
         <div style="flex: 1;">
           <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
@@ -709,15 +709,16 @@
             <div class="dropzone-icon">📁</div>
             <div class="dropzone-title">복수 모의고사 파일들을 이곳에 드래그&드롭하세요</div>
             <div class="dropzone-desc" style="line-height: 1.6; font-size: 0.82rem;">
-              📌 <strong>기본 필수 조합</strong>: <code>고3-[2026-06].pdf</code> (문제지) + <code>고3-[2026-06].hwp</code> (해설지) + <code>고3-[2026-06].json</code> (정답 데이터, 권장)<br>
+              📌 <strong>기본 필수 조합</strong>: <code>고3-[2026-06].pdf</code> (문제지) + <code>고3-[2026-06].hwp</code> (해설지)<br>
               <div style="margin-top: 4px; color: #475569; font-size: 0.78rem;">
+                • <strong>대본/해설 PDF</strong>: <code>고3-[2026-06]_script.pdf</code> 또는 <code>대본.pdf</code> / <code>-A.pdf</code> (듣기 대본 & FELS 자동 동기화, 선택)<br>
                 • <strong>정답표</strong>: <code>.json</code> (1순위 확정 정답, 권장) 또는 <code>-A.png</code> (정답 이미지) 중 1개 등록 시 형광펜 자동 연동<br>
                 • <strong>정답률</strong>: <code>고3-[2026-06].csv</code> (정답률·선택률 통계, 선택 사항)<br>
                 • <strong>출제기관</strong>: 파일명에서 학년·연도·월 자동 추출 (3학년 6·9·11월은 평가원, 그 외는 교육청)
               </div>
             </div>
             <label class="btn btn-secondary btn-sm dropzone-btn" style="cursor: pointer; margin-top: 0.75rem;">
-              📂 파일 선택하기 (PDF & HWP & 정답JSON/이미지 & 정답률CSV 다중 선택)
+              📂 파일 선택하기 (PDF & HWP & 대본PDF & 정답표 & 정답률CSV 다중 선택)
               <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg,.csv,.json" multiple style="display: none;">
             </label>
           </div>
@@ -732,18 +733,20 @@
                 ✕ 목록 비우기
               </button>
             </div>
-            <div class="batch-sets-table-wrapper" style="max-height: 240px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+            <div class="batch-sets-table-wrapper" style="max-height: 480px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
               <table class="batch-sets-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
                 <thead>
                   <tr style="background: #f8fafc; border-bottom: 1px solid var(--border);">
-                    <th style="padding: 8px 12px; white-space: nowrap;">세트 식별자</th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">학년</th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">연도/월</th>
+                    <th style="padding: 8px 12px; white-space: nowrap;">시험지 식별자</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">학년</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">년도</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">월</th>
                     <th style="padding: 8px 10px; white-space: nowrap;">출제기관</th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">PDF 파일</th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">HWP 파일</th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">정답표 (-A)</th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">📊 정답률 (CSV)</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📄 문제지 (PDF)</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📝 해설지 (HWP)</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📜 대본/해설 (PDF)</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">🖼️ 정답표 (JSON / 이미지)</th>
+                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📊 정답률 (CSV)</th>
                     <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">상태</th>
                   </tr>
                 </thead>
@@ -830,6 +833,7 @@
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📜 대본/해설 (PDF)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (JSON / 이미지)</th>
                   <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📊 정답률 (CSV)</th>
+                  <th style="padding: 10px 10px; white-space: nowrap;">📊 코어 본문 / 메타데이터</th>
                   <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">종합 상태</th>
                 </tr>
               </thead>
