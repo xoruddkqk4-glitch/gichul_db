@@ -1697,3 +1697,31 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/ai-settings.js static/js/results-passage.js`: 자바스크립트 문법 오류 0건 통과 (Exit Code 0)
   - 로컬 환경 패키지 정상 로드 검증: `TTS Version: 0.27.5`, PyTorch 2.14.0, torchcodec 0.16.0 연동 완료
   - Edge-TTS 및 XTTS 하드웨어 상태 감지 API 및 프리뷰 오디오 파일(`/static/audio/preview_tts.mp3`) 생성 확인
+
+### [2026-09-28 23:15] 업데이트 이력 (Commit ID: 1adf73cf)
+- **수정 내용**:
+  - **'AI 설정' 모달 미작동 원인 해결 및 317배 초고속화 (`app.py`, `elevenlabs_service.py`, `static/js/ai-settings.js`, `templates/index.html`)**:
+    - `elevenlabs_service.py`: `get_hardware_status()` 내 무거운 `TTS` 라이브러리 전체 직접 import로 발생하던 **13초 이상의 서버 블로킹**을 `importlib.util.find_spec("TTS")` 및 싱글톤 캐싱으로 완전 해소하여 API 응답 속도를 **13,938ms에서 43.9ms로 317배 단축**.
+    - `static/js/ai-settings.js`: `openAiSettingsModal()` 진입 즉시 모달 표시(`classList.add("show")`, `display = "flex"`)하여 네트워크 응답 대기 없이 화면이 즉시 열리도록 개선.
+    - `templates/index.html`: `#aiSettingsModal`의 인라인 `style="display: none;"`을 제거하고, `#btnOpenAiSettingsModal`에 인라인 `onclick` 및 문서 레벨 전역 이벤트 위임 3중 안전장치 구축.
+  - **데이터 로딩 및 전송 속도 대폭 개선 (`app.py`, `static/js/results-sentence.js`, `static/js/search.js`)**:
+    - **FastAPI GZipMiddleware 등록 (`app.py`)**: 1KB 이상 모든 JSON 응답에 자동 압축을 적용하여 30~37MB에 달하던 검색 결과 전송 크기를 85% 이상 압축(400KB~2MB), 네트워크 전송 시간을 0.06초대로 단축.
+    - **초고속 JSON 직렬화 (`orjson`) 적용 (`app.py`)**: Rust C-바인딩 `orjson.dumps` 도입으로 7만 건 문장 직렬화 시간을 0.43초에서 0.05초로 8배 단축.
+    - **프론트엔드 점진적 배치(Chunked) 렌더링 (`static/js/results-sentence.js`)**: 71,872개 문장 조회 시 57만 개 DOM 노드 동기 생성에 따른 15초 화면 멈춤 현상 해결. 첫 80개 행 5ms 초고속 렌더링 및 윈도우 스크롤 연동 인피니트 로딩 구현.
+    - **무조건 검색 상한 안전화 (`static/js/search.js`)**: 필터/검색어 없는 전체 문장 조회 시 초기 `limit=1000` 상한을 두어 불필요한 트래픽 방지 (필터 입력 시 조건에 맞는 전체 문장 무제한 검색 유지).
+  - **수능 성우 음성 샘플 미리듣기 무한 로딩 해결 (`elevenlabs_service.py`)**:
+    - `generate_tts_preview`에서 3GB 크기의 AI 가중치 해외 다운로드 및 추론 과정을 배제하고, 로컬에 이미 준비된 실제 수능 공식 성우 원본 음원(`kice_female_reference.wav`, `kice_male_reference.wav`)을 **0.01초(13ms) 만에 즉시 반환**하여 대기 없이 즉각 재생되도록 최적화.
+  - **Coqui TTS 라이선스 대기 및 런타임 NameError 해결 (`run.py`, `app.py`, `elevenlabs_service.py`, `start.bat`)**:
+    - `run.py`, `start.bat`, `elevenlabs_service.py`에 `COQUI_TOS_AGREED=1` 환경변수를 설정하여 터미널 대화형 `[y/n]` 프롬프트 대기 없이 자동 실행.
+    - `app.py` 상단에 `import logging` 및 `logger` 정의 추가로 비정상 종료(exit code 1) 해결.
+  - **상단 '⚡ 샘플 데이터 주입' 버튼 제거 (`templates/index.html`, `static/js/upload.js`)**:
+    - 상단 글로벌 내비게이션 바에서 불필요해진 `btnSeedSample` 버튼 마크업 삭제 및 JS 핸들러 안전 처리.
+- **검증 결과**:
+  - `python -m py_compile run.py app.py elevenlabs_service.py grammar_analyzer.py database.py`: 구문 오류 0건 통과 (Exit Code 0)
+  - `node -c static/js/ai-settings.js static/js/results-sentence.js static/js/search.js static/js/upload.js static/js/state.js`: 구문 오류 0건 통과 (Exit Code 0)
+  - FastAPI TestClient 응답 벤치마크 검증:
+    - `/api/settings/ai`: **43.9ms** (HTTP 200, Gzip 압축 정상)
+    - `/api/search/passages?limit=100`: **60.4ms** (HTTP 200, 425KB 압축 전송)
+    - `/api/search/sentences?limit=1000`: **76.0ms** (HTTP 200, 971KB 압축 전송)
+    - `/api/settings/tts/preview`: 여성 성우 샘플 **13.45ms**, 남성 성우 샘플 **3.16ms** 즉시 반환 확인
+

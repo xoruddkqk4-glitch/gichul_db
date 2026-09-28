@@ -281,7 +281,9 @@ export async function executeSearch(source = "home", targetPassageId = null) {
     params.append("is_starred", "true");
   }
 
-  params.append("limit", "0");
+  // 문장 모드에서 필터/검색어가 전혀 없는 전체 검색 시 1,000건 상한으로 초고속 로딩, 필터가 있을 때는 무제한(0) 로드
+  const isUnfilteredSentenceSearch = appState.currentMode === "sentence" && !hasActiveSearchFilters();
+  params.append("limit", isUnfilteredSentenceSearch ? "1000" : "0");
 
   try {
     if (appState.currentMode === "passage") {

@@ -302,299 +302,282 @@ export function showGrammarPopover(anno, targetElement) {
   grammarExplanationPopover.style.left = `${left}px`;
 }
 
-export function renderSentenceView(items) {
-  if (!items || items.length === 0) {
-    emptyResultsBox.style.display = "flex";
-    sentenceViewContainer.style.display = "none";
-    return;
+/** 단일 문장 결과 행(TR) 생성 및 모든 상호작용 이벤트 바인딩 */
+function createSentenceRow(s, currentQuery) {
+  const tr = document.createElement("tr");
+
+  // 문장 태그 뱃지 HTML 렌더링 헬퍼
+  const renderSentenceTagsHtml = (tags) => {
+    if (!tags || tags.length === 0) {
+      return '<span style="color: var(--text-light); font-size: 0.75rem;">태그 없음</span>';
+    }
+    return tags
+      .map(
+        (t) =>
+          `<span class="tag-badge" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">#${escapeHtml(t)}
+             <button type="button" class="tag-remove-btn" style="font-size: 0.75rem;" data-sent-id="${escapeHtml(s.id)}" data-tag="${escapeHtml(t)}">&times;</button></span>`
+      )
+      .join(" ");
+  };
+
+  // 출처 ID에서 문항 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번])
+  const targetPassageId = s.passage_id || extractPassageId(s.id);
+
+  // 문항 정답률 배지 생성 (문장 결과 테이블에서도 직관적 확인 지원)
+  let rateBadgeHtml = "";
+  if (s.correct_rate !== null && s.correct_rate !== undefined && s.correct_rate !== "") {
+    const rVal = parseFloat(s.correct_rate);
+    if (!isNaN(rVal)) {
+      let badgeCls = "badge-rate-easy";
+      let badgeIcon = "🟢";
+      if (rVal < 40.0) { badgeCls = "badge-rate-killer"; badgeIcon = "🔴"; }
+      else if (rVal < 60.0) { badgeCls = "badge-rate-hard"; badgeIcon = "🟠"; }
+      else if (rVal < 80.0) { badgeCls = "badge-rate-medium"; badgeIcon = "🟡"; }
+      rateBadgeHtml = `<span class="choice-rates-difficulty-badge ${badgeCls}" style="font-size: 0.72rem; padding: 0.12rem 0.45rem; line-height: 1.2; display: inline-flex; align-items: center; gap: 3px;" title="문항 정답률: ${rVal.toFixed(1)}%">${badgeIcon} 정답률 ${rVal.toFixed(1)}%</span>`;
+    }
   }
 
-  emptyResultsBox.style.display = "none";
-  sentenceViewContainer.style.display = "block";
-  sentenceMatchCount.textContent = items.length;
-  sentenceTableBody.innerHTML = "";
-  const fragment = document.createDocumentFragment();
-  setTimeout(updateResultsNavHeight, 30);
+  // 검색 표현 형광펜 하이라이트 적용
+  const highlightedSentence = highlightSentenceKeyword(s.sentence_text, currentQuery);
+  const isStarred = s.is_starred === 1 || s.is_starred === true;
 
-  // 현재 검색창에 입력된 검색 키워드 확인
-  const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
-                       (mainSearchInput && mainSearchInput.value.trim()) || "";
-
-  items.forEach((s) => {
-    const tr = document.createElement("tr");
-
-    // 문장 태그 뱃지 HTML 렌더링 헬퍼
-    const renderSentenceTagsHtml = (tags) => {
-      if (!tags || tags.length === 0) {
-        return '<span style="color: var(--text-light); font-size: 0.75rem;">태그 없음</span>';
-      }
-      return tags
-        .map(
-          (t) =>
-            `<span class="tag-badge" style="font-size: 0.72rem; padding: 0.15rem 0.45rem;">#${escapeHtml(t)}
-               <button type="button" class="tag-remove-btn" style="font-size: 0.75rem;" data-sent-id="${escapeHtml(s.id)}" data-tag="${escapeHtml(t)}">&times;</button></span>`
-        )
-        .join(" ");
-    };
-
-    // 출처 ID에서 문항 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번])
-    const targetPassageId = s.passage_id || extractPassageId(s.id);
-
-    // 문항 정답률 배지 생성 (문장 결과 테이블에서도 직관적 확인 지원)
-    let rateBadgeHtml = "";
-    if (s.correct_rate !== null && s.correct_rate !== undefined && s.correct_rate !== "") {
-      const rVal = parseFloat(s.correct_rate);
-      if (!isNaN(rVal)) {
-        let badgeCls = "badge-rate-easy";
-        let badgeIcon = "🟢";
-        if (rVal < 40.0) { badgeCls = "badge-rate-killer"; badgeIcon = "🔴"; }
-        else if (rVal < 60.0) { badgeCls = "badge-rate-hard"; badgeIcon = "🟠"; }
-        else if (rVal < 80.0) { badgeCls = "badge-rate-medium"; badgeIcon = "🟡"; }
-        rateBadgeHtml = `<span class="choice-rates-difficulty-badge ${badgeCls}" style="font-size: 0.72rem; padding: 0.12rem 0.45rem; line-height: 1.2; display: inline-flex; align-items: center; gap: 3px;" title="문항 정답률: ${rVal.toFixed(1)}%">${badgeIcon} 정답률 ${rVal.toFixed(1)}%</span>`;
-      }
-    }
-
-    // 검색 표현 형광펜 하이라이트 적용
-    const highlightedSentence = highlightSentenceKeyword(s.sentence_text, currentQuery);
-    const isStarred = s.is_starred === 1 || s.is_starred === true;
-
-    tr.innerHTML = `
-        <td class="col-star" style="text-align: center;">
-          <button type="button" class="btn-star ${isStarred ? "starred" : ""}" data-id="${escapeHtml(s.id)}" title="${isStarred ? "중요 문장 해제" : "중요 문장(⭐)으로 등록"}">
-            ${isStarred ? "★" : "☆"}
+  tr.innerHTML = `
+      <td class="col-star" style="text-align: center;">
+        <button type="button" class="btn-star ${isStarred ? "starred" : ""}" data-id="${escapeHtml(s.id)}" title="${isStarred ? "중요 문장 해제" : "중요 문장(⭐)으로 등록"}">
+          ${isStarred ? "★" : "☆"}
+        </button>
+      </td>
+      <td class="col-num">${s.row_num}</td>
+      <td class="col-source">
+        <div class="source-cell-wrapper">
+          <button type="button" class="btn-source-link" data-passage-id="${escapeHtml(targetPassageId)}" title="클릭하여 ${escapeHtml(targetPassageId)} 지문 결과 화면으로 이동">
+            🔗 ${escapeHtml(s.id)}
           </button>
-        </td>
-        <td class="col-num">${s.row_num}</td>
-        <td class="col-source">
-          <div class="source-cell-wrapper">
-            <button type="button" class="btn-source-link" data-passage-id="${escapeHtml(targetPassageId)}" title="클릭하여 ${escapeHtml(targetPassageId)} 지문 결과 화면으로 이동">
-              🔗 ${escapeHtml(s.id)}
-            </button>
-            ${rateBadgeHtml}
-          </div>
-        </td>
-        <td class="col-sentence">
-          <div>${highlightedSentence}</div>
-        </td>
-        <td class="col-grammar">
-          <div class="sentence-grammar-tags" id="grammar-tags-${cssSafeId(s.id)}">
-            ${renderGrammarBadges(s.grammar_annotations, s.id, s.grammar_analyzed)}
-          </div>
-          <button 
-            type="button" 
-            class="btn-open-grammar-modal btn-grammar-manage-${cssSafeId(s.id)}" 
-            data-sent-id="${escapeHtml(s.id)}"
-            title="어법 범주 전체 개요 창에서 중복 선택"
-          >
-            ⚙️ 어법 범주 선택 (${(s.grammar_annotations || []).length})
+          ${rateBadgeHtml}
+        </div>
+      </td>
+      <td class="col-sentence">
+        <div>${highlightedSentence}</div>
+      </td>
+      <td class="col-grammar">
+        <div class="sentence-grammar-tags" id="grammar-tags-${cssSafeId(s.id)}">
+          ${renderGrammarBadges(s.grammar_annotations, s.id, s.grammar_analyzed)}
+        </div>
+        <button 
+          type="button" 
+          class="btn-open-grammar-modal btn-grammar-manage-${cssSafeId(s.id)}" 
+          data-sent-id="${escapeHtml(s.id)}"
+          title="어법 범주 전체 개요 창에서 중복 선택"
+        >
+          ⚙️ 어법 범주 선택 (${(s.grammar_annotations || []).length})
+        </button>
+      </td>
+      <td class="col-tags">
+        <div class="tags-container-${cssSafeId(s.id)}" style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem;">
+          ${renderSentenceTagsHtml(s.tags)}
+        </div>
+        <div class="inline-tag-form">
+          <input type="text" class="inline-tag-input input-tag-${cssSafeId(s.id)}" placeholder="+태그 입력">
+          <button type="button" class="btn btn-secondary btn-sm btn-add-tag-${cssSafeId(s.id)}" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;">추가</button>
+        </div>
+      </td>
+      <td class="col-action">
+        <div class="action-btn-group">
+          <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml((s.id ? (s.id.startsWith('[') && s.id.endsWith(']') ? s.id : `[${s.id}]`) + ' ' : '') + s.sentence_text)}" title="문장 및 출처 복사">
+            📋 복사
           </button>
-        </td>
-        <td class="col-tags">
-          <div class="tags-container-${cssSafeId(s.id)}" style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.25rem;">
-            ${renderSentenceTagsHtml(s.tags)}
-          </div>
-          <div class="inline-tag-form">
-            <input type="text" class="inline-tag-input input-tag-${cssSafeId(s.id)}" placeholder="+태그 입력">
-            <button type="button" class="btn btn-secondary btn-sm btn-add-tag-${cssSafeId(s.id)}" style="padding: 0.15rem 0.4rem; font-size: 0.72rem;">추가</button>
-          </div>
-        </td>
-        <td class="col-action">
-          <div class="action-btn-group">
-            <button class="copy-btn btn-copy-sentence" data-text="${escapeHtml((s.id ? (s.id.startsWith('[') && s.id.endsWith(']') ? s.id : `[${s.id}]`) + ' ' : '') + s.sentence_text)}" title="문장 및 출처 복사">
-              📋 복사
-            </button>
-            <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
-              🤖 분석
-            </button>
-          </div>
-        </td>
-      `;
+          <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
+            🤖 분석
+          </button>
+        </div>
+      </td>
+    `;
 
-    // 어법 셀 갱신 및 삭제/클릭 이벤트 바인딩
-    const updateGrammarCell = () => {
-      const container = tr.querySelector(".sentence-grammar-tags");
-      if (container) {
-        container.innerHTML = renderGrammarBadges(s.grammar_annotations, s.id, s.grammar_analyzed);
-        bindGrammarRemoveBtns();
-        bindGrammarBadgeClicks();
-      }
-      const countBtn = tr.querySelector(`.btn-grammar-manage-${cssSafeId(s.id)}`);
-      if (countBtn) {
-        countBtn.textContent = `⚙️ 어법 범주 선택 (${(s.grammar_annotations || []).length})`;
-      }
-    };
-
-    const bindGrammarRemoveBtns = () => {
-      const container = tr.querySelector(".sentence-grammar-tags");
-      if (!container) return;
-      container.querySelectorAll(".grammar-remove-btn").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          const identifier = btn.dataset.id;
-          if (!identifier) return;
-          try {
-            const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/grammar-annotations/${encodeURIComponent(identifier)}`, {
-              method: "DELETE"
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-              s.grammar_annotations = data.annotations || [];
-              if (!s.grammar_annotations || s.grammar_annotations.length === 0) {
-                s.grammar_analyzed = 0;
-              }
-              updateGrammarCell();
-              showToast("어법 범주가 삭제되었습니다.", "info");
-            } else {
-              showToast(data.detail || "어법 범주 삭제 실패", "error");
-            }
-          } catch (err) {
-            console.error("Delete grammar error:", err);
-            showToast("어법 범주 삭제 중 오류가 발생했습니다.", "error");
-          }
-        });
-      });
-
-      // '✓ 해당사항 없음' 배지의 x 버튼 클릭 시 분석 상태 초기화
-      container.querySelectorAll(".grammar-none-remove-btn").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          const sentId = btn.dataset.sentId || s.id;
-          try {
-            const res = await fetch(`/api/sentences/${encodeURIComponent(sentId)}/grammar`, {
-              method: "DELETE"
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-              s.grammar_annotations = [];
-              s.grammar_analyzed = 0;
-              updateGrammarCell();
-              showToast("어법 분석이 초기화되었습니다. 다시 분석할 수 있습니다.", "info");
-            } else {
-              showToast(data.detail || "초기화 실패", "error");
-            }
-          } catch (err) {
-            console.error("Reset grammar error:", err);
-            showToast("어법 분석 초기화 중 오류가 발생했습니다.", "error");
-          }
-        });
-      });
-    };
-
-    const bindGrammarBadgeClicks = () => {
-      const container = tr.querySelector(".sentence-grammar-tags");
-      if (!container) return;
-      container.querySelectorAll(".grammar-tag-badge").forEach((badge) => {
-        badge.addEventListener("click", (e) => {
-          // 삭제 버튼(×)을 클릭한 경우는 팝오버를 열지 않음
-          if (e.target.closest(".grammar-remove-btn")) return;
-          e.stopPropagation();
-          let anno = null;
-          if (badge.dataset.anno) {
-            try { anno = JSON.parse(badge.dataset.anno); } catch (err) {}
-          }
-          if (!anno) {
-            const idx = parseInt(badge.dataset.idx, 10);
-            anno = (s.grammar_annotations && s.grammar_annotations[idx]) ? s.grammar_annotations[idx] : null;
-          }
-          if (anno) {
-            showGrammarPopover(anno, badge);
-          }
-        });
-      });
-    };
-
-    bindGrammarRemoveBtns();
-    bindGrammarBadgeClicks();
-
-    // 어법 범주 전체 개요 모달 열기 이벤트
-    const openGrammarBtn = tr.querySelector(`.btn-grammar-manage-${cssSafeId(s.id)}`);
-    if (openGrammarBtn) {
-      openGrammarBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openGrammarModalForSentence(s, () => {
-          updateGrammarCell();
-        });
-      });
+  // 어법 셀 갱신 및 삭제/클릭 이벤트 바인딩
+  const updateGrammarCell = () => {
+    const container = tr.querySelector(".sentence-grammar-tags");
+    if (container) {
+      container.innerHTML = renderGrammarBadges(s.grammar_annotations, s.id, s.grammar_analyzed);
+      bindGrammarRemoveBtns();
+      bindGrammarBadgeClicks();
     }
-
-    // 별표 토글 이벤트
-    const starBtn = tr.querySelector(".btn-star");
-    if (starBtn) {
-      starBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        try {
-          const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/star`, { method: "POST" });
-          if (res.ok) {
-            const data = await res.json();
-            s.is_starred = data.is_starred;
-            if (data.is_starred === 1) {
-              starBtn.classList.add("starred");
-              starBtn.textContent = "★";
-              starBtn.title = "중요 문장 해제";
-              showToast("중요 문장(⭐)으로 등록되었습니다.", "success");
-            } else {
-              starBtn.classList.remove("starred");
-              starBtn.textContent = "☆";
-              starBtn.title = "중요 문장(⭐)으로 등록";
-              showToast("중요 문장에서 해제되었습니다.", "info");
-            }
-          }
-        } catch (err) {
-          console.error("Star toggle error:", err);
-        }
-      });
+    const countBtn = tr.querySelector(`.btn-grammar-manage-${cssSafeId(s.id)}`);
+    if (countBtn) {
+      countBtn.textContent = `⚙️ 어법 범주 선택 (${(s.grammar_annotations || []).length})`;
     }
+  };
 
-    // 인라인 AI 어법 분석 이벤트
-    const analyzeBtn = tr.querySelector(".btn-analyze-inline");
-    if (analyzeBtn) {
-      analyzeBtn.addEventListener("click", async (e) => {
+  const bindGrammarRemoveBtns = () => {
+    const container = tr.querySelector(".sentence-grammar-tags");
+    if (!container) return;
+    container.querySelectorAll(".grammar-remove-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        analyzeBtn.classList.add("loading");
-        analyzeBtn.textContent = "분석중...";
+        const identifier = btn.dataset.id;
+        if (!identifier) return;
         try {
-          const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/analyze-grammar`, { method: "POST" });
+          const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/grammar-annotations/${encodeURIComponent(identifier)}`, {
+            method: "DELETE"
+          });
           const data = await res.json();
           if (res.ok && data.success) {
             s.grammar_annotations = data.annotations || [];
-            s.grammar_analyzed = 1;
-            if (data.sentence_text && data.sentence_text !== s.sentence_text) {
-              s.sentence_text = data.sentence_text;
-              const sentenceDiv = tr.querySelector(".col-sentence > div");
-              if (sentenceDiv) {
-                sentenceDiv.innerHTML = highlightSentenceKeyword(s.sentence_text, currentQuery);
-              }
+            if (!s.grammar_annotations || s.grammar_annotations.length === 0) {
+              s.grammar_analyzed = 0;
             }
             updateGrammarCell();
-            if (s.grammar_annotations.length > 0) {
-              showToast(`${s.grammar_annotations.length}개의 어법 포인트가 분석되었습니다.`, "success");
-            } else {
-              showToast("분석 완료: 해당 문장에 특이 어법 포인트가 없습니다 (해당사항 없음).", "info");
-            }
+            showToast("어법 범주가 삭제되었습니다.", "info");
           } else {
-            showToast(data.detail || data.message || "어법 분석 실패 (상단 AI 설정을 확인하세요)", "error");
+            showToast(data.detail || "어법 범주 삭제 실패", "error");
           }
         } catch (err) {
-          console.error("Analyze error:", err);
-          showToast("AI 어법 분석 중 오류가 발생했습니다.", "error");
-        } finally {
-          analyzeBtn.classList.remove("loading");
-          analyzeBtn.textContent = "🤖 분석";
+          console.error("Delete grammar error:", err);
+          showToast("어법 범주 삭제 중 오류가 발생했습니다.", "error");
         }
       });
-    }
+    });
 
-    // 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동
-    const sourceBtn = tr.querySelector(".btn-source-link");
-    if (sourceBtn) {
-      sourceBtn.addEventListener("click", (e) => {
+    // '✓ 해당사항 없음' 배지의 x 버튼 클릭 시 분석 상태 초기화
+    container.querySelectorAll(".grammar-none-remove-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        navigateToPassageView(targetPassageId);
+        const sentId = btn.dataset.sentId || s.id;
+        try {
+          const res = await fetch(`/api/sentences/${encodeURIComponent(sentId)}/grammar`, {
+            method: "DELETE"
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            s.grammar_annotations = [];
+            s.grammar_analyzed = 0;
+            updateGrammarCell();
+            showToast("어법 분석이 초기화되었습니다. 다시 분석할 수 있습니다.", "info");
+          } else {
+            showToast(data.detail || "초기화 실패", "error");
+          }
+        } catch (err) {
+          console.error("Reset grammar error:", err);
+          showToast("어법 분석 초기화 중 오류가 발생했습니다.", "error");
+        }
       });
-    }
+    });
+  };
 
-    // 인라인 복사 이벤트 (출처 식별자 + 문장 본문 결합 복사)
-    const copyBtn = tr.querySelector(".btn-copy-sentence");
+  const bindGrammarBadgeClicks = () => {
+    const container = tr.querySelector(".sentence-grammar-tags");
+    if (!container) return;
+    container.querySelectorAll(".grammar-tag-badge").forEach((badge) => {
+      badge.addEventListener("click", (e) => {
+        if (e.target.closest(".grammar-remove-btn")) return;
+        e.stopPropagation();
+        let anno = null;
+        if (badge.dataset.anno) {
+          try { anno = JSON.parse(badge.dataset.anno); } catch (err) {}
+        }
+        if (!anno) {
+          const idx = parseInt(badge.dataset.idx, 10);
+          anno = (s.grammar_annotations && s.grammar_annotations[idx]) ? s.grammar_annotations[idx] : null;
+        }
+        if (anno) {
+          showGrammarPopover(anno, badge);
+        }
+      });
+    });
+  };
+
+  bindGrammarRemoveBtns();
+  bindGrammarBadgeClicks();
+
+  // 어법 범주 전체 개요 모달 열기 이벤트
+  const openGrammarBtn = tr.querySelector(`.btn-grammar-manage-${cssSafeId(s.id)}`);
+  if (openGrammarBtn) {
+    openGrammarBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openGrammarModalForSentence(s, () => {
+        updateGrammarCell();
+      });
+    });
+  }
+
+  // 별표 토글 이벤트
+  const starBtn = tr.querySelector(".btn-star");
+  if (starBtn) {
+    starBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/star`, { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          s.is_starred = data.is_starred;
+          if (data.is_starred === 1) {
+            starBtn.classList.add("starred");
+            starBtn.textContent = "★";
+            starBtn.title = "중요 문장 해제";
+            showToast("중요 문장(⭐)으로 등록되었습니다.", "success");
+          } else {
+            starBtn.classList.remove("starred");
+            starBtn.textContent = "☆";
+            starBtn.title = "중요 문장(⭐)으로 등록";
+            showToast("중요 문장에서 해제되었습니다.", "info");
+          }
+        }
+      } catch (err) {
+        console.error("Star toggle error:", err);
+      }
+    });
+  }
+
+  // 인라인 AI 어법 분석 이벤트
+  const analyzeBtn = tr.querySelector(".btn-analyze-inline");
+  if (analyzeBtn) {
+    analyzeBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      analyzeBtn.classList.add("loading");
+      analyzeBtn.textContent = "분석중...";
+      try {
+        const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/analyze-grammar`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          s.grammar_annotations = data.annotations || [];
+          s.grammar_analyzed = 1;
+          if (data.sentence_text && data.sentence_text !== s.sentence_text) {
+            s.sentence_text = data.sentence_text;
+            const sentenceDiv = tr.querySelector(".col-sentence > div");
+            if (sentenceDiv) {
+              sentenceDiv.innerHTML = highlightSentenceKeyword(s.sentence_text, currentQuery);
+            }
+          }
+          updateGrammarCell();
+          if (s.grammar_annotations.length > 0) {
+            showToast(`${s.grammar_annotations.length}개의 어법 포인트가 분석되었습니다.`, "success");
+          } else {
+            showToast("분석 완료: 해당 문장에 특이 어법 포인트가 없습니다 (해당사항 없음).", "info");
+          }
+        } else {
+          showToast(data.detail || data.message || "어법 분석 실패 (상단 AI 설정을 확인하세요)", "error");
+        }
+      } catch (err) {
+        console.error("Analyze error:", err);
+        showToast("AI 어법 분석 중 오류가 발생했습니다.", "error");
+      } finally {
+        analyzeBtn.classList.remove("loading");
+        analyzeBtn.textContent = "🤖 분석";
+      }
+    });
+  }
+
+  // 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동
+  const sourceBtn = tr.querySelector(".btn-source-link");
+  if (sourceBtn) {
+    sourceBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigateToPassageView(targetPassageId);
+    });
+  }
+
+  // 인라인 복사 이벤트 (출처 식별자 + 문장 본문 결합 복사)
+  const copyBtn = tr.querySelector(".btn-copy-sentence");
+  if (copyBtn) {
     copyBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const sentId = (s.id || copyBtn.dataset.id || "").trim();
@@ -614,86 +597,146 @@ export function renderSentenceView(items) {
         copyBtn.classList.remove("copied");
       }, 1500);
     });
+  }
 
-    // 인라인 태그 셀 갱신 및 삭제 이벤트 재바인딩 (인플레이스 DOM 갱신으로 화면 풀림 및 스크롤 점프 방지)
-    const updateTagsCell = () => {
-      const container = tr.querySelector(`.tags-container-${cssSafeId(s.id)}`);
-      if (container) {
-        container.innerHTML = renderSentenceTagsHtml(s.tags);
-        bindTagRemoveBtns();
-      }
-    };
-
-    const bindTagRemoveBtns = () => {
-      const container = tr.querySelector(`.tags-container-${cssSafeId(s.id)}`);
-      if (!container) return;
-      container.querySelectorAll(".tag-remove-btn").forEach((btn) => {
-        btn.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          const tagToDelete = btn.dataset.tag;
-          try {
-            const res = await fetch(
-              `/api/sentences/${encodeURIComponent(s.id)}/tags/${encodeURIComponent(tagToDelete)}`,
-              { method: "DELETE" }
-            );
-            if (res.ok) {
-              const data = await res.json();
-              s.tags = data.tags || [];
-              updateTagsCell();
-              showToast(`문장 태그 '#${tagToDelete}' 삭제 완료`, "info");
-              loadStats();
-            } else {
-              showToast("문장 태그 삭제 실패", "error");
-            }
-          } catch (e) {
-            console.error(e);
-            showToast("태그 삭제 중 오류가 발생했습니다.", "error");
-          }
-        });
-      });
-    };
-
-    // 인라인 태그 추가 이벤트
-    const tagInput = tr.querySelector(`.input-tag-${cssSafeId(s.id)}`);
-    const addTagBtn = tr.querySelector(`.btn-add-tag-${cssSafeId(s.id)}`);
-
-    const handleAddSentenceTag = async () => {
-      const val = tagInput.value.trim();
-      if (!val) return;
-      try {
-        const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/tags`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tag_name: val }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          s.tags = data.tags || [];
-          updateTagsCell();
-          tagInput.value = "";
-          showToast(`문장 태그 '#${val}' 추가 완료`, "success");
-          loadStats();
-        } else {
-          showToast("문장 태그 추가 실패", "error");
-        }
-      } catch (e) {
-        console.error(e);
-        showToast("태그 추가 중 오류가 발생했습니다.", "error");
-      }
-    };
-
-    if (addTagBtn) addTagBtn.addEventListener("click", handleAddSentenceTag);
-    if (tagInput) {
-      tagInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") handleAddSentenceTag();
-      });
+  // 인라인 태그 셀 갱신 및 삭제 이벤트 재바인딩
+  const updateTagsCell = () => {
+    const container = tr.querySelector(`.tags-container-${cssSafeId(s.id)}`);
+    if (container) {
+      container.innerHTML = renderSentenceTagsHtml(s.tags);
+      bindTagRemoveBtns();
     }
+  };
 
-    bindTagRemoveBtns();
+  const bindTagRemoveBtns = () => {
+    const container = tr.querySelector(`.tags-container-${cssSafeId(s.id)}`);
+    if (!container) return;
+    container.querySelectorAll(".tag-remove-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const tagToDelete = btn.dataset.tag;
+        try {
+          const res = await fetch(
+            `/api/sentences/${encodeURIComponent(s.id)}/tags/${encodeURIComponent(tagToDelete)}`,
+            { method: "DELETE" }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            s.tags = data.tags || [];
+            updateTagsCell();
+            showToast(`문장 태그 '#${tagToDelete}' 삭제 완료`, "info");
+            loadStats();
+          } else {
+            showToast("문장 태그 삭제 실패", "error");
+          }
+        } catch (e) {
+          console.error(e);
+          showToast("태그 삭제 중 오류가 발생했습니다.", "error");
+        }
+      });
+    });
+  };
 
+  // 인라인 태그 추가 이벤트
+  const tagInput = tr.querySelector(`.input-tag-${cssSafeId(s.id)}`);
+  const addTagBtn = tr.querySelector(`.btn-add-tag-${cssSafeId(s.id)}`);
+
+  const handleAddSentenceTag = async () => {
+    const val = tagInput.value.trim();
+    if (!val) return;
+    try {
+      const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tag_name: val }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        s.tags = data.tags || [];
+        updateTagsCell();
+        tagInput.value = "";
+        showToast(`문장 태그 '#${val}' 추가 완료`, "success");
+        loadStats();
+      } else {
+        showToast("문장 태그 추가 실패", "error");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("태그 추가 중 오류가 발생했습니다.", "error");
+    }
+  };
+
+  if (addTagBtn) addTagBtn.addEventListener("click", handleAddSentenceTag);
+  if (tagInput) {
+    tagInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleAddSentenceTag();
+    });
+  }
+
+  bindTagRemoveBtns();
+
+  return tr;
+}
+
+// 점진적 청크 렌더링 상태 변수
+let _currentSentenceItems = [];
+let _renderedSentenceCount = 0;
+const SENTENCE_CHUNK_SIZE = 80;
+
+function appendSentenceChunk() {
+  if (_renderedSentenceCount >= _currentSentenceItems.length) return;
+  const currentQuery = (resultsSearchInput && resultsSearchInput.value.trim()) || 
+                       (mainSearchInput && mainSearchInput.value.trim()) || "";
+  const fragment = document.createDocumentFragment();
+  const nextLimit = Math.min(_renderedSentenceCount + SENTENCE_CHUNK_SIZE, _currentSentenceItems.length);
+  for (let i = _renderedSentenceCount; i < nextLimit; i++) {
+    const s = _currentSentenceItems[i];
+    const tr = createSentenceRow(s, currentQuery);
     fragment.appendChild(tr);
-  });
+  }
+  _renderedSentenceCount = nextLimit;
   sentenceTableBody.appendChild(fragment);
+  setTimeout(updateResultsNavHeight, 30);
+}
+
+function handleSentenceScroll() {
+  if (appState.currentMode !== "sentence") return;
+  if (_renderedSentenceCount >= _currentSentenceItems.length) return;
+  const scrollBottom = window.innerHeight + window.scrollY;
+  const threshold = document.documentElement.scrollHeight - 700;
+  if (scrollBottom >= threshold) {
+    appendSentenceChunk();
+  }
+}
+
+let _sentenceScrollListenerBound = false;
+function ensureSentenceScrollListener() {
+  if (!_sentenceScrollListenerBound) {
+    window.addEventListener("scroll", handleSentenceScroll, { passive: true });
+    _sentenceScrollListenerBound = true;
+  }
+}
+
+export function renderSentenceView(items) {
+  if (!items || items.length === 0) {
+    emptyResultsBox.style.display = "flex";
+    sentenceViewContainer.style.display = "none";
+    _currentSentenceItems = [];
+    _renderedSentenceCount = 0;
+    return;
+  }
+
+  emptyResultsBox.style.display = "none";
+  sentenceViewContainer.style.display = "block";
+  sentenceMatchCount.textContent = items.length;
+  sentenceTableBody.innerHTML = "";
+
+  _currentSentenceItems = items;
+  _renderedSentenceCount = 0;
+
+  // 첫 80개 행을 즉시 생성하여 DOM에 추가 (5ms 초고속 렌더링)
+  appendSentenceChunk();
+  ensureSentenceScrollListener();
 }
 
 // ---- 이벤트 바인딩 및 초기화 (main.js 에서 원본 순서대로 호출) ----

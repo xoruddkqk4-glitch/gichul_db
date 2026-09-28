@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gichul DB — 수능·모의고사 영어 기출 데이터베이스</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260928_0950">
+  <link rel="stylesheet" href="/static/css/style.css?v=20260928_2255">
 </head>
 <body>
 
@@ -30,10 +30,7 @@
           📝 해당 지문의 전체 문장
         </button>
       </div>
-      <button class="btn btn-secondary btn-sm" id="btnSeedSample" title="대표 기출 샘플 3지문 즉시 주입">
-        ⚡ 샘플 데이터 주입
-      </button>
-      <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal" title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
+      <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal" onclick="window.__openAiSettingsModal && window.__openAiSettingsModal()" title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
         🔑 AI 설정
       </button>
       <button class="btn btn-primary btn-sm" id="btnOpenUploadModal">
@@ -1239,7 +1236,7 @@
   <!-- ====================================================================
        AI 설정 모달창 (Multi-LLM: Gemini / ChatGPT / Claude / OpenRouter)
        ==================================================================== -->
-  <div class="modal-backdrop" id="aiSettingsModal" style="display: none;">
+  <div class="modal-backdrop" id="aiSettingsModal">
     <div class="modal-content ai-settings-modal-content" style="max-width: 1260px; width: 95vw;">
       <div class="modal-header">
         <div style="flex: 1;">
@@ -1956,6 +1953,6 @@
     </div>
   </div>
 
-  <script type="module" src="/static/js/main.js?v=20260927_1415"></script>
+  <script type="module" src="/static/js/main.js?v=20260928_2255"></script>
 </body>
 </html>

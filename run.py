@@ -4,8 +4,10 @@
 - 로컬 웹서버 (http://127.0.0.1:8000) 구동
 """
 
-import uvicorn
 import os
+os.environ["COQUI_TOS_AGREED"] = "1"
+
+import uvicorn
 import webbrowser
 import threading
 import time

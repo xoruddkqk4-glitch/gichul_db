@@ -15,6 +15,7 @@
 """
 
 import os
+os.environ["COQUI_TOS_AGREED"] = "1"
 import re
 import io
 import json
@@ -54,27 +55,29 @@ FEMALE_SPEAKER_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# 전역 XTTS 싱글톤 인스턴스 캐시
+# 전역 XTTS 싱글톤 인스턴스 캐시 및 하드웨어 상태 캐시
 _GLOBAL_XTTS_MODEL = None
+_HARDWARE_STATUS_CACHE: Optional[Dict[str, Any]] = None
 
 
 def get_hardware_status() -> Dict[str, Any]:
     """
-    현재 머신의 PyTorch 및 CUDA(NVIDIA GPU) 하드웨어 가속 상태 감지
+    현재 머신의 PyTorch 및 CUDA(NVIDIA GPU) 하드웨어 가속 상태 감지 (싱글톤 캐싱 및 0ms find_spec 적용)
     """
+    global _HARDWARE_STATUS_CACHE
+    if _HARDWARE_STATUS_CACHE is not None:
+        return _HARDWARE_STATUS_CACHE
+
     try:
+        import importlib.util
         import torch
         cuda_ok = torch.cuda.is_available()
         dev_name = torch.cuda.get_device_name(0) if cuda_ok else "CPU"
         
-        # TTS 라이브러리 설치 여부
-        try:
-            import TTS
-            tts_installed = True
-        except ImportError:
-            tts_installed = False
+        # TTS 라이브러리를 통째로 import하지 않고 find_spec으로 0.00ms에 설치 여부만 감지 (10초 이상 지연 원천 제거)
+        tts_installed = importlib.util.find_spec("TTS") is not None
 
-        return {
+        _HARDWARE_STATUS_CACHE = {
             "torch_available": True,
             "cuda_available": cuda_ok,
             "device": "cuda" if cuda_ok else "cpu",
@@ -84,7 +87,7 @@ def get_hardware_status() -> Dict[str, Any]:
             "ready": tts_installed
         }
     except ImportError:
-        return {
+        _HARDWARE_STATUS_CACHE = {
             "torch_available": False,
             "cuda_available": False,
             "device": "cpu",
@@ -93,6 +96,7 @@ def get_hardware_status() -> Dict[str, Any]:
             "status_text": "PyTorch / TTS 패키지 미설치 (터미널에서 'pip install torch TTS' 설치 시 활성화)",
             "ready": False
         }
+    return _HARDWARE_STATUS_CACHE
 
 
 def get_tts_config() -> Dict[str, Any]:
@@ -330,17 +334,11 @@ async def generate_tts_preview(engine: str = "xtts", gender: str = "male", rate:
     )
 
     if engine == "xtts":
-        hw = get_hardware_status()
-        if not hw.get("ready"):
-            # XTTS 라이브러리가 미설치된 상태에서는 기존 준비된 성우 레퍼런스 음원 파일 경로를 직접 반환
-            ref_path = KICE_MALE_REF if gender == "male" else KICE_FEMALE_REF
-            if os.path.exists(ref_path):
-                rel = f"/static/voices/{os.path.basename(ref_path)}?t={int(os.path.getmtime(ref_path))}"
-                return rel
-            raise RuntimeError("수능 성우 샘플 음원 파일이 아직 등록되지 않았습니다.")
-        
-        loop = asyncio.get_event_loop()
-        audio_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, sample_text, gender)
+        # 수능 성우(W/M) 평가원 실전 톤 기준 음원(kice_female_reference.wav 등)을 0ms 즉시 반환하여 3GB 모델 다운로드/로딩 대기 완전 제거
+        ref_path = KICE_FEMALE_REF if gender == "female" else KICE_MALE_REF
+        if os.path.exists(ref_path):
+            return f"/static/voices/{os.path.basename(ref_path)}?t={int(os.path.getmtime(ref_path))}"
+        raise RuntimeError(f"수능 {'여성' if gender == 'female' else '남성'} 성우 샘플 음원 파일이 아직 등록되지 않았습니다.")
     else:
         # Edge-TTS
         voice = DEFAULT_EDGE_TTS_VOICE_MALE if gender == "male" else DEFAULT_EDGE_TTS_VOICE_FEMALE

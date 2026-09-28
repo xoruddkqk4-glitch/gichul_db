@@ -31,5 +31,5 @@ export const appState = {
     { key: "month", order: "desc" },
     { key: "grade", order: "asc" }
   ],
-  ttsEngine: "edge-tts", // 'edge-tts' 또는 'elevenlabs'
+  ttsEngine: "xtts", // 'xtts' (수능 성우 복제 기본값) 또는 'edge-tts'
 };

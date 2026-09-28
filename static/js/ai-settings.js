@@ -470,6 +470,14 @@ export async function refreshAiStatusIndicator() {
     if (res.ok) {
       const data = await res.json();
       updateAiHeaderButton(data);
+      // 서버 DB에 설정된 실제 TTS 엔진(xtts 또는 edge-tts)을 프론트엔드 상태에 실시간 동기화 (하드코딩 방지)
+      if (data.tts && data.tts.engine) {
+        appState.ttsEngine = data.tts.engine;
+        const badgeTopRight = document.getElementById("badgeTopRightSource");
+        if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData[appState.currentPassageIndex]?.area === "listening"))) {
+          badgeTopRight.textContent = (data.tts.engine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
+        }
+      }
       return data;
     }
   } catch (e) {
@@ -534,7 +542,10 @@ function updateAiModalSelectionSummary() {
 }
 
 async function openAiSettingsModal() {
-  if (!aiSettingsModal) return;
+  if (aiSettingsModal) {
+    aiSettingsModal.classList.add("show");
+    aiSettingsModal.style.display = "flex";
+  }
   const statusDiv = document.getElementById("aiSettingsStatus");
   if (statusDiv) statusDiv.style.display = "none";
 
@@ -717,7 +728,10 @@ async function loadTtsHardwareStatus() {
 }
 
 function closeAiSettingsModal() {
-  if (aiSettingsModal) aiSettingsModal.style.display = "none";
+  if (aiSettingsModal) {
+    aiSettingsModal.classList.remove("show");
+    aiSettingsModal.style.display = "none";
+  }
   ALL_PROVIDERS.forEach((p) => {
     const keyInput = document.getElementById(`keyInput${capitalize(p)}`);
     if (keyInput) keyInput.value = "";
@@ -1278,3 +1292,15 @@ export function init() {
     btnPreviewFemale.addEventListener("click", () => handleEdgeTtsPreview("female"));
   }
 }
+
+// 전역 노출 및 이벤트 위임 바인딩 (인라인 onclick 및 동적 DOM 교체 시 100% 작동 보장)
+window.__openAiSettingsModal = openAiSettingsModal;
+window.__closeAiSettingsModal = closeAiSettingsModal;
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("#btnOpenAiSettingsModal");
+  if (btn) {
+    e.preventDefault();
+    openAiSettingsModal();
+  }
+});

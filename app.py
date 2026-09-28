@@ -17,9 +17,21 @@ from urllib.parse import quote
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+import logging
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
+
+logger = logging.getLogger("gichul_db")
+os.environ["COQUI_TOS_AGREED"] = "1"
+
+try:
+    import orjson
+    def fast_json_dumps(obj: Any) -> bytes:
+        return orjson.dumps(obj)
+except ImportError:
+    def fast_json_dumps(obj: Any) -> bytes:
+        return json.dumps(obj, ensure_ascii=False).encode("utf-8")
 
 import database as db
 import grammar_analyzer
@@ -44,6 +56,9 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)")
+
+# GZip 압축 미들웨어 등록 (1KB 이상의 모든 JSON/텍스트 응답을 80~90% 초고속 압축하여 전송 지연 해결)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # 정적 파일 마운트 (/static -> static/)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -298,7 +313,7 @@ async def api_search_passages(
         whole_word=whole_word,
         limit=limit
     )
-    payload = json.dumps({"count": len(results), "items": results}, ensure_ascii=False)
+    payload = fast_json_dumps({"count": len(results), "items": results})
     return Response(content=payload, media_type="application/json")
 
 
@@ -354,7 +369,7 @@ async def api_search_sentences(
         whole_word=whole_word,
         limit=limit
     )
-    payload = json.dumps({"count": len(results), "items": results}, ensure_ascii=False)
+    payload = fast_json_dumps({"count": len(results), "items": results})
     return Response(content=payload, media_type="application/json")
 
 

@@ -10,7 +10,7 @@ echo.
 echo [1/4] Python 확인 중...
 python --version > nul 2>&1
 if %errorlevel% neq 0 (
-    echo [오류] Python이 설치되어 있지 않거나 환경 변수(PATH)에 등록되지 않았습니다.
+    echo [오류] Python이 설치되어 있지 않거나 환경 변수 PATH에 등록되지 않았습니다.
     echo Python 3.10 또는 3.11을 먼저 설치해 주세요.
     pause
     exit /b
@@ -32,7 +32,7 @@ echo.
 
 echo [4/4] 수능 성우 복제 XTTS-v2 패키지 설치 중...
 if exist "dist" (
-    echo 미리 준비된 dist 폴더의 패키지들로 초고속 설치를 진행합니다 (C++ 컴파일 불필요).
+    echo 미리 준비된 dist 폴더의 패키지들로 초고속 설치를 진행합니다 [C++ 컴파일 불필요].
     pip install --find-links=dist coqui-tts torchcodec
 ) else (
     echo dist 폴더가 없어 인터넷에서 직접 설치를 시도합니다...

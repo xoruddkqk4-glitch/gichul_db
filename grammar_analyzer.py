@@ -334,7 +334,7 @@ def get_available_lmstudio_models(base_url: str = "") -> List[str]:
             headers={"Content-Type": "application/json"},
             method="GET"
         )
-        with urllib.request.urlopen(req, timeout=4) as resp:
+        with urllib.request.urlopen(req, timeout=1.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             models = []
             for item in data.get("data", []):

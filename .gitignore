@@ -21,3 +21,7 @@ scratch/
 
 # Answer-key intermediate transcription passes (final keys in data/answer_keys/*.json are tracked)
 data/answer_keys/_pass*/
+
+# Generated Audio
+static/audio/*.mp3
+static/audio/*.zip

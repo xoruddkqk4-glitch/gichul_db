@@ -10,6 +10,7 @@ echo  - 서버를 종료하려면 이 창에서 Ctrl + C 를 누르거나 창을
 echo =====================================================================
 echo.
 
+set COQUI_TOS_AGREED=1
 python run.py
 
 if %errorlevel% neq 0 (

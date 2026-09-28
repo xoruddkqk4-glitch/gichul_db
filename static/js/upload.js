@@ -1596,25 +1596,26 @@ export function init() {
     });
   }
 
-  btnSeedSample.addEventListener("click", async () => {
-    btnSeedSample.disabled = true;
-    btnSeedSample.textContent = "주입 중...";
-    try {
-      const res = await fetch("/api/seed-sample-data", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        showToast(data.message, "success");
-        loadStats();
-        // 검색 자동 실행
-        mainSearchInput.value = "";
-        executeSearch("home");
+  if (btnSeedSample) {
+    btnSeedSample.addEventListener("click", async () => {
+      btnSeedSample.disabled = true;
+      btnSeedSample.textContent = "주입 중...";
+      try {
+        const res = await fetch("/api/seed-sample-data", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(data.message, "success");
+          loadStats();
+          mainSearchInput.value = "";
+          executeSearch("home");
+        }
+      } catch (e) {
+        console.error(e);
+        showToast("샘플 주입 실패", "error");
+      } finally {
+        btnSeedSample.disabled = false;
+        btnSeedSample.textContent = "⚡ 샘플 데이터 주입";
       }
-    } catch (e) {
-      console.error(e);
-      showToast("샘플 주입 실패", "error");
-    } finally {
-      btnSeedSample.disabled = false;
-      btnSeedSample.textContent = "⚡ 샘플 데이터 주입";
-    }
-  });
+    });
+  }
 }
