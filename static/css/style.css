@@ -5715,9 +5715,16 @@ mark.passage-highlight {
   box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2);
   transition: all 0.15s ease;
 }
-.btn-inline-recapture:hover {
+.btn-inline-recapture:hover:not(:disabled) {
   background: #1d4ed8;
   transform: translateY(-1px);
+}
+.btn-inline-recapture:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  background: #64748b;
+  box-shadow: none;
 }
 
 /* ==========================================================================

@@ -205,6 +205,14 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
         except Exception as l_crop_err:
             print(f"[Crops] {exam_id} 듣기 문항 형광펜 크롭 생성 중 경고: {l_crop_err}")
 
+        # [특수 예외 폴백] 고3 2013년 9월 등 벡터 폰트 외곽선 변환 문서 전용 크롭 연동
+        if not crop_results and grade == "고3" and year == 2013 and month == 9:
+            from tools.crop_2013_09 import generate_crops_for_exam
+            sub = subtype or ("A형" if "-A" in exam_id else "B형")
+            if generate_crops_for_exam(exam_id, sub):
+                print(f"[Crops] {exam_id} 전용 고정밀 기하 크롭 생성 완료")
+                return True
+
         with db.get_connection() as conn:
             cursor = conn.cursor()
             for q_n, q_data in crop_results.items():
@@ -499,7 +507,7 @@ async def api_recapture_passage_pdf(passage_id: str):
 
     with db.get_connection() as conn:
         exam = conn.execute(
-            "SELECT grade, year, month, reading_start_q, reading_end_q FROM exams WHERE id = ?", (exam_id,)
+            "SELECT grade, year, month, reading_start_q, reading_end_q, subtype FROM exams WHERE id = ?", (exam_id,)
         ).fetchone()
         exam_answers = {int(r["q_num"]): (r["answer_text"] or "") for r in conn.execute(
             "SELECT q_num, answer_text FROM passages WHERE exam_id = ?", (exam_id,))}
@@ -508,7 +516,8 @@ async def api_recapture_passage_pdf(passage_id: str):
 
     success = _regenerate_exam_crops(
         exam_id, exam["grade"], exam["year"], exam["month"],
-        exam["reading_start_q"] or 18, exam["reading_end_q"] or 45, exam_answers
+        exam["reading_start_q"] or 18, exam["reading_end_q"] or 45, exam_answers,
+        subtype=exam["subtype"]
     )
 
     with db.get_connection() as conn:

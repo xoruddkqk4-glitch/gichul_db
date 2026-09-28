@@ -72,6 +72,7 @@ import { copyToClipboard, escapeHtml, showToast } from "./utils.js";
 import { triggerSingleFileUpload } from "./upload.js";
 
 let currentDetailPassage = null;
+let isRecapturingPdf = false;
 
 export function getCurrentDetailPassage() {
   return currentDetailPassage;
@@ -461,8 +462,81 @@ export function groupPassageItems(rawItems) {
 
     } else {
       // =======================================================================
-      // [총 45문항 체제 (2012년 이후)]: 41~42번 (1지문2문항) / 43~45번 (1지문3문항)
+      // [총 45문항 체제 (2012년 이후)]:
+      // 1) 고2-[2012-09-A] 특수 분기: 41~43번 (1지문3문항), 44~45번 (1지문2문항)
+      // 2) 일반 분기: 41~42번 (1지문2문항), 43~45번 (1지문3문항)
       // =======================================================================
+
+      const is2012_09_A = (p.exam_id && (
+        p.exam_id.includes("2012년-09월") && !p.exam_id.includes("B형") && (p.exam_id.includes("고2") || p.subtype === "A형")
+      )) || (p.q_num === 41 && p.question_type === "1지문3문항");
+
+      if (is2012_09_A) {
+        // [41~43번 (1지문 3문항) 통합]
+        if (p.q_num === 41) {
+          const p42 = itemMap.get(`${p.exam_id}_42`);
+          const p43 = itemMap.get(`${p.exam_id}_43`);
+          if (p42 && p43) {
+            handledIds.add(p.id);
+            handledIds.add(p42.id);
+            handledIds.add(p43.id);
+
+            const examPrefix = p.id.replace(/-41번\]$/, "").replace(/^\[/, "");
+            const ans41 = p.answer_text || "-";
+            const ans42 = p42.answer_text || "-";
+            const ans43 = p43.answer_text || "-";
+            const ansLabel = `41.${ans41} / 42.${ans42} / 43.${ans43}`;
+            const expText41_43 = combineGroupExplanations([p, p42, p43]);
+
+            result.push({
+              ...p,
+              isGroup: true,
+              groupType: "41-43",
+              q_num_label: "41~43번",
+              display_id: `[${examPrefix}-41~43번]`,
+              all_ids: [p.id, p42.id, p43.id],
+              subItems: [p, p42, p43],
+              question_type: "1지문3문항",
+              answer_text: ansLabel,
+              answer_verified: [p, p42, p43].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+              pdf_crop_images: Array.from(new Set([p.pdf_crop_image, p42.pdf_crop_image, p43.pdf_crop_image].filter(Boolean))),
+              explanation_text: expText41_43
+            });
+            continue;
+          }
+        }
+
+        // [44~45번 (1지문 2문항) 통합]
+        if (p.q_num === 44) {
+          const p45 = itemMap.get(`${p.exam_id}_45`);
+          if (p45) {
+            handledIds.add(p.id);
+            handledIds.add(p45.id);
+
+            const examPrefix = p.id.replace(/-44번\]$/, "").replace(/^\[/, "");
+            const ans44 = p.answer_text || "-";
+            const ans45 = p45.answer_text || "-";
+            const ansLabel = `44.${ans44} / 45.${ans45}`;
+            const expText44_45 = combineGroupExplanations([p, p45]);
+
+            result.push({
+              ...p,
+              isGroup: true,
+              groupType: "44-45",
+              q_num_label: "44~45번",
+              display_id: `[${examPrefix}-44~45번]`,
+              all_ids: [p.id, p45.id],
+              subItems: [p, p45],
+              question_type: "1지문2문항",
+              answer_text: ansLabel,
+              answer_verified: [p, p45].every((x) => Number(x.answer_verified) === 1) ? 1 : 0,
+              pdf_crop_images: Array.from(new Set([p.pdf_crop_image, p45.pdf_crop_image].filter(Boolean))),
+              explanation_text: expText44_45
+            });
+            continue;
+          }
+        }
+      }
 
       // 41~42번 (1지문 2문항) 통합
       if (p.q_num === 41 || (p.question_type === "1지문2문항" && p.q_num === 41)) {
@@ -1527,8 +1601,8 @@ function loadPassageDetail(p) {
             시험지 업로드 시 PDF 파일을 함께 등록하시면 원본 문항 인쇄 영역이 고화질로 자동 크롭됩니다.
           </div>
           <div>
-            <button type="button" class="btn-inline-recapture">
-              🔄 지금 다시 캡처 실행
+            <button type="button" class="btn-inline-recapture" ${isRecapturingPdf ? "disabled" : ""}>
+              ${isRecapturingPdf ? "⏳ 캡처 진행 중..." : "🔄 지금 다시 캡처 실행"}
             </button>
           </div>
         </div>
@@ -2151,16 +2225,22 @@ export function init() {
 
   /** PDF 문항 캡처 다시 실행 */
   async function handleRecapturePdf() {
+    if (isRecapturingPdf) return;
     const p = currentDetailPassage;
     if (!p) {
       showToast("선택된 문항이 없습니다. 문항을 먼저 선택해 주세요.", "warning");
       return;
     }
     const targetId = p.id;
+    isRecapturingPdf = true;
     if (btnRecapturePdf) {
       btnRecapturePdf.disabled = true;
       btnRecapturePdf.textContent = "⏳ 캡처 중...";
     }
+    document.querySelectorAll(".btn-inline-recapture").forEach((btn) => {
+      btn.disabled = true;
+      btn.textContent = "⏳ 캡처 진행 중...";
+    });
     showToast(`${p.display_id || p.id} PDF 문항 캡처를 다시 생성하는 중입니다...`, "info");
     try {
       const res = await fetch(`/api/passages/${encodeURIComponent(targetId)}/recapture`, {
@@ -2185,10 +2265,15 @@ export function init() {
       console.error(err);
       showToast(err.message || "PDF 캡처 재생성 중 오류가 발생했습니다.", "error");
     } finally {
+      isRecapturingPdf = false;
       if (btnRecapturePdf) {
         btnRecapturePdf.disabled = false;
         btnRecapturePdf.textContent = "🔄 다시 캡처";
       }
+      document.querySelectorAll(".btn-inline-recapture").forEach((btn) => {
+        btn.disabled = false;
+        btn.textContent = "🔄 지금 다시 캡처 실행";
+      });
     }
   }
 
@@ -2199,7 +2284,8 @@ export function init() {
   // PDF placeholder 내부 인라인 다시 캡처 버튼 이벤트 위임
   if (panelPdfImageContainer) {
     panelPdfImageContainer.addEventListener("click", (e) => {
-      if (e.target && e.target.closest(".btn-inline-recapture")) {
+      const btn = e.target && e.target.closest(".btn-inline-recapture");
+      if (btn && !btn.disabled && !isRecapturingPdf) {
         handleRecapturePdf();
       }
     });
