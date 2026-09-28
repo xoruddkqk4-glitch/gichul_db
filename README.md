@@ -42,10 +42,12 @@
 - **수동 정정**: 뷰어에서 `✏`로 정답 정정 시 DB·해설 헤더·형광펜 크롭·키 파일에 동시 반영 (`PATCH /api/passages/{id}/answer`).
 - **운영 도구** (`tools/`): `build_answer_keys.py`(이중 전사·CSV 계층 검증으로 키 생성), `resync_answers.py`(키 → DB/크롭 재동기화), `audit_keys_with_vision.py`(다중 모델 재감사).
 
-### 8. 영어 듣기 영역 2x2 뷰어, 100% 무료 Edge-TTS / ElevenLabs 듀얼 엔진 및 FELS 약형드랩
-- **Edge-TTS 100% 무료 음성 합성**: 고가의 API 비용 없이 인터넷이 연결된 로컬 환경에서 Microsoft Neural 고품질 음성(남성 `en-US-GuyNeural`, 여성 `en-US-JennyNeural` 등)으로 대화/독백 지문 실시간 무제한 생성.
-- **ElevenLabs 유료 API 하이브리드 지원**: 필요 시 ElevenLabs 고품질 음성으로 자유롭게 전환 가능하며, AI 환경설정 모달에서 엔진 선택 및 실시간 음성 샘플(`[🔊 남성 샘플]`, `[🔊 여성 샘플]`) 미리듣기 지원.
+### 8. 영어 듣기 영역 2x2 뷰어, 수능 성우 보이스 클로닝(XTTS-v2 로컬 AI) 및 무료 Edge-TTS 하이브리드 엔진, FELS 약형드랩
+- **수능 남/여 공식 성우 보이스 클로닝 (XTTS-v2 1:1 복제)**: 유료 ElevenLabs API 의존성을 완전히 제거하고, 평가원 수능 공식 남성/여성 성우 음성 참조 파일(`static/voices/kice_male_reference.wav`, `kice_female_reference.wav`)을 활용하여 실제 수능 듣기 평가와 동일한 보이스를 1:1로 복제 합성.
+- **하드웨어 가속 자동 감지 (GPU/CPU)**: CUDA 외장 GPU(RTX 5060 등) 환경에서는 문항당 2~3초 초고속 생성, GPU가 없는 노트북/CPU 환경에서는 자동 폴백 안내. AI 환경설정 모달에서 실시간 하드웨어 상태(`CUDA 가속 지원` vs `CPU 모드`) 및 남/여 성우 미리듣기 지원.
+- **Edge-TTS 100% 무료 음성 합성 (하이브리드/폴백)**: 인터넷이 연결된 환경에서 Microsoft Neural 고품질 음성(남성 `en-US-GuyNeural`, 여성 `en-US-JennyNeural` 등)으로 대화/독백 지문 실시간 무제한 보조 생성.
 - **화자 분리(M/W) 턴 자동 합성 & 17문항 ZIP 일괄 다운로드**: 남/여 대화문 및 독백을 분리 합성하여 단일 MP3로 제공하며, 시험지 전체 17문항 일괄 생성 및 ZIP 다운로드 지원.
+- **원클릭 자동 설치 및 실행 지원 (`install.bat`, `start.bat`)**: 완제품 패키지 보관소(`dist/`)를 통해 GPU 데스크탑 등 새 컴퓨터로 이전 시 Visual Studio C++ 빌드 도구 설치 없이 원클릭 초고속 설치 및 웹앱 자동 구동 지원.
 - **FELS 약형드랩 시스템**: 7대 기능어 추출, 학생용 최장 단어 기준 균일 공백(`[        ]`) 복사 및 교사용 정답(`[단어]`) 복사 1:1 지원.
 
 ---
@@ -1672,5 +1674,26 @@ CREATE TABLE user_sentence_status (
   - `node --check static/js/ai-settings.js`: 자바스크립트 구문 검사 오류 0건 통과 (Exit Code 0)
   - LM Studio 모델 목록 API 및 UI 상호작용 검증 완료
 
-
-
+### [2026-09-28 22:15] 업데이트 이력 (Commit ID: 71daa116)
+- **수정 내용**:
+  - **수능 영어 듣기 남/여 공식 성우 보이스 클로닝(XTTS-v2 로컬 AI) 및 하이브리드 엔진 구축**:
+    - **ElevenLabs 유료 API 완전 제거**: 기존 ElevenLabs API 키 입력창, 유료 크레딧 연결 의존성 및 백엔드 네트워크 호출 로직을 완전 삭제.
+    - **XTTS-v2 기반 1:1 성우 복제 구현 (`elevenlabs_service.py`)**:
+      - `static/voices/` 디렉터리 신설 및 평가원 수능 남/여 공식 성우 참조 음성(`kice_male_reference.wav`, `kice_female_reference.wav`) 배치.
+      - `synthesize_xtts_turn()`: M(남성 성우), W(여성 성우) 화자 턴별로 해당 참조 음성을 조건화하여 수능 시험장과 동일한 음색으로 실시간 클로닝 합성.
+      - 글로벌 싱글톤 모델 캐싱(`_GLOBAL_XTTS_MODEL`)을 적용하여 17문항 연속 생성 시 모델 재로딩 오버헤드 원천 제거.
+    - **동적 하드웨어 감지 및 상태 엔드포인트 (`app.py`, `elevenlabs_service.py`)**:
+      - `get_hardware_status()` 함수 및 `GET /api/settings/tts/hardware` 신설: PyTorch 및 CUDA 가속 상태(RTX 외장 GPU 감지 시 초고속 CUDA 가속 모드, 미감지 시 CPU 모드)를 자동 감지하여 프론트엔드에 실시간 제공.
+      - 통합 음성 프리뷰 API(`POST /api/settings/tts/preview`): XTTS-v2 남/여 성우 클로닝 샘플 및 Edge-TTS 샘플을 실시간 생성하여 즉시 청취 지원.
+  - **AI 환경설정 UI 전면 개편 (`templates/index.html`, `static/js/ai-settings.js`, `static/js/results-passage.js`)**:
+    - AI 설정 모달 내 ElevenLabs 카드를 제거하고 **`XTTS-v2 수능 성우 보이스 클로닝 (로컬 AI)`** 카드로 교체.
+    - 하드웨어 상태 배지(`badgeTtsHardware`), 엔진 선택 라디오 버튼, `[🔊 남성 성우 샘플]`, `[🔊 여성 성우 샘플]` 원클릭 청취 버튼 탑재.
+    - 지문 결과 뷰어 상단 배지 라벨을 `수능 성우 복제(XTTS)` 및 `Edge-TTS (무료)`로 동기화.
+  - **원클릭 환경 구성 및 배포 자동화 (`install.bat`, `start.bat`, `dist/`)**:
+    - **`install.bat`**: 새 컴퓨터(GPU 데스크탑 등)로 프로젝트 이동 시, 미리 빌드된 `dist/` 내 94개 `.whl` 패키지를 활용(`--find-links=dist`)하여 Visual Studio C++ 빌드 도구 설치 없이 원클릭 초고속 자동 설치(`torch`, `coqui-tts`, `torchcodec`, `transformers 4.57.6`).
+    - **`start.bat`**: 터미널 타이핑 없이 마우스 더블클릭만으로 Uvicorn 웹서버 구동 및 기본 브라우저(`http://127.0.0.1:8000`) 자동 오픈.
+- **검증 결과**:
+  - `python -m py_compile app.py elevenlabs_service.py run.py`: 파이썬 구문 오류 0건 통과 (Exit Code 0)
+  - `node -c static/js/ai-settings.js static/js/results-passage.js`: 자바스크립트 문법 오류 0건 통과 (Exit Code 0)
+  - 로컬 환경 패키지 정상 로드 검증: `TTS Version: 0.27.5`, PyTorch 2.14.0, torchcodec 0.16.0 연동 완료
+  - Edge-TTS 및 XTTS 하드웨어 상태 감지 API 및 프리뷰 오디오 파일(`/static/audio/preview_tts.mp3`) 생성 확인

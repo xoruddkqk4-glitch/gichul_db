@@ -603,7 +603,6 @@ async def api_get_ai_settings():
     cfg["model"] = legacy_m
     cfg["has_key"] = bool(legacy_k)
     cfg["masked_key"] = cfg["providers"].get(legacy_p, {}).get("masked_key", "")
-    cfg["elevenlabs"] = elevenlabs_service.get_elevenlabs_config()
     cfg["tts"] = elevenlabs_service.get_tts_config()
     return cfg
 
@@ -748,15 +747,6 @@ async def api_save_ai_settings(req: AISettingsRequest):
     if req.edge_tts_rate is not None:
         db.set_setting("edge_tts_rate", req.edge_tts_rate.strip())
 
-    if req.elevenlabs_api_key is not None:
-        db.set_setting("elevenlabs_api_key", req.elevenlabs_api_key.strip())
-    if req.elevenlabs_voice_male is not None:
-        db.set_setting("elevenlabs_voice_male", req.elevenlabs_voice_male.strip())
-    if req.elevenlabs_voice_female is not None:
-        db.set_setting("elevenlabs_voice_female", req.elevenlabs_voice_female.strip())
-    if req.elevenlabs_model_id is not None:
-        db.set_setting("elevenlabs_model_id", req.elevenlabs_model_id.strip())
-
     # 6. test_now인 경우 첫 번째 활성 프로바이더 연결 테스트
     test_msg = ""
     if req.test_now:
@@ -774,43 +764,38 @@ async def api_save_ai_settings(req: AISettingsRequest):
     }
 
 
+@app.get("/api/settings/tts/hardware")
+async def api_get_tts_hardware():
+    """현재 머신의 GPU(CUDA) 및 XTTS 설치 하드웨어 상태 반환"""
+    return elevenlabs_service.get_hardware_status()
+
+
+@app.post("/api/settings/tts/preview")
+async def api_preview_tts(req: Dict[str, Any] = Body(...)):
+    """XTTS-v2 수능 성우 복제 및 Edge-TTS 목소리 샘플 미리듣기 생성"""
+    try:
+        engine = (req.get("engine") or "xtts").strip()
+        gender = (req.get("gender") or "male").strip()
+        rate = (req.get("rate") or "+0%").strip()
+        preview_url = await elevenlabs_service.generate_tts_preview(engine=engine, gender=gender, rate=rate)
+        return {"success": True, "audio_url": preview_url}
+    except Exception as e:
+        logger.error(f"TTS 미리듣기 실패: {e}")
+        return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
+
+
 @app.post("/api/settings/edge-tts/preview")
 async def api_preview_edge_tts(req: Dict[str, Any] = Body(...)):
-    """Edge-TTS 목소리 샘플 미리듣기 생성"""
+    """Edge-TTS 목소리 샘플 미리듣기 생성 (호환용)"""
     try:
         voice = (req.get("voice") or "en-US-GuyNeural").strip()
         rate = (req.get("rate") or "+0%").strip()
-        preview_url = await elevenlabs_service.generate_edge_tts_preview(voice, rate)
+        gender = "female" if "Jenny" in voice or "female" in voice.lower() else "male"
+        preview_url = await elevenlabs_service.generate_tts_preview(engine="edge-tts", gender=gender, rate=rate)
         return {"success": True, "audio_url": preview_url}
     except Exception as e:
         logger.error(f"Edge-TTS 미리듣기 실패: {e}")
         return JSONResponse(status_code=400, content={"success": False, "message": str(e)})
-
-
-@app.post("/api/settings/elevenlabs/test")
-async def api_test_elevenlabs(req: AISettingsRequest):
-    """ElevenLabs API 연결 상태 실시간 테스트"""
-    import urllib.request
-    key = (req.elevenlabs_api_key or "").strip()
-    if not key:
-        key = db.get_setting("elevenlabs_api_key") or ""
-    if not key:
-        return JSONResponse(status_code=400, content={"success": False, "message": "ElevenLabs API Key를 입력해 주세요."})
-
-    try:
-        url = "https://api.elevenlabs.io/v1/user"
-        request = urllib.request.Request(url, headers={"xi-api-key": key})
-        with urllib.request.urlopen(request, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            char_count = data.get("subscription", {}).get("character_count", 0)
-            char_limit = data.get("subscription", {}).get("character_limit", 0)
-            tier = data.get("subscription", {}).get("tier", "free")
-            return {
-                "success": True,
-                "message": f"ElevenLabs 연결 성공! ({tier} 플랜, 사용량: {char_count:,} / {char_limit:,}자)"
-            }
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"success": False, "message": f"ElevenLabs 연결 실패: {str(e)}"})
 
 
 @app.post("/api/sentences/{sentence_id}/star")

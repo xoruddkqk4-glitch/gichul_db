@@ -1248,7 +1248,7 @@
             <span class="ai-ensemble-badge" id="aiEnsembleModeBadge">🗳️ 다수결 합의 모드</span>
           </h3>
           <p class="modal-subtitle" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-            수능·모의고사 243개 어법 기준표(<code>grammar_categories.json</code>) 분석 AI 엔진 및 영어 듣기 ElevenLabs 음성 합성 엔진을 설정합니다.
+            수능·모의고사 243개 어법 기준표(<code>grammar_categories.json</code>) 분석 AI 엔진 및 영어 듣기 수능 성우 복제(XTTS-v2) / Edge-TTS 음성 합성 엔진을 설정합니다.
           </p>
         </div>
         <button class="modal-close" id="btnCloseAiSettingsModal">&times;</button>
@@ -1615,6 +1615,9 @@
         <!-- ====================================================================
              섹션 2: 영어 듣기 음성 합성 엔진 (Edge-TTS / ElevenLabs) - 하이브리드 엔진
              ==================================================================== -->
+        <!-- ====================================================================
+             섹션 2: 영어 듣기 음성 합성 엔진 (XTTS-v2 수능 성우 복제 / Edge-TTS)
+             ==================================================================== -->
         <div class="tts-section-container">
           <div class="tts-section-header" style="flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; align-items: center; gap: 8px;">
@@ -1628,18 +1631,83 @@
             <!-- TTS 엔진 선택 라디오 바 -->
             <div class="tts-engine-selector-bar" style="display: flex; gap: 10px; align-items: center; background: #e0e7ff; padding: 4px 10px; border-radius: 6px;">
               <label style="margin: 0; font-size: 0.82rem; font-weight: 700; color: #3730a3; cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none;">
-                <input type="radio" name="ttsEngineRadio" id="radioTtsEdge" value="edge-tts" checked style="cursor: pointer;">
-                🟢 Edge-TTS (무료 / Microsoft Neural)
+                <input type="radio" name="ttsEngineRadio" id="radioTtsXtts" value="xtts" checked style="cursor: pointer;">
+                🎙️ 수능 평가원 성우 복제 (XTTS-v2, 강력 추천 ⭐)
               </label>
               <label style="margin: 0; font-size: 0.82rem; font-weight: 600; color: #4b5563; cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none;">
-                <input type="radio" name="ttsEngineRadio" id="radioTtsElevenlabs" value="elevenlabs" style="cursor: pointer;">
-                🔑 ElevenLabs (유료 API)
+                <input type="radio" name="ttsEngineRadio" id="radioTtsEdge" value="edge-tts" style="cursor: pointer;">
+                🟢 Edge-TTS (빠른 기본 / 보조)
               </label>
             </div>
           </div>
 
-          <!-- 1. Edge-TTS 설정 카드 (기본 활성, 100% 무료) -->
-          <div class="tts-dedicated-card" id="cardEdgeTts" style="display: block; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 8px;">
+          <!-- 1. XTTS-v2 수능 성우 로컬 복제 카드 (기본 활성, 100% 로컬 / 오프라인) -->
+          <div class="tts-dedicated-card" id="cardXtts" style="display: block; background: linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%); border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.86rem; font-weight: 800; color: #0f172a;">
+                  🎙️ 수능 기출 방송 실제 성우 목소리 1:1 로컬 복제 (Zero-shot Voice Cloning)
+                </span>
+                <span style="background: #e0e7ff; color: #4338ca; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">비용 0원 무제한</span>
+                <span style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">완전 오프라인</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span id="badgeTtsHardware" style="font-size: 0.76rem; font-weight: 700; background: #0284c7; color: #ffffff; padding: 2px 9px; border-radius: 9999px;">
+                  🖥️ 하드웨어 감지 중...
+                </span>
+              </div>
+            </div>
+
+            <p style="font-size: 0.79rem; color: #475569; margin: 0 0 10px 0; line-height: 1.45;">
+              실제 평가원 수능 영어 듣기 평가에 출제되는 <strong>남성 성우</strong>와 <strong>여성 성우</strong>의 실제 발화 음원을 기반으로 음색, 억양, 호흡을 1:1로 정밀 복제하여 듣기 지문을 합성합니다. (GPU 감지 시 초고속 연산, CPU 시 자동 전환)
+            </p>
+
+            <div class="tts-card-grid" style="display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 12px;">
+              <!-- 1열: 수능 남자 성우 레퍼런스 -->
+              <div class="tts-col" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">👨 수능 남자 성우 (M)</span>
+                  <span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">● 음원 준비됨</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 8px;">
+                  기준: <code>kice_male_reference.wav</code> (평가원 실전 톤)
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewXttsMale" style="width: 100%; height: 32px; font-size: 0.78rem; font-weight: 700;">
+                  🔊 남자 성우 샘플 미리듣기
+                </button>
+              </div>
+
+              <!-- 2열: 수능 여자 성우 레퍼런스 -->
+              <div class="tts-col" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">👩 수능 여자 성우 (W)</span>
+                  <span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">● 음원 준비됨</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 8px;">
+                  기준: <code>kice_female_reference.wav</code> (평가원 실전 톤)
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewXttsFemale" style="width: 100%; height: 32px; font-size: 0.78rem; font-weight: 700;">
+                  🔊 여자 성우 샘플 미리듣기
+                </button>
+              </div>
+
+              <!-- 3열: 구동 환경 및 상태 안내 -->
+              <div class="tts-col" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                  <div style="font-size: 0.82rem; font-weight: 700; color: #1e293b; margin-bottom: 4px;">
+                    ⚙️ 구동 아키텍처 및 상태
+                  </div>
+                  <div id="ttsHardwareDesc" style="font-size: 0.75rem; color: #475569; line-height: 1.4;">
+                    NVIDIA GPU(CUDA) 장착 시 자동 GPU 가속(문항당 2~3초), 외장 GPU 없을 시 CPU 모드로 자동 전환됩니다.
+                  </div>
+                </div>
+                <div class="provider-test-result" id="testResultXtts" style="margin-top: 6px; font-size: 0.74rem;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Edge-TTS 설정 카드 (보조 엔진, 100% 무료) -->
+          <div class="tts-dedicated-card" id="cardEdgeTts" style="display: none; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
               <div style="display: flex; align-items: center; gap: 6px;">
                 <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">
@@ -1702,56 +1770,6 @@
                   </div>
                 </div>
                 <div class="provider-test-result" id="testResultEdgeTts" style="margin-top: 5px; font-size: 0.76rem;"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 2. ElevenLabs 설정 카드 (선택 시 전환 노출) -->
-          <div class="tts-dedicated-card" id="cardElevenlabs" data-provider="elevenlabs" style="display: none;">
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
-              <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener" class="provider-key-link" style="font-size: 0.76rem;">
-                ElevenLabs 공식 키 발급 ↗
-              </a>
-            </div>
-            <div class="tts-card-grid">
-              <!-- 1열: ElevenLabs API Key -->
-              <div class="tts-col">
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="provider-field-label">ElevenLabs API Key</label>
-                  <div class="provider-key-input-wrapper">
-                    <input type="password" class="form-control provider-key-input" id="keyInputElevenlabs" placeholder="sk_... (기존 키 유지 시 비워두기)">
-                    <button type="button" class="btn-toggle-key-vis" data-target="keyInputElevenlabs" title="키 표시/숨김">👁️</button>
-                  </div>
-                  <span class="provider-key-status" id="keyStatusElevenlabs">현재 키: 미등록</span>
-                </div>
-              </div>
-
-              <!-- 2열: 남성/여성 Voice ID -->
-              <div class="tts-col">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                  <div class="form-group" style="margin-bottom: 0;">
-                    <label class="provider-field-label">남성 화자(M) Voice ID</label>
-                    <input type="text" class="form-control provider-model-input" id="voiceInputElevenlabsMale" value="pNInz6obpgDQGcFmaJgB" placeholder="예: pNInz6obpgDQGcFmaJgB (Adam)">
-                  </div>
-                  <div class="form-group" style="margin-bottom: 0;">
-                    <label class="provider-field-label">여성 화자(W) Voice ID</label>
-                    <input type="text" class="form-control provider-model-input" id="voiceInputElevenlabsFemale" value="EXAVITQu4vr4xnSDxMaL" placeholder="예: EXAVITQu4vr4xnSDxMaL (Sarah)">
-                  </div>
-                </div>
-              </div>
-
-              <!-- 3열: TTS 모델 ID 및 연결 테스트 -->
-              <div class="tts-col">
-                <div style="display: flex; gap: 8px; align-items: flex-end;">
-                  <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label class="provider-field-label">TTS 모델 ID</label>
-                    <input type="text" class="form-control provider-model-input" id="modelInputElevenlabs" value="eleven_multilingual_v2" placeholder="eleven_multilingual_v2">
-                  </div>
-                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="elevenlabs" id="btnTestElevenlabs" style="height: 34px; white-space: nowrap;">
-                    🧪 연결 테스트
-                  </button>
-                </div>
-                <div class="provider-test-result" id="testResultElevenlabs" style="margin-top: 5px;"></div>
               </div>
             </div>
           </div>

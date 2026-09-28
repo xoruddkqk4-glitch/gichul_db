@@ -1,32 +1,43 @@
 """
-05-gichul_db: ElevenLabs M/W 듀얼 보이스 TTS 서비스 모듈 (elevenlabs_service.py)
+05-gichul_db: 수능 영어 듣기 성우 로컬 복제(XTTS-v2) & Edge-TTS 하이브리드 음성 서비스 모듈
+(elevenlabs_service.py)
 
 기능:
-1. 일레븐랩스(ElevenLabs) API 연동 음성 합성
-2. 남성(M) / 여성(W) 화자 분기 자동 감지 및 듀얼 보이스(M/W) 개별 합성
-3. 다중 화자 음성 청크 결합 및 MP3 파일 저장 (/static/audio/[exam_id]_[q_num].mp3)
-4. 단일 문항 음성 생성 및 시험지 전체(1~17번) 일괄 생성
-5. 시험지 전체 듣기 문항 MP3 파일 ZIP 압축 다운로드 패키징
+1. 수능 평가원(KICE) 남/여 성우 목소리 1:1 로컬 복제 (Zero-shot Voice Cloning with XTTS-v2)
+   - static/voices/kice_male_reference.wav (수능 남자 성우 레퍼런스)
+   - static/voices/kice_female_reference.wav (수능 여자 성우 레퍼런스)
+   - GPU(RTX 5060) 자동 감지 및 초고속 가속, CPU 자동 폴백 지원
+2. Microsoft Neural 고품질 무료 Edge-TTS (경량 보조 엔진)
+3. 남성(M) / 여성(W) 화자 분기 자동 감지 및 듀얼 보이스 턴 분할 합성
+4. 다중 화자 음성 청크 결합 및 MP3 파일 저장 (/static/audio/[exam_id]_[q_num].mp3)
+5. 단일 문항 음성 생성 및 시험지 전체(1~17번) 일괄 생성
+6. 시험지 전체 듣기 문항 MP3 파일 ZIP 압축 다운로드 패키징
 """
 
 import os
 import re
+import io
 import json
 import asyncio
 import zipfile
-import requests
-import edge_tts
+import tempfile
+import logging
 from typing import List, Dict, Any, Optional, Tuple
+
+import edge_tts
 import database as db
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_DIR = os.path.join(BASE_DIR, "static", "audio")
+VOICES_DIR = os.path.join(BASE_DIR, "static", "voices")
 os.makedirs(AUDIO_DIR, exist_ok=True)
+os.makedirs(VOICES_DIR, exist_ok=True)
 
-# 기본 음성 ID 및 모델 설정 (ElevenLabs)
-DEFAULT_VOICE_MALE = "pNInz6obpgDQGcFmaJgB"    # Adam (남성, Free API 지원)
-DEFAULT_VOICE_FEMALE = "EXAVITQu4vr4xnSDxMaL"  # Sarah (여성, Free API 지원 - 구 Rachel(21m00Tcm4TlvDq8ikWAM) 유료 전환 대응)
-DEFAULT_MODEL_ID = "eleven_multilingual_v2"
+# 수능 평가원 성우 기준 음원 파일 경로
+KICE_MALE_REF = os.path.join(VOICES_DIR, "kice_male_reference.wav")
+KICE_FEMALE_REF = os.path.join(VOICES_DIR, "kice_female_reference.wav")
 
 # Edge-TTS 기본 음성 및 속도 설정 (무료 Microsoft Neural)
 DEFAULT_EDGE_TTS_VOICE_MALE = "en-US-GuyNeural"
@@ -43,43 +54,70 @@ FEMALE_SPEAKER_PATTERN = re.compile(
     re.IGNORECASE
 )
 
+# 전역 XTTS 싱글톤 인스턴스 캐시
+_GLOBAL_XTTS_MODEL = None
 
-def get_elevenlabs_config() -> Dict[str, str]:
-    """저장된 ElevenLabs 설정값 조회 (DB app_settings 및 환경변수 폴백)"""
-    api_key = db.get_setting("elevenlabs_api_key", os.environ.get("ELEVENLABS_API_KEY", "")).strip()
-    voice_male = db.get_setting("elevenlabs_voice_male", DEFAULT_VOICE_MALE).strip() or DEFAULT_VOICE_MALE
-    voice_female = db.get_setting("elevenlabs_voice_female", DEFAULT_VOICE_FEMALE).strip() or DEFAULT_VOICE_FEMALE
-    model_id = db.get_setting("elevenlabs_model_id", DEFAULT_MODEL_ID).strip() or DEFAULT_MODEL_ID
 
-    # ElevenLabs에서 무료 계정 API 접근이 차단된 구 Rachel ID가 설정되어 있는 경우 안전하게 Sarah로 자동 폴백
-    if voice_female == "21m00Tcm4TlvDq8ikWAM":
-        voice_female = DEFAULT_VOICE_FEMALE
+def get_hardware_status() -> Dict[str, Any]:
+    """
+    현재 머신의 PyTorch 및 CUDA(NVIDIA GPU) 하드웨어 가속 상태 감지
+    """
+    try:
+        import torch
+        cuda_ok = torch.cuda.is_available()
+        dev_name = torch.cuda.get_device_name(0) if cuda_ok else "CPU"
+        
+        # TTS 라이브러리 설치 여부
+        try:
+            import TTS
+            tts_installed = True
+        except ImportError:
+            tts_installed = False
 
-    return {
-        "api_key": api_key,
-        "voice_male": voice_male,
-        "voice_female": voice_female,
-        "model_id": model_id
-    }
+        return {
+            "torch_available": True,
+            "cuda_available": cuda_ok,
+            "device": "cuda" if cuda_ok else "cpu",
+            "device_name": dev_name,
+            "tts_installed": tts_installed,
+            "status_text": f"NVIDIA GPU 가속 활성화 ({dev_name})" if cuda_ok else "CPU 모드 구동 (외장 GPU 미검출)",
+            "ready": tts_installed
+        }
+    except ImportError:
+        return {
+            "torch_available": False,
+            "cuda_available": False,
+            "device": "cpu",
+            "device_name": "미설치",
+            "tts_installed": False,
+            "status_text": "PyTorch / TTS 패키지 미설치 (터미널에서 'pip install torch TTS' 설치 시 활성화)",
+            "ready": False
+        }
 
 
 def get_tts_config() -> Dict[str, Any]:
-    """저장된 전체 TTS (Edge-TTS 및 ElevenLabs) 설정값 조회"""
-    engine = db.get_setting("tts_engine", "edge-tts").strip() or "edge-tts"
+    """저장된 전체 TTS 설정값 조회 (기본값: 수능 성우 복제 xtts)"""
+    engine = db.get_setting("tts_engine", "xtts").strip() or "xtts"
     edge_male = db.get_setting("edge_tts_voice_male", DEFAULT_EDGE_TTS_VOICE_MALE).strip() or DEFAULT_EDGE_TTS_VOICE_MALE
     edge_female = db.get_setting("edge_tts_voice_female", DEFAULT_EDGE_TTS_VOICE_FEMALE).strip() or DEFAULT_EDGE_TTS_VOICE_FEMALE
     edge_rate = db.get_setting("edge_tts_rate", DEFAULT_EDGE_TTS_RATE).strip() or DEFAULT_EDGE_TTS_RATE
 
-    eleven_cfg = get_elevenlabs_config()
+    hw_info = get_hardware_status()
 
     return {
         "engine": engine,
+        "hardware": hw_info,
         "edge_tts": {
             "voice_male": edge_male,
             "voice_female": edge_female,
             "rate": edge_rate,
         },
-        "elevenlabs": eleven_cfg
+        "voices": {
+            "male_ref_exists": os.path.exists(KICE_MALE_REF),
+            "female_ref_exists": os.path.exists(KICE_FEMALE_REF),
+            "male_ref_url": "/static/voices/kice_male_reference.wav",
+            "female_ref_url": "/static/voices/kice_female_reference.wav",
+        }
     }
 
 
@@ -99,124 +137,170 @@ def split_script_by_speaker(script_text: str) -> List[Dict[str, str]]:
         l_s = raw_l.strip()
         if not l_s:
             continue
-        is_spk = bool(re.match(r"^(?:[MW]|Man|Woman|Girl|Boy|Teacher|Student|Clerk|Host|Doctor|Officer|남|여)\s*[:：]", l_s, re.IGNORECASE))
-        if is_spk:
+
+        # 어휘 목록이나 해설 구역이 시작되면 대본 수집 즉시 중단
+        if re.search(r"^(?:\[?Words\s*&?\s*Phrases\]?|\[?어휘\]?|Words\b|Vocabulary\b|\[해설\]|\[정답\])", l_s, re.IGNORECASE):
+            break
+
+        # 첫 화자 태그(M:, W: 등) 이전의 안내글 필터링
+        has_spk = re.match(r"^(?:[MW]|Man|Woman|Boy|Girl|Male|Female|Teacher|Student|Doctor|Father|Mother|Son|Daughter)\s*[:：]", l_s, re.IGNORECASE)
+        if has_spk:
             dialogue_started = True
-        # 한국어 포함 라인 (어휘 설명 등) 제외 (화자 태그 '남:', '여:' 제외)
-        if re.search(r"[\uac00-\ud7a3]", l_s):
-            if not re.match(r"^\s*(?:남|여|선생님|학생)\s*[:：]", l_s):
+
+        # 대화가 시작된 이후라도 완전한 한글 설명줄(화자 태그 없는 순수 한글 해석)은 대본 제외
+        if dialogue_started and not has_spk:
+            ko_cnt = len(re.findall(r"[\uac00-\ud7a3]", l_s))
+            en_cnt = len(re.findall(r"[A-Za-z]", l_s))
+            if ko_cnt > 3 and en_cnt == 0:
                 continue
-        # 대화 시작 후, 화자 태그 없고 구두점(. ? !)으로 끝나지 않으며 단어수가 적은 어휘 라인 제외
-        if dialogue_started and not is_spk:
-            if not re.search(r"[\.\?\!\"\'\)]$", l_s):
-                if len(l_s.split()) <= 5:
-                    continue
+
         clean_lines.append(l_s)
 
+    full_clean_script = "\n".join(clean_lines).strip()
+    if not full_clean_script:
+        return []
+
+    # 2. 화자 턴 단위 분할 정규식
+    pattern = re.compile(
+        r"(?=(?:^|\n)\s*(?:M|W|Man|Woman|Boy|Girl|Male|Female|Father|Mother|Son|Daughter|Dad|Mom|Mr\.\s*\w+|Ms\.\s*\w+|Mrs\.\s*\w+|Teacher(?:\s*\([MW]\))?|Student(?:\s*\([MW]\))?|Doctor(?:\s*\([MW]\))?|Host(?:\s*\([MW]\))?|Officer(?:\s*\([MW]\))?)\s*[:：])",
+        re.IGNORECASE
+    )
+
+    raw_turns = pattern.split(full_clean_script)
     turns = []
-    current_speaker = "male"  # 기본 화자
-    current_lines = []
+    default_speaker = "female"
 
-    speaker_tag_regex = re.compile(r"^\s*([A-Za-z0-9\.\(\)\s]+)\s*[:：]\s*(.*)$")
-
-    for line in clean_lines:
-        # 한국어 포함 라인은 음성 합성에서 100% 완전 배제
-        if re.search(r"[\uac00-\ud7a3]", line):
+    for t in raw_turns:
+        t = t.strip()
+        if not t:
             continue
 
-        m = speaker_tag_regex.match(line)
-        if m:
-            raw_speaker = m.group(1).strip()
-            speech_text = m.group(2).strip()
+        m_spk = re.match(
+            r"^((?:M|W|Man|Woman|Boy|Girl|Male|Female|Father|Mother|Son|Daughter|Dad|Mom|Mr\.\s*\w+|Ms\.\s*\w+|Mrs\.\s*\w+|Teacher(?:\s*\([MW]\))?|Student(?:\s*\([MW]\))?|Doctor(?:\s*\([MW]\))?|Host(?:\s*\([MW]\))?|Officer(?:\s*\([MW]\))?))\s*[:：]\s*(.*)$",
+            t,
+            re.IGNORECASE | re.DOTALL
+        )
 
-            # 화자 성별 감지
-            detected_gender = None
-            if MALE_SPEAKER_PATTERN.search(raw_speaker):
-                detected_gender = "male"
-            elif FEMALE_SPEAKER_PATTERN.search(raw_speaker):
-                detected_gender = "female"
+        if m_spk:
+            spk_label = m_spk.group(1).strip()
+            body_text = m_spk.group(2).strip()
+
+            if MALE_SPEAKER_PATTERN.match(spk_label):
+                current_speaker = "male"
+            elif FEMALE_SPEAKER_PATTERN.match(spk_label):
+                current_speaker = "female"
             else:
-                # 일반명칭인 경우 이전 화자의 반대로 교대
-                detected_gender = "female" if current_speaker == "male" else "male"
+                current_speaker = default_speaker
 
-            if current_lines:
-                speech = " ".join(current_lines).strip()
-                if speech:
-                    turns.append({
-                        "speaker": current_speaker,
-                        "text": speech
-                    })
-                current_lines = []
-
-            current_speaker = detected_gender
-            if speech_text:
-                current_lines.append(speech_text)
+            # 턴 교대 준비
+            default_speaker = "female" if current_speaker == "male" else "male"
         else:
-            # 화자 태그가 없는 연속 발화 줄
-            current_lines.append(line)
+            current_speaker = default_speaker
+            body_text = t
 
-    if current_lines:
-        speech = " ".join(current_lines).strip()
-        if speech:
+        # 한국어 단독 라인 및 괄호 번역문 최종 정제
+        cleaned_body_lines = []
+        for line in body_text.splitlines():
+            line_s = line.strip()
+            if not line_s:
+                continue
+            ko_count = len(re.findall(r"[\uac00-\ud7a3]", line_s))
+            en_count = len(re.findall(r"[A-Za-z]", line_s))
+            if ko_count > 0 and en_count == 0:
+                continue
+            cleaned_line = re.sub(r"[\(\[\{][^\)\]\}]*[\uac00-\ud7a3]+[^\)\]\}]*[\)\]\}]", "", line_s).strip()
+            if cleaned_line:
+                cleaned_body_lines.append(cleaned_line)
+
+        final_text = " ".join(cleaned_body_lines).strip()
+        final_text = re.sub(r"\s+", " ", final_text)
+
+        # 영문/숫자 유효 발화가 있는 경우에만 턴 추가
+        if final_text and re.search(r"[A-Za-z0-9]", final_text):
             turns.append({
                 "speaker": current_speaker,
-                "text": speech
+                "text": final_text
             })
 
-    # 화자 구분이 전혀 없는 단일 담화문인 경우
-    if not turns and clean_lines:
+    # 화자 분기가 전혀 없는 경우(독백 등)
+    if not turns and full_clean_script:
+        clean_lines = [l.strip() for l in full_clean_script.splitlines() if l.strip() and not (len(re.findall(r"[\uac00-\ud7a3]", l)) > 0 and len(re.findall(r"[A-Za-z]", l)) == 0)]
         turns.append({
-            "speaker": "male",
+            "speaker": "female",
             "text": " ".join(clean_lines).strip()
         })
 
     return turns
 
 
-def synthesize_turn_speech(text: str, voice_id: str, api_key: str, model_id: str = DEFAULT_MODEL_ID) -> bytes:
-    """단일 발화 텍스트를 ElevenLabs TTS API로 호출하여 MP3 바이너리 반환"""
-    if not api_key:
-        raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. 상단 [AI 설정]에서 API Key를 입력해 주세요.")
-    if not text.strip():
+def _get_or_load_xtts_model():
+    """XTTS-v2 모델 싱글톤 로더 (GPU/CUDA 자동 활용)"""
+    global _GLOBAL_XTTS_MODEL
+    if _GLOBAL_XTTS_MODEL is not None:
+        return _GLOBAL_XTTS_MODEL
+
+    try:
+        import torch
+        from TTS.api import TTS
+    except ImportError as e:
+        raise RuntimeError(
+            "수능 성우 로컬 복제(XTTS-v2)를 구동하려면 PyTorch와 TTS 패키지가 필요합니다.\n"
+            "터미널에서 'pip install torch TTS'를 실행해 주세요.\n"
+            "(설치 전에는 설정에서 [Edge-TTS]를 선택하시면 즉시 음성을 생성하실 수 있습니다.)"
+        ) from e
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    logger.info(f"[XTTS-v2] Loading model on device: {device}...")
+    _GLOBAL_XTTS_MODEL = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
+    logger.info("[XTTS-v2] Model successfully loaded.")
+    return _GLOBAL_XTTS_MODEL
+
+
+def synthesize_xtts_turn(text: str, speaker_gender: str = "male") -> bytes:
+    """
+    수능 평가원 실제 남/여 성우 음성 샘플(WAV)을 레퍼런스로 하여
+    XTTS-v2로 해당 성우의 목소리를 1:1 복제(Zero-shot Voice Cloning) 합성
+    """
+    clean_text = text.strip()
+    if not clean_text or not re.search(r"[A-Za-z0-9]", clean_text):
         return b""
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-    headers = {
-        "xi-api-key": api_key,
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg"
-    }
-    payload = {
-        "text": text.strip(),
-        "model_id": model_id,
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75
-        }
-    }
+    ref_wav = KICE_MALE_REF if speaker_gender == "male" else KICE_FEMALE_REF
+    if not os.path.exists(ref_wav):
+        # 만약 해당 레퍼런스 음원이 없으면 다른 성별 레퍼런스 폴백
+        fallback = KICE_FEMALE_REF if speaker_gender == "male" else KICE_MALE_REF
+        if os.path.exists(fallback):
+            ref_wav = fallback
+        else:
+            raise FileNotFoundError(f"수능 성우 기준 음원 파일({ref_wav})을 찾을 수 없습니다. static/voices 폴더를 확인해 주세요.")
 
-    resp = requests.post(url, json=payload, headers=headers, timeout=60)
-    if resp.status_code != 200:
-        err_msg = f"ElevenLabs API Error ({resp.status_code}): {resp.text}"
-        try:
-            err_json = resp.json()
-            if "detail" in err_json:
-                detail = err_json["detail"]
-                if isinstance(detail, dict) and "message" in detail:
-                    err_msg = f"ElevenLabs API Error: {detail['message']}"
-                else:
-                    err_msg = f"ElevenLabs API Error: {detail}"
-        except Exception:
-            pass
-        raise RuntimeError(err_msg)
+    tts = _get_or_load_xtts_model()
 
-    return resp.content
+    # 임시 WAV 파일로 합성 후 바이너리 읽기
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_f:
+        tmp_path = tmp_f.name
+
+    try:
+        tts.tts_to_file(
+            text=clean_text,
+            speaker_wav=ref_wav,
+            language="en",
+            file_path=tmp_path
+        )
+        with open(tmp_path, "rb") as f:
+            audio_bytes = f.read()
+        return audio_bytes
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
 
 async def synthesize_edge_tts_turn(text: str, voice: str, rate: str = "+0%") -> bytes:
     """Edge-TTS를 이용한 단일 턴 음성 비동기 합성 (Microsoft Neural 무료 고품질 음성)"""
     clean_text = text.strip()
-    # 영문/숫자 알파벳이 전혀 없는 발화는 음성 합성 건너뜀
     if not clean_text or not re.search(r"[A-Za-z0-9]", clean_text):
         return b""
     communicate = edge_tts.Communicate(clean_text, voice, rate=rate)
@@ -226,22 +310,46 @@ async def synthesize_edge_tts_turn(text: str, voice: str, rate: str = "+0%") -> 
             if chunk["type"] == "audio":
                 audio_data.extend(chunk["data"])
     except edge_tts.exceptions.NoAudioReceived:
-        print(f"[Edge-TTS Warning] No audio received for turn: {clean_text[:40]}")
+        logger.warning(f"[Edge-TTS Warning] No audio received for turn: {clean_text[:40]}")
         return b""
     except Exception as e:
-        print(f"[Edge-TTS Error] {e} for turn: {clean_text[:40]}")
+        logger.error(f"[Edge-TTS Error] {e} for turn: {clean_text[:40]}")
         return b""
     return bytes(audio_data)
 
 
-async def generate_edge_tts_preview(voice: str = DEFAULT_EDGE_TTS_VOICE_MALE, rate: str = DEFAULT_EDGE_TTS_RATE) -> str:
-    """Edge-TTS 목소리 샘플 미리듣기 파일 생성 (/static/audio/preview_edge_tts.mp3)"""
-    sample_text = "Hello! This is a test of the Microsoft Neural voice for high school English listening tests."
-    audio_bytes = await synthesize_edge_tts_turn(sample_text, voice, rate=rate)
+async def generate_tts_preview(engine: str = "xtts", gender: str = "male", rate: str = "+0%") -> str:
+    """
+    선택된 TTS 엔진 및 성별 목소리 샘플 미리듣기 파일 생성
+    (/static/audio/preview_tts.mp3)
+    """
+    sample_text = (
+        "Hello! This is a test of the official CSAT English listening voice for high school examinations."
+        if gender == "female" else
+        "Good morning, students. This is a sample recording of the English listening test narrator."
+    )
+
+    if engine == "xtts":
+        hw = get_hardware_status()
+        if not hw.get("ready"):
+            # XTTS 라이브러리가 미설치된 상태에서는 기존 준비된 성우 레퍼런스 음원 파일 경로를 직접 반환
+            ref_path = KICE_MALE_REF if gender == "male" else KICE_FEMALE_REF
+            if os.path.exists(ref_path):
+                rel = f"/static/voices/{os.path.basename(ref_path)}?t={int(os.path.getmtime(ref_path))}"
+                return rel
+            raise RuntimeError("수능 성우 샘플 음원 파일이 아직 등록되지 않았습니다.")
+        
+        loop = asyncio.get_event_loop()
+        audio_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, sample_text, gender)
+    else:
+        # Edge-TTS
+        voice = DEFAULT_EDGE_TTS_VOICE_MALE if gender == "male" else DEFAULT_EDGE_TTS_VOICE_FEMALE
+        audio_bytes = await synthesize_edge_tts_turn(sample_text, voice, rate=rate)
+
     if not audio_bytes:
         raise RuntimeError("샘플 음성 생성 실패")
 
-    preview_filename = "preview_edge_tts.mp3"
+    preview_filename = "preview_tts.mp3"
     preview_path = os.path.join(AUDIO_DIR, preview_filename)
     with open(preview_path, "wb") as f:
         f.write(audio_bytes)
@@ -256,7 +364,7 @@ def sanitize_filename(name: str) -> str:
 async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
     """
     단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
-    (Edge-TTS 무료 기본 또는 ElevenLabs 유료 API 하이브리드 지원)
+    (XTTS-v2 수능 성우 로컬 복제 기본 또는 Edge-TTS 무료 보조 하이브리드 지원)
     """
     passage = db.get_passage(passage_id)
     if not passage:
@@ -267,16 +375,29 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
         raise ValueError("합성할 대본(스크립트) 텍스트가 없습니다.")
 
     tts_cfg = get_tts_config()
-    engine = tts_cfg.get("engine", "edge-tts")
+    engine = tts_cfg.get("engine", "xtts")
 
     turns = split_script_by_speaker(script_text)
     if not turns:
         raise ValueError("대본에서 추출된 발화가 없습니다.")
 
-    # 각 턴별 오디오 합성 및 바이너리 결합
     combined_audio = bytearray()
 
-    if engine == "edge-tts":
+    if engine == "xtts":
+        hw = get_hardware_status()
+        if not hw.get("ready"):
+            raise RuntimeError(
+                "수능 성우 로컬 복제(XTTS-v2) 구동을 위한 PyTorch/TTS 패키지가 설치되지 않았습니다.\n"
+                "터미널에서 'pip install torch TTS'를 실행하거나, 상단 [AI 설정]에서 'Edge-TTS'를 선택해 주세요."
+            )
+        loop = asyncio.get_event_loop()
+        for turn in turns:
+            spk = turn["speaker"]
+            turn_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, turn["text"], spk)
+            if turn_bytes:
+                combined_audio.extend(turn_bytes)
+    else:
+        # Edge-TTS
         edge_cfg = tts_cfg.get("edge_tts", {})
         male_voice = edge_cfg.get("voice_male") or DEFAULT_EDGE_TTS_VOICE_MALE
         female_voice = edge_cfg.get("voice_female") or DEFAULT_EDGE_TTS_VOICE_FEMALE
@@ -285,17 +406,6 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
         for turn in turns:
             voice = female_voice if turn["speaker"] == "female" else male_voice
             turn_bytes = await synthesize_edge_tts_turn(turn["text"], voice, rate=rate)
-            if turn_bytes:
-                combined_audio.extend(turn_bytes)
-    else:
-        # ElevenLabs
-        el_cfg = tts_cfg.get("elevenlabs", {})
-        if not el_cfg.get("api_key"):
-            raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. [AI 설정] 모달에서 등록하거나 무료 Edge-TTS를 선택해 주세요.")
-
-        for turn in turns:
-            voice_id = el_cfg["voice_female"] if turn["speaker"] == "female" else el_cfg["voice_male"]
-            turn_bytes = synthesize_turn_speech(turn["text"], voice_id, el_cfg["api_key"], el_cfg["model_id"])
             if turn_bytes:
                 combined_audio.extend(turn_bytes)
 
@@ -351,11 +461,7 @@ async def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
         raise ValueError(f"시험지 '{exam_id}'에 등록된 듣기 문항이 없습니다.")
 
     tts_cfg = get_tts_config()
-    engine = tts_cfg.get("engine", "edge-tts")
-    if engine == "elevenlabs":
-        el_cfg = tts_cfg.get("elevenlabs", {})
-        if not el_cfg.get("api_key"):
-            raise ValueError("ElevenLabs API Key가 설정되지 않았습니다. [AI 설정] 모달에서 등록하거나 무료 Edge-TTS를 선택해 주세요.")
+    engine = tts_cfg.get("engine", "xtts")
 
     results = []
     success_count = 0
