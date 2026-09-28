@@ -9,6 +9,7 @@ export const appState = {
   currentMode: "passage", // 'passage' 또는 'sentence'
   currentArea: "reading", // 'reading' 또는 'listening'
   currentPassageId: null,
+  currentPassage: null, // 현재 화면에 표시 중인 문항 객체 (싱글톤 공유)
   currentPassageIndex: 0,
   passagesData: [],
   sentencesData: [],

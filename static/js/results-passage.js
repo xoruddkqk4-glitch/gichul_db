@@ -75,7 +75,49 @@ let currentDetailPassage = null;
 let isRecapturingPdf = false;
 
 export function getCurrentDetailPassage() {
-  return currentDetailPassage;
+  return getCurrentActivePassage();
+}
+
+/** 현재 화면에 표시된 활성 문항 객체 안전 추출 (DOM + appState 다층 검증) */
+export function getCurrentActivePassage() {
+  // 1. 활성 탭 DOM 요소에서 직접 추출
+  const activeTab = passageTabBar ? passageTabBar.querySelector(".passage-q-tab.active") : document.querySelector(".passage-q-tab.active");
+  const activeTabId = activeTab ? activeTab.dataset.id : null;
+  const activeTabIdx = activeTab && activeTab.dataset.index !== undefined ? parseInt(activeTab.dataset.index, 10) : -1;
+
+  // 2. 현재 열린 시험지의 문항 목록(appState.currentExamQuestions)에서 검색
+  if (appState.currentExamQuestions && appState.currentExamQuestions.length > 0) {
+    if (activeTabId) {
+      const match = appState.currentExamQuestions.find(
+        (it) => it.id === activeTabId || (it.all_ids && it.all_ids.includes(activeTabId))
+      );
+      if (match) return match;
+    }
+    if (activeTabIdx >= 0 && activeTabIdx < appState.currentExamQuestions.length) {
+      return appState.currentExamQuestions[activeTabIdx];
+    }
+  }
+
+  // 3. appState.currentPassage 싱글톤 확인
+  if (appState.currentPassage && (!activeTabId || appState.currentPassage.id === activeTabId || (appState.currentPassage.all_ids && appState.currentPassage.all_ids.includes(activeTabId)))) {
+    return appState.currentPassage;
+  }
+
+  // 4. 모듈 내부 변수 확인
+  if (currentDetailPassage && (!activeTabId || currentDetailPassage.id === activeTabId || (currentDetailPassage.all_ids && currentDetailPassage.all_ids.includes(activeTabId)))) {
+    return currentDetailPassage;
+  }
+
+  // 5. currentPassageId로 전체 검색
+  const targetId = activeTabId || appState.currentPassageId;
+  if (targetId && appState.passagesData) {
+    const match = appState.passagesData.find(
+      (it) => it.id === targetId || (it.all_ids && it.all_ids.includes(targetId))
+    );
+    if (match) return match;
+  }
+
+  return currentDetailPassage || appState.currentPassage || null;
 }
 
 const ANSWER_SOURCE_LABELS = { uploaded_json: "정답 JSON", verified_key: "검증 키 파일", csv: "정답률 CSV", image_consensus: "이미지 모델 합의", image_single: "이미지 단일 모델", hwp: "HWP 해설", manual: "수동 확정", none: "출처 없음" };
@@ -1446,6 +1488,8 @@ export function copyFelsAnswerVersion() {
 /** 2x2 패널에 특정 지문 상세 정보 로드 */
 function loadPassageDetail(p) {
   if (!p) return;
+  currentDetailPassage = p;
+  appState.currentPassage = p;
   appState.currentPassageId = p.id;
   setHeaderSlotState("passage");
 
@@ -2299,26 +2343,34 @@ export function init() {
     });
   }
 
-  btnAddPassageTag.addEventListener("click", addPassageTagAction);
-  inputPassageTag.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") addPassageTagAction();
-  });
+  if (btnAddPassageTag) {
+    btnAddPassageTag.addEventListener("click", addPassageTagAction);
+  }
+  if (inputPassageTag) {
+    inputPassageTag.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") addPassageTagAction();
+    });
+  }
 
   // 지문 전체 복사 버튼
-  btnCopyPassage.addEventListener("click", () => {
-    const text = panelPassageText.dataset.rawText || panelPassageText.textContent;
-    if (text && text !== "지문 본문이 여기에 표시됩니다." && text !== "-") {
-      copyToClipboard(text, "지문 본문이 클립보드에 복사되었습니다! (Ctrl+V)");
-    }
-  });
+  if (btnCopyPassage) {
+    btnCopyPassage.addEventListener("click", () => {
+      const text = panelPassageText ? (panelPassageText.dataset.rawText || panelPassageText.textContent) : "";
+      if (text && text !== "지문 본문이 여기에 표시됩니다." && text !== "-") {
+        copyToClipboard(text, "지문 본문이 클립보드에 복사되었습니다! (Ctrl+V)");
+      }
+    });
+  }
 
   // 해설 복사 버튼
-  btnCopyExplanation.addEventListener("click", () => {
-    const text = panelExplanation.textContent;
-    if (text && text !== "-") {
-      copyToClipboard(text, "정답 및 해설이 클립보드에 복사되었습니다!");
-    }
-  });
+  if (btnCopyExplanation) {
+    btnCopyExplanation.addEventListener("click", () => {
+      const text = panelExplanation ? panelExplanation.textContent : "";
+      if (text && text !== "-") {
+        copyToClipboard(text, "정답 및 해설이 클립보드에 복사되었습니다!");
+      }
+    });
+  }
 
   // 듣기 모드 전용 버튼 이벤트 바인딩
   if (btnCopyFelsBlank) {
@@ -2342,104 +2394,160 @@ export function init() {
     });
   }
 
-  if (btnGenerateListeningAudio) {
-    btnGenerateListeningAudio.addEventListener("click", async () => {
-      if (!currentDetailPassage) return;
-      btnGenerateListeningAudio.disabled = true;
-      btnGenerateListeningAudio.textContent = "⏳ 음성 합성 중...";
-      try {
-        const res = await fetch(`/api/passages/${encodeURIComponent(currentDetailPassage.id)}/generate-audio`, { method: "POST" });
-        let resData;
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          resData = await res.json();
-        } else {
-          const rawText = await res.text();
-          resData = { success: false, message: rawText || `서버 오류 (${res.status})` };
-        }
+  // 단일 문항 듣기 음성 생성 핸들러 (DOM 활성 탭 및 문항 객체 100% 동기화)
+  async function handleGenerateListeningAudioAction(btnEl) {
+    const targetBtn = btnEl || btnGenerateListeningAudio || document.getElementById("btnGenerateListeningAudio");
+    if (targetBtn && targetBtn.disabled) return;
 
-        if (res.ok && resData.success) {
-          currentDetailPassage.audio_file_path = resData.audio_url;
-          if (currentDetailPassage.isGroup && currentDetailPassage.subItems) {
-            currentDetailPassage.subItems.forEach((si) => {
-              si.audio_file_path = resData.audio_url;
-            });
-          }
-          showToast("🎙️ 문항 듣기 음성이 성공적으로 생성되었습니다!", "success");
-          const player = document.getElementById("listeningAudioPlayer");
-          const chip = document.getElementById("audioStatusChip");
-          if (player) {
-            player.src = `${resData.audio_url}?t=${Date.now()}`;
-            player.load();
-          }
-          if (chip) {
-            chip.className = "audio-status-chip ready";
-            chip.textContent = "🎙️ 음성 준비됨";
-          }
-        } else {
-          showToast(resData.detail || resData.message || "음성 합성 실패", "error");
-        }
-      } catch (e) {
-        showToast(`오류 발생: ${e.message}`, "error");
-      } finally {
-        btnGenerateListeningAudio.disabled = false;
-        btnGenerateListeningAudio.textContent = "🎙️ 음성 생성";
+    const p = getCurrentActivePassage();
+
+    if (!p || !p.id) {
+      showToast("선택된 듣기 문항이 없습니다. 상단 탭에서 문항을 먼저 선택해 주세요.", "warning");
+      return;
+    }
+
+    if (targetBtn) {
+      targetBtn.disabled = true;
+      targetBtn.textContent = "⏳ 음성 합성 중...";
+    }
+    const displayLabel = p.display_id || p.id;
+    showToast(`🎙️ ${displayLabel} 문항의 영어 듣기 음성을 생성하고 있습니다...`, "info");
+
+    try {
+      const targetId = (p.isGroup && p.subItems && p.subItems.length > 0) ? p.subItems[0].id : p.id;
+      const res = await fetch(`/api/passages/${encodeURIComponent(targetId)}/generate-audio`, { method: "POST" });
+      let resData;
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        resData = await res.json();
+      } else {
+        const rawText = await res.text();
+        resData = { success: false, message: rawText || `서버 오류 (${res.status})` };
       }
-    });
+
+      if (res.ok && resData.success) {
+        p.audio_file_path = resData.audio_url;
+        if (p.isGroup && p.subItems) {
+          p.subItems.forEach((si) => {
+            si.audio_file_path = resData.audio_url;
+          });
+        }
+        currentDetailPassage = p;
+        appState.currentPassage = p;
+        showToast(`🎙️ ${displayLabel} 문항 듣기 음성이 성공적으로 생성되었습니다!`, "success");
+        const player = document.getElementById("listeningAudioPlayer");
+        const chip = document.getElementById("audioStatusChip");
+        if (player) {
+          player.src = `${resData.audio_url}?t=${Date.now()}`;
+          player.load();
+        }
+        if (chip) {
+          chip.className = "audio-status-chip ready";
+          chip.textContent = "🎙️ 음성 준비됨";
+        }
+      } else {
+        showToast(resData.detail || resData.message || "음성 합성 실패", "error");
+      }
+    } catch (e) {
+      console.error("음성 생성 오류:", e);
+      showToast(`음성 생성 통신 오류: ${e.message}`, "error");
+    } finally {
+      if (targetBtn) {
+        targetBtn.disabled = false;
+        targetBtn.textContent = "🎙️ 음성 생성";
+      }
+    }
   }
 
-  if (btnGenerateAllListeningAudio) {
-    btnGenerateAllListeningAudio.addEventListener("click", async () => {
-      if (!currentDetailPassage) return;
-      if (!confirm(`[${currentDetailPassage.exam_id}] 전체 듣기 문항의 음성을 일괄 생성하시겠습니까?\n\n(Edge-TTS 엔진 선택 시 비용 없이 완전 무료로 생성됩니다)`)) {
-        return;
-      }
-      btnGenerateAllListeningAudio.disabled = true;
-      btnGenerateAllListeningAudio.textContent = "⏳ 일괄 합성 진행 중...";
-      try {
-        const res = await fetch(`/api/exams/${encodeURIComponent(currentDetailPassage.exam_id)}/generate-listening-audio`, { method: "POST" });
-        let resData;
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          resData = await res.json();
-        } else {
-          const rawText = await res.text();
-          resData = { success: false, message: rawText || `서버 오류 (${res.status})` };
-        }
+  // 전체 듣기 문항 일괄 생성 핸들러
+  async function handleGenerateAllListeningAudioAction(btnEl) {
+    const targetBtn = btnEl || btnGenerateAllListeningAudio || document.getElementById("btnGenerateAllListeningAudio");
+    if (targetBtn && targetBtn.disabled) return;
 
-        if (res.ok && resData.success) {
-          showToast(`🎙️ 전체 듣기 문항 일괄 생성이 완료되었습니다! (성공: ${resData.generated_count || resData.success_count || 0}개)`, "success");
-          const freshRes = await fetch(`/api/passages/${encodeURIComponent(currentDetailPassage.id)}`);
+    const p = getCurrentActivePassage();
+    const examId = (p && p.exam_id) || 
+                   (appState.currentExamQuestions && appState.currentExamQuestions[0]?.exam_id);
+
+    if (!examId) {
+      showToast("선택된 시험지 정보가 없습니다.", "warning");
+      return;
+    }
+
+    if (!confirm(`[${examId}] 전체 듣기 문항의 음성을 일괄 생성하시겠습니까?\n\n(선택된 TTS 엔진으로 1~17번 음성을 자동 합성합니다)`)) {
+      return;
+    }
+
+    if (targetBtn) {
+      targetBtn.disabled = true;
+      targetBtn.textContent = "⏳ 일괄 합성 진행 중...";
+    }
+    showToast(`🎙️ [${examId}] 전체 듣기 문항 일괄 생성을 시작합니다...`, "info");
+
+    try {
+      const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/generate-listening-audio`, { method: "POST" });
+      let resData;
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        resData = await res.json();
+      } else {
+        const rawText = await res.text();
+        resData = { success: false, message: rawText || `서버 오류 (${res.status})` };
+      }
+
+      if (res.ok && resData.success) {
+        showToast(`🎙️ 전체 듣기 문항 일괄 생성이 완료되었습니다! (성공: ${resData.generated_count || resData.success_count || 0}개)`, "success");
+        const curP = getCurrentActivePassage();
+        if (curP && curP.id) {
+          const freshRes = await fetch(`/api/passages/${encodeURIComponent(curP.id)}`);
           if (freshRes.ok) {
             const freshData = await freshRes.json();
-            currentDetailPassage.audio_file_path = freshData.audio_file_path;
-            if (currentDetailPassage.isGroup && currentDetailPassage.subItems) {
-              currentDetailPassage.subItems.forEach((si) => {
+            curP.audio_file_path = freshData.audio_file_path;
+            if (curP.isGroup && curP.subItems) {
+              curP.subItems.forEach((si) => {
                 si.audio_file_path = freshData.audio_file_path;
               });
             }
             const player = document.getElementById("listeningAudioPlayer");
             const chip = document.getElementById("audioStatusChip");
-            if (player && currentDetailPassage.audio_file_path) {
-              player.src = `${currentDetailPassage.audio_file_path}?t=${Date.now()}`;
+            if (player && curP.audio_file_path) {
+              player.src = `${curP.audio_file_path}?t=${Date.now()}`;
               player.load();
             }
-            if (chip && currentDetailPassage.audio_file_path) {
+            if (chip && curP.audio_file_path) {
               chip.className = "audio-status-chip ready";
               chip.textContent = "🎙️ 음성 준비됨";
             }
           }
-        } else {
-          showToast(resData.detail || resData.message || "일괄 합성 실패", "error");
         }
-      } catch (e) {
-        showToast(`오류 발생: ${e.message}`, "error");
-      } finally {
-        btnGenerateAllListeningAudio.disabled = false;
-        btnGenerateAllListeningAudio.textContent = "🎙️ 전체 일괄 생성";
+      } else {
+        showToast(resData.detail || resData.message || "일괄 합성 실패", "error");
       }
-    });
+    } catch (e) {
+      console.error("일괄 음성 생성 오류:", e);
+      showToast(`일괄 생성 통신 오류: ${e.message}`, "error");
+    } finally {
+      if (targetBtn) {
+        targetBtn.disabled = false;
+        targetBtn.textContent = "🎙️ 전체 일괄 생성";
+      }
+    }
   }
+
+  // 전역 클릭 이벤트 위임 (동적 DOM 재렌더링 시에도 버튼 클릭 100% 작동 보장)
+  document.addEventListener("click", (e) => {
+    const targetSingle = e.target.closest("#btnGenerateListeningAudio");
+    if (targetSingle) {
+      e.preventDefault();
+      handleGenerateListeningAudioAction(targetSingle);
+      return;
+    }
+    const targetAll = e.target.closest("#btnGenerateAllListeningAudio");
+    if (targetAll) {
+      e.preventDefault();
+      handleGenerateAllListeningAudioAction(targetAll);
+      return;
+    }
+  });
 
   if (btnDownloadListeningMp3) {
     btnDownloadListeningMp3.addEventListener("click", () => {

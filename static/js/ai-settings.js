@@ -17,6 +17,7 @@ import {
   selectConsensusModeEl,
 } from "./dom.js";
 import { escapeHtml, showToast } from "./utils.js";
+import { appState } from "./state.js";
 
 let openrouterTopModelsData = [];
 let openrouterAllModelsData = [];
@@ -727,7 +728,62 @@ async function loadTtsHardwareStatus() {
   }
 }
 
+// 성우 샘플 미리듣기 전역 오디오 인스턴스 및 상태 제어 (중복/동시 재생 방지)
+let currentPreviewAudio = null;
+let currentPreviewKey = null; // 'xtts_male' | 'xtts_female' | 'edge_male' | 'edge_female'
+let currentPreviewRequestId = 0; // 비동기 응답 레이스 컨디션 차단
+
+const PREVIEW_BUTTON_DEFAULT_TEXTS = {
+  xtts_male: "🔊 남자 성우 샘플 미리듣기",
+  xtts_female: "🔊 여자 성우 샘플 미리듣기",
+  edge_male: "🔊 남성 샘플",
+  edge_female: "🔊 여성 샘플"
+};
+
+function resetButtonLabels() {
+  const btnXttsMale = document.getElementById("btnPreviewXttsMale");
+  const btnXttsFemale = document.getElementById("btnPreviewXttsFemale");
+  const btnEdgeMale = document.getElementById("btnPreviewEdgeTtsMale");
+  const btnEdgeFemale = document.getElementById("btnPreviewEdgeTtsFemale");
+
+  if (btnXttsMale) {
+    btnXttsMale.textContent = PREVIEW_BUTTON_DEFAULT_TEXTS.xtts_male;
+    btnXttsMale.classList.remove("btn-danger");
+    btnXttsMale.classList.add("btn-secondary");
+  }
+  if (btnXttsFemale) {
+    btnXttsFemale.textContent = PREVIEW_BUTTON_DEFAULT_TEXTS.xtts_female;
+    btnXttsFemale.classList.remove("btn-danger");
+    btnXttsFemale.classList.add("btn-secondary");
+  }
+  if (btnEdgeMale) {
+    btnEdgeMale.textContent = PREVIEW_BUTTON_DEFAULT_TEXTS.edge_male;
+    btnEdgeMale.classList.remove("btn-danger");
+    btnEdgeMale.classList.add("btn-secondary");
+  }
+  if (btnEdgeFemale) {
+    btnEdgeFemale.textContent = PREVIEW_BUTTON_DEFAULT_TEXTS.edge_female;
+    btnEdgeFemale.classList.remove("btn-danger");
+    btnEdgeFemale.classList.add("btn-secondary");
+  }
+}
+
+function stopCurrentPreviewAudio() {
+  currentPreviewRequestId++; // 이전 모든 진행 중인 비동기 fetch/재생 요청 무효화
+  if (currentPreviewAudio) {
+    try {
+      currentPreviewAudio.pause();
+      currentPreviewAudio.currentTime = 0;
+      currentPreviewAudio.src = "";
+    } catch (e) {}
+    currentPreviewAudio = null;
+  }
+  currentPreviewKey = null;
+  resetButtonLabels();
+}
+
 function closeAiSettingsModal() {
+  stopCurrentPreviewAudio();
   if (aiSettingsModal) {
     aiSettingsModal.classList.remove("show");
     aiSettingsModal.style.display = "none";
@@ -1150,12 +1206,19 @@ export function init() {
             ...ttsPayload,
           }),
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          showToast(errData.message || `서버 오류 (${res.status})`, "error");
+          return;
+        }
         const data = await res.json();
-        if (res.ok && data.success) {
-          appState.ttsEngine = selectedTtsEngine;
-          const badgeTopRight = document.getElementById("badgeTopRightSource");
-          if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData[appState.currentPassageIndex]?.area === "listening"))) {
-            badgeTopRight.textContent = (selectedTtsEngine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
+        if (data.success) {
+          if (typeof appState !== "undefined" && appState) {
+            appState.ttsEngine = selectedTtsEngine;
+            const badgeTopRight = document.getElementById("badgeTopRightSource");
+            if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData?.[appState.currentPassageIndex]?.area === "listening"))) {
+              badgeTopRight.textContent = (selectedTtsEngine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
+            }
           }
           showToast("AI 및 TTS 설정이 성공적으로 저장되었습니다.", "success");
           await refreshAiStatusIndicator();
@@ -1166,8 +1229,8 @@ export function init() {
           showToast(data.message || "설정 저장 실패", "error");
         }
       } catch (err) {
-        console.error(err);
-        showToast("설정 저장 중 통신 오류가 발생했습니다.", "error");
+        console.error("AI/TTS 설정 저장 중 오류:", err);
+        showToast(`설정 저장 중 오류: ${err.message || "통신 오류"}`, "error");
       } finally {
         btnSaveAiSettings.disabled = false;
         btnSaveAiSettings.textContent = "✔ 전체 설정 저장";
@@ -1196,12 +1259,36 @@ export function init() {
 
   // XTTS-v2 수능 성우 음성 샘플 미리듣기 핸들러
   const handleXttsPreview = async (gender) => {
+    const key = `xtts_${gender}`;
+    const btn = gender === "female"
+      ? document.getElementById("btnPreviewXttsFemale")
+      : document.getElementById("btnPreviewXttsMale");
     const resDiv = document.getElementById("testResultXtts");
     const label = gender === "female" ? "여성" : "남성";
+
+    // 1. 이미 같은 성우가 재생 중인 경우 -> 즉시 정지 (토글 동작)
+    if (currentPreviewKey === key && currentPreviewAudio && !currentPreviewAudio.paused) {
+      stopCurrentPreviewAudio();
+      if (resDiv) {
+        resDiv.className = "provider-test-result info visible";
+        resDiv.textContent = `⏹ 수능 ${label} 성우 재생이 중지되었습니다.`;
+      }
+      return;
+    }
+
+    // 2. 다른 버튼이거나 새로 재생하는 경우 -> 이전 재생 완전 정지
+    stopCurrentPreviewAudio();
+    const requestId = ++currentPreviewRequestId;
+    currentPreviewKey = key;
+
+    if (btn) {
+      btn.textContent = `⏳ ${label} 성우 로딩 중...`;
+    }
     if (resDiv) {
       resDiv.className = "provider-test-result info visible";
       resDiv.textContent = `⏳ 수능 ${label} 성우 목소리 샘플 불러오는 중...`;
     }
+
     try {
       const res = await fetch("/api/settings/tts/preview", {
         method: "POST",
@@ -1209,23 +1296,61 @@ export function init() {
         body: JSON.stringify({ engine: "xtts", gender }),
       });
       const data = await res.json();
+
+      // 사용자가 응답 대기 중에 다른 버튼을 눌렀거나 모달을 닫은 경우 차단
+      if (requestId !== currentPreviewRequestId) {
+        return;
+      }
+
       if (res.ok && data.success && data.audio_url) {
         if (resDiv) {
           resDiv.className = "provider-test-result success visible";
-          resDiv.textContent = `✔ 수능 ${label} 성우 목소리 재생 중...`;
+          resDiv.textContent = `✔ 수능 ${label} 성우 목소리 재생 중... (버튼을 다시 누르면 중지됩니다)`;
         }
+        if (btn) {
+          btn.textContent = `⏹ ${label} 성우 재생 중지`;
+          btn.classList.remove("btn-secondary");
+          btn.classList.add("btn-danger");
+        }
+
         const audio = new Audio(data.audio_url);
-        audio.play().catch(e => console.warn("오디오 자동재생 차단:", e));
+        currentPreviewAudio = audio;
+
+        audio.onended = () => {
+          if (currentPreviewAudio === audio) {
+            currentPreviewAudio = null;
+            currentPreviewKey = null;
+            resetButtonLabels();
+            if (resDiv) resDiv.textContent = `✔ 수능 ${label} 성우 목소리 재생 완료`;
+          }
+        };
+        audio.onerror = () => {
+          if (currentPreviewAudio === audio) {
+            currentPreviewAudio = null;
+            currentPreviewKey = null;
+            resetButtonLabels();
+            if (resDiv) {
+              resDiv.className = "provider-test-result error visible";
+              resDiv.textContent = `❌ 오디오 재생 오류가 발생했습니다.`;
+            }
+          }
+        };
+
+        await audio.play();
       } else {
+        stopCurrentPreviewAudio();
         if (resDiv) {
           resDiv.className = "provider-test-result error visible";
           resDiv.textContent = `❌ 미리듣기 실패: ${data.message || "오류"}`;
         }
       }
     } catch (e) {
-      if (resDiv) {
-        resDiv.className = "provider-test-result error visible";
-        resDiv.textContent = `❌ 통신 오류: ${e.message}`;
+      if (requestId === currentPreviewRequestId) {
+        stopCurrentPreviewAudio();
+        if (resDiv) {
+          resDiv.className = "provider-test-result error visible";
+          resDiv.textContent = `❌ 통신 오류: ${e.message}`;
+        }
       }
     }
   };
@@ -1241,6 +1366,10 @@ export function init() {
 
   // Edge-TTS 음성 샘플 미리듣기 핸들러
   const handleEdgeTtsPreview = async (gender) => {
+    const key = `edge_${gender}`;
+    const btn = gender === "female"
+      ? document.getElementById("btnPreviewEdgeTtsFemale")
+      : document.getElementById("btnPreviewEdgeTtsMale");
     const voiceSelect = gender === "female"
       ? document.getElementById("selectEdgeTtsVoiceFemale")
       : document.getElementById("selectEdgeTtsVoiceMale");
@@ -1249,10 +1378,29 @@ export function init() {
 
     const voice = voiceSelect ? voiceSelect.value : (gender === "female" ? "en-US-JennyNeural" : "en-US-GuyNeural");
     const rate = rateSelect ? rateSelect.value : "+0%";
+    const label = gender === "female" ? "여성" : "남성";
 
+    // 1. 이미 같은 성우가 재생 중인 경우 -> 즉시 정지 (토글 동작)
+    if (currentPreviewKey === key && currentPreviewAudio && !currentPreviewAudio.paused) {
+      stopCurrentPreviewAudio();
+      if (resDiv) {
+        resDiv.className = "provider-test-result info visible";
+        resDiv.textContent = `⏹ ${label} 음성 재생이 중지되었습니다.`;
+      }
+      return;
+    }
+
+    // 2. 다른 버튼이거나 새로 재생하는 경우 -> 이전 재생 완전 정지
+    stopCurrentPreviewAudio();
+    const requestId = ++currentPreviewRequestId;
+    currentPreviewKey = key;
+
+    if (btn) {
+      btn.textContent = `⏳ ${label} 로딩 중...`;
+    }
     if (resDiv) {
       resDiv.className = "provider-test-result info visible";
-      resDiv.textContent = `⏳ ${gender === "female" ? "여성" : "남성"}(${voice}) 음성 샘플 합성 중...`;
+      resDiv.textContent = `⏳ ${label}(${voice}) 음성 샘플 합성 중...`;
     }
 
     try {
@@ -1262,23 +1410,60 @@ export function init() {
         body: JSON.stringify({ voice, rate }),
       });
       const data = await res.json();
+
+      if (requestId !== currentPreviewRequestId) {
+        return;
+      }
+
       if (res.ok && data.success && data.audio_url) {
         if (resDiv) {
           resDiv.className = "provider-test-result success visible";
-          resDiv.textContent = `✔ 음성 합성 완료! 재생 중... (${voice})`;
+          resDiv.textContent = `✔ 음성 합성 완료! 재생 중... (${voice}) (클릭 시 중지)`;
         }
+        if (btn) {
+          btn.textContent = `⏹ ${label} 재생 중지`;
+          btn.classList.remove("btn-secondary");
+          btn.classList.add("btn-danger");
+        }
+
         const audio = new Audio(data.audio_url);
-        audio.play().catch(e => console.warn("오디오 자동재생 차단:", e));
+        currentPreviewAudio = audio;
+
+        audio.onended = () => {
+          if (currentPreviewAudio === audio) {
+            currentPreviewAudio = null;
+            currentPreviewKey = null;
+            resetButtonLabels();
+            if (resDiv) resDiv.textContent = `✔ 음성 샘플 재생 완료 (${voice})`;
+          }
+        };
+        audio.onerror = () => {
+          if (currentPreviewAudio === audio) {
+            currentPreviewAudio = null;
+            currentPreviewKey = null;
+            resetButtonLabels();
+            if (resDiv) {
+              resDiv.className = "provider-test-result error visible";
+              resDiv.textContent = `❌ 오디오 재생 오류가 발생했습니다.`;
+            }
+          }
+        };
+
+        await audio.play();
       } else {
+        stopCurrentPreviewAudio();
         if (resDiv) {
           resDiv.className = "provider-test-result error visible";
           resDiv.textContent = `❌ 미리듣기 실패: ${data.message || "오류"}`;
         }
       }
     } catch (e) {
-      if (resDiv) {
-        resDiv.className = "provider-test-result error visible";
-        resDiv.textContent = `❌ 통신 오류: ${e.message}`;
+      if (requestId === currentPreviewRequestId) {
+        stopCurrentPreviewAudio();
+        if (resDiv) {
+          resDiv.className = "provider-test-result error visible";
+          resDiv.textContent = `❌ 통신 오류: ${e.message}`;
+        }
       }
     }
   };

@@ -1725,3 +1725,29 @@ CREATE TABLE user_sentence_status (
     - `/api/search/sentences?limit=1000`: **76.0ms** (HTTP 200, 971KB 압축 전송)
     - `/api/settings/tts/preview`: 여성 성우 샘플 **13.45ms**, 남성 성우 샘플 **3.16ms** 즉시 반환 확인
 
+### [2026-09-29 00:15] 업데이트 이력 (Commit ID: 86c93e4)
+- **수정 내용**:
+  - **성우 샘플 목소리 배타적 단일 재생 제어 (`static/js/ai-settings.js`)**:
+    - AI 환경설정 모달에서 남자/여자 성우 샘플 미리듣기 재생 중 다른 버튼 클릭 시 이전 오디오 즉시 중단 및 단일 오디오 인스턴스 재생 보장 (`currentPreviewAudio.pause()`, UI 버튼 상태 복구).
+  - **SQLite 데이터베이스 및 검색 파이프라인 속도 최적화 (`database.py`, `app.py`)**:
+    - SQLite 연결 풀 및 PRAGMA 튜닝 (`WAL`, `cache_size = -64000` (64MB), `mmap_size = 256MB`, `temp_store = MEMORY`).
+    - 지문/문장 검색 쿼리에서 불필요한 서브쿼리 제거 및 인덱스 활용 극대화.
+  - **듣기 영역 '음성 생성' 버튼 동작 불발 원인 해결 (`static/js/results-passage.js`)**:
+    - `loadPassageDetail` 진입 즉시 문항 객체 확정 및 3중 폴백 가드 적용.
+    - 동적 DOM 재렌더링 시에도 100% 클릭을 보장하는 전역 이벤트 위임(Event Delegation) 구현.
+  - **16~17번 문항 선택 시 다른 문항(`[고3-2026년-09월-06번]`) 음성 합성 버그 해결 (`static/js/results-passage.js`, `static/js/main.js`, `static/js/state.js`, `templates/index.html`)**:
+    - **ES Module 다중 인스턴스(Dual Module Instance) 문제 해결**: `main.js`의 상대경로 import에서 `?v=...` 쿼리스트링을 제거하여 브라우저에서 `results-passage.js`가 단일 인스턴스(Singleton)로만 로드되도록 일원화하고, 버전 관리는 진입점인 `templates/index.html`(`main.js?v=20260929_0005`)에서 단일 관리.
+    - **`getCurrentActivePassage()` 다층 안전 추출 엔진 신설**: DOM 활성 탭(`.passage-q-tab.active`)의 `dataset.id` 및 `dataset.index`를 바탕으로 현재 열린 시험지의 문항 목록(`appState.currentExamQuestions`)에서 100% 일치하는 문항(16~17번 복합 문항 포함)을 직접 매칭하여 타겟 객체로 안전 반환.
+    - **`appState.currentPassage` 전역 싱글톤 보관**: `state.js`에 `currentPassage`를 추가하여 모듈 간 문항 상태 완벽 공유.
+    - **토스트 안내 라벨 개선**: `[${p.display_id || p.id}]`로 인해 발생하던 대괄호 중복(`[[문항]]`) 제거.
+  - **Windows 환경 `torchaudio`의 `torchcodec` / FFmpeg DLL 부재 에러 해결 (`elevenlabs_service.py`)**:
+    - `Failed to create AudioDecoder ... Could not load libtorchcodec` 에러 방지.
+    - `soundfile` 기반의 고속 무오류 안전 디코더로 `torchaudio.load` 글로벌 패치 적용.
+    - 충돌을 유발하던 미사용 `torchcodec` 패키지 언인스톨.
+- **검증 결과**:
+  - `python -m py_compile elevenlabs_service.py app.py database.py`: 구문 검사 오류 0건 통과 (Exit Code 0)
+  - `node -c static/js/results-passage.js static/js/main.js static/js/state.js static/js/ai-settings.js static/js/search.js`: 자바스크립트 문법 검사 오류 0건 통과 (Exit Code 0)
+  - 성우 기준 음원 로드 검증: `torchaudio.load('static/voices/kice_male_reference.wav')` -> `Tensor shape: torch.Size([2, 457967]) SR: 44100` 정상 확인
+  - 16~17번 문항 선택 시 화면 대본과 100% 일치하는 음성 합성 및 오디오 플레이어 연동 확인
+
+

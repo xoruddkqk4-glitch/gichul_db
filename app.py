@@ -60,6 +60,37 @@ app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)")
 # GZip 압축 미들웨어 등록 (1KB 이상의 모든 JSON/텍스트 응답을 80~90% 초고속 압축하여 전송 지연 해결)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+from collections import OrderedDict
+import threading
+
+class FastSearchCache:
+    """스레드 안전 인메모리 검색 결과 캐시 (동일 조건 쿼리 1ms 즉시 반환)"""
+    def __init__(self, maxsize: int = 256):
+        self._cache: OrderedDict = OrderedDict()
+        self._maxsize = maxsize
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Optional[bytes]:
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
+            return None
+
+    def set(self, key: str, value: bytes) -> None:
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = value
+            if len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+search_cache = FastSearchCache(maxsize=256)
+
 # 정적 파일 마운트 (/static -> static/)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -298,6 +329,11 @@ async def api_search_passages(
         except Exception:
             years_list = None
 
+    cache_key = f"passages:{keyword}:{exam_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{area}:{whole_word}:{limit}"
+    cached_payload = search_cache.get(cache_key)
+    if cached_payload is not None:
+        return Response(content=cached_payload, media_type="application/json")
+
     results = db.search_passages(
         keyword=keyword,
         exam_id=exam_id,
@@ -314,6 +350,7 @@ async def api_search_passages(
         limit=limit
     )
     payload = fast_json_dumps({"count": len(results), "items": results})
+    search_cache.set(cache_key, payload)
     return Response(content=payload, media_type="application/json")
 
 
@@ -351,6 +388,11 @@ async def api_search_sentences(
         except Exception:
             years_list = None
 
+    cache_key = f"sentences:{keyword}:{passage_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{is_starred}:{grammar_cat_id}:{grammar_pos}:{area}:{whole_word}:{limit}"
+    cached_payload = search_cache.get(cache_key)
+    if cached_payload is not None:
+        return Response(content=cached_payload, media_type="application/json")
+
     results = db.search_sentences(
         keyword=keyword,
         passage_id=passage_id,
@@ -370,6 +412,7 @@ async def api_search_sentences(
         limit=limit
     )
     payload = fast_json_dumps({"count": len(results), "items": results})
+    search_cache.set(cache_key, payload)
     return Response(content=payload, media_type="application/json")
 
 

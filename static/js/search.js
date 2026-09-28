@@ -292,20 +292,40 @@ export async function executeSearch(source = "home", targetPassageId = null) {
       }
       const res = await fetch(`/api/search/passages?${params.toString()}`);
       const data = await res.json();
+      
+      // 데이터 수신 즉시 로딩 스피너를 닫아 체감 속도 극대화
+      loadingIndicator.style.display = "none";
+
       appState.passagesData = groupPassageItems(data.items || []);
       appState.rawPassagesData = [...appState.passagesData]; // 원본 캐시 갱신
       resultsTotalCount.textContent = appState.passagesData.length;
-      renderPassageView(appState.passagesData, targetPassageId);
+      
       setHeaderSlotState("passage");
+      renderPassageView(appState.passagesData, targetPassageId);
       updateGrammarFiltersVisibility();
     } else {
       const res = await fetch(`/api/search/sentences?${params.toString()}`);
       const data = await res.json();
-      appState.sentencesData = data.items || [];
-      appState.rawSentencesData = [...appState.sentencesData]; // 원본 캐시 갱신
-      resultsTotalCount.textContent = appState.sentencesData.length;
-      renderSentenceView(appState.sentencesData);
+
+      // 데이터 수신 즉시 로딩 스피너를 닫아 체감 속도 극대화
+      loadingIndicator.style.display = "none";
+
+      const allSentences = data.items || [];
+      appState.sentencesData = allSentences;
+      appState.rawSentencesData = [...allSentences]; // 원본 캐시 갱신
+      resultsTotalCount.textContent = allSentences.length;
+      
       setHeaderSlotState("sentence");
+
+      // 대량 문장(500건 이상)인 경우 첫 100건을 0.05초 만에 초고속 렌더링 후 나머지 백그라운드 병합
+      if (allSentences.length > 500) {
+        renderSentenceView(allSentences.slice(0, 100));
+        setTimeout(() => {
+          renderSentenceView(allSentences);
+        }, 16);
+      } else {
+        renderSentenceView(allSentences);
+      }
       updateGrammarFiltersVisibility();
     }
   } catch (err) {

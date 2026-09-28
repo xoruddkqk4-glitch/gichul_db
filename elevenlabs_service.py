@@ -30,6 +30,26 @@ import database as db
 
 logger = logging.getLogger(__name__)
 
+# Windows 환경에서 torchaudio 2.11+가 torchcodec(FFmpeg DLL) 부재로 인해 발생하는 AudioDecoder 에러 완벽 방지 패치
+try:
+    import torch
+    import torchaudio
+    import soundfile as sf
+
+    def _safe_torchaudio_load(filepath, *args, **kwargs):
+        data, sr = sf.read(filepath, dtype="float32")
+        tensor = torch.from_numpy(data)
+        if tensor.ndim == 1:
+            tensor = tensor.unsqueeze(0)
+        else:
+            tensor = tensor.t()
+        return tensor, sr
+
+    torchaudio.load = _safe_torchaudio_load
+    logger.info("[Audio] torchaudio.load patched with reliable soundfile backend.")
+except Exception as _patch_err:
+    logger.warning(f"[Audio] torchaudio.load patch skipped: {_patch_err}")
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIO_DIR = os.path.join(BASE_DIR, "static", "audio")
 VOICES_DIR = os.path.join(BASE_DIR, "static", "voices")

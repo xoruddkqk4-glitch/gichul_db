@@ -69,6 +69,7 @@ export async function showSentencesForPassage(passageId) {
   try {
     const res = await fetch(`/api/search/sentences?passage_id=${encodeURIComponent(passageId)}&limit=300`);
     const data = await res.json();
+    loadingIndicator.style.display = "none";
     appState.sentencesData = data.items || [];
     appState.rawSentencesData = appState.sentencesData;
     resultsTotalCount.textContent = appState.sentencesData.length;
@@ -169,6 +170,7 @@ async function navigateToPassageView(targetPassageId) {
     const res = await fetch(`/api/search/passages?exam_id=${encodeURIComponent(examId)}&limit=100`);
     if (res.ok) {
       const data = await res.json();
+      loadingIndicator.style.display = "none";
       if (data.items && data.items.length > 0) {
         appState.passagesData = groupPassageItems(data.items);
         resultsTotalCount.textContent = appState.passagesData.length;
