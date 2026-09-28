@@ -1600,7 +1600,7 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/dom.js static/js/results-passage.js static/js/upload.js`: 자바스크립트 문법 오류 0건 통과 (Exit Code 0)
   - API 엔드포인트 및 브레드크럼 5종 파일 칩/ZIP 다운로드, 교체 업로드 연동 정합성 검증 완료.
 
-### [2026-09-28 11:25] 업데이트 이력 (Commit ID: 723450bf)
+### [2026-09-28 11:25] 업데이트 이력 (Commit ID: dcdb620b)
 - **수정 내용**:
   - **고2-[2012-09-A] 및 고2-[2012-09-B] 기출 시험지 복합 지문 정밀 검증 및 데이터 정정**:
     - **1) 원본 시험지(PDF/HWP) 레이아웃 정밀 대조 및 체제 검증**:
