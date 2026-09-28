@@ -90,7 +90,7 @@
 ├── answer_resolver.py      # 정답 소스 결합·우선순위·검증 판정, CSV 정답률 교차검증
 ├── listening_parser.py     # 듣기 대본 HWP/PDF 추출 및 어휘 블록 자동 정제
 ├── fels_engine.py          # 7대 기능어 약형드랩 및 최장 단어 기준 균일 빈칸 생성 모듈
-├── elevenlabs_service.py   # Edge-TTS(무료) 및 ElevenLabs M/W 듀얼 보이스 음성 합성 엔진
+├── tts_service.py          # Edge-TTS(무료) 및 수능 성우 복제(XTTS-v2) 듀얼 보이스 음성 합성 엔진
 ├── app.py                  # FastAPI REST API 및 웹 서버 엔드포인트
 ├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기
 ├── data/
@@ -1749,5 +1749,19 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/results-passage.js static/js/main.js static/js/state.js static/js/ai-settings.js static/js/search.js`: 자바스크립트 문법 검사 오류 0건 통과 (Exit Code 0)
   - 성우 기준 음원 로드 검증: `torchaudio.load('static/voices/kice_male_reference.wav')` -> `Tensor shape: torch.Size([2, 457967]) SR: 44100` 정상 확인
   - 16~17번 문항 선택 시 화면 대본과 100% 일치하는 음성 합성 및 오디오 플레이어 연동 확인
+
+### [2026-09-29 00:27] 업데이트 이력 (Commit ID: ecba0cd)
+- **수정 내용**:
+  - **음성 합성 모듈 명칭 리팩토링 및 ElevenLabs 잔재 제거 (`elevenlabs_service.py` ➔ `tts_service.py`, `app.py`, `README.md`)**:
+    - ElevenLabs 유료 API에서 100% 무료 Edge-TTS 및 로컬 수능 성우 복제(XTTS-v2) 듀얼 체제로 완전 전환됨에 따라 레거시 파일명 `elevenlabs_service.py`를 역할에 맞게 `tts_service.py`로 리팩토링 (`git mv`).
+    - `tts_service.py` 모듈 독스트링 갱신 및 `app.py` 내의 import 및 8개 함수 호출부(`generate_passage_audio`, `generate_exam_listening_audio`, `create_listening_zip`, `get_tts_config`, `get_hardware_status`, `generate_tts_preview` 등)를 `tts_service`로 전면 교체.
+    - `README.md` 프로젝트 구조도 내 파일명 최신화.
+  - **PyTorch/Coqui-TTS 패키지 의존성 및 Windows 오디오 디코더 호환성 분석 (`tts_service.py`)**:
+    - PyTorch >= 2.9 환경의 Coqui-TTS(`TTS/__init__.py`)에서 요구하는 `torchcodec` 검사 메커니즘을 규명하고, Windows DLL 부재 충돌을 방지하는 `soundfile` 기반 안전 디코더 패치 유지 관리.
+- **검증 결과**:
+  - `python -m py_compile app.py tts_service.py run.py`: 구문 검사 오류 0건 통과 (Exit Code 0)
+  - `python -c "import tts_service, app; print('Imports and attributes OK!')"`: 런타임 Import 및 함수 바인딩 검증 완료 (Exit Code 0)
+  - 로컬 Uvicorn 서버(`python run.py`) 핫 리로드 정상 반영 및 구동 지속 확인
+
 
 

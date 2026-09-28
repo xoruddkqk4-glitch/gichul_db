@@ -42,7 +42,7 @@ import answer_keys
 import answer_resolver
 from validator import cross_validate_and_merge
 from rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
-import elevenlabs_service
+import tts_service
 import listening_parser
 import fels_engine
 
@@ -438,7 +438,7 @@ async def api_generate_passage_audio(passage_id: str):
         clean_id = passage_id.strip()
         if not clean_id.startswith("["):
             clean_id = f"[{clean_id}]"
-        result = await elevenlabs_service.generate_passage_audio(clean_id)
+        result = await tts_service.generate_passage_audio(clean_id)
         if not result.get("success"):
             return JSONResponse(status_code=400, content=result)
         return result
@@ -457,7 +457,7 @@ async def api_generate_exam_listening_audio(exam_id: str):
         clean_id = exam_id.strip()
         if not clean_id.startswith("["):
             clean_id = f"[{clean_id}]"
-        result = await elevenlabs_service.generate_exam_listening_audio(clean_id)
+        result = await tts_service.generate_exam_listening_audio(clean_id)
         return result
     except Exception as e:
         logger.error(f"시험지 전체 음성 합성 실패 ({exam_id}): {e}")
@@ -473,7 +473,7 @@ async def api_download_listening_zip(exam_id: str):
     clean_id = exam_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
-    zip_path = elevenlabs_service.create_listening_zip(clean_id)
+    zip_path = tts_service.create_listening_zip(clean_id)
     if not zip_path or not os.path.exists(zip_path):
         raise HTTPException(status_code=404, detail="생성된 듣기 오디오 파일이 없거나 압축 생성에 실패했습니다.")
     safe_name = clean_id.replace("[", "").replace("]", "").replace(" ", "_")
@@ -661,7 +661,7 @@ async def api_get_ai_settings():
     cfg["model"] = legacy_m
     cfg["has_key"] = bool(legacy_k)
     cfg["masked_key"] = cfg["providers"].get(legacy_p, {}).get("masked_key", "")
-    cfg["tts"] = elevenlabs_service.get_tts_config()
+    cfg["tts"] = tts_service.get_tts_config()
     return cfg
 
 
@@ -825,7 +825,7 @@ async def api_save_ai_settings(req: AISettingsRequest):
 @app.get("/api/settings/tts/hardware")
 async def api_get_tts_hardware():
     """현재 머신의 GPU(CUDA) 및 XTTS 설치 하드웨어 상태 반환"""
-    return elevenlabs_service.get_hardware_status()
+    return tts_service.get_hardware_status()
 
 
 @app.post("/api/settings/tts/preview")
@@ -835,7 +835,7 @@ async def api_preview_tts(req: Dict[str, Any] = Body(...)):
         engine = (req.get("engine") or "xtts").strip()
         gender = (req.get("gender") or "male").strip()
         rate = (req.get("rate") or "+0%").strip()
-        preview_url = await elevenlabs_service.generate_tts_preview(engine=engine, gender=gender, rate=rate)
+        preview_url = await tts_service.generate_tts_preview(engine=engine, gender=gender, rate=rate)
         return {"success": True, "audio_url": preview_url}
     except Exception as e:
         logger.error(f"TTS 미리듣기 실패: {e}")
@@ -849,7 +849,7 @@ async def api_preview_edge_tts(req: Dict[str, Any] = Body(...)):
         voice = (req.get("voice") or "en-US-GuyNeural").strip()
         rate = (req.get("rate") or "+0%").strip()
         gender = "female" if "Jenny" in voice or "female" in voice.lower() else "male"
-        preview_url = await elevenlabs_service.generate_tts_preview(engine="edge-tts", gender=gender, rate=rate)
+        preview_url = await tts_service.generate_tts_preview(engine="edge-tts", gender=gender, rate=rate)
         return {"success": True, "audio_url": preview_url}
     except Exception as e:
         logger.error(f"Edge-TTS 미리듣기 실패: {e}")

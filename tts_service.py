@@ -1,6 +1,6 @@
 """
 05-gichul_db: 수능 영어 듣기 성우 로컬 복제(XTTS-v2) & Edge-TTS 하이브리드 음성 서비스 모듈
-(elevenlabs_service.py)
+(tts_service.py)
 
 기능:
 1. 수능 평가원(KICE) 남/여 성우 목소리 1:1 로컬 복제 (Zero-shot Voice Cloning with XTTS-v2)
