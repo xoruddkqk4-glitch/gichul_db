@@ -1545,7 +1545,7 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py`: 파이썬 구문 오류 0건 통과 (Exit Code 0)
   - `고2-[2012-09-A].hwp` 단독 드롭 시 `📝 해설지 갱신 (준비 완료)` 상태 전환 및 업로드 버튼 활성화 정합성 확인
 
-### [2026-09-28 09:25] 업데이트 이력 (Commit ID: Pending)
+### [2026-09-28 09:25] 업데이트 이력 (Commit ID: 6ab60190)
 - **수정 내용**:
   - **독해 1지문 2문항(41~42번) 및 1지문 3문항(43~45번) 지문 누락 버그 원천 해결 (`pdf_parser.py`, `hwp_parser.py`, `static/js/results-passage.js`)**:
     - **1) 지문 본문 내 소수점 숫자에 의한 50문항 체제 오인식 버그 수정 (`pdf_parser.py`, `hwp_parser.py`)**:
