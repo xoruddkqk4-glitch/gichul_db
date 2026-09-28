@@ -11,6 +11,9 @@ import re
 import json
 import shutil
 import glob
+import io
+import zipfile
+from urllib.parse import quote
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -1357,6 +1360,105 @@ async def api_delete_exam(exam_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"시험지 삭제 중 오류 발생: {str(e)}")
+
+
+@app.get("/api/exams/{exam_id}/raw-files")
+async def api_get_exam_raw_files(exam_id: str):
+    """특정 시험지에 등록된 5종 원본 파일(문제 PDF, 해설 HWP, 대본 PDF, 정답 JSON/PNG, 정답률 CSV) 현황 조회"""
+    data = db.get_exam_raw_files(exam_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"시험지 '{exam_id}'를 찾을 수 없습니다.")
+
+    safe_files = {}
+    for ft, f_info in data["files"].items():
+        safe_files[ft] = {
+            "exists": f_info["exists"],
+            "filename": f_info["filename"],
+            "size_bytes": f_info["size_bytes"],
+            "size_formatted": f_info["size_formatted"],
+            "type_label": f_info["type_label"],
+            "is_exp": f_info.get("is_exp", False)
+        }
+    return {
+        "status": "success",
+        "exam_id": data["exam_id"],
+        "grade": data["grade"],
+        "year": data["year"],
+        "month": data["month"],
+        "subtype": data["subtype"],
+        "files": safe_files
+    }
+
+
+@app.get("/api/exams/{exam_id}/download-file")
+async def api_download_exam_file(exam_id: str, file_type: str = Query(...)):
+    """특정 시험지의 단일 원본 파일(pdf, hwp, script, ans, csv)을 다운로드"""
+    data = db.get_exam_raw_files(exam_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"시험지 '{exam_id}'를 찾을 수 없습니다.")
+
+    clean_type = file_type.strip().lower()
+    if clean_type not in data["files"]:
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 파일 유형입니다: {file_type}")
+
+    f_info = data["files"][clean_type]
+    if not f_info["exists"] or not f_info["abs_path"] or not os.path.exists(f_info["abs_path"]):
+        raise HTTPException(status_code=404, detail=f"해당 시험지의 {f_info['type_label']} 파일이 서버에 존재하지 않습니다.")
+
+    file_path = f_info["abs_path"]
+    filename = f_info["filename"]
+
+    media_type = "application/octet-stream"
+    fl = filename.lower()
+    if fl.endswith(".pdf"):
+        media_type = "application/pdf"
+    elif fl.endswith((".hwp", ".hwpx")):
+        media_type = "application/x-hwp"
+    elif fl.endswith(".json"):
+        media_type = "application/json"
+    elif fl.endswith(".png"):
+        media_type = "image/png"
+    elif fl.endswith((".jpg", ".jpeg")):
+        media_type = "image/jpeg"
+    elif fl.endswith(".csv"):
+        media_type = "text/csv; charset=utf-8"
+
+    encoded_filename = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{encoded_filename}\"; filename*=UTF-8''{encoded_filename}"
+    }
+    return FileResponse(file_path, media_type=media_type, headers=headers)
+
+
+@app.get("/api/exams/{exam_id}/download-zip")
+async def api_download_exam_all_zip(exam_id: str):
+    """특정 시험지의 보관된 모든 원본 파일(문제, 해설, 대본, 정답, 정답률)을 하나의 ZIP으로 일괄 압축 다운로드"""
+    data = db.get_exam_raw_files(exam_id)
+    if not data:
+        raise HTTPException(status_code=404, detail=f"시험지 '{exam_id}'를 찾을 수 없습니다.")
+
+    existing_files = [
+        (f_info["abs_path"], f_info["filename"])
+        for f_info in data["files"].values()
+        if f_info["exists"] and f_info["abs_path"] and os.path.exists(f_info["abs_path"])
+    ]
+
+    if not existing_files:
+        raise HTTPException(status_code=404, detail="다운로드할 수 있는 원본 파일이 서버에 없습니다.")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for f_path, f_name in existing_files:
+            zip_file.write(f_path, arcname=f_name)
+
+    zip_buffer.seek(0)
+    safe_name = data["exam_id"].replace("[", "").replace("]", "").replace(" ", "_")
+    zip_filename = f"{safe_name}_전체파일.zip"
+    encoded_filename = quote(zip_filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{encoded_filename}\"; filename*=UTF-8''{encoded_filename}"
+    }
+    return Response(content=zip_buffer.getvalue(), media_type="application/zip", headers=headers)
 
 
 @app.post("/api/exams/{exam_id}/upload-file")

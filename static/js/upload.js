@@ -1569,6 +1569,11 @@ export function init() {
               img.src = `${cleanSrc}?t=${Date.now()}`;
             }
           });
+
+          // 상단 브레드크럼 파일 툴바 등 연동 컴포넌트에 파일 교체 완료 알림 브로드캐스트
+          window.dispatchEvent(new CustomEvent("exam-file-uploaded", {
+            detail: { examId: activeSingleTargetExamId, fileType: activeSingleTargetType, data }
+          }));
         } else {
           alert(`❌ 업로드 실패: ${data.detail || '오류가 발생했습니다.'}`);
           if (targetBtn) {

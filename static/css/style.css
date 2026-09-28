@@ -1217,6 +1217,8 @@ button {
   padding: 0.25rem 0.35rem 0.4rem;
   border-bottom: 1px solid #f1f5f9;
   min-height: 46px;
+  flex-wrap: wrap;
+  row-gap: 0.4rem;
 }
 
 .breadcrumb-left {
@@ -1346,6 +1348,162 @@ button {
 .compact-reset {
   padding: 0.28rem 0.6rem;
   font-size: 0.78rem;
+}
+
+/* 1-1. 해당 시험지 원본 5종 파일 다운로드 & 교체 툴바 (브레드크럼 바 중앙) */
+.breadcrumb-exam-files {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.2rem 0.45rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  margin-right: 0.35rem;
+}
+
+/* 개별 파일 칩 (분할 버튼: 좌측 다운로드 | 우측 교체/등록) */
+.exam-file-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.exam-file-chip.is-ready {
+  border-color: #cbd5e1;
+  background: #ffffff;
+}
+
+.exam-file-chip.is-ready:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.exam-file-chip.is-missing {
+  border: 1.5px dashed #cbd5e1;
+  background: #f8fafc;
+  opacity: 0.85;
+}
+
+.exam-file-chip.is-missing:hover {
+  border-color: #94a3b8;
+  opacity: 1;
+}
+
+/* 파일 칩 다운로드 버튼 */
+.file-chip-btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.28rem 0.55rem;
+  background: transparent;
+  border: none;
+  color: #334155;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.file-chip-btn-download:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.file-chip-btn-download:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+  opacity: 0.7;
+}
+
+.file-chip-btn-download .file-chip-icon {
+  font-size: 0.92rem;
+}
+
+.file-chip-btn-download .file-chip-status-icon {
+  font-size: 0.74rem;
+  margin-left: 0.15rem;
+}
+
+/* 분할 구분선 */
+.file-chip-divider {
+  width: 1px;
+  background: #e2e8f0;
+  margin: 0.2rem 0;
+}
+
+.exam-file-chip.is-missing .file-chip-divider {
+  background: #cbd5e1;
+}
+
+/* 파일 칩 교체/업로드 버튼 */
+.file-chip-btn-replace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.28rem 0.45rem;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.file-chip-btn-replace:hover:not(:disabled) {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.file-chip-btn-replace:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.exam-file-chip.is-missing .file-chip-btn-replace {
+  color: #0284c7;
+  font-weight: 800;
+  background: #f0f9ff;
+}
+
+.exam-file-chip.is-missing .file-chip-btn-replace:hover:not(:disabled) {
+  background: #bae6fd;
+  color: #0369a1;
+}
+
+/* 전체 ZIP 일괄 다운로드 버튼 */
+.btn-exam-zip-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-exam-zip-download:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
 }
 
 /* 2. 상위 계층 단계별 선택기 (학년 / 년도 / 월) */

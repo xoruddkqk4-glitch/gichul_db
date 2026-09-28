@@ -12,6 +12,7 @@ import {
   badgeTopLeftSource,
   badgeTopRightSource,
   breadcrumbTrail,
+  breadcrumbExamFiles,
   btnAddPassageTag,
   btnCancelAnswer,
   btnCopyExplanation,
@@ -919,6 +920,13 @@ function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
     if (fIdx >= 0) activeIdx = fIdx;
   }
   selectPassageTab(activeIdx, appState.currentExamQuestions);
+
+  // 상단 브레드크럼 파일 툴바 연동 확정
+  const curEid = (appState.currentExamQuestions && appState.currentExamQuestions[0]?.exam_id) ||
+                 (examData && examData.items && examData.items[0]?.exam_id);
+  if (curEid) {
+    renderBreadcrumbExamFiles(curEid);
+  }
 }
 
 /** 인라인 브레드크럼 바 렌더링 */
@@ -929,7 +937,19 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
   const isExamSelected = !!(appState.treeNavState.grade && appState.treeNavState.year && appState.treeNavState.month);
 
   if (isExamSelected) {
-    const examData = tree[appState.treeNavState.grade]?.[appState.treeNavState.year]?.[appState.treeNavState.month];
+    let examData = tree[appState.treeNavState.grade]?.[appState.treeNavState.year]?.[appState.treeNavState.month];
+    if (!examData && tree[appState.treeNavState.grade]?.[appState.treeNavState.year]) {
+      const curM = String(appState.treeNavState.month || "");
+      const mNum = parseInt(curM.replace(/[^0-9]/g, ""), 10);
+      const mKeys = Object.keys(tree[appState.treeNavState.grade][appState.treeNavState.year]);
+      const matchedM = mKeys.find((k) => k === curM) ||
+        mKeys.find((k) => curM.includes("B형") ? k.includes("B형") : (curM.includes("A형") ? k.includes("A형") : false)) ||
+        mKeys.find((k) => parseInt(String(k).replace(/[^0-9]/g, ""), 10) === mNum);
+      if (matchedM) {
+        appState.treeNavState.month = matchedM;
+        examData = tree[appState.treeNavState.grade][appState.treeNavState.year][matchedM];
+      }
+    }
     const count = examData ? examData.items.length : 0;
     const examType = examData?.examType ? ` · ${examData.examType}` : "";
 
@@ -941,7 +961,30 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
         <span class="breadcrumb-item active" data-step="month" title="월/시험 변경">${escapeHtml(appState.treeNavState.month)}${escapeHtml(examType)}</span>
         <span class="breadcrumb-count-badge">(${count}문항)</span>
       `;
+
+    // 해당 시험지 5종 원본 파일 다운로드 및 교체 툴바 연동
+    let currentExamId = (examData?.items?.[0]?.exam_id) ||
+                        (appState.currentExamQuestions?.[0]?.exam_id) ||
+                        (currentDetailPassage?.exam_id) ||
+                        null;
+    if (!currentExamId && appState.treeNavState.grade && appState.treeNavState.year && appState.treeNavState.month) {
+      const g = appState.treeNavState.grade;
+      const y = appState.treeNavState.year.includes("년") ? appState.treeNavState.year : `${appState.treeNavState.year}년`;
+      const mClean = appState.treeNavState.month;
+      const subMatch = mClean.match(/\[([AB]형)\]/i);
+      const mNum = parseInt(mClean.replace(/[^0-9]/g, ""), 10);
+      const mStr = `${String(mNum).padStart(2, "0")}월`;
+      if (subMatch) {
+        currentExamId = `[${g}-${y}-${mStr}-${subMatch[1].toUpperCase()}]`;
+      } else {
+        currentExamId = `[${g}-${y}-${mStr}]`;
+      }
+    }
+    if (currentExamId) {
+      renderBreadcrumbExamFiles(currentExamId);
+    }
   } else if (appState.treeNavState.grade && appState.treeNavState.year) {
+    hideBreadcrumbExamFiles();
     trailHtml = `
         <span class="breadcrumb-item" data-step="grade" title="학년 변경">${escapeHtml(appState.treeNavState.grade)}</span>
         <span class="breadcrumb-separator">&gt;</span>
@@ -950,12 +993,14 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
         <span class="breadcrumb-hint">월/시험을 선택하세요</span>
       `;
   } else if (appState.treeNavState.grade) {
+    hideBreadcrumbExamFiles();
     trailHtml = `
         <span class="breadcrumb-item active" data-step="grade">${escapeHtml(appState.treeNavState.grade)}</span>
         <span class="breadcrumb-separator">&gt;</span>
         <span class="breadcrumb-hint">년도를 선택하세요</span>
       `;
   } else {
+    hideBreadcrumbExamFiles();
     const examSetHint = totalExamsCount ? ` (${totalExamsCount}회차 시험지 세트)` : "";
     trailHtml = `
         <span class="breadcrumb-hint">총 ${allItems.length.toLocaleString()}개 문항${examSetHint} 중 탐색할 학년을 선택하세요</span>
@@ -978,6 +1023,7 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
       } else if (step === "month") {
         appState.treeNavState.month = null;
       }
+      hideBreadcrumbExamFiles();
       updateTreeUI(tree, allItems, totalExamsCount);
     });
   });
@@ -991,6 +1037,7 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
     if (shouldShow) {
       btnTreeResetExam.style.display = "inline-flex";
       btnTreeResetExam.onclick = () => {
+        hideBreadcrumbExamFiles();
         if (hasActiveFilters) {
           // 상단 검색 조건(필터/검색어)이 설정된 경우: 전체 검색 조건 초기화 및 전체 지문 재조회
           resetAllSearchFilters(true);
@@ -1013,6 +1060,7 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
   if (treeBreadcrumbHome) {
     treeBreadcrumbHome.style.cursor = "pointer";
     treeBreadcrumbHome.onclick = () => {
+      hideBreadcrumbExamFiles();
       const hasActiveFilters = typeof hasActiveSearchFilters === "function" ? hasActiveSearchFilters() : false;
       if (hasActiveFilters) {
         resetAllSearchFilters(true);
@@ -1032,6 +1080,7 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
     if (totalExamsCount > 1 && isExamSelected) {
       btnTreeChangeExam.style.display = "inline-flex";
       btnTreeChangeExam.onclick = () => {
+        hideBreadcrumbExamFiles();
         appState.treeNavState.month = null;
         const years = Object.keys(tree[appState.treeNavState.grade] || {});
         if (years.length <= 1) {
@@ -1046,6 +1095,170 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
     }
   }
 }
+
+let currentLoadedExamRawFilesId = null;
+
+/** 해당 시험지 5종 원본 파일 다운로드 및 교체 툴바 렌더링 */
+export async function renderBreadcrumbExamFiles(examId, forceRefresh = false) {
+  if (!examId) return;
+  const container = breadcrumbExamFiles || document.getElementById("breadcrumbExamFiles");
+  if (!container) return;
+
+  container.style.setProperty("display", "inline-flex", "important");
+
+  // 동일한 시험지 파일 정보가 이미 렌더링되어 있다면 중복 fetch 생략 (불필요한 통신 및 깜빡임 방지)
+  if (!forceRefresh && currentLoadedExamRawFilesId === examId && container.querySelector(".exam-file-chip")) {
+    return;
+  }
+
+  currentLoadedExamRawFilesId = examId;
+  container.innerHTML = `<span style="font-size: 0.76rem; color: #64748b; font-weight: 600; padding: 2px 6px;">⏳ 파일 확인 중...</span>`;
+
+  try {
+    const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/raw-files`);
+    if (!res.ok) {
+      console.warn(`[BreadcrumbFiles] API error: ${res.status} for ${examId}`);
+      const altId = examId.startsWith("[") ? examId.slice(1, -1) : `[${examId}]`;
+      const resAlt = await fetch(`/api/exams/${encodeURIComponent(altId)}/raw-files`);
+      if (resAlt.ok) {
+        const dataAlt = await resAlt.json();
+        return renderRawFilesChips(dataAlt, altId, container);
+      }
+      container.innerHTML = `<span style="font-size: 0.74rem; color: #94a3b8; padding: 2px 6px;">⚠️ 파일 정보 조회 실패</span>`;
+      return;
+    }
+    const data = await res.json();
+    renderRawFilesChips(data, examId, container);
+  } catch (err) {
+    console.error("시험지 원본 파일 현황 조회 실패:", err);
+    container.innerHTML = `<span style="font-size: 0.74rem; color: #ef4444; padding: 2px 6px;">⚠️ 통신 오류</span>`;
+  }
+}
+
+/** 5종 파일 칩 DOM 렌더링 헬퍼 */
+function renderRawFilesChips(data, examId, container) {
+  const files = data.files || {};
+
+  const fileTypesConfig = [
+    { key: "pdf", icon: "📄", label: "문제", extLabel: "PDF" },
+    { key: "hwp", icon: "📝", label: "해설", extLabel: "HWP" },
+    { key: "script", icon: "📜", label: "대본", extLabel: "PDF" },
+    { key: "ans", icon: "🖼️", label: "정답", extLabel: "JSON/PNG" },
+    { key: "csv", icon: "📊", label: "정답률", extLabel: "CSV" }
+  ];
+
+  let chipsHtml = "";
+  let hasAnyFile = false;
+
+  fileTypesConfig.forEach((cfg) => {
+    const f = files[cfg.key] || { exists: false, filename: "", size_formatted: "" };
+    if (f.exists) hasAnyFile = true;
+
+    const isReady = f.exists;
+    const chipClass = isReady ? "is-ready" : "is-missing";
+    const titleLabel = `${cfg.label} ${cfg.extLabel}`;
+    const dlTitle = isReady
+      ? `[다운로드] ${escapeHtml(f.filename)}${f.size_formatted ? ` (${f.size_formatted})` : ""} - 클릭하여 다운로드`
+      : `[미등록] ${titleLabel} 파일이 등록되지 않았습니다. 우측 ➕ 버튼을 눌러 등록하세요.`;
+    const repTitle = isReady
+      ? `[교체] 새 ${titleLabel} 파일로 교체 업로드`
+      : `[등록] 클릭하여 ${titleLabel} 파일 등록 업로드`;
+
+    chipsHtml += `
+      <div class="exam-file-chip ${chipClass}" data-exam-id="${escapeHtml(examId)}" data-file-type="${cfg.key}">
+        <button type="button" class="file-chip-btn-download" 
+                title="${dlTitle}" 
+                ${!isReady ? "disabled" : ""} 
+                data-exam-id="${escapeHtml(examId)}" 
+                data-file-type="${cfg.key}">
+          <span class="file-chip-icon">${cfg.icon}</span>
+          <span class="file-chip-title">${titleLabel}</span>
+          <span class="file-chip-status-icon">${isReady ? "⬇️" : "✕"}</span>
+        </button>
+        <span class="file-chip-divider"></span>
+        <button type="button" class="file-chip-btn-replace" 
+                title="${repTitle}" 
+                data-exam-id="${escapeHtml(examId)}" 
+                data-file-type="${cfg.key}">
+          <span class="file-chip-rep-icon">${isReady ? "🔄" : "➕"}</span>
+        </button>
+      </div>
+    `;
+  });
+
+  if (hasAnyFile) {
+    chipsHtml += `
+      <button type="button" class="btn-exam-zip-download" title="해당 시험지의 등록된 모든 원본 파일 일괄 다운로드 (ZIP)" data-exam-id="${escapeHtml(examId)}">
+        📦 ZIP
+      </button>
+    `;
+  }
+
+  container.innerHTML = chipsHtml;
+
+  // 1. 다운로드 버튼 이벤트
+  container.querySelectorAll(".file-chip-btn-download").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const eid = btn.dataset.examId;
+      const fType = btn.dataset.fileType;
+      downloadExamRawFile(eid, fType);
+    });
+  });
+
+  // 2. 교체/업로드 버튼 이벤트
+  container.querySelectorAll(".file-chip-btn-replace").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const eid = btn.dataset.examId;
+      const fType = btn.dataset.fileType;
+      triggerSingleFileUpload(eid, fType, btn);
+    });
+  });
+
+  // 3. ZIP 전체 다운로드 이벤트
+  const btnZip = container.querySelector(".btn-exam-zip-download");
+  if (btnZip) {
+    btnZip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const eid = btnZip.dataset.examId;
+      downloadExamAllZip(eid);
+    });
+  }
+}
+
+/** 툴바 숨김 및 초기화 */
+export function hideBreadcrumbExamFiles() {
+  const container = breadcrumbExamFiles || document.getElementById("breadcrumbExamFiles");
+  if (container) {
+    container.style.display = "none";
+    container.innerHTML = "";
+  }
+  currentLoadedExamRawFilesId = null;
+}
+
+/** 단일 파일 다운로드 트리거 */
+function downloadExamRawFile(examId, fileType) {
+  const url = `/api/exams/${encodeURIComponent(examId)}/download-file?file_type=${encodeURIComponent(fileType)}`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 1000);
+}
+
+/** 전체 파일 ZIP 일괄 다운로드 트리거 */
+function downloadExamAllZip(examId) {
+  const url = `/api/exams/${encodeURIComponent(examId)}/download-zip`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 1000);
+}
+
 
 /** 최하위 문항별 탭 생성 (1행 10개 문항 초컴팩트 28px 버튼) */
 function renderPassageTabs(items) {
@@ -1434,6 +1647,9 @@ function loadPassageDetail(p) {
     metaAnswerStatus.style.display = p.answer_text ? "inline-flex" : "none";
   }
   currentDetailPassage = p;
+  if (p && p.exam_id) {
+    renderBreadcrumbExamFiles(p.exam_id);
+  }
   if (btnRecapturePdf) btnRecapturePdf.disabled = false;
   if (btnEditAnswer) btnEditAnswer.style.display = "inline-flex";
   if (answerEditForm) answerEditForm.style.display = "none";
@@ -2162,4 +2378,12 @@ export function init() {
       window.open(url, "_blank");
     });
   }
+
+  // 시험지 파일 교체/업로드 완료 시 브레드크럼 파일 툴바 실시간 재동기화
+  window.addEventListener("exam-file-uploaded", (e) => {
+    if (currentLoadedExamRawFilesId) {
+      renderBreadcrumbExamFiles(currentLoadedExamRawFilesId, true);
+    }
+  });
 }
+

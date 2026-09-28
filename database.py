@@ -564,6 +564,144 @@ def get_all_exams_with_stats(force_refresh: bool = False) -> List[Dict[str, Any]
         return exams
 
 
+def _format_size(size_bytes: int) -> str:
+    if not size_bytes or size_bytes <= 0:
+        return "0 B"
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def get_exam_raw_files(exam_id: str) -> Optional[Dict[str, Any]]:
+    """
+    특정 시험지에 해당하는 5종 원본 파일(문제 PDF, 해설 HWP, 대본 PDF, 정답 JSON/PNG, 정답률 CSV)의
+    디스크 존재 여부, 파일명, 크기, 절대 경로 등을 조회하여 반환
+    """
+    clean_id = exam_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, grade, year, month, exam_type, subtype FROM exams WHERE id = ?",
+            (clean_id,)
+        )
+        exam = cursor.fetchone()
+        if not exam:
+            clean_search = clean_id.strip("[]")
+            cursor.execute(
+                "SELECT id, grade, year, month, exam_type, subtype FROM exams WHERE id LIKE ?",
+                (f"%{clean_search}%",)
+            )
+            exam = cursor.fetchone()
+
+    if not exam:
+        return None
+
+    exam = dict(exam)
+    grade = exam["grade"]
+    year = int(exam["year"])
+    month = int(exam["month"])
+    subtype = exam.get("subtype")
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    uploads_dir = os.path.join(base_dir, "uploads")
+    keys_dir = os.path.join(base_dir, "data", "answer_keys")
+
+    matched_entries = []
+    prefix1 = f"{grade}_{year}_{month:02d}"
+    prefix2 = f"{grade}_{year}_{month}"
+    prefix3 = f"{grade}-{year}-{month:02d}"
+    prefix4 = f"{grade}-{year}-{month}"
+
+    if os.path.exists(uploads_dir):
+        for entry in os.scandir(uploads_dir):
+            if entry.is_file():
+                fn = entry.name
+                if fn.startswith(prefix1) or fn.startswith(prefix2) or fn.startswith(prefix3) or fn.startswith(prefix4):
+                    if subtype:
+                        sub_key = subtype.replace("형", "")
+                        if not re.search(rf"[-_\[\s]{sub_key}(?:형)?(?:[-_\]\s]|\.|$)", fn, re.I):
+                            continue
+                    matched_entries.append(entry)
+
+    # 1. 대본/해설 PDF
+    script_entry = next((e for e in matched_entries if e.name.lower().endswith(".pdf") and ("_script" in e.name.lower() or "대본" in e.name.lower())), None)
+    exp_pdf_entry = next((e for e in matched_entries if e.name.lower().endswith(".pdf") and (re.search(r"[-_]A\.pdf$", e.name, re.I) or "_exp_" in e.name.lower() or "_exp.pdf" in e.name.lower())), None)
+    script_target = script_entry or exp_pdf_entry
+    is_exp_script = bool(exp_pdf_entry and not script_entry)
+
+    def _is_prob(fn: str) -> bool:
+        fl = fn.lower()
+        if not fl.endswith(".pdf"):
+            return False
+        if "_script" in fl or "대본" in fl or "_ans_" in fl or "_exp_" in fl:
+            return False
+        if re.search(r"[-_]A\.pdf$", fn, re.I):
+            return False
+        return True
+
+    # 2. 문제 PDF
+    pdf_entry = next((e for e in matched_entries if _is_prob(e.name)), None)
+
+    # 3. 해설 HWP
+    hwp_entry = next((e for e in matched_entries if e.name.lower().endswith((".hwp", ".hwpx")) and "_exp_" not in e.name.lower()), None)
+
+    # 4. 정답표 (JSON or 이미지)
+    ans_entry = next((e for e in matched_entries if "_ans_" in e.name.lower() or e.name.lower().endswith((".png", ".jpg", ".jpeg")) or (e.name.lower().endswith(".json") and ("_ans" in e.name.lower() or "ans_" in e.name.lower()))), None)
+    ans_path = ans_entry.path if ans_entry else None
+    if not ans_path:
+        if subtype:
+            sub_k = subtype.replace("형", "")
+            cand1 = os.path.join(keys_dir, f"{grade}_{year}_{month:02d}_{sub_k}.json")
+            cand2 = os.path.join(keys_dir, f"{grade}_{year}_{month:02d}_{subtype}.json")
+            if os.path.exists(cand1):
+                ans_path = cand1
+            elif os.path.exists(cand2):
+                ans_path = cand2
+        if not ans_path:
+            cand = os.path.join(keys_dir, f"{grade}_{year}_{month:02d}.json")
+            if os.path.exists(cand):
+                ans_path = cand
+
+    # 5. 정답률 CSV
+    csv_entry = next((e for e in matched_entries if e.name.lower().endswith(".csv")), None)
+
+    def _file_info(p: Optional[str], type_label: str, is_exp: bool = False) -> Dict[str, Any]:
+        exists = bool(p and os.path.exists(p))
+        size = os.path.getsize(p) if exists else 0
+        fn = os.path.basename(p) if exists else ""
+        return {
+            "exists": exists,
+            "filename": fn,
+            "abs_path": p if exists else "",
+            "size_bytes": size,
+            "size_formatted": _format_size(size) if exists else "",
+            "type_label": type_label,
+            "is_exp": is_exp
+        }
+
+    return {
+        "exam_id": exam["id"],
+        "grade": grade,
+        "year": year,
+        "month": month,
+        "subtype": subtype,
+        "exam_type": exam.get("exam_type", ""),
+        "files": {
+            "pdf": _file_info(pdf_entry.path if pdf_entry else None, "문제 PDF"),
+            "hwp": _file_info(hwp_entry.path if hwp_entry else None, "해설 HWP"),
+            "script": _file_info(script_target.path if script_target else None, "대본 PDF" if not is_exp_script else "해설(대본) PDF", is_exp=is_exp_script),
+            "ans": _file_info(ans_path, "정답표 (JSON/이미지)"),
+            "csv": _file_info(csv_entry.path if csv_entry else None, "정답률 CSV")
+        }
+    }
+
+
 def selective_delete_exam(
     exam_id: str,
     delete_raw: bool = True,
