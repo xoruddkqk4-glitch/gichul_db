@@ -202,11 +202,14 @@ def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[
     - 구 50문항 체제(2006~2011년): 독해 끝 50번 자동 감지
     기본값: 독해 시작 18, 끝 45
     """
-    is_50 = bool(
-        re.search(r"(?:^|\n|\s)50\s*\.", full_text)
-        or re.search(r"\[\s*49\s*[~～\-]\s*50\s*\]", full_text)
-        or (year and 2006 <= year <= 2011)
-    )
+    if year and year >= 2014:
+        is_50 = False
+    else:
+        is_50 = bool(
+            (year and 2006 <= year <= 2011)
+            or re.search(r"(?:^|\n)\s*50\s*\.\s*(?!\d)", full_text)
+            or re.search(r"\[\s*49\s*[~～\-∼]\s*50\s*\]", full_text)
+        )
     default_end = 50 if is_50 else 45
 
     # 1. 종료 발문 (이제 듣기·말하기 문제가 끝났습니다. M번부터는 문제지의 지시에 따라...)
@@ -331,7 +334,10 @@ def extract_pdf_columns_and_questions(
         all_page_text += page.get_text() + "\n"
 
     detected_start, detected_end = detect_listening_range(all_page_text, year=year)
-    is_50 = (detected_end == 50) or (end_q is not None and end_q >= 48) or (reading_end is not None and reading_end >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011)
+    if year and year >= 2014:
+        is_50 = False
+    else:
+        is_50 = (detected_end == 50) or (end_q is not None and end_q >= 48) or (reading_end is not None and reading_end >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011)
     if is_50 and (end_q is None or end_q == 45) and (reading_end is None or reading_end == 45):
         detected_end = 50
 
@@ -512,13 +518,38 @@ def extract_pdf_columns_and_questions(
                     "text": list(group_text_lines)
                 }
 
-    # 45문항 체제에서만 1지문 3문항 (43~45번) 전용 고화질 크롭 & 세로 이어붙이기 수행
     if not is_50:
+        # 1지문 2문항 (41~42번) 전용 고화질 크롭 & 세로 이어붙이기 수행
+        merged_41_42_url = crop_and_merge_41_42(doc, grade, year, month, answers_dict, subtype=subtype)
+        if merged_41_42_url:
+            for q_target in (41, 42):
+                if q_target in questions_data:
+                    questions_data[q_target]["pdf_crop_image"] = merged_41_42_url
+        elif 41 in questions_data and questions_data[41].get("pdf_crop_image"):
+            if 42 in questions_data and not questions_data[42].get("pdf_crop_image"):
+                questions_data[42]["pdf_crop_image"] = questions_data[41]["pdf_crop_image"]
+
+        # 1지문 3문항 (43~45번) 전용 고화질 크롭 & 세로 이어붙이기 수행
         merged_43_45_url = crop_and_merge_43_45(doc, grade, year, month, answers_dict, subtype=subtype)
         if merged_43_45_url:
             for q_target in (43, 44, 45):
                 if q_target in questions_data:
                     questions_data[q_target]["pdf_crop_image"] = merged_43_45_url
+        elif 43 in questions_data and questions_data[43].get("pdf_crop_image"):
+            for q_target in (44, 45):
+                if q_target in questions_data and not questions_data[q_target].get("pdf_crop_image"):
+                    questions_data[q_target]["pdf_crop_image"] = questions_data[43]["pdf_crop_image"]
+    else:
+        # 50문항 체제: 46~48번(1지문 3문항) 및 49~50번(1지문 2문항) 지문 연동 보장
+        if 46 in questions_data and questions_data[46].get("pdf_crop_image"):
+            url_46 = questions_data[46]["pdf_crop_image"]
+            for q_sub in (47, 48):
+                if q_sub in questions_data and not questions_data[q_sub].get("pdf_crop_image"):
+                    questions_data[q_sub]["pdf_crop_image"] = url_46
+        if 49 in questions_data and questions_data[49].get("pdf_crop_image"):
+            url_49 = questions_data[49]["pdf_crop_image"]
+            if 50 in questions_data and not questions_data[50].get("pdf_crop_image"):
+                questions_data[50]["pdf_crop_image"] = url_49
 
     doc.close()
     return questions_data
@@ -679,6 +710,225 @@ def save_extracted_question(
     }
 
 
+def crop_and_merge_41_42(
+    doc: fitz.Document,
+    grade: str,
+    year: int,
+    month: int,
+    answers_dict: dict = None,
+    subtype: Optional[str] = None
+) -> Optional[str]:
+    """
+    1지문 2문항(41~42번) 전용 고화질 크롭 & 세로 이어붙이기:
+    - 지문 (좌/우 칼럼의 지문 영역 및 발문 캡처)
+    - 41번, 42번 문항 영역을 정확히 캡처하고 정답 선지 형광펜 하이라이트 적용
+    - 동일 칼럼에 위치한 경우 연속된 단일 영역으로 깔끔하게 캡처,
+      칼럼이 분리된 경우 세로 결합하여 41번과 42번 모두에 완성도 높은 지문 캡처 이미지 제공
+    """
+    answers_dict = answers_dict or {}
+
+    # 41~42번이 위치한 페이지 탐색 (끝 페이지부터 역순)
+    target_page = None
+    for p_idx in range(len(doc) - 1, -1, -1):
+        p = doc[p_idx]
+        txt = p.get_text()
+        if (
+            re.search(r"\[\s*41\s*[\~～\-\—∼\s]\s*42\s*\]", txt) or
+            re.search(r"41\s*[\~～\-\—∼]\s*42", txt) or
+            (re.search(r"(?:^|\n)\s*41\s*\.", txt) and re.search(r"(?:^|\n)\s*42\s*\.", txt))
+        ):
+            target_page = p
+            break
+
+    if not target_page:
+        return None
+
+    page = target_page
+    width, height = page.rect.width, page.rect.height
+
+    # 세로 단 분할선 동적 감지
+    divider_x = None
+    try:
+        v_lines = [
+            d["rect"].x0 for d in page.get_drawings()
+            if d.get("rect") and (d["rect"].y1 - d["rect"].y0) > (height * 0.4) and (d["rect"].x1 - d["rect"].x0) < 5
+        ]
+        mid_cands = [x for x in v_lines if width * 0.35 <= x <= width * 0.65]
+        if mid_cands:
+            divider_x = sum(mid_cands) / len(mid_cands)
+    except Exception:
+        pass
+    if divider_x is None:
+        divider_x = width / 2.0
+
+    # 41, 42번 문항 시작 위치 및 칼럼 소속(L/R) 정밀 탐색
+    q_locs = {}
+    for q in [41, 42]:
+        hits = (
+            page.search_for(f"{q}.") or
+            page.search_for(f"{q} .") or
+            page.search_for(f"{q}\n.")
+        )
+        valid = [h for h in hits if (h.x0 < divider_x and h.x0 >= 25) or (h.x0 >= divider_x and h.x0 <= width - 25)]
+        if valid:
+            top_hit = min(valid, key=lambda r: r.y0)
+            side = "L" if top_hit.x0 < divider_x else "R"
+            q_locs[q] = {"side": side, "y0": top_hit.y0 - 6, "hit": top_hit}
+
+    if 41 not in q_locs or 42 not in q_locs:
+        return None
+
+    side_41 = q_locs[41]["side"]
+    side_42 = q_locs[42]["side"]
+
+    # 1. 지문 헤더 [41~42] 상단 Y 좌표 탐색
+    r_grp = (
+        page.search_for("[41") or
+        page.search_for("41~42") or
+        page.search_for("41～42") or
+        page.search_for("41∼42")
+    )
+    if r_grp:
+        y_start_grp = max(55, min(r.y0 for r in r_grp) - 6)
+    else:
+        # 폴백: 41번 문항 위쪽의 첫 텍스트 블록 상단
+        side_blocks = [
+            b for b in page.get_text("blocks")
+            if (b[0] < divider_x if side_41 == "L" else b[0] >= divider_x)
+            and b[1] < q_locs[41]["y0"] and b[3] > 60
+            and not any(h in b[4] for h in ["홀수형", "짝수형", "영어 영역", "문제지"])
+        ]
+        y_start_grp = max(55, min(b[1] for b in side_blocks) - 6) if side_blocks else 55
+
+    # 2. 정답 선지 하이라이트 주석 적용
+    annots = []
+
+    # Case A: 41번과 42번이 동일 칼럼에 위치한 경우 (대부분의 표준 시험지)
+    if side_41 == side_42:
+        side = side_41
+        x0 = 35 if side == "L" else divider_x + 3
+        x1 = divider_x - 3 if side == "L" else width - 35
+        y0 = y_start_grp
+
+        # 42번 하단 경계: [43~45] 복합지문 헤더, 다음 문항(43번), 또는 42번 선지 블록 끝
+        r_next = page.search_for("[43") or page.search_for("43.") or page.search_for("43 .")
+        r_next_same = [r for r in r_next if (r.x0 < divider_x if side == "L" else r.x0 >= divider_x) and r.y0 > q_locs[42]["y0"]]
+        if r_next_same:
+            y1 = min(r.y0 for r in r_next_same) - 8
+        else:
+            # 42번 이후 텍스트 블록
+            blocks_42 = [
+                b for b in page.get_text("blocks")
+                if (b[0] < divider_x if side == "L" else b[0] >= divider_x)
+                and b[1] >= q_locs[42]["y0"] and b[3] < height - 30
+            ]
+            y1 = max(b[3] for b in blocks_42) + 10 if blocks_42 else height - 40
+
+        # 확인사항 박스 제외
+        notice_top = find_notice_box_top(page, min_x=x0, min_y=y0)
+        if notice_top and notice_top < y1:
+            y1 = notice_top - 4
+
+        clip_41 = fitz.Rect(x0, q_locs[41]["y0"], x1, q_locs[42]["y0"])
+        clip_42 = fitz.Rect(x0, q_locs[42]["y0"], x1, y1)
+
+        ans_41 = answers_dict.get(41, "")
+        if ans_41:
+            try:
+                annots.extend(highlight_answer_choice(page, clip_41, ans_41))
+            except Exception as e:
+                print(f"[41번 정답 하이라이트 경고] {e}")
+
+        ans_42 = answers_dict.get(42, "")
+        if ans_42:
+            try:
+                annots.extend(highlight_answer_choice(page, clip_42, ans_42))
+            except Exception as e:
+                print(f"[42번 정답 하이라이트 경고] {e}")
+
+        crop_rect = fitz.Rect(max(0, x0), max(0, y0), min(width, x1), min(height, y1))
+        pix = page.get_pixmap(clip=crop_rect, dpi=200)
+        final_img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    else:
+        # Case B: 41번(또는 지문)과 42번이 다른 칼럼에 걸쳐 있는 경우 (분할 후 세로 결합)
+        # Part 1: 지문 및 41번 문항 (Left 또는 Right)
+        x0_p1 = 35 if side_41 == "L" else divider_x + 3
+        x1_p1 = divider_x - 3 if side_41 == "L" else width - 35
+        y0_p1 = y_start_grp
+        blocks_41 = [
+            b for b in page.get_text("blocks")
+            if (b[0] < divider_x if side_41 == "L" else b[0] >= divider_x)
+            and b[1] >= q_locs[41]["y0"] and b[3] < height - 30
+        ]
+        y1_p1 = max(b[3] for b in blocks_41) + 10 if blocks_41 else height - 40
+        clip_41 = fitz.Rect(x0_p1, q_locs[41]["y0"], x1_p1, y1_p1)
+
+        ans_41 = answers_dict.get(41, "")
+        if ans_41:
+            try:
+                annots.extend(highlight_answer_choice(page, clip_41, ans_41))
+            except Exception as e:
+                print(f"[41번 정답 하이라이트 경고] {e}")
+
+        # Part 2: 42번 문항 (다른 쪽 칼럼)
+        x0_p2 = 35 if side_42 == "L" else divider_x + 3
+        x1_p2 = divider_x - 3 if side_42 == "L" else width - 35
+        y0_p2 = q_locs[42]["y0"]
+        r_next = page.search_for("[43") or page.search_for("43.") or page.search_for("43 .")
+        r_next_same = [r for r in r_next if (r.x0 < divider_x if side_42 == "L" else r.x0 >= divider_x) and r.y0 > y0_p2]
+        if r_next_same:
+            y1_p2 = min(r.y0 for r in r_next_same) - 8
+        else:
+            blocks_42 = [
+                b for b in page.get_text("blocks")
+                if (b[0] < divider_x if side_42 == "L" else b[0] >= divider_x)
+                and b[1] >= y0_p2 and b[3] < height - 30
+            ]
+            y1_p2 = max(b[3] for b in blocks_42) + 10 if blocks_42 else height - 40
+
+        clip_42 = fitz.Rect(x0_p2, y0_p2, x1_p2, y1_p2)
+        ans_42 = answers_dict.get(42, "")
+        if ans_42:
+            try:
+                annots.extend(highlight_answer_choice(page, clip_42, ans_42))
+            except Exception as e:
+                print(f"[42번 정답 하이라이트 경고] {e}")
+
+        pix1 = page.get_pixmap(clip=fitz.Rect(max(0, x0_p1), max(0, y0_p1), min(width, x1_p1), min(height, y1_p1)), dpi=200)
+        pix2 = page.get_pixmap(clip=fitz.Rect(max(0, x0_p2), max(0, y0_p2), min(width, x1_p2), min(height, y1_p2)), dpi=200)
+        im1 = Image.frombytes("RGB", [pix1.width, pix1.height], pix1.samples)
+        im2 = Image.frombytes("RGB", [pix2.width, pix2.height], pix2.samples)
+
+        max_w = max(im1.width, im2.width)
+        total_h = im1.height + im2.height + 20
+        final_img = Image.new("RGB", (max_w, total_h), (255, 255, 255))
+        final_img.paste(im1, ((max_w - im1.width) // 2, 0))
+        final_img.paste(im2, ((max_w - im2.width) // 2, im1.height + 20))
+
+    if subtype:
+        img_filename = f"{grade}_{year}_{month:02d}_{subtype}_41.png"
+    else:
+        img_filename = f"{grade}_{year}_{month:02d}_41.png"
+    img_filepath = os.path.join(CAPTURES_DIR, img_filename)
+    final_img.save(img_filepath)
+
+    # 42번 문항 파일도 일관성을 위해 동일한 통합 이미지로 저장
+    if subtype:
+        q42_file = os.path.join(CAPTURES_DIR, f"{grade}_{year}_{month:02d}_{subtype}_42.png")
+    else:
+        q42_file = os.path.join(CAPTURES_DIR, f"{grade}_{year}_{month:02d}_42.png")
+    final_img.save(q42_file)
+
+    for a in annots:
+        try:
+            page.delete_annot(a)
+        except Exception:
+            pass
+
+    return f"/static/captures/{img_filename}"
+
+
 def crop_and_merge_43_45(
     doc: fitz.Document,
     grade: str,
@@ -699,9 +949,11 @@ def crop_and_merge_43_45(
     target_page = None
     for p_idx in range(len(doc) - 1, -1, -1):
         p = doc[p_idx]
+        txt = p.get_text()
         if (
-            p.search_for("[43~45]") or p.search_for("43~45") or
-            p.search_for("[43～45]") or p.search_for("43～45") or
+            re.search(r"\[\s*43\s*[\~～\-\—∼\s]\s*45\s*\]", txt) or
+            re.search(r"43\s*[\~～\-\—∼]\s*45", txt) or
+            (re.search(r"(?:^|\n)\s*43\s*\.", txt) and re.search(r"(?:^|\n)\s*45\s*\.", txt)) or
             p.search_for("(A)")
         ):
             target_page = p
@@ -782,10 +1034,13 @@ def crop_and_merge_43_45(
 
     # 지문 영역 Bounding Box 산출 (문항이 시작되기 전 순수 지문 본문만 추출)
     r_grp = (
-        page.search_for("[43~45]") or page.search_for("43~45") or
-        page.search_for("[43～45]") or page.search_for("43～45")
+        page.search_for("[43") or
+        page.search_for("43~45") or
+        page.search_for("43～45") or
+        page.search_for("43∼45") or
+        page.search_for("43-45")
     )
-    y_start_l = max(60, r_grp[0].y0 - 8) if r_grp else 60
+    y_start_l = max(60, min(r.y0 for r in r_grp) - 8) if r_grp else 60
 
     # 1. 좌측 칼럼 지문 영역
     l_qs = [d["y0"] for d in q_locs.values() if d["side"] == "L"]

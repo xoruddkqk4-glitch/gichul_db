@@ -315,7 +315,9 @@ export function groupPassageItems(rawItems) {
     if (!examIs50Map.has(it.exam_id)) examIs50Map.set(it.exam_id, false);
     const yMatch = it.exam_id.match(/(\d{4})년/) || (it.year ? [null, it.year] : null);
     const yr = yMatch ? parseInt(yMatch[1], 10) : 0;
-    if (it.reading_end_q >= 48 || it.q_num >= 46 || (yr >= 2006 && yr <= 2011)) {
+    if (yr >= 2014) {
+      examIs50Map.set(it.exam_id, false);
+    } else if (it.reading_end_q >= 48 || it.q_num >= 46 || (yr >= 2006 && yr <= 2011)) {
       examIs50Map.set(it.exam_id, true);
     }
   }

@@ -553,7 +553,10 @@ def parse_hwp_questions(
         end_q = detected_end
 
     # 50문항 체제 여부 판별
-    is_50 = (end_q >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011) or bool(re.search(r"(?:^|\n)\s*50\s*\.", full_text))
+    if year and year >= 2014:
+        is_50 = False
+    else:
+        is_50 = (end_q >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011) or bool(re.search(r"(?:^|\n)\s*50\s*\.\s*(?!\d)", full_text)) or bool(re.search(r"\[\s*49\s*[~～\-∼]\s*50\s*\]", full_text))
     if is_50 and reading_end is None and end_q == 45:
         end_q = 50
 
