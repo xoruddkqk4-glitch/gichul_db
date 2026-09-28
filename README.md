@@ -1572,7 +1572,7 @@ CREATE TABLE user_sentence_status (
   - 대상 시험지(`고3-2022년-09월`) 검증:
     - 41번/42번: 1063x2006px 고화질 크롭 (지문 + 41번 정답 ③ + 42번 정답 ③ 형광펜 하이라이트 확인)
     - 43번/44번/45번: 1066x3041px 고화질 크롭 (지문 (A)~(D) + 43~45번 문항 및 정답 형광펜 하이라이트 확인)
-### [2026-09-28 10:30] 업데이트 이력 (Commit ID: pending)
+### [2026-09-28 10:30] 업데이트 이력 (Commit ID: 1071e202)
 - **수정 내용**:
   - **문항 상세 브레드크럼 상단 바 내 5종 원본 파일 다운로드 및 실시간 교체/등록 툴바 신규 구축 (`templates/index.html`, `static/js/results-passage.js`, `static/js/upload.js`, `static/css/style.css`)**:
     - **1) 브레드크럼 바 중앙 5종 파일 칩 툴바 신설 (`#breadcrumbExamFiles`)**:
