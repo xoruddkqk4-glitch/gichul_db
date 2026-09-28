@@ -463,15 +463,15 @@ export function groupPassageItems(rawItems) {
     } else {
       // =======================================================================
       // [총 45문항 체제 (2012년 이후)]:
-      // 1) 고2-[2012-09-A] 특수 분기: 41~43번 (1지문3문항), 44~45번 (1지문2문항)
-      // 2) 일반 분기: 41~42번 (1지문2문항), 43~45번 (1지문3문항)
-      // =======================================================================
+      // 1) 고2 특수 분기: 고2-[2012-09-A], 고2-[2012-11-A], 고2-[2013-03-A]형은
+      //    41~43번 (1지문3문항), 44~45번 (1지문2문항) 유형임
+      const isSpecial41_43GroupExam = (p.exam_id && (
+        (p.exam_id.includes("2012년-09월") || p.exam_id.includes("2012년-11월") || p.exam_id.includes("2013년-03월")) &&
+        !p.exam_id.includes("B형") && (p.exam_id.includes("고2") || p.subtype === "A형")
+      )) || (p.question_type === "1지문3문항" && (p.q_num === 41 || p.q_num === 42 || p.q_num === 43))
+         || (p.q_num === 44 && (itemMap.get(`${p.exam_id}_41`)?.question_type === "1지문3문항" || p.question_type === "1지문2문항"));
 
-      const is2012_09_A = (p.exam_id && (
-        p.exam_id.includes("2012년-09월") && !p.exam_id.includes("B형") && (p.exam_id.includes("고2") || p.subtype === "A형")
-      )) || (p.q_num === 41 && p.question_type === "1지문3문항");
-
-      if (is2012_09_A) {
+      if (isSpecial41_43GroupExam) {
         // [41~43번 (1지문 3문항) 통합]
         if (p.q_num === 41) {
           const p42 = itemMap.get(`${p.exam_id}_42`);
