@@ -1654,7 +1654,7 @@ CREATE TABLE user_sentence_status (
     - 고2-[2013-03-A]: `[41~43번] (1지문3문항)` / `[44~45번] (1지문2문항)` 정상 확인
     - 고2-[2012-09-B], 고2-[2012-11-B], 고2-[2013-03-B]: `[41~42번] (1지문2문항)` / `[43~45번] (1지문3문항)` 정상 확인
 
-### [2026-09-28 20:40] 업데이트 이력 (Commit ID: pending)
+### [2026-09-28 20:40] 업데이트 이력 (Commit ID: 21cd0932)
 - **수정 내용**:
   - **LM Studio (Local LLM) 연동 기능 구현 및 비용 0원 무제한 수능 어법 분석 지원 (`templates/index.html`, `static/js/ai-settings.js`, `grammar_analyzer.py`, `app.py`)**:
     - AI 설정 모달(`modalAiSettings`) 내 LM Studio 카드 추가: 로컬 서버 주소(Base URL: `http://localhost:1234/v1`), 선택적 API 키 입력, 다운로드된 모델 목록 실시간 불러오기 드롭다운, 원클릭 추천 모델 태그(`Qwen 2.5 14B`, `Qwen 2.5 7B`, `DeepSeek-R1 14B`, `local-model`) 및 개별 연결 테스트 버튼 연동.
