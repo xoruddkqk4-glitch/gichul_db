@@ -46,6 +46,12 @@
 - 사용자가 `/scratchpad`, `/action scratchpad`, 또는 "scratchpad로 검증해줘"라고 명시적으로 요청한 경우에 한해 브라우저 검증을 수행합니다.
 - 상세는 `.agents/skills/scratchpad/SKILL.md` 참조.
 
-## 7. 원본 규칙 파일
+## 7. `/apply` 계획서 즉시 적용 모드
+- 사용자가 `/apply`, `/action apply` 명령어를 입력하면 직전 `/ask` 모드에서 작성된 `implementation_plan.md` 계획서를 확인하고 소스 코드에 즉시 반영합니다.
+- '반영해줘' 등의 자연어 승인 문구 없이도 즉시 코드 수정을 수행합니다.
+- 코드 변경 후에는 터미널 정적 검증을 수행하며, 자동 커밋/푸시는 하지 않습니다.
+- 상세는 `.agents/skills/apply/SKILL.md` 참조.
+
+## 8. 원본 규칙 파일
 이 문서는 `.agents/rules/rules.md`를 기반으로 구성되었습니다. 규칙을 변경할 때는 함께 갱신하세요.
-- 스킬 정의 원본은 `.agents/skills/*/SKILL.md`이며, Claude Code 슬래시 명령(`/git-commit`, `/ask`, `/scratchpad`)용으로 `.claude/skills/*/SKILL.md`에 미러링되어 있습니다. 스킬을 수정할 때는 두 위치를 함께 갱신하세요.
+- 스킬 정의 원본은 `.agents/skills/*/SKILL.md`이며, Claude Code 슬래시 명령(`/git-commit`, `/ask`, `/scratchpad`, `/apply`)용으로 `.claude/skills/*/SKILL.md`에 미러링되어 있습니다. 스킬을 수정할 때는 두 위치를 함께 갱신하세요.

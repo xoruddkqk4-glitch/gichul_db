@@ -1654,4 +1654,23 @@ CREATE TABLE user_sentence_status (
     - 고2-[2013-03-A]: `[41~43번] (1지문3문항)` / `[44~45번] (1지문2문항)` 정상 확인
     - 고2-[2012-09-B], 고2-[2012-11-B], 고2-[2013-03-B]: `[41~42번] (1지문2문항)` / `[43~45번] (1지문3문항)` 정상 확인
 
+### [2026-09-28 20:40] 업데이트 이력 (Commit ID: pending)
+- **수정 내용**:
+  - **LM Studio (Local LLM) 연동 기능 구현 및 비용 0원 무제한 수능 어법 분석 지원 (`templates/index.html`, `static/js/ai-settings.js`, `grammar_analyzer.py`, `app.py`)**:
+    - AI 설정 모달(`modalAiSettings`) 내 LM Studio 카드 추가: 로컬 서버 주소(Base URL: `http://localhost:1234/v1`), 선택적 API 키 입력, 다운로드된 모델 목록 실시간 불러오기 드롭다운, 원클릭 추천 모델 태그(`Qwen 2.5 14B`, `Qwen 2.5 7B`, `DeepSeek-R1 14B`, `local-model`) 및 개별 연결 테스트 버튼 연동.
+    - 백엔드 LM Studio 지원:
+      - `grammar_analyzer.py`: `get_lmstudio_base_url()`, `set_lmstudio_base_url()`, `get_available_lmstudio_models()` 함수 신설 및 `_call_llm` 내 `/chat/completions` OpenAI 호환 통신 파이프라인 탑재.
+      - `test_connection()`에 LM Studio 전용 연결 테스트 및 미기동 시 친절한 안내 메시지(포트 1234 서버 실행 확인) 처리.
+      - `app.py`: `GET /api/lmstudio/models` 모델 목록 엔드포인트 및 단일 연결 테스트/설정 저장 시 Base URL 영구 보관 연동.
+  - **에이전트 규칙 및 스킬 정책 체계화 (`.agents/rules/rules.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.agents/skills/`, `.claude/skills/`)**:
+    - **Rule 5 (`/ask` 질의응답 및 계획 전용 모드)**: 소스 코드 수정 절대 금지 및 계획서 작성 시 자동 실행 방지 원칙 명문화.
+    - **Rule 7 (`/apply` 계획서 즉시 적용 모드)**: `/ask` 모드로 작성된 계획서를 사용자의 '반영해줘' 등의 자연어 입력 없이 `/apply` 명령어 하나로 즉시 단계별 적용하도록 스킬 및 실행 규칙 신설.
+  - **LM Studio vs OpenRouter 모델 선택 구조 가이드 및 질의 응답**:
+    - OpenRouter(클라우드 다중 모델 동시 병렬 호출을 통한 앙상블 합의)와 LM Studio(로컬 GPU VRAM 한계에 따라 1개 대표 최적 모델 적재)의 구조적 차이점 및 올바른 활용법 가이드 제공.
+- **검증 결과**:
+  - `python -m py_compile app.py grammar_analyzer.py`: 파이썬 문법 검사 오류 0건 통과 (Exit Code 0)
+  - `node --check static/js/ai-settings.js`: 자바스크립트 구문 검사 오류 0건 통과 (Exit Code 0)
+  - LM Studio 모델 목록 API 및 UI 상호작용 검증 완료
+
+
 

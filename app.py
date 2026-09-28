@@ -80,6 +80,7 @@ class SingleProviderTestRequest(BaseModel):
     provider: str
     api_key: Optional[str] = ""
     model: Optional[str] = ""
+    base_url: Optional[str] = ""
 
 
 class AISettingsRequest(BaseModel):
@@ -629,6 +630,13 @@ async def api_get_openrouter_all_models(force_refresh: bool = False):
     }
 
 
+@app.get("/api/lmstudio/models")
+async def api_get_lmstudio_models(base_url: Optional[str] = None):
+    """LM Studio 로컬 서버에서 다운로드/로드된 모델 목록 실시간 조회"""
+    b_url = base_url or grammar_analyzer.get_lmstudio_base_url()
+    models = grammar_analyzer.get_available_lmstudio_models(b_url)
+    return {"success": True, "models": models, "total": len(models)}
+
 
 def describe_non_ascii(value: str) -> str:
     """문자열에 ASCII 외 문자가 있으면 '위치: 문자' 목록을 반환 (없으면 빈 문자열)"""
@@ -642,26 +650,34 @@ async def api_test_single_ai_provider(req: SingleProviderTestRequest):
     p = req.provider.strip().lower()
     k = req.api_key.strip() if req.api_key else ""
     m = req.model.strip() if req.model else ""
+    b_url = req.base_url.strip() if req.base_url else ""
 
-    if not k:
-        existing_k, existing_m = grammar_analyzer.get_provider_config(p)
-        k = existing_k
-        if not m:
-            m = existing_m
+    if p == "lmstudio":
+        if b_url:
+            grammar_analyzer.set_lmstudio_base_url(b_url)
+        if not k:
+            existing_k, _ = grammar_analyzer.get_provider_config(p)
+            k = existing_k or "lm-studio"
+    else:
+        if not k:
+            existing_k, existing_m = grammar_analyzer.get_provider_config(p)
+            k = existing_k
+            if not m:
+                m = existing_m
 
-    if not k:
-        prov_label = grammar_analyzer.PROVIDER_NAMES.get(p, p)
-        return JSONResponse(status_code=400, content={"success": False, "message": f"{prov_label} API Key를 입력해 주세요."})
+        if not k:
+            prov_label = grammar_analyzer.PROVIDER_NAMES.get(p, p)
+            return JSONResponse(status_code=400, content={"success": False, "message": f"{prov_label} API Key를 입력해 주세요."})
 
-    # HTTP 헤더(x-api-key 등)는 latin-1 만 허용되므로 ASCII 외 문자가 섞인 키는 전송 전에 차단
-    bad = describe_non_ascii(k)
-    if bad:
-        return JSONResponse(status_code=400, content={"success": False, "message": f"API Key에 허용되지 않는 문자가 있습니다 ({bad}). 콘솔에서 전체 키를 다시 복사해 붙여 주세요 (말줄임표 '…'나 공백이 섞인 잘린 키인지 확인)."})
+        # HTTP 헤더(x-api-key 등)는 latin-1 만 허용되므로 ASCII 외 문자가 섞인 키는 전송 전에 차단
+        bad = describe_non_ascii(k)
+        if bad:
+            return JSONResponse(status_code=400, content={"success": False, "message": f"API Key에 허용되지 않는 문자가 있습니다 ({bad}). 콘솔에서 전체 키를 다시 복사해 붙여 주세요 (말줄임표 '…'나 공백이 섞인 잘린 키인지 확인)."})
 
     if p == "gemini":
         m = grammar_analyzer.resolve_gemini_model(k, m)
 
-    ok, msg, used_model = grammar_analyzer.test_connection(p, k, m)
+    ok, msg, used_model = grammar_analyzer.test_connection(p, k, m, base_url=b_url)
     if not ok:
         return JSONResponse(status_code=400, content={"success": False, "message": msg})
     return {"success": True, "provider": p, "model": used_model, "message": msg}
@@ -690,6 +706,10 @@ async def api_save_ai_settings(req: AISettingsRequest):
             if p_clean in grammar_analyzer.SUPPORTED_PROVIDERS:
                 k = (p_data.get("api_key") or "").strip()
                 m = (p_data.get("model") or "").strip()
+                if p_clean == "lmstudio":
+                    b_url = (p_data.get("base_url") or "").strip()
+                    if b_url:
+                        grammar_analyzer.set_lmstudio_base_url(b_url)
                 if k:
                     bad = describe_non_ascii(k)
                     if bad:

@@ -78,27 +78,30 @@ SYSTEM_PROMPT = """당신은 대한민국 대학수학능력시험 및 전국연
 """
 
 
-SUPPORTED_PROVIDERS = ["gemini", "openai", "claude", "openrouter"]
+SUPPORTED_PROVIDERS = ["gemini", "openai", "claude", "openrouter", "lmstudio"]
 
 PROVIDER_NAMES = {
     "gemini": "Google Gemini",
     "openai": "OpenAI ChatGPT",
     "claude": "Anthropic Claude",
-    "openrouter": "OpenRouter"
+    "openrouter": "OpenRouter",
+    "lmstudio": "LM Studio (Local LLM)"
 }
 
 PROVIDER_DEFAULT_MODELS = {
     "gemini": "gemini-3.6-flash",
     "openai": "gpt-4o-mini",
     "claude": "claude-haiku-4-5",
-    "openrouter": "deepseek/deepseek-chat"
+    "openrouter": "deepseek/deepseek-chat",
+    "lmstudio": "qwen2.5-14b-instruct"
 }
 
 PROVIDER_ENV_VARS = {
     "gemini": "GEMINI_API_KEY",
     "openai": "OPENAI_API_KEY",
     "claude": "ANTHROPIC_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY"
+    "openrouter": "OPENROUTER_API_KEY",
+    "lmstudio": "LMSTUDIO_API_KEY"
 }
 
 RETIRED_GEMINI_MODELS = {
@@ -216,13 +219,15 @@ def resolve_gemini_model(api_key: str, requested_model: str = "") -> str:
 
 
 def is_valid_api_key_format(provider: str, key: str) -> bool:
-    """API 키가 더미 문자열이 아닌 실제 유효한 형식인지 검증"""
+    """API 키가 더미 문자열이 아닌 실제 유효한 형식인지 검증 (LM Studio는 로컬 특성상 키 선택사항)"""
+    p = provider.lower()
+    if p == "lmstudio":
+        return True
     if not key or not isinstance(key, str):
         return False
     k = key.strip()
     if "test-key" in k.lower() or k.endswith("...") or len(k) < 15:
         return False
-    p = provider.lower()
     if p == "openrouter":
         return k.startswith("sk-or-") and len(k) >= 30
     elif p == "openai":
@@ -305,6 +310,43 @@ def set_consensus_mode(mode: str):
     database.set_setting("ai_consensus_mode", clean_mode)
 
 
+def get_lmstudio_base_url() -> str:
+    """LM Studio 로컬 서버 Base URL 조회 (기본값: http://localhost:1234/v1)"""
+    url = database.get_setting("ai_base_url_lmstudio", "").strip()
+    return url if url else "http://localhost:1234/v1"
+
+
+def set_lmstudio_base_url(url: str):
+    """LM Studio 로컬 서버 Base URL 저장"""
+    clean_url = (url or "http://localhost:1234/v1").strip().rstrip("/")
+    if not clean_url.endswith("/v1"):
+        clean_url = f"{clean_url}/v1"
+    database.set_setting("ai_base_url_lmstudio", clean_url)
+
+
+def get_available_lmstudio_models(base_url: str = "") -> List[str]:
+    """LM Studio 로컬 서버(/v1/models)에서 사용 가능한 로컬 모델 ID 목록 조회"""
+    b_url = (base_url or get_lmstudio_base_url()).rstrip("/")
+    url = f"{b_url}/models"
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"Content-Type": "application/json"},
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = []
+            for item in data.get("data", []):
+                m_id = item.get("id")
+                if m_id:
+                    models.append(m_id)
+            return models
+    except Exception as e:
+        print(f"[LM Studio ListModels Error] {e}")
+        return []
+
+
 def get_all_ai_configs() -> Dict[str, Any]:
     """모든 지원 모델의 설정 현황 및 활성화 목록 종합 조회"""
     active_providers = get_active_providers()
@@ -318,15 +360,20 @@ def get_all_ai_configs() -> Dict[str, Any]:
                 masked_key = api_key[:4] + "•" * (len(api_key) - 8) + api_key[-4:]
             else:
                 masked_key = "••••••••"
+        elif p == "lmstudio":
+            masked_key = "로컬 인증 (키 불필요)"
 
-        providers_info[p] = {
+        p_info = {
             "name": PROVIDER_NAMES.get(p, p),
             "is_active": p in active_providers,
-            "has_key": bool(api_key),
+            "has_key": bool(api_key) or (p == "lmstudio"),
             "masked_key": masked_key,
             "model": model,
             "default_model": PROVIDER_DEFAULT_MODELS.get(p, "")
         }
+        if p == "lmstudio":
+            p_info["base_url"] = get_lmstudio_base_url()
+        providers_info[p] = p_info
 
     is_or_ensemble = is_openrouter_ensemble_enabled()
     is_ensemble = (len(active_providers) > 1) or ("openrouter" in active_providers and is_or_ensemble)
@@ -337,7 +384,8 @@ def get_all_ai_configs() -> Dict[str, Any]:
         "consensus_mode": get_consensus_mode(),
         "providers": providers_info,
         "openrouter_ensemble": is_or_ensemble,
-        "openrouter_ensemble_models": get_openrouter_ensemble_models()
+        "openrouter_ensemble_models": get_openrouter_ensemble_models(),
+        "lmstudio_base_url": get_lmstudio_base_url()
     }
 
 
@@ -526,7 +574,7 @@ def _call_gemini_with_resilience(user_content: str, api_key: str, requested_mode
         raise ValueError(f"GEMINI API 호출 오류 ({last_error_code or 'Unknown'}): {last_error_detail}")
 
 
-def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool, str, str]:
+def test_connection(provider: str, api_key: str, model: str = "", base_url: str = "") -> Tuple[bool, str, str]:
     """선택된 Provider 및 API Key로 연결 핑 테스트 수행 (성공여부, 메시지, 사용된 모델)"""
     load_categories()
     provider = provider.lower()
@@ -536,6 +584,11 @@ def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool,
         resolved_model = model
         if provider == "gemini":
             resolved_model = resolve_gemini_model(api_key, model)
+        elif provider == "lmstudio":
+            if not api_key:
+                api_key = "lm-studio"
+            if base_url:
+                set_lmstudio_base_url(base_url)
         results, used_model = _call_llm(test_sentence, provider, api_key, resolved_model, return_model=True)
         prov_name = PROVIDER_NAMES.get(provider, provider.upper())
         msg = f"연결 성공! {prov_name} ({used_model}) 연결이 정상 확인되었습니다."
@@ -543,7 +596,11 @@ def test_connection(provider: str, api_key: str, model: str = "") -> Tuple[bool,
             msg += f" (참고: 요청 모델 {model}의 일시적 Google 트래픽 과부하(503)로 인해 안정적인 {used_model} 모델로 자동 전환되었습니다.)"
         return True, msg, used_model
     except Exception as e:
-        return False, f"연결 실패: {str(e)}", model
+        err_msg = str(e)
+        if provider == "lmstudio" and ("Connection refused" in err_msg or "WinError 10061" in err_msg or "URLError" in str(type(e))):
+            target_url = base_url or get_lmstudio_base_url()
+            err_msg = f"LM Studio 서버({target_url})에 연결할 수 없습니다. LM Studio의 'Local Server' 탭에서 [Start Server]를 켜두셨는지 확인해 주세요."
+        return False, f"연결 실패: {err_msg}", model
 
 
 def extract_answer_num(ans_text: str) -> Optional[int]:
@@ -719,7 +776,10 @@ def _call_llm(
     load_categories()
     provider = provider.lower()
     if not api_key:
-        raise ValueError(f"{provider.upper()} API Key가 설정되지 않았습니다.")
+        if provider == "lmstudio":
+            api_key = "lm-studio"
+        else:
+            raise ValueError(f"{provider.upper()} API Key가 설정되지 않았습니다.")
 
     user_content = f"""[분석할 영어 문장]
 "{sentence}"
@@ -817,6 +877,34 @@ def _call_llm(
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 # 현행 모델은 content 앞에 thinking 블록이 올 수 있으므로 text 블록만 모아서 사용
                 raw_json_str = "".join(b.get("text", "") for b in resp_data.get("content", []) if b.get("type") == "text")
+
+        elif provider == "lmstudio":
+            target_model = model or PROVIDER_DEFAULT_MODELS.get("lmstudio", "qwen2.5-14b-instruct")
+            used_model = target_model
+            base_url = get_lmstudio_base_url().rstrip("/")
+            url = f"{base_url}/chat/completions"
+            payload = {
+                "model": target_model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1
+            }
+            auth_header = f"Bearer {api_key}" if api_key else "Bearer lm-studio"
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": auth_header
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                raw_json_str = resp_data["choices"][0]["message"]["content"]
 
         else:
             raise ValueError(f"지원하지 않는 AI Provider: {provider}")

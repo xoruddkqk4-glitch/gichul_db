@@ -29,13 +29,14 @@ let currentEnsembleModels = [
 // 13. AI 설정 모달 (Multi-LLM: Gemini / ChatGPT / Claude / OpenRouter)
 // =========================================================================
 
-const ALL_PROVIDERS = ["gemini", "openai", "claude", "openrouter"];
+const ALL_PROVIDERS = ["gemini", "openai", "claude", "openrouter", "lmstudio"];
 
 const providerDisplayNames = {
   gemini: "Google Gemini",
   openai: "OpenAI ChatGPT",
   claude: "Anthropic Claude",
   openrouter: "OpenRouter",
+  lmstudio: "LM Studio (Local LLM)",
 };
 
 const providerShortNames = {
@@ -43,6 +44,7 @@ const providerShortNames = {
   openai: "GPT",
   claude: "Claude",
   openrouter: "OpenRouter",
+  lmstudio: "LM Studio",
 };
 
 function capitalize(str) {
@@ -202,6 +204,74 @@ async function loadOpenRouterAllModels(force = false) {
     if (btn) {
       btn.disabled = false;
       btn.textContent = "🔄 모델 갱신";
+    }
+  }
+}
+
+/** LM Studio 로컬 서버 다운로드 모델 목록 실시간 조회 */
+async function loadLmStudioModels(force = false) {
+  const btn = document.getElementById("btnRefreshLmstudioModels");
+  const select = document.getElementById("lmstudioModelSelect");
+  const urlInput = document.getElementById("urlInputLmstudio");
+  const modelInput = document.getElementById("modelInputLmstudio");
+  const baseUrl = (urlInput ? urlInput.value.trim() : "") || "http://localhost:1234/v1";
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "⏳ 조회 중...";
+  }
+
+  try {
+    const res = await fetch(`/api/lmstudio/models?base_url=${encodeURIComponent(baseUrl)}`);
+    const data = await res.json();
+    if (res.ok && data.models && data.models.length > 0) {
+      if (select) {
+        select.innerHTML = "";
+        const curModel = modelInput ? modelInput.value.trim() : "";
+        let matched = false;
+
+        data.models.forEach((mId) => {
+          const opt = document.createElement("option");
+          opt.value = mId;
+          opt.textContent = `📦 ${mId}`;
+          if (mId === curModel) {
+            opt.selected = true;
+            matched = true;
+          }
+          select.appendChild(opt);
+        });
+
+        const optCustom = document.createElement("option");
+        optCustom.value = "__custom__";
+        optCustom.textContent = "✏️ 직접 모델명 입력...";
+        if (!matched && curModel) optCustom.selected = true;
+        select.appendChild(optCustom);
+
+        if (!matched && data.models.length > 0 && (!curModel || curModel === "qwen2.5-14b-instruct")) {
+          select.selectedIndex = 0;
+          if (modelInput) modelInput.value = data.models[0];
+        }
+      }
+      if (force) {
+        showToast(`LM Studio 로컬 모델 ${data.models.length}개를 불러왔습니다.`, "success");
+      }
+    } else {
+      if (select) {
+        select.innerHTML = '<option value="">(LM Studio에서 모델을 다운로드하거나 로드해주세요)</option>';
+      }
+      if (force) {
+        showToast("LM Studio에서 모델 목록을 불러오지 못했습니다. Local Server가 켜져 있는지 확인해 주세요.", "warning");
+      }
+    }
+  } catch (err) {
+    console.error("LM Studio 모델 목록 조회 실패:", err);
+    if (force) {
+      showToast("LM Studio 로컬 서버 연결 실패 (포트 1234 확인 필요)", "error");
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "🔄 로컬 모델 불러오기";
     }
   }
 }
@@ -522,6 +592,25 @@ async function openAiSettingsModal() {
             testRes.innerHTML = `<span>⚠️ <strong>키 미등록:</strong> API Key를 입력한 후 [🧪 개별 연결 테스트]를 진행해 주세요.</span>`;
           }
         }
+        if (p === "lmstudio") {
+          const urlInput = document.getElementById("urlInputLmstudio");
+          if (urlInput) {
+            urlInput.value = pData.base_url || data.lmstudio_base_url || "http://localhost:1234/v1";
+          }
+          if (keyStatus) {
+            if (pData.has_key && pData.masked_key && !pData.masked_key.includes("불필요")) {
+              keyStatus.textContent = `현재 키: ${pData.masked_key} (등록됨)`;
+              keyStatus.style.color = "#059669";
+            } else {
+              keyStatus.textContent = "로컬 연결 대기 (포트: 1234)";
+              keyStatus.style.color = "#059669";
+            }
+          }
+          if (testRes) {
+            testRes.className = "provider-test-result info visible";
+            testRes.innerHTML = `<span>ℹ️ <strong>로컬 LLM:</strong> LM Studio에서 Start Server(포트 1234)를 켠 후 [🧪 개별 연결 테스트]를 클릭하세요.</span>`;
+          }
+        }
       });
 
       // 합의 방식 셀렉트 동기화
@@ -549,6 +638,9 @@ async function openAiSettingsModal() {
       } else {
         renderOpenRouterModelSelectOptions();
       }
+
+      // LM Studio 다운로드 모델 목록 동기화
+      loadLmStudioModels(false);
 
       // TTS 설정 동기화 (Edge-TTS 및 ElevenLabs)
       const ttsData = data.tts || {};
@@ -772,6 +864,23 @@ export function init() {
     });
   }
 
+  const btnRefreshLmstudio = document.getElementById("btnRefreshLmstudioModels");
+  if (btnRefreshLmstudio) {
+    btnRefreshLmstudio.addEventListener("click", () => {
+      loadLmStudioModels(true);
+    });
+  }
+
+  const lmstudioSelect = document.getElementById("lmstudioModelSelect");
+  if (lmstudioSelect) {
+    lmstudioSelect.addEventListener("change", () => {
+      const modelInput = document.getElementById("modelInputLmstudio");
+      if (modelInput && lmstudioSelect.value && lmstudioSelect.value !== "__custom__") {
+        modelInput.value = lmstudioSelect.value;
+      }
+    });
+  }
+
   // 체크박스 클릭 시 카드 스타일 및 요약 업데이트
   document.querySelectorAll(".provider-checkbox").forEach((cb) => {
     cb.addEventListener("change", () => {
@@ -825,6 +934,12 @@ export function init() {
         `;
       }
 
+      let baseUrl = "";
+      if (p === "lmstudio") {
+        const urlInput = document.getElementById("urlInputLmstudio");
+        baseUrl = urlInput ? urlInput.value.trim() : "";
+      }
+
       try {
         const res = await fetch("/api/settings/ai/test", {
           method: "POST",
@@ -833,6 +948,7 @@ export function init() {
             provider: p,
             api_key: apiKey,
             model: model,
+            base_url: baseUrl,
           }),
         });
         const resData = await res.json();
@@ -982,6 +1098,10 @@ export function init() {
           api_key: keyInput ? keyInput.value.trim() : "",
           model: modelInput ? modelInput.value.trim() : "",
         };
+        if (p === "lmstudio") {
+          const urlInput = document.getElementById("urlInputLmstudio");
+          providersPayload[p].base_url = urlInput ? urlInput.value.trim() : "http://localhost:1234/v1";
+        }
       });
 
       const modeSelect = document.getElementById("selectConsensusMode");

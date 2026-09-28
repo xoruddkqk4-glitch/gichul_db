@@ -1546,6 +1546,70 @@
             </div>
           </div>
 
+          <!-- 5. LM Studio (Local LLM) 카드 -->
+          <div class="ai-provider-card" id="cardProviderLmstudio" data-provider="lmstudio" style="grid-column: 1 / -1; border: 1.5px solid #cbd5e1; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);">
+            <div class="provider-card-header">
+              <label class="provider-toggle-label">
+                <input type="checkbox" class="provider-checkbox" id="cbProviderLmstudio" data-provider="lmstudio">
+                <span class="provider-name" style="display: flex; align-items: center; gap: 6px;">
+                  🖥️ LM Studio (Local LLM)
+                  <span style="font-size: 0.7rem; font-weight: 700; background: #e0e7ff; color: #4338ca; padding: 2px 7px; border-radius: 9999px;">비용 0원 무제한</span>
+                </span>
+              </label>
+              <span class="provider-status-badge" id="badgeProviderLmstudio">비활성</span>
+            </div>
+            <div class="provider-card-body">
+              <p class="provider-card-desc">내 PC 그래픽카드(RTX 5060 16GB)를 활용하여 외부 API 요금 없이 초고속 일괄 분석을 수행합니다.</p>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="provider-field-label">로컬 서버 주소 (Base URL)</label>
+                  <input type="text" class="form-control" id="urlInputLmstudio" value="http://localhost:1234/v1" placeholder="http://localhost:1234/v1" style="font-size: 0.82rem;">
+                  <span style="font-size: 0.71rem; color: #64748b; margin-top: 3px; display: block;">LM Studio의 [Local Server] 탭에서 Start Server 실행 시 주소</span>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label class="provider-field-label" style="margin-bottom: 0;">API Key (선택 사항)</label>
+                    <span style="font-size: 0.71rem; color: #10b981; font-weight: 700;">로컬 기본: 인증 불필요</span>
+                  </div>
+                  <div class="provider-key-input-wrapper">
+                    <input type="password" class="form-control provider-key-input" id="keyInputLmstudio" placeholder="비워두기 (LM Studio 인증 토큰 켰을 때만 입력)">
+                    <button type="button" class="btn-toggle-key-vis" data-target="keyInputLmstudio" title="키 표시/숨김">👁️</button>
+                  </div>
+                  <span class="provider-key-status" id="keyStatusLmstudio" style="color: #059669;">로컬 연결 대기 (포트: 1234)</span>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label class="provider-field-label" style="margin-bottom: 0;">로컬 모델 선택</label>
+                  <button type="button" class="btn-refresh-models" id="btnRefreshLmstudioModels" title="LM Studio에 다운로드된 모델 목록 실시간 불러오기">🔄 로컬 모델 불러오기</button>
+                </div>
+                <select class="form-control" id="lmstudioModelSelect" style="font-size: 0.8rem; margin-bottom: 6px;">
+                  <option value="">(LM Studio 모델 불러오기를 누르면 다운로드된 모델 목록이 표시됩니다)</option>
+                </select>
+                <input type="text" class="form-control provider-model-input" id="modelInputLmstudio" value="qwen2.5-14b-instruct" placeholder="예: qwen2.5-14b-instruct / local-model">
+                <div class="lmstudio-model-suggestions" style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="qwen2.5-14b-instruct" title="수능 어법 분석 강력 추천 1위 (5060 16GB 최적)">🏆 Qwen 2.5 14B (추천)</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="qwen2.5-7b-instruct" title="초고속 7B 모델">⚡ Qwen 2.5 7B</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="deepseek-r1-distill-qwen-14b" title="고난도 킬러 문항 추론">🧠 DeepSeek-R1 14B</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="local-model" title="현재 로드된 기본 모델">📍 현재 로드된 모델 (local-model)</button>
+                </div>
+              </div>
+
+              <div class="provider-card-actions">
+                <div class="provider-test-btn-row">
+                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="lmstudio" id="btnTestLmstudio">
+                    🧪 개별 연결 테스트
+                  </button>
+                  <span class="test-guide-hint">로컬 서버 핑 및 어법 분석 JSON 통신 확인</span>
+                </div>
+                <div class="provider-test-result" id="testResultLmstudio"></div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- ====================================================================
