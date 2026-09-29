@@ -14,10 +14,13 @@ import {
   mainSearchInput,
   passageViewContainer,
   popoverBadge,
-  popoverExplanationText,
+  popoverSource,
   popoverPath,
   popoverPhraseSection,
   popoverPhraseText,
+  popoverExplanationText,
+  popoverFooter,
+  btnAdoptAiToUser,
   resultsSearchInput,
   resultsTabModePassage,
   resultsTabModeSentence,
@@ -223,12 +226,19 @@ function renderGrammarBadges(annos, sentenceId, grammarAnalyzed) {
     return annos
       .map((a, idx) => {
         const badgeClass = getGrammarBadgeClass(a.pos);
+        const isUser = a.source_type === "USER";
+        const sourceClass = isUser ? "badge-source-user" : "badge-source-ai";
+        const sourceIcon = isUser ? "👤" : "🤖";
+        const sourceLabel = isUser ? "사용자 분석" : "AI 분석";
         const identifier = a.id || a.category_id || 0;
         const removeBtn = sentenceId
-          ? `<button type="button" class="grammar-remove-btn" data-sent-id="${escapeHtml(sentenceId)}" data-id="${escapeHtml(String(identifier))}" title="어법 범주 삭제">&times;</button>`
+          ? `<button type="button" class="grammar-remove-btn" data-sent-id="${escapeHtml(sentenceId)}" data-id="${escapeHtml(String(identifier))}" data-source="${escapeHtml(a.source_type || 'AI')}" title="${sourceLabel} 삭제">&times;</button>`
           : "";
         const annoJson = escapeHtml(JSON.stringify(a));
-        return `<span class="grammar-tag-badge ${badgeClass}" data-sent-id="${escapeHtml(sentenceId || '')}" data-idx="${idx}" data-anno="${annoJson}" title="클릭하여 상세 해설 보기">🏷️ ${escapeHtml(a.leaf_name || a.pos || "")}${removeBtn}</span>`;
+        const tooltipTitle = isUser
+          ? `[사용자 직접 분석] ${escapeHtml(a.full_path || '')} (클릭하여 상세 해설 보기)`
+          : `[AI 자동 분석 - ${escapeHtml(a.ai_model || 'LLM')}] ${escapeHtml(a.full_path || '')} (클릭하여 상세 해설 보기)`;
+        return `<span class="grammar-tag-badge ${badgeClass} ${sourceClass}" data-sent-id="${escapeHtml(sentenceId || '')}" data-idx="${idx}" data-source="${escapeHtml(a.source_type || 'AI')}" data-anno="${annoJson}" title="${tooltipTitle}"><span class="badge-source-icon">${sourceIcon}</span> ${escapeHtml(a.leaf_name || a.pos || "")}${removeBtn}</span>`;
       })
       .join(" ");
   }
@@ -248,15 +258,25 @@ function closeGrammarPopover() {
   if (grammarExplanationPopover) {
     grammarExplanationPopover.style.display = "none";
   }
+  if (popoverFooter) {
+    popoverFooter.style.display = "none";
+  }
 }
 
 /** 어법 범주 배지 클릭 시 상세 해설 플로팅 팝오버 표시 */
-export function showGrammarPopover(anno, targetElement) {
+export function showGrammarPopover(anno, targetElement, sentenceObj = null, onUpdateCallback = null) {
   if (!grammarExplanationPopover || !anno || !targetElement) return;
 
   if (popoverBadge) {
     popoverBadge.className = `grammar-popover-badge ${getGrammarBadgeClass(anno.pos)}`;
     popoverBadge.textContent = `🏷️ ${anno.leaf_name || anno.pos || '어법'}`;
+  }
+
+  if (popoverSource) {
+    const isUser = anno.source_type === "USER";
+    popoverSource.textContent = isUser ? "👤 사용자 분석" : `🤖 AI 분석 (${anno.ai_model || 'LLM'})`;
+    popoverSource.style.background = isUser ? "rgba(16, 185, 129, 0.15)" : "rgba(139, 92, 246, 0.15)";
+    popoverSource.style.color = isUser ? "#059669" : "#8b5cf6";
   }
 
   if (popoverPath) {
@@ -275,6 +295,52 @@ export function showGrammarPopover(anno, targetElement) {
 
   if (popoverExplanationText) {
     popoverExplanationText.textContent = anno.explanation || "등록된 상세 해설 내용이 없습니다.";
+  }
+
+  // AI 분석 어법인 경우 "내 분석으로 채택(등록)" 버튼 활성화
+  if (popoverFooter && btnAdoptAiToUser) {
+    if (anno.source_type !== "USER" && sentenceObj && sentenceObj.id) {
+      popoverFooter.style.display = "flex";
+      btnAdoptAiToUser.onclick = async () => {
+        btnAdoptAiToUser.disabled = true;
+        btnAdoptAiToUser.textContent = "⏳ 채택 중...";
+        try {
+          const res = await fetch(`/api/sentences/${encodeURIComponent(sentenceObj.id)}/grammar-annotations`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              category_id: anno.category_id || 0,
+              pos: anno.pos || "",
+              full_path: anno.full_path || "",
+              leaf_name: anno.leaf_name || "",
+              target_expression: anno.target_expression || "",
+              explanation: `사용자 채택: ${anno.explanation || anno.full_path || ''}`,
+              source_type: "USER"
+            })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            sentenceObj.grammar_annotations = data.annotations || [];
+            sentenceObj.grammar_analyzed = 1;
+            if (typeof onUpdateCallback === "function") {
+              onUpdateCallback();
+            }
+            showToast(`'${anno.leaf_name}' 어법이 내 분석으로 채택되었습니다.`, "success");
+            closeGrammarPopover();
+          } else {
+            showToast(data.detail || "채택 등록 실패", "error");
+          }
+        } catch (err) {
+          console.error("Adopt grammar error:", err);
+          showToast("내 분석 채택 중 오류가 발생했습니다.", "error");
+        } finally {
+          btnAdoptAiToUser.disabled = false;
+          btnAdoptAiToUser.textContent = "👤 내 분석으로 채택(등록)";
+        }
+      };
+    } else {
+      popoverFooter.style.display = "none";
+    }
   }
 
   grammarExplanationPopover.style.display = "block";
@@ -418,7 +484,11 @@ function createSentenceRow(s, currentQuery) {
         const identifier = btn.dataset.id;
         if (!identifier) return;
         try {
-          const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/grammar-annotations/${encodeURIComponent(identifier)}`, {
+          let delUrl = `/api/sentences/${encodeURIComponent(s.id)}/grammar-annotations/${encodeURIComponent(identifier)}`;
+          if (btn.dataset.source) {
+            delUrl += `?source_type=${encodeURIComponent(btn.dataset.source)}`;
+          }
+          const res = await fetch(delUrl, {
             method: "DELETE"
           });
           const data = await res.json();
@@ -481,7 +551,7 @@ function createSentenceRow(s, currentQuery) {
           anno = (s.grammar_annotations && s.grammar_annotations[idx]) ? s.grammar_annotations[idx] : null;
         }
         if (anno) {
-          showGrammarPopover(anno, badge);
+          showGrammarPopover(anno, badge, s, () => updateGrammarCell());
         }
       });
     });

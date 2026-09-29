@@ -187,11 +187,27 @@ export const btnCloseBatchModal = document.getElementById("btnCloseBatchModal");
 // 어법 범주 상세 해설 플로팅 팝오버 요소
 export const grammarExplanationPopover = document.getElementById("grammarExplanationPopover");
 export const popoverBadge = document.getElementById("popoverBadge");
+export const popoverSource = document.getElementById("popoverSource");
 export const popoverPath = document.getElementById("popoverPath");
 export const btnCloseGrammarPopover = document.getElementById("btnCloseGrammarPopover");
 export const popoverPhraseSection = document.getElementById("popoverPhraseSection");
 export const popoverPhraseText = document.getElementById("popoverPhraseText");
 export const popoverExplanationText = document.getElementById("popoverExplanationText");
+export const popoverFooter = document.getElementById("popoverFooter");
+export const btnAdoptAiToUser = document.getElementById("btnAdoptAiToUser");
+
+// 커스텀 어법 체계 관리 모달 요소
+export const grammarTreeStatusBadge = document.getElementById("grammarTreeStatusBadge");
+export const btnManageGrammarTree = document.getElementById("btnManageGrammarTree");
+export const customGrammarTreeModal = document.getElementById("customGrammarTreeModal");
+export const btnCloseCustomTreeModal = document.getElementById("btnCloseCustomTreeModal");
+export const btnCancelCustomTreeModal = document.getElementById("btnCancelCustomTreeModal");
+export const btnSaveCustomTreeModal = document.getElementById("btnSaveCustomTreeModal");
+export const toggleUseCustomTree = document.getElementById("toggleUseCustomTree");
+export const labelUseCustomTree = document.getElementById("labelUseCustomTree");
+export const customTreeJsonEditor = document.getElementById("customTreeJsonEditor");
+export const btnCopyStandardTree = document.getElementById("btnCopyStandardTree");
+export const btnResetToStandardTree = document.getElementById("btnResetToStandardTree");
 
 export const tabBtnBatchUpload = document.getElementById("tabBtnBatchUpload");
 export const tabBtnFilesStatus = document.getElementById("tabBtnFilesStatus");

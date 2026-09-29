@@ -2768,6 +2768,47 @@ mark.passage-highlight {
   border-color: #cbd5e1;
 }
 
+/* AI 분석 어법 배지 (인디고/퍼플 악센트) */
+.grammar-tag-badge.badge-source-ai {
+  border-left-width: 3px;
+  border-left-color: #8b5cf6;
+}
+.grammar-tag-badge.badge-source-ai .badge-source-icon {
+  font-size: 0.72rem;
+  margin-right: 2px;
+  filter: drop-shadow(0 1px 1px rgba(139, 92, 246, 0.3));
+}
+
+/* 사용자 직접 분석 어법 배지 (에메랄드/그린 악센트) */
+.grammar-tag-badge.badge-source-user {
+  border-left-width: 3px;
+  border-left-color: #10b981;
+  background-color: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+.grammar-tag-badge.badge-source-user:hover {
+  background-color: #d1fae5;
+  border-color: #6ee7b7;
+}
+.grammar-tag-badge.badge-source-user .badge-source-icon {
+  font-size: 0.72rem;
+  margin-right: 2px;
+}
+
+/* 어법 체계 상태 배지 (모달창 상단) */
+.grammar-tree-badge.custom-active {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #059669 !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+[data-theme="dark"] .grammar-tag-badge.badge-source-user {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
 /* ==========================================================================
    어법 범주 상세 해설 플로팅 팝오버
    ========================================================================== */

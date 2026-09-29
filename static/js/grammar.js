@@ -44,12 +44,25 @@ import {
   inputGrammarSearch,
   resultsFilterGrammarCategory,
   resultsFilterGrammarPos,
+  grammarTreeStatusBadge,
+  btnManageGrammarTree,
+  customGrammarTreeModal,
+  btnCloseCustomTreeModal,
+  btnCancelCustomTreeModal,
+  btnSaveCustomTreeModal,
+  toggleUseCustomTree,
+  labelUseCustomTree,
+  customTreeJsonEditor,
+  btnCopyStandardTree,
+  btnResetToStandardTree,
 } from "./dom.js";
 import { executeSearch, executeSearchWithinResults } from "./search.js";
 import { getGrammarBadgeClass, showGrammarPopover, showSentencesForPassage } from "./results-sentence.js";
 import { escapeHtml, showToast } from "./utils.js";
 
 let grammarCategoriesList = [];
+let isCustomGrammarTree = false;
+let customGrammarTreeData = null;
 // =========================================================================
 // 12. 어법 범주표 로드 및 캐스케이딩 드롭다운 연동
 // =========================================================================
@@ -78,15 +91,46 @@ function closeGrammarCategoryModal() {
   activeGrammarModalCallback = null;
 }
 
+function updateGrammarTreeStatusBadge() {
+  if (!grammarTreeStatusBadge) return;
+  if (isCustomGrammarTree) {
+    grammarTreeStatusBadge.textContent = "👤 나만의 커스텀 체계";
+    grammarTreeStatusBadge.classList.add("custom-active");
+    grammarTreeStatusBadge.title = "현재 나만의 커스텀 어법 체계가 적용되어 있습니다.";
+  } else {
+    grammarTreeStatusBadge.textContent = "🏛️ 표준 243개 체계";
+    grammarTreeStatusBadge.classList.remove("custom-active");
+    grammarTreeStatusBadge.title = "현재 기본 표준 243개 어법 체계가 적용되어 있습니다.";
+  }
+}
+
 async function loadGrammarCategories() {
   try {
-    const res = await fetch("/static/data/grammar_categories.json");
+    const res = await fetch("/api/grammar/categories");
     if (res.ok) {
       const data = await res.json();
-      grammarCategoriesList = data.list || [];
+      const catData = data.data || data;
+      grammarCategoriesList = catData.list || [];
+      isCustomGrammarTree = Boolean(data.is_custom || data.use_custom_tree);
+      customGrammarTreeData = catData;
+      updateGrammarTreeStatusBadge();
+      return;
     }
   } catch (e) {
-    console.error("어법 범주 데이터 로드 실패:", e);
+    console.error("어법 범주 API 로드 실패, 로컬 백업 로드 시도:", e);
+  }
+
+  try {
+    const fbRes = await fetch("/static/data/grammar_categories.json");
+    if (fbRes.ok) {
+      const fbData = await fbRes.json();
+      grammarCategoriesList = fbData.list || [];
+      isCustomGrammarTree = false;
+      customGrammarTreeData = fbData;
+      updateGrammarTreeStatusBadge();
+    }
+  } catch (fbErr) {
+    console.error("어법 범주 로컬 백업 로드 실패:", fbErr);
   }
 }
 
@@ -989,7 +1033,8 @@ export function init() {
             pos: found.pos,
             full_path: found.full_path,
             leaf_name: found.leaf,
-            explanation: `수동 등록 (${found.full_path})`
+            explanation: `사용자 분석 (${found.full_path})`,
+            source_type: "USER"
           };
         }
         return null;
@@ -999,7 +1044,10 @@ export function init() {
         const res = await fetch(`/api/sentences/${encodeURIComponent(activeGrammarModalSentence.id)}/grammar-annotations/batch`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ annotations: selectedItems })
+          body: JSON.stringify({ 
+            annotations: selectedItems,
+            source_type: "USER"
+          })
         });
         const data = await res.json();
         if (res.ok && data.success) {
@@ -1169,6 +1217,142 @@ export function init() {
       }
 
       await runBatchAnalysisModal(targetSentences, false);
+    });
+  }
+
+  // 커스텀 어법 체계 관리 모달 연동
+  initCustomGrammarTreeModal();
+}
+
+/**
+ * 나만의 커스텀 어법 체계 관리 모달 이벤트 초기화
+ */
+function initCustomGrammarTreeModal() {
+  if (!btnManageGrammarTree || !customGrammarTreeModal) return;
+
+  const closeCustomModal = () => {
+    customGrammarTreeModal.style.display = "none";
+  };
+
+  btnManageGrammarTree.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/grammar/settings");
+      if (res.ok) {
+        const settings = await res.json();
+        if (toggleUseCustomTree) {
+          toggleUseCustomTree.checked = Boolean(settings.use_custom_tree);
+          if (labelUseCustomTree) {
+            labelUseCustomTree.textContent = settings.use_custom_tree ? "커스텀 체계 사용 중" : "표준 체계 사용 중";
+            labelUseCustomTree.style.color = settings.use_custom_tree ? "#059669" : "var(--text-main)";
+          }
+        }
+        if (customTreeJsonEditor) {
+          if (settings.custom_tree_json) {
+            customTreeJsonEditor.value = settings.custom_tree_json;
+          } else if (customGrammarTreeData) {
+            customTreeJsonEditor.value = JSON.stringify(customGrammarTreeData, null, 2);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Load grammar settings error:", err);
+    }
+    customGrammarTreeModal.style.display = "flex";
+  });
+
+  if (btnCloseCustomTreeModal) btnCloseCustomTreeModal.addEventListener("click", closeCustomModal);
+  if (btnCancelCustomTreeModal) btnCancelCustomTreeModal.addEventListener("click", closeCustomModal);
+
+  if (toggleUseCustomTree && labelUseCustomTree) {
+    toggleUseCustomTree.addEventListener("change", () => {
+      labelUseCustomTree.textContent = toggleUseCustomTree.checked ? "커스텀 체계 사용 중" : "표준 체계 사용 중";
+      labelUseCustomTree.style.color = toggleUseCustomTree.checked ? "#059669" : "var(--text-main)";
+    });
+  }
+
+  if (btnCopyStandardTree) {
+    btnCopyStandardTree.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/static/data/grammar_categories.json");
+        if (res.ok) {
+          const stdJson = await res.json();
+          if (customTreeJsonEditor) {
+            customTreeJsonEditor.value = JSON.stringify(stdJson, null, 2);
+            showToast("표준 243개 템플릿 JSON을 에디터에 로드했습니다.", "info");
+          }
+        }
+      } catch (err) {
+        showToast("표준 템플릿 로드 실패", "error");
+      }
+    });
+  }
+
+  if (btnResetToStandardTree) {
+    btnResetToStandardTree.addEventListener("click", async () => {
+      if (!confirm("정말 기본 243개 표준 어법 체계로 초기화하시겠습니까?")) return;
+      try {
+        const res = await fetch("/api/grammar/settings/reset", { method: "POST" });
+        if (res.ok) {
+          showToast("기본 표준 어법 체계로 복원되었습니다.", "success");
+          if (toggleUseCustomTree) toggleUseCustomTree.checked = false;
+          if (labelUseCustomTree) {
+            labelUseCustomTree.textContent = "표준 체계 사용 중";
+            labelUseCustomTree.style.color = "var(--text-main)";
+          }
+          await loadGrammarCategories();
+          renderGrammarModalView();
+          closeCustomModal();
+        }
+      } catch (err) {
+        showToast("어법 체계 초기화 실패", "error");
+      }
+    });
+  }
+
+  if (btnSaveCustomTreeModal) {
+    btnSaveCustomTreeModal.addEventListener("click", async () => {
+      btnSaveCustomTreeModal.disabled = true;
+      btnSaveCustomTreeModal.textContent = "⏳ 저장 중...";
+      try {
+        const useCustom = toggleUseCustomTree ? toggleUseCustomTree.checked : false;
+        let treeJsonStr = (customTreeJsonEditor && customTreeJsonEditor.value) ? customTreeJsonEditor.value.trim() : "";
+
+        if (useCustom && treeJsonStr) {
+          try {
+            JSON.parse(treeJsonStr);
+          } catch (jsonErr) {
+            showToast(`JSON 문법 오류: ${jsonErr.message}`, "error");
+            btnSaveCustomTreeModal.disabled = false;
+            btnSaveCustomTreeModal.textContent = "💾 커스텀 어법 체계 저장";
+            return;
+          }
+        }
+
+        const res = await fetch("/api/grammar/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            use_custom_tree: useCustom,
+            custom_tree_json: treeJsonStr || null
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(data.message || "커스텀 어법 체계가 저장되었습니다.", "success");
+          await loadGrammarCategories();
+          renderGrammarModalView();
+          closeCustomModal();
+        } else {
+          showToast(data.detail || "저장 실패", "error");
+        }
+      } catch (err) {
+        console.error("Save custom tree error:", err);
+        showToast("어법 체계 저장 중 오류 발생", "error");
+      } finally {
+        btnSaveCustomTreeModal.disabled = false;
+        btnSaveCustomTreeModal.textContent = "💾 커스텀 어법 체계 저장";
+      }
     });
   }
 }

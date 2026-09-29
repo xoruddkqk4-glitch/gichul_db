@@ -257,6 +257,34 @@ def init_db():
             );
         """)
 
+        # sentence_grammar_annotations 테이블에 source_type, user_id, ai_model 컬럼 안전 마이그레이션
+        for col_sql in (
+            "ALTER TABLE sentence_grammar_annotations ADD COLUMN source_type TEXT DEFAULT 'AI';",
+            "ALTER TABLE sentence_grammar_annotations ADD COLUMN user_id TEXT DEFAULT NULL;",
+            "ALTER TABLE sentence_grammar_annotations ADD COLUMN ai_model TEXT DEFAULT NULL;",
+        ):
+            try:
+                cursor.execute(col_sql)
+            except sqlite3.OperationalError:
+                pass
+
+        # 기존 수동 등록 어법 데이터의 source_type을 'USER'로 안전 보정
+        try:
+            cursor.execute("UPDATE sentence_grammar_annotations SET source_type = 'USER' WHERE explanation LIKE '수동 등록%' AND (source_type IS NULL OR source_type = 'AI');")
+        except Exception:
+            pass
+
+        # 6-1. 사용자 커스텀 어법 체계 및 매핑 설정 테이블
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_grammar_settings (
+                user_id TEXT PRIMARY KEY DEFAULT 'default_user',
+                use_custom_tree INTEGER DEFAULT 0,
+                custom_tree_json TEXT,
+                custom_mapping_json TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         # 7. 시스템 설정 테이블 (AI API 키, 선택된 모델 등 로컬 저장)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
@@ -281,6 +309,8 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_sid ON sentence_grammar_annotations(sentence_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_cat ON sentence_grammar_annotations(category_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_pos ON sentence_grammar_annotations(pos);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_source ON sentence_grammar_annotations(sentence_id, source_type);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_s_grammar_user ON sentence_grammar_annotations(user_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_pid ON passage_tags(passage_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_tag ON passage_tags(tag_name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_sid ON sentence_tags(sentence_id);")
@@ -1396,28 +1426,51 @@ def toggle_sentence_star(sentence_id: str) -> int:
         return new_state
 
 
-def save_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]):
-    """문장의 어법 범주 분석 결과 저장 (기존 AI 분석 결과 교체, 수동 등록 어법 보존)"""
+def save_grammar_annotations(
+    sentence_id: str, 
+    annotations: List[Dict[str, Any]], 
+    source_type: str = "AI", 
+    ai_model: Optional[str] = None, 
+    user_id: Optional[str] = None
+):
+    """문장의 어법 범주 분석 결과 저장
+    - source_type='AI'인 경우: 기존 AI 분석 결과만 교체하고 사용자가 직접 등록한 어법('USER')은 안전하게 영구 보존
+    - source_type='USER'인 경우: 사용자 분석 결과로 저장 (동일 사용자의 어법만 갱신)
+    """
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND (explanation IS NULL OR explanation NOT LIKE '수동 등록%')", (clean_id,))
+        if source_type == "AI":
+            cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND (source_type = 'AI' OR source_type IS NULL)", (clean_id,))
+        else:
+            if user_id:
+                cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND source_type = 'USER' AND user_id = ?", (clean_id, user_id))
+            else:
+                cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND source_type = 'USER'", (clean_id,))
+
         for anno in annotations:
             try:
+                cat_id = anno.get("category_id", 0)
+                leaf_name = anno.get("leaf_name", "") or anno.get("leaf", "")
+                if not cat_id or cat_id == 0:
+                    cat_id = 10000 + (abs(hash(leaf_name)) % 90000)
                 cursor.execute("""
                     INSERT OR REPLACE INTO sentence_grammar_annotations 
-                    (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation, source_type, user_id, ai_model)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     clean_id,
-                    anno.get("category_id", 0),
+                    cat_id,
                     anno.get("pos", ""),
                     anno.get("full_path", ""),
-                    anno.get("leaf_name", "") or anno.get("leaf", ""),
+                    leaf_name,
                     anno.get("target_expression", ""),
-                    anno.get("explanation", "")
+                    anno.get("explanation", "AI 분석" if source_type == "AI" else "사용자 분석"),
+                    source_type,
+                    user_id,
+                    ai_model or anno.get("ai_model")
                 ))
             except Exception:
                 pass
@@ -1425,8 +1478,14 @@ def save_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]
         conn.commit()
 
 
-def add_sentence_grammar_annotation(sentence_id: str, annotation: Dict[str, Any]) -> bool:
-    """문장에 어법 범주 단일 수동 추가"""
+def add_sentence_grammar_annotation(
+    sentence_id: str, 
+    annotation: Dict[str, Any], 
+    source_type: str = "USER", 
+    user_id: str = "default_user", 
+    ai_model: Optional[str] = None
+) -> bool:
+    """문장에 어법 범주 단일 추가 (기본: 사용자 직접 등록)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
@@ -1435,7 +1494,7 @@ def add_sentence_grammar_annotation(sentence_id: str, annotation: Dict[str, Any]
     full_path = annotation.get("full_path", "")
     leaf_name = annotation.get("leaf_name", "") or annotation.get("leaf", "")
     target_expression = annotation.get("target_expression", "")
-    explanation = annotation.get("explanation", "수동 등록")
+    explanation = annotation.get("explanation", "사용자 분석" if source_type == "USER" else "AI 분석")
 
     # category_id가 0일 경우 leaf_name 기반 고유 가상 ID 생성
     if not cat_id or cat_id == 0:
@@ -1445,25 +1504,32 @@ def add_sentence_grammar_annotation(sentence_id: str, annotation: Dict[str, Any]
         cursor = conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO sentence_grammar_annotations 
-            (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (clean_id, cat_id, pos, full_path, leaf_name, target_expression, explanation))
+            (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation, source_type, user_id, ai_model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (clean_id, cat_id, pos, full_path, leaf_name, target_expression, explanation, source_type, user_id, ai_model))
         cursor.execute("UPDATE sentences SET grammar_analyzed = 1 WHERE id = ?", (clean_id,))
         conn.commit()
         return True
 
 
-def delete_sentence_grammar_annotation(sentence_id: str, identifier: int) -> bool:
-    """문장에서 특정 어법 범주 삭제 (category_id 또는 annotation row id 기준)"""
+def delete_sentence_grammar_annotation(sentence_id: str, identifier: int, source_type: Optional[str] = None) -> bool:
+    """문장에서 특정 어법 범주 삭제 (category_id 또는 annotation row id 기준, source_type 선택 가능)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            DELETE FROM sentence_grammar_annotations 
-            WHERE sentence_id = ? AND (category_id = ? OR id = ?)
-        """, (clean_id, identifier, identifier))
+        if source_type:
+            cursor.execute("""
+                DELETE FROM sentence_grammar_annotations 
+                WHERE sentence_id = ? AND (category_id = ? OR id = ?) AND source_type = ?
+            """, (clean_id, identifier, identifier, source_type))
+        else:
+            cursor.execute("""
+                DELETE FROM sentence_grammar_annotations 
+                WHERE sentence_id = ? AND (category_id = ? OR id = ?)
+            """, (clean_id, identifier, identifier))
+
         cursor.execute("SELECT COUNT(*) as cnt FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
         row = cursor.fetchone()
         if row and row["cnt"] == 0:
@@ -1472,44 +1538,70 @@ def delete_sentence_grammar_annotation(sentence_id: str, identifier: int) -> boo
         return True
 
 
-def reset_sentence_grammar(sentence_id: str) -> bool:
-    """문장의 어법 분석 결과 및 상태를 초기화(미분석 상태)로 복원하여 재분석 허용"""
+def reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None) -> bool:
+    """문장의 어법 분석 결과 초기화 (특정 source_type만 초기화하거나 전체 초기화)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
-        cursor.execute("UPDATE sentences SET grammar_analyzed = 0 WHERE id = ?", (clean_id,))
+        if source_type:
+            cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND source_type = ?", (clean_id, source_type))
+        else:
+            cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+
+        cursor.execute("SELECT COUNT(*) as cnt FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        row = cursor.fetchone()
+        if row and row["cnt"] == 0:
+            cursor.execute("UPDATE sentences SET grammar_analyzed = 0 WHERE id = ?", (clean_id,))
         conn.commit()
         return True
 
 
-def get_sentence_grammar_annotations(sentence_id: str) -> List[Dict[str, Any]]:
-    """특정 문장의 어법 범주 분석 목록 조회"""
+def get_sentence_grammar_annotations(sentence_id: str, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    """특정 문장의 어법 범주 분석 목록 조회 (AI 및 USER 출처 포함, 사용자 분석 우선 정렬)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, category_id, pos, full_path, leaf_name, target_expression, explanation
-            FROM sentence_grammar_annotations
-            WHERE sentence_id = ?
-            ORDER BY id ASC
-        """, (clean_id,))
+        if source_type:
+            cursor.execute("""
+                SELECT id, category_id, pos, full_path, leaf_name, target_expression, explanation,
+                       COALESCE(source_type, 'AI') AS source_type, user_id, ai_model
+                FROM sentence_grammar_annotations
+                WHERE sentence_id = ? AND source_type = ?
+                ORDER BY id ASC
+            """, (clean_id, source_type))
+        else:
+            cursor.execute("""
+                SELECT id, category_id, pos, full_path, leaf_name, target_expression, explanation,
+                       COALESCE(source_type, 'AI') AS source_type, user_id, ai_model
+                FROM sentence_grammar_annotations
+                WHERE sentence_id = ?
+                ORDER BY CASE WHEN source_type = 'USER' THEN 0 ELSE 1 END, id ASC
+            """, (clean_id,))
         return [dict(r) for r in cursor.fetchall()]
 
 
-def set_sentence_grammar_annotations(sentence_id: str, annotations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """문장의 어법 범주 목록을 일괄 설정 (기존 항목 교체)"""
+def set_sentence_grammar_annotations(
+    sentence_id: str, 
+    annotations: List[Dict[str, Any]], 
+    source_type: str = "USER", 
+    user_id: str = "default_user"
+) -> List[Dict[str, Any]]:
+    """문장의 어법 범주 목록을 일괄 설정 (기존 해당 source_type 항목만 교체하여 AI와 USER 상호 보존)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ?", (clean_id,))
+        if source_type == "USER":
+            cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND source_type = 'USER' AND (user_id = ? OR user_id IS NULL)", (clean_id, user_id))
+        else:
+            cursor.execute("DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND (source_type = 'AI' OR source_type IS NULL)", (clean_id,))
+
         for anno in annotations:
             cat_id = anno.get("category_id", 0)
             leaf_name = anno.get("leaf_name", "") or anno.get("leaf", "")
@@ -1518,8 +1610,8 @@ def set_sentence_grammar_annotations(sentence_id: str, annotations: List[Dict[st
             try:
                 cursor.execute("""
                     INSERT OR REPLACE INTO sentence_grammar_annotations 
-                    (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation, source_type, user_id, ai_model)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     clean_id,
                     cat_id,
@@ -1527,7 +1619,10 @@ def set_sentence_grammar_annotations(sentence_id: str, annotations: List[Dict[st
                     anno.get("full_path", ""),
                     leaf_name,
                     anno.get("target_expression", ""),
-                    anno.get("explanation", "수동 등록")
+                    anno.get("explanation", "사용자 분석" if source_type == "USER" else "AI 분석"),
+                    source_type,
+                    user_id if source_type == "USER" else None,
+                    anno.get("ai_model")
                 ))
             except Exception:
                 pass
@@ -1536,6 +1631,100 @@ def set_sentence_grammar_annotations(sentence_id: str, annotations: List[Dict[st
 
     return get_sentence_grammar_annotations(clean_id)
 
+
+# =========================================================================
+# 사용자 커스텀 어법 체계 및 매핑 설정 관리 함수
+# =========================================================================
+
+def get_user_grammar_settings(user_id: str = "default_user") -> Dict[str, Any]:
+    """사용자의 어법 체계 설정 조회 (커스텀 트리 활성화 여부, 커스텀 트리 JSON, 매핑 JSON)"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT user_id, use_custom_tree, custom_tree_json, custom_mapping_json, updated_at 
+            FROM user_grammar_settings 
+            WHERE user_id = ?
+        """, (user_id,))
+        row = cursor.fetchone()
+        if row:
+            res = dict(row)
+            res["use_custom_tree"] = bool(res.get("use_custom_tree", 0))
+            return res
+        return {
+            "user_id": user_id,
+            "use_custom_tree": False,
+            "custom_tree_json": None,
+            "custom_mapping_json": None,
+            "updated_at": None
+        }
+
+
+def save_user_grammar_settings(
+    user_id: str = "default_user",
+    use_custom_tree: int = 0,
+    custom_tree_json: Optional[str] = None,
+    custom_mapping_json: Optional[str] = None
+) -> bool:
+    """사용자의 어법 커스텀 트리 및 매핑 설정 저장"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR REPLACE INTO user_grammar_settings 
+            (user_id, use_custom_tree, custom_tree_json, custom_mapping_json, updated_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """, (user_id, 1 if use_custom_tree else 0, custom_tree_json, custom_mapping_json))
+        conn.commit()
+        return True
+
+
+def reset_user_grammar_settings(user_id: str = "default_user") -> bool:
+    """사용자의 커스텀 어법 설정을 기본 243개 표준 체계로 초기화"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE user_grammar_settings SET use_custom_tree = 0 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        return True
+
+
+def get_effective_grammar_categories(user_id: str = "default_user") -> Dict[str, Any]:
+    """현재 사용자에게 유효한 어법 범주표 반환 (커스텀 트리가 활성화된 경우 커스텀 트리, 아니면 기본 243개 표준 반환)"""
+    settings = get_user_grammar_settings(user_id)
+    if settings.get("use_custom_tree") and settings.get("custom_tree_json"):
+        try:
+            custom_data = json.loads(settings["custom_tree_json"])
+            custom_mapping = {}
+            if settings.get("custom_mapping_json"):
+                try:
+                    custom_mapping = json.loads(settings["custom_mapping_json"])
+                except Exception:
+                    pass
+            return {
+                "is_custom": True,
+                "use_custom_tree": True,
+                "data": custom_data,
+                "mapping": custom_mapping,
+                "user_id": user_id
+            }
+        except Exception as e:
+            print(f"[Custom Grammar Tree Parse Error] {e}")
+
+    # 기본 243개 표준 JSON 로드
+    std_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "data", "grammar_categories.json")
+    if os.path.exists(std_path):
+        try:
+            with open(std_path, "r", encoding="utf-8") as f:
+                std_data = json.load(f)
+            return {
+                "is_custom": False,
+                "use_custom_tree": False,
+                "data": std_data,
+                "mapping": {},
+                "user_id": user_id
+            }
+        except Exception as e:
+            print(f"[Standard Grammar Categories Load Error] {e}")
+
+    return {"is_custom": False, "use_custom_tree": False, "data": {"list": [], "tree": []}, "mapping": {}, "user_id": user_id}
 
 
 def get_setting(key: str, default: str = "") -> str:
@@ -1686,10 +1875,11 @@ def search_sentences(
             chunk = sentence_ids[i:i + chunk_size]
             placeholders = ",".join(["?"] * len(chunk))
             cursor.execute(f"""
-                SELECT id, sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation
+                SELECT id, sentence_id, category_id, pos, full_path, leaf_name, target_expression, explanation,
+                       COALESCE(source_type, 'AI') AS source_type, user_id, ai_model
                 FROM sentence_grammar_annotations
                 WHERE sentence_id IN ({placeholders})
-                ORDER BY id ASC
+                ORDER BY CASE WHEN source_type = 'USER' THEN 0 ELSE 1 END, id ASC
             """, chunk)
             for ar in cursor.fetchall():
                 annos_by_sent[ar["sentence_id"]].append(dict(ar))

@@ -1763,5 +1763,33 @@ CREATE TABLE user_sentence_status (
   - `python -c "import tts_service, app; print('Imports and attributes OK!')"`: 런타임 Import 및 함수 바인딩 검증 완료 (Exit Code 0)
   - 로컬 Uvicorn 서버(`python run.py`) 핫 리로드 정상 반영 및 구동 지속 확인
 
+### [2026-09-29 09:39] 업데이트 이력 (Commit ID: 60863dd4)
+- **수정 내용**:
+  - **어법 데이터 출처 분류 체계 구축 (`database.py`, `app.py`, `static/js/results-sentence.js`, `static/css/style.css`)**:
+    - `sentence_grammar_annotations` 테이블에 `source_type`('AI'/'USER'), `user_id`, `ai_model` 컬럼 및 인덱스(`idx_s_grammar_source`, `idx_s_grammar_user`) 추가 마이그레이션.
+    - AI 자동 분석 결과와 사용자가 직접 등록/검수한 어법 데이터를 완벽히 격리하여 저장·관리.
+    - AI 어법 분석 저장 시 기존 AI 결과만 갱신하며, 사용자가 등록한 수동 어법(`USER`)은 절대 삭제되지 않고 영구 보존.
+    - 문장 검색 결과 화면에서 `[🤖 AI]`(인디고) 및 `[👤 사용자]`(에메랄드) 배지로 시각적 분리 표시.
+  - **AI 어법 분석 원클릭 '내 분석으로 채택' 기능 구현 (`static/js/results-sentence.js`, `templates/index.html`, `static/js/dom.js`)**:
+    - 어법 배지 클릭 시 표시되는 상세 해설 팝오버(`grammarExplanationPopover`)에 분석 출처 배지(`popoverSource`) 추가.
+    - AI 분석 어법일 경우 팝오버 하단에 `[👤 내 분석으로 채택(등록)]` 버튼을 제공하여, 사용자가 원클릭으로 해당 어법을 내 분석(`source_type: "USER"`)으로 즉시 복제 저장 가능.
+  - **사용자 커스텀 어법 체계 및 스마트 매핑(토큰 0원) 시스템 구축 (`database.py`, `app.py`, `static/js/grammar.js`, `templates/index.html`)**:
+    - `user_grammar_settings` 테이블 신설 (`user_id`, `use_custom_tree`, `custom_tree_json`, `custom_mapping_json`).
+    - 신규 API 엔드포인트 구현:
+      - `GET /api/grammar/categories`: 현재 사용자에게 유효한 어법 체계(표준 243개 또는 커스텀 트리) 반환
+      - `GET /api/grammar/settings`: 사용자의 커스텀 어법 체계 설정 조회
+      - `POST /api/grammar/settings`: 사용자 커스텀 어법 트리 및 활성화 여부 저장
+      - `POST /api/grammar/settings/reset`: 기본 243개 표준 체계로 원클릭 초기화
+    - 어법 선택 모달(`grammarCategoryModal`) 헤더에 **`[🏛️ 표준 243개 체계]`** 상태 배지(`grammarTreeStatusBadge`) 및 **`[⚙️ 커스텀 체계 관리]`** 버튼 배치.
+    - **커스텀 어법 체계 관리 모달(`customGrammarTreeModal`) 신설**:
+      - 나만의 커스텀 어법 체계 활성화 토글 스위치
+      - 표준 243개 템플릿 JSON 에디터 로드 및 사용자 자유 편집 기능
+      - 기본 243개 표준 체계 원클릭 초기화 및 스마트 매핑(사전 분석된 AI 데이터와 0원 연동) 지원.
+- **검증 결과**:
+  - `python -m py_compile app.py database.py grammar_analyzer.py run.py`: 파이썬 문법 검사 오류 0건 통과 (Exit Code 0)
+  - `node -c static/js/grammar.js static/js/dom.js static/js/results-sentence.js static/js/main.js`: 자바스크립트 문법 검사 오류 0건 통과 (Exit Code 0)
+  - `/api/grammar/categories` 및 `/api/grammar/settings` 엔드포인트 응답(HTTP 200) 및 어법 CRUD 격리 런타임 테스트 완료
+
+
 
 

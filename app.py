@@ -163,11 +163,23 @@ class AddGrammarAnnotationRequest(BaseModel):
     full_path: Optional[str] = ""
     leaf_name: str
     target_expression: Optional[str] = ""
-    explanation: Optional[str] = "수동 등록"
+    explanation: Optional[str] = "사용자 분석"
+    source_type: Optional[str] = "USER"
+    user_id: Optional[str] = "default_user"
+    ai_model: Optional[str] = None
 
 
 class BatchSetGrammarAnnotationsRequest(BaseModel):
     annotations: List[Dict[str, Any]] = []
+    source_type: Optional[str] = "USER"
+    user_id: Optional[str] = "default_user"
+
+
+class UserGrammarSettingsRequest(BaseModel):
+    user_id: Optional[str] = "default_user"
+    use_custom_tree: Optional[bool] = False
+    custom_tree_json: Optional[str] = None
+    custom_mapping_json: Optional[str] = None
 
 
 
@@ -907,7 +919,7 @@ async def api_analyze_sentence_grammar(sentence_id: str):
             answer_text=passage.get("answer_text", "") if passage else "",
             explanation_text=passage.get("explanation_text", "") if passage else ""
         )
-        db.save_grammar_annotations(clean_id, annos)
+        db.save_grammar_annotations(clean_id, annos, source_type="AI", ai_model="Multi-LLM")
         return {
             "success": True,
             "sentence_id": clean_id,
@@ -920,16 +932,59 @@ async def api_analyze_sentence_grammar(sentence_id: str):
         raise HTTPException(status_code=500, detail=f"AI 어법 분석 실패: {str(e)}")
 
 
+@app.get("/api/grammar/categories")
+async def api_get_grammar_categories(user_id: str = "default_user"):
+    """현재 사용자에게 유효한 어법 범주표 및 커스텀 체계 메타데이터 반환"""
+    return db.get_effective_grammar_categories(user_id)
+
+
+@app.get("/api/grammar/settings")
+async def api_get_grammar_settings(user_id: str = "default_user"):
+    """사용자 커스텀 어법 체계 설정 조회"""
+    return db.get_user_grammar_settings(user_id)
+
+
+@app.post("/api/grammar/settings")
+async def api_save_grammar_settings(req: UserGrammarSettingsRequest):
+    """사용자 커스텀 어법 트리 및 매핑 설정 저장"""
+    try:
+        db.save_user_grammar_settings(
+            user_id=req.user_id or "default_user",
+            use_custom_tree=1 if req.use_custom_tree else 0,
+            custom_tree_json=req.custom_tree_json,
+            custom_mapping_json=req.custom_mapping_json
+        )
+        return {"success": True, "message": "어법 체계 설정이 성공적으로 저장되었습니다."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"어법 체계 저장 실패: {str(e)}")
+
+
+@app.post("/api/grammar/settings/reset")
+async def api_reset_grammar_settings(user_id: str = "default_user"):
+    """사용자 커스텀 어법 설정을 기본 243개 표준 체계로 초기화"""
+    try:
+        db.reset_user_grammar_settings(user_id)
+        return {"success": True, "message": "기본 243개 표준 어법 체계로 복원되었습니다."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"어법 체계 초기화 실패: {str(e)}")
+
+
 @app.post("/api/sentences/{sentence_id}/grammar-annotations")
 async def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotationRequest):
-    """문장에 수동으로 어법 범주 추가"""
+    """문장에 수동/사용자 어법 범주 추가"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
     try:
         data = req.dict()
-        db.add_sentence_grammar_annotation(clean_id, data)
+        db.add_sentence_grammar_annotation(
+            clean_id, 
+            data, 
+            source_type=req.source_type or "USER", 
+            user_id=req.user_id or "default_user",
+            ai_model=req.ai_model
+        )
         updated = db.get_sentence_grammar_annotations(clean_id)
         return {
             "success": True,
@@ -942,14 +997,14 @@ async def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotation
 
 
 @app.delete("/api/sentences/{sentence_id}/grammar-annotations/{identifier}")
-async def api_delete_grammar_annotation(sentence_id: str, identifier: int):
-    """문장의 특정 어법 범주 삭제"""
+async def api_delete_grammar_annotation(sentence_id: str, identifier: int, source_type: Optional[str] = None):
+    """문장의 특정 어법 범주 삭제 (source_type 선택적 필터)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
     try:
-        db.delete_sentence_grammar_annotation(clean_id, identifier)
+        db.delete_sentence_grammar_annotation(clean_id, identifier, source_type=source_type)
         updated = db.get_sentence_grammar_annotations(clean_id)
         return {
             "success": True,
@@ -962,19 +1017,20 @@ async def api_delete_grammar_annotation(sentence_id: str, identifier: int):
 
 
 @app.delete("/api/sentences/{sentence_id}/grammar")
-async def api_reset_sentence_grammar(sentence_id: str):
-    """문장의 어법 분석 결과 및 상태를 초기화(미분석 상태로 복원)하여 재분석 허용"""
+async def api_reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None):
+    """문장의 어법 분석 결과 초기화 (AI 또는 USER 개별 초기화 또는 전체 초기화)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
     try:
-        db.reset_sentence_grammar(clean_id)
+        db.reset_sentence_grammar(clean_id, source_type=source_type)
+        updated = db.get_sentence_grammar_annotations(clean_id)
         return {
             "success": True,
             "sentence_id": clean_id,
-            "grammar_analyzed": 0,
-            "annotations": []
+            "grammar_analyzed": 1 if updated else 0,
+            "annotations": updated
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"어법 분석 초기화 실패: {str(e)}")
@@ -982,13 +1038,18 @@ async def api_reset_sentence_grammar(sentence_id: str):
 
 @app.post("/api/sentences/{sentence_id}/grammar-annotations/batch")
 async def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGrammarAnnotationsRequest):
-    """문장의 어법 범주 목록을 모달 선택값으로 일괄 저장"""
+    """문장의 어법 범주 목록을 모달 선택값으로 일괄 저장 (지정된 source_type 항목만 교체)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
     try:
-        updated = db.set_sentence_grammar_annotations(clean_id, req.annotations)
+        updated = db.set_sentence_grammar_annotations(
+            clean_id, 
+            req.annotations, 
+            source_type=req.source_type or "USER", 
+            user_id=req.user_id or "default_user"
+        )
         return {
             "success": True,
             "sentence_id": clean_id,
@@ -1055,7 +1116,7 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
                 answer_text=p_data.get("answer_text", "") if p_data else "",
                 explanation_text=p_data.get("explanation_text", "") if p_data else ""
             )
-            db.save_grammar_annotations(s["id"], annos)
+            db.save_grammar_annotations(s["id"], annos, source_type="AI", ai_model="Multi-LLM")
             results.append({
                 "sentence_id": s["id"],
                 "sentence_text": s.get("sentence_text", ""),
@@ -1120,7 +1181,7 @@ def background_auto_analyze_exam_grammar(exam_id: str):
                     answer_text=p_data.get("answer_text", "") if p_data else "",
                     explanation_text=p_data.get("explanation_text", "") if p_data else ""
                 )
-                db.save_grammar_annotations(s["id"], annos)
+                db.save_grammar_annotations(s["id"], annos, source_type="AI", ai_model="Multi-LLM")
             except Exception as ex:
                 print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
     except Exception as e:
