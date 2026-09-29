@@ -44,7 +44,7 @@ import {
   statSentences,
 } from "./dom.js";
 import { setHeaderSlotState, setMode, showResultsScreen, updateGrammarFiltersVisibility } from "./navigation.js";
-import { groupPassageItems, renderPassageView, getCurrentDetailPassage } from "./results-passage.js";
+import { groupPassageItems, renderPassageView, getCurrentDetailPassage, stopAllListeningAudio } from "./results-passage.js";
 import { renderSentenceView } from "./results-sentence.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { resetAllGrammarFilters, updateGrammarBreadcrumbFilterUI } from "./grammar.js";
@@ -166,6 +166,7 @@ export function highlightSentenceKeyword(text, rawQuery) {
 
 /** 통합 검색 실행 */
 export async function executeSearch(source = "home", targetPassageId = null) {
+  stopAllListeningAudio();
   let keyword = "";
   let grade = "";
   let year = "";
@@ -175,9 +176,10 @@ export async function executeSearch(source = "home", targetPassageId = null) {
   let correctRateRange = "";
   let tag = "";
 
+  // targetPassageId가 없을 때만 검색어 빈값 초기화 분기 실행 (영역 전환이나 지문 직행 시 targetPassageId 보존)
   const isHomeEmpty = source === "home" && (!mainSearchInput || !mainSearchInput.value.trim());
   const isResultsEmpty = source !== "home" && source !== "all" && source !== "all_passages" && (!resultsSearchInput || !resultsSearchInput.value.trim());
-  const isNoKeywordSearch = (source === "all" || source === "all_passages") || isHomeEmpty || isResultsEmpty;
+  const isNoKeywordSearch = !targetPassageId && ((source === "all" || source === "all_passages") || isHomeEmpty || isResultsEmpty);
 
   if (isNoKeywordSearch) {
     // 검색창에 아무런 검색어 입력 없이 '검색'을 누른 경우:
@@ -224,6 +226,16 @@ export async function executeSearch(source = "home", targetPassageId = null) {
     appState.currentPassageId = null;
     appState.currentPassageIndex = 0;
     appState.currentExamQuestions = [];
+  } else if (targetPassageId) {
+    // 특정 지문으로 직접 이동(예: 독해 ↔ 듣기 영역 전환 1번 ↔ 18번, 또는 문장 뷰어 연동)
+    keyword = "";
+    tag = "";
+    grade = "";
+    year = "";
+    month = "";
+    examType = "";
+    questionType = "";
+    correctRateRange = "";
   } else if (source === "home") {
     const parsed = parseSearchQuery(mainSearchInput.value);
     keyword = parsed.keyword;
@@ -624,6 +636,7 @@ export function updateFilterResetButtonsUI() {
 
 /** 모든 검색 조건(검색어, 기본 필터, 어법 필터, 트리 네비게이션, 결과 내 검색)을 초기화 */
 export function resetAllSearchFilters(triggerSearch = true) {
+  stopAllListeningAudio();
   // 1. 검색어 초기화
   if (mainSearchInput) mainSearchInput.value = "";
   if (resultsSearchInput) resultsSearchInput.value = "";
@@ -673,6 +686,7 @@ export function resetAllSearchFilters(triggerSearch = true) {
 
 // 영역 선택 토글 (독해 vs 듣기) 공통 설정 함수
 export function setSearchArea(area, triggerSearch = true) {
+  stopAllListeningAudio();
   appState.currentArea = area;
   document.querySelectorAll(".area-toggle-btn").forEach(btn => {
     const bArea = btn.getAttribute("data-area");
@@ -682,44 +696,56 @@ export function setSearchArea(area, triggerSearch = true) {
   if (triggerSearch) {
     const isResultsVisible = resultsView && (resultsView.style.display === "flex" || resultsView.style.display === "block" || resultsView.offsetHeight > 0);
     if (isResultsVisible) {
-      const hasKeyword = !!((resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()));
       let targetPassageId = null;
 
-      // 검색어가 있거나 특정 지문을 명시적으로 보고 있던 경우에만 문항 매핑 시도
-      if (hasKeyword) {
-        const detailP = (typeof getCurrentDetailPassage === "function") ? getCurrentDetailPassage() : null;
-        const questionP = (appState.currentExamQuestions && appState.currentPassageIndex >= 0 && appState.currentExamQuestions[appState.currentPassageIndex]) || null;
-        const currentP = detailP || questionP;
-        const p = (currentP && currentP.isGroup && currentP.subItems) ? currentP.subItems[0] : currentP;
+      // 1. 현재 보고 있는 지문(상세 화면 또는 문항 탭) 또는 트리 선택 상태에서 동일 시험지 정보 정확히 추출
+      const detailP = (typeof getCurrentDetailPassage === "function") ? getCurrentDetailPassage() : null;
+      const questionP = (appState.currentExamQuestions && appState.currentPassageIndex >= 0 && appState.currentExamQuestions[appState.currentPassageIndex]) || null;
+      const currentP = detailP || questionP;
+      const p = (currentP && currentP.isGroup && currentP.subItems) ? currentP.subItems[0] : currentP;
 
-        const grade = p?.grade || appState.treeNavState.grade || (resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value);
-        const year = p?.year || appState.treeNavState.year || (resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value);
-        const month = p?.month || appState.treeNavState.month || (resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value);
+      let pGrade = p?.grade;
+      let pYear = p?.year;
+      let pMonth = p?.month;
+      if (p && p.id && (!pGrade || !pYear || !pMonth)) {
+        const idM = String(p.id).match(/\[([^-]+)-(\d{4})년?-(\d{1,2})월/);
+        if (idM) {
+          if (!pGrade) pGrade = idM[1];
+          if (!pYear) pYear = `${idM[2]}년`;
+          if (!pMonth) pMonth = `${idM[3]}월`;
+        }
+      }
 
-        if (grade && year && month) {
-          const yearNum = parseInt(String(year).replace(/[^0-9]/g, ""), 10);
-          const monthNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
-          if (yearNum && monthNum) {
-            // 듣기 영역 -> 1번 문항, 독해 영역 -> 18번 문항 (23번 등 시작 시험은 fallback으로 자동 처리)
-            const targetQ = (area === "listening") ? 1 : 18;
-            targetPassageId = `[${grade}-${yearNum}년-${String(monthNum).padStart(2, "0")}월-${String(targetQ).padStart(2, "0")}번]`;
-            appState.treeNavState.grade = grade;
-            appState.treeNavState.year = `${yearNum}년`;
-            appState.treeNavState.month = `${String(monthNum).padStart(2, "0")}월`;
+      const grade = pGrade || appState.treeNavState.grade || (resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value);
+      const year = pYear || appState.treeNavState.year || (resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value);
+      const month = pMonth || appState.treeNavState.month || (resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value);
 
-            // 특정 문항(1번 ↔ 18번)으로의 안전한 전환을 위해 문항 개별 필터(검색어, 문제유형, 정답률) 리셋
-            if (resultsSearchInput) resultsSearchInput.value = "";
-            if (mainSearchInput) mainSearchInput.value = "";
-            if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
-            if (filterQuestionType) filterQuestionType.value = "";
-            if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
-            if (filterCorrectRate) filterCorrectRate.value = "";
-          }
+      // 특정 모의고사 세트(학년, 연도, 월)가 선택되어 있는 경우:
+      // 선택되어 있는 해당 모의고사 세트 내에서 영역을 이동 (듣기: 1번 ↔ 독해: 18번)
+      if (grade && year && month) {
+        const yearNum = parseInt(String(year).replace(/[^0-9]/g, ""), 10);
+        const monthNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
+        if (yearNum && monthNum) {
+          // 듣기 영역 -> 1번 문항, 독해 영역 -> 18번 문항 (23번 등 시작 시험은 fallback으로 자동 처리)
+          const targetQ = (area === "listening") ? 1 : 18;
+          targetPassageId = `[${grade}-${yearNum}년-${String(monthNum).padStart(2, "0")}월-${String(targetQ).padStart(2, "0")}번]`;
+          appState.treeNavState.grade = grade;
+          appState.treeNavState.year = `${yearNum}년`;
+          appState.treeNavState.month = `${String(monthNum).padStart(2, "0")}월`;
+
+          // 특정 문항(1번 ↔ 18번)으로의 안전한 전환을 위해 문항 개별 필터(검색어, 문제유형, 정답률) 리셋
+          if (resultsSearchInput) resultsSearchInput.value = "";
+          if (mainSearchInput) mainSearchInput.value = "";
+          if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+          if (filterQuestionType) filterQuestionType.value = "";
+          if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
+          if (filterCorrectRate) filterCorrectRate.value = "";
         }
 
         executeSearch("results", targetPassageId);
       } else {
-        // 검색어가 없는 경우: 특정 모의고사 세트로 직행하지 않고 해당 영역의 전체 학년 선택 화면으로 전환
+        // 아직 특정 모의고사 세트가 선택되지 않은 상태(최상위 탐색 중)에서 영역을 변경하는 경우:
+        // 바뀐 영역의 최상위 학년 선택 단계로 전환
         targetPassageId = null;
         appState.treeNavState = { grade: null, year: null, month: null };
         executeSearch("all_passages", null);

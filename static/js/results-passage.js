@@ -42,7 +42,6 @@ import {
   listeningBottomLeftActions,
   listeningTopRightActions,
   mainSearchInput,
-  resultsSearchInput,
   metaAnswer,
   metaAnswerStatus,
   metaCorrectRate,
@@ -784,6 +783,7 @@ function sortMonthsDescending(monthsList) {
 
 /** 지문 결과 화면 렌더링 (트리 계층 기반) */
 export function renderPassageView(items, targetPassageId = null) {
+  stopAllListeningAudio();
   if (!items || items.length === 0) {
     emptyResultsBox.style.display = "flex";
     passageViewContainer.style.display = "none";
@@ -851,12 +851,7 @@ export function renderPassageView(items, targetPassageId = null) {
     appState.treeNavState.month = singleExamCombo.month;
   } else {
     // 3) 복수 시험인 경우: 현재 선택된 상태가 유효한지 검사
-    const hasSearchKeyword = !!((resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()));
-    if (!targetPassageId && !hasSearchKeyword) {
-      appState.treeNavState.grade = null;
-      appState.treeNavState.year = null;
-      appState.treeNavState.month = null;
-    } else if (!appState.treeNavState.grade || !tree[appState.treeNavState.grade]) {
+    if (!appState.treeNavState.grade || !tree[appState.treeNavState.grade]) {
       if (grades.length === 1) {
         appState.treeNavState.grade = grades[0];
       } else {
@@ -896,6 +891,7 @@ export function renderPassageView(items, targetPassageId = null) {
 
 /** 트리 단계에 따라 상위 선택기 / 최하위 문항 1행 10개 탭 전환 */
 function updateTreeUI(tree, allItems, totalExamsCount, targetPassageId = null) {
+  stopAllListeningAudio();
   const grades = sortGradesDescending(Object.keys(tree));
 
   // 상단 브레드크럼 갱신
@@ -1134,6 +1130,7 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
   // 브레드크럼 항목 클릭 시 해당 상위 단계로 즉시 이동
   breadcrumbTrail.querySelectorAll(".breadcrumb-item").forEach((item) => {
     item.addEventListener("click", () => {
+      stopAllListeningAudio();
       const step = item.dataset.step;
       if (step === "grade") {
         appState.treeNavState.grade = null;
@@ -1159,6 +1156,7 @@ function renderBreadcrumb(tree, allItems, totalExamsCount) {
     if (shouldShow) {
       btnTreeResetExam.style.display = "inline-flex";
       btnTreeResetExam.onclick = () => {
+        stopAllListeningAudio();
         hideBreadcrumbExamFiles();
         if (hasActiveFilters) {
           // 상단 검색 조건(필터/검색어)이 설정된 경우: 전체 검색 조건 초기화 및 전체 지문 재조회
@@ -1468,6 +1466,7 @@ function renderPassageTabs(items) {
 
 /** 특정 문항 탭 선택 및 2x2 그리드 동기화 */
 export function selectPassageTab(idx, items) {
+  stopAllListeningAudio();
   if (!items || items.length === 0) return;
   if (idx < 0) idx = 0;
   if (idx >= items.length) idx = items.length - 1;
@@ -1548,6 +1547,7 @@ export function copyFelsAnswerVersion() {
 /** 2x2 패널에 특정 지문 상세 정보 로드 */
 function loadPassageDetail(p) {
   if (!p) return;
+  stopAllListeningAudio();
   currentDetailPassage = p;
   appState.currentPassage = p;
   appState.currentPassageId = p.id;
@@ -2130,7 +2130,69 @@ export function renderChoiceRates(p) {
   }
 }
 
+// 활성 재생 중인 오디오 객체 전역 추적 (캡처 단계에서 즉시 포착)
+let activeListeningAudio = null;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "play",
+    (e) => {
+      if (e.target && (e.target.tagName === "AUDIO" || e.target instanceof HTMLMediaElement)) {
+        activeListeningAudio = e.target;
+      }
+    },
+    true
+  );
+}
+
+/** 듣기 영역 오디오 재생 즉시 완전 정지 */
+export function stopAllListeningAudio() {
+  try {
+    // 0. 활성 참조된 오디오 객체 즉시 정지
+    if (activeListeningAudio) {
+      try {
+        if (!activeListeningAudio.paused) {
+          activeListeningAudio.pause();
+        }
+        activeListeningAudio.currentTime = 0;
+      } catch (e) {}
+      activeListeningAudio = null;
+    }
+
+    // 1. DOM에 존재하는 모든 audio 태그 정지
+    const audios = document.querySelectorAll("audio");
+    audios.forEach((audio) => {
+      try {
+        if (!audio.paused) {
+          audio.pause();
+        }
+        audio.currentTime = 0;
+      } catch (e) {}
+    });
+
+    // 2. id="listeningAudioPlayer" 오디오 플레이어 명시적 정지
+    const player = document.getElementById("listeningAudioPlayer");
+    if (player) {
+      try {
+        if (!player.paused) {
+          player.pause();
+        }
+        player.currentTime = 0;
+      } catch (e) {}
+    }
+  } catch (err) {
+    console.error("오디오 정지 오류:", err);
+  }
+}
+
+// 전역 윈도우 객체에도 노출하여 모든 모듈에서 안전하게 호출 가능하도록 등록
+if (typeof window !== "undefined") {
+  window.stopAllListeningAudio = stopAllListeningAudio;
+  window.addEventListener("beforeunload", stopAllListeningAudio);
+  window.addEventListener("pagehide", stopAllListeningAudio);
+}
+
 function reset2x2ContentPanels() {
+  stopAllListeningAudio();
   panelPdfImageContainer.innerHTML = `<div class="pdf-placeholder">탐색할 시험 및 문항을 선택하세요.</div>`;
   if (btnRecapturePdf) btnRecapturePdf.disabled = true;
   if (panelTitleTopLeft) panelTitleTopLeft.textContent = "🖼️ PDF 문항 캡처 이미지";
@@ -2461,6 +2523,7 @@ export function init() {
 
   // 단일 문항 듣기 음성 생성 핸들러 (DOM 활성 탭 및 문항 객체 100% 동기화)
   async function handleGenerateListeningAudioAction(btnEl) {
+    stopAllListeningAudio();
     const targetBtn = btnEl || btnGenerateListeningAudio || document.getElementById("btnGenerateListeningAudio");
     if (targetBtn && targetBtn.disabled) return;
 
@@ -2526,6 +2589,7 @@ export function init() {
 
   // 전체 듣기 문항 일괄 생성 핸들러
   async function handleGenerateAllListeningAudioAction(btnEl) {
+    stopAllListeningAudio();
     const targetBtn = btnEl || btnGenerateAllListeningAudio || document.getElementById("btnGenerateAllListeningAudio");
     if (targetBtn && targetBtn.disabled) return;
 

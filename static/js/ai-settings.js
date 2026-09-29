@@ -543,6 +543,9 @@ function updateAiModalSelectionSummary() {
 }
 
 async function openAiSettingsModal() {
+  if (typeof window !== "undefined" && window.stopAllListeningAudio) {
+    window.stopAllListeningAudio();
+  }
   if (aiSettingsModal) {
     aiSettingsModal.classList.add("show");
     aiSettingsModal.style.display = "flex";

@@ -33,7 +33,7 @@ import {
 } from "./dom.js";
 import { setHeaderSlotState, setMode, updateGrammarFiltersVisibility, updateResultsNavHeight } from "./navigation.js";
 import { executeSearch, highlightSentenceKeyword, loadStats } from "./search.js";
-import { groupPassageItems, renderPassageView, selectPassageTab } from "./results-passage.js";
+import { groupPassageItems, renderPassageView, selectPassageTab, stopAllListeningAudio } from "./results-passage.js";
 import { copyToClipboard, cssSafeId, escapeHtml, showToast } from "./utils.js";
 import { openGrammarModalForSentence } from "./grammar.js";
 
@@ -43,6 +43,7 @@ import { openGrammarModalForSentence } from "./grammar.js";
 
 /** 특정 지문의 전체 문장 결과창을 1행 테이블로 표시 */
 export async function showSentencesForPassage(passageId) {
+  stopAllListeningAudio();
   if (!passageId) {
     if (appState.currentPassageId) {
       passageId = appState.currentPassageId;
@@ -96,6 +97,7 @@ export async function showSentencesForPassage(passageId) {
 
 /** 전체 문장 결과창에서 이전 지문 상세 화면으로 복귀 */
 export function backToPassageView() {
+  stopAllListeningAudio();
   appState.currentMode = "passage";
   if (resultsTabModePassage) resultsTabModePassage.classList.add("active");
   if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
@@ -137,6 +139,7 @@ function extractPassageId(str) {
 
 /** 문장 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동 및 탭 포커스 */
 async function navigateToPassageView(targetPassageId) {
+  stopAllListeningAudio();
   const pId = extractPassageId(targetPassageId);
   if (!pId) return;
 
@@ -790,6 +793,7 @@ function ensureSentenceScrollListener() {
 }
 
 export function renderSentenceView(items) {
+  stopAllListeningAudio();
   if (!items || items.length === 0) {
     emptyResultsBox.style.display = "flex";
     sentenceViewContainer.style.display = "none";

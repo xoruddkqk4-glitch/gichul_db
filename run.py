@@ -5,6 +5,15 @@
 """
 
 import os
+import sys
+
+# Windows 콘솔 cp949 인코딩 호환 처리
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 import uvicorn
@@ -18,7 +27,7 @@ def open_browser_later():
 
 if __name__ == "__main__":
     print("\n" + "=" * 65)
-    print(" 🚀 [05-gichul_db] 수능·모의고사 영어 기출 데이터베이스 웹앱")
+    print(" [05-gichul_db] 수능·모의고사 영어 기출 데이터베이스 웹앱")
     print(" - 로컬 접속 주소: http://127.0.0.1:8000")
     print(" - 종료하려면 터미널에서 Ctrl + C 를 누르세요.")
     print("=" * 65 + "\n")

@@ -45,6 +45,7 @@ import {
   updateFilterResetButtonsUI,
 } from "./search.js";
 import { backToPassageView, showSentencesForPassage } from "./results-sentence.js";
+import { stopAllListeningAudio } from "./results-passage.js";
 
 // =========================================================================
 // 1. 헤더 액션 슬롯 상태 제어 (통계 배지 <-> 전체 문장 <-> 지문 복귀)
@@ -98,6 +99,7 @@ export function setHeaderSlotState(state) {
 
 /** 홈 검색 화면으로 복귀 */
 export function showHomeScreen() {
+  stopAllListeningAudio();
   appState.currentPassageId = null;
   appState.currentPassageIndex = 0;
   appState.treeNavState = { grade: null, year: null, month: null };
@@ -140,6 +142,7 @@ export function updateResultsNavHeight() {
 
 /** 결과 화면으로 전환 */
 export function showResultsScreen() {
+  stopAllListeningAudio();
   homeSearchView.style.display = "none";
   resultsView.style.display = "flex";
   if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
@@ -165,6 +168,7 @@ export function updateGrammarFiltersVisibility() {
 }
 
 export function setMode(mode, triggerSearch = false) {
+  stopAllListeningAudio();
   appState.currentMode = mode;
   if (mode === "passage") {
     tabModePassage.classList.add("active");

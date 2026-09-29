@@ -157,6 +157,9 @@ async function loadGrammarCategories() {
 }
 
 export function openGrammarModalForSentence(sentence, onUpdateCallback) {
+  if (typeof window !== "undefined" && window.stopAllListeningAudio) {
+    window.stopAllListeningAudio();
+  }
   if (!sentence || !grammarCategoryModal) return;
 
   activeGrammarModalSentence = sentence;

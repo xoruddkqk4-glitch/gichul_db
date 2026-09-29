@@ -1851,6 +1851,34 @@ CREATE TABLE user_sentence_status (
   - `node --check static/js/search.js static/js/navigation.js static/js/results-passage.js`: 구문 오류 없음 (Exit Code: 0)
   - 백엔드 메타데이터 API (`area=reading`, `area=listening`): 독해 8,817개 / 듣기 5,582개 정상 응답 및 그룹핑 후 7,898개 / 5,250개 화면 일치 확인
 
+### [2026-09-29 11:55] 업데이트 이력 (Commit ID: 08a4a7fe)
+- **수정 내용**:
+  - **듣기 영역 음성 재생 중 화면 전환 시 오디오 즉시 완전 정지 구현 (`static/js/results-passage.js` 외)**:
+    - **문제 원인**: 브라우저의 HTML5 `<audio>` 태그는 화면 전환이나 문항 변경 시 DOM(`innerHTML`)이 교체되거나 태그가 제거되더라도 백그라운드 미디어 버퍼에서 소리가 멈추지 않고 끝까지 재생되는 문제 발생.
+    - **전역 오디오 실시간 추적 및 완전 정지 함수 구축 (`stopAllListeningAudio`)**:
+      - `document.addEventListener("play", ..., true)`(이벤트 캡처링 단계)로 재생 시작 오디오 객체를 실시간 추적하여, 엘리먼트가 DOM에서 언로드/삭제되더라도 메모리 상의 오디오를 완전히 `.pause()` 및 `.currentTime = 0` 처리.
+      - DOM에 잔류하는 모든 `<audio>` 태그 및 `#listeningAudioPlayer`에 대해서도 일괄 정지 로직 적용.
+    - **모든 화면 전환 및 뷰 변경 경로에 자동 정지 연동**:
+      - 문항 번호 탭 전환 (`selectPassageTab`)
+      - 모의고사 트리 단계 이동 (학년/년도/월 칩 클릭 및 브레드크럼 클릭: `updateTreeUI`, `renderBreadcrumb`, `btnTreeResetExam`)
+      - 독해 ↔ 듣기 영역 토글 (`setSearchArea`)
+      - 지문 검색 ↔ 문장 검색 모드 전환 (`setMode`)
+      - 홈 검색창 복귀 (`showHomeScreen`, "← 처음 화면으로 돌아가기", 상단 로고 클릭)
+      - 검색 실행 및 필터 초기화 (`executeSearch`, `resetAllSearchFilters`)
+      - 지문 상세 ↔ 전체 문장 뷰어 전환 (`showSentencesForPassage`, `backToPassageView`, `navigateToPassageView`, `renderSentenceView`)
+      - 신규 음성 생성 클릭 (`handleGenerateListeningAudioAction`, `handleGenerateAllListeningAudioAction`)
+      - 어법 범주 모달 및 AI 설정 모달 오픈 시 (`grammar.js`, `ai-settings.js`)
+  - **독해 ↔ 듣기 영역 토글 시 특정 모의고사 세트 내 1번 ↔ 18번 영역 이동 연동 보완 (`static/js/search.js`)**:
+    - 특정 모의고사 세트를 조회 중인 상태에서 독해 ↔ 듣기 토글 클릭 시, 최상위 화면으로 나가지 않고 현재 선택된 모의고사 세트 내에서 듣기(1번) ↔ 독해(18번)로 정상 영역 이동하도록 보완.
+    - `executeSearch`에서 `targetPassageId`가 전달되었을 때 검색어가 없더라도 `isNoKeywordSearch`에 걸리지 않도록 분기 로직 우선 순위 조정.
+  - **Windows 콘솔 인코딩 충돌 방지 (`run.py`)**:
+    - `sys.stdout.reconfigure(encoding='utf-8')` 적용 및 이모지 콘솔 출력 시 cp949 인코딩 에러 방지.
+- **검증 결과**:
+  - `node --check static/js/results-passage.js static/js/navigation.js static/js/search.js static/js/results-sentence.js static/js/grammar.js static/js/ai-settings.js` 자바스크립트 구문 검사 통과 (오류 0건)
+  - `python -m py_compile run.py` 파이썬 구문 검사 통과 (오류 0건)
+  - 문항 이동, 트리 네비게이션, 영역 토글, 홈 복귀 시 재생 중이던 듣기 음성 즉시 완전 정지 확인
+
+
 
 
 
