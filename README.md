@@ -1924,6 +1924,33 @@ CREATE TABLE user_sentence_status (
   - `test_fels_unit.py`: 4개 단위 테스트 통과 (OK)
   - 실제 DB 5,582개 전체 듣기 문항 2중 검증 테스트: 대화문 3,895건 / 담화문 1,687건 오차 0건 정상 분류 완료
 
+### [2026-09-30 00:10] 업데이트 이력 (Commit ID: 082d4a38)
+- **수정 내용**:
+  - **FELS(기능어 약형드랩) 학생용 빈칸 공백 폭 복원 & 밑줄 제거 (`static/css/style.css`, `static/js/results-passage.js`, `fels_engine.py`)**:
+    - **공백 폭 복원**: 이전 버전에서 문장 분할 시 정규식(`replace(/[ \t]+/g, " ")`)에 의해 축소되었던 `[ ]` 공백을 지문 내 최장 단어 글자수(`maxLen`) 기준 균일 공백(`[       ]`)으로 100% 복원.
+    - **웹/클립보드 공백 보존**: CSS `.fels-blank-box`에 `white-space: pre;`를 적용하여 브라우저 및 한글/워드 인쇄물 복사 시에도 다중 공백이 축소되지 않도록 완벽 보존.
+    - **빈칸 밑줄 제거**: 사용자 피드백을 반영하여 `.fels-blank-box`의 하단 밑줄(`border-bottom: 2px solid #94a3b8;`)을 제거하고 깔끔한 박스형 학습지 UI로 개선.
+  - **담화문 화자 태그(`M:`, `W:`) 완전 제거 및 문장 번호(`1. `, `2. `...) 부여 (`static/js/results-passage.js`, `fels_engine.py`)**:
+    - 담화문(독백/안내문/방송 등)에서 불필요한 화자 태그(`M:`, `W:`, `Man:`, `Woman:` 등)를 전면 제거.
+    - 각 문장 시작마다 `1. `, `2. `, `3. `... 순으로 문장 번호를 부여하여 유인물 및 학습 편의성 극대화.
+  - **대화문 화자별 순번(`M1:`, `M2:`, `W1:`, `W2:`) 자동 부여**:
+    - 대화문에서 발화 턴마다 성별을 구분하여 `M1: `, `M2: `, `W1: `, `W2: ` 형태로 발화 순번 자동 기록.
+  - **좌측 하단 패널 Default를 학생용 빈칸으로 설정 & 교사용 정답 토글 버튼 추가 (`templates/index.html`, `static/js/dom.js`, `static/js/results-passage.js`)**:
+    - 문항 선택 시 기본 뷰(Default)를 학생용 빈칸(`[       ]`) 텍스트로 표시.
+    - 상단 액션 바에 `[👁️ 정답 보기]` ↔ `[🙈 정답 숨기기]` 토글 버튼(`btnToggleFelsAnswer`)을 구현하여 교사용 정답(`[단어]`)과 학생용 빈칸을 자유롭게 전환.
+    - 헤더 타이틀(`🎯 FELS (기능어 약형드랩)`) 및 배지(`학생용 빈칸` ↔ `교사용 정답`) 실시간 동기화.
+  - **패널 헤더 레이아웃 최적화 & `📋 대본 복사` 버튼 우측 상단 이동**:
+    - `📋 대본 복사` 버튼(`btnCopyScript`)을 원래 영문 대본이 표시되는 우측 상단 패널(`listeningTopRightActions`)로 재배치.
+    - 좌측 하단 버튼 그룹을 3개(`👁️ 정답 보기`, `📝 FELS 빈칸 복사`, `🔑 FELS 정답 복사`)로 최적화하고 줄바꿈 방지(`flex-wrap: nowrap`), `.panel-header-left` 인라인 플렉스 정렬을 적용하여 헤더를 완벽한 단일 행(One-line)으로 정렬.
+  - **프론트엔드 ES 모듈 중복 변수 버그 픽스**:
+    - `results-passage.js` 내 중복 선언되었던 `currentFelsViewMode`를 제거하여 초기화 오류 완벽 해결.
+- **검증 결과**:
+  - `verify_all_modules.mjs`: 전체 14개 프론트엔드 ES 모듈 구문 및 런타임 오류 0건 통과 (Exit Code: 0)
+  - `python -m py_compile fels_engine.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code: 0)
+  - `pytest tests/`: 76개 전체 기존 테스트 통과 (0.13s)
+  - `test_fels_unit.py`: 담화문 분할, 화자 태그 제거, 문장 번호 부여, 대화 순번 부여 등 신규 단위 테스트 4건 전건 통과 (OK)
+
+
 
 
 

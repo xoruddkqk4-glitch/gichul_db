@@ -349,6 +349,7 @@ export const btnDownloadListeningMp3 = document.getElementById("btnDownloadListe
 export const btnDownloadListeningZip = document.getElementById("btnDownloadListeningZip");
 
 export const listeningBottomLeftActions = document.getElementById("listeningBottomLeftActions");
+export const btnToggleFelsAnswer = document.getElementById("btnToggleFelsAnswer");
 export const btnCopyFels = document.getElementById("btnCopyFels");
 export const btnCopyFelsBlank = document.getElementById("btnCopyFelsBlank");
 export const btnCopyFelsAnswer = document.getElementById("btnCopyFelsAnswer");

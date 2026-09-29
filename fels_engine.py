@@ -10,7 +10,7 @@
 """
 
 import re
-from typing import Dict, Any, Tuple, Set
+from typing import Dict, Any, Tuple, Set, List, Union
 
 # 1. 관사 (Articles)
 ARTICLES: Set[str] = {
@@ -188,32 +188,33 @@ def is_dialogue_script(text: str, title: str = "", question_type: str = "") -> b
     return speaker_count >= 2
 
 
-def split_fels_monologue_sentences(fels_text: str) -> str:
-    """담화문(Monologue) FELS 텍스트를 문장 단위로 분할하여 한 문장당 한 행(\n)으로 정렬 (유인물 형태)"""
+def split_fels_monologue_sentences(fels_text: str, as_list: bool = False) -> Union[str, List[str]]:
+    """담화문(Monologue) FELS 텍스트에서 화자 태그(M:, W: 등)를 제거하고 문장 단위로 분할하여 번호(1. , 2. ...) 부여"""
     if not fels_text:
-        return ""
+        return [] if as_list else ""
 
-    prefix = ""
     body = fels_text.strip()
-    m_spk = re.match(
-        r"^(\s*(?:[MW]|Man|Woman|Boy|Girl|Host|Speaker|Teacher|Doctor|Officer)\s*[:：]\s*)",
+    # 1. 화자 태그(M:, W:, Man:, Woman: 등) 완전 제거
+    body = re.sub(
+        r"(?:^|\n)\s*(?:[MW]|Man|Woman|Boy|Girl|Host|Speaker|Teacher|Doctor|Officer|Male|Female|남|여)\d*\s*[:：]\s*",
+        " ",
         body,
-        re.IGNORECASE
-    )
-    if m_spk:
-        prefix = m_spk.group(1).strip() + " "
-        body = body[m_spk.end():].strip()
+        flags=re.IGNORECASE
+    ).strip()
 
+    # 2. 공백 및 개행 정규화
     cleaned = re.sub(r"[\r\n]+", " ", body)
     cleaned = re.sub(r"[ \t]+", " ", cleaned).strip()
 
+    # 3. 약어 및 마침표 보호
     cleaned = re.sub(r"(\d+)\.(\d+)", r"\1<PERIOD>\2", cleaned)
     abbr_pattern = r"\b(mr|mrs|ms|dr|prof|sr|jr|e\.g|i\.e|etc|vs|u\.s|u\.k|no)\."
     cleaned = re.sub(abbr_pattern, lambda m: m.group(0).replace(".", "<PERIOD>"), cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\b([A-Za-z])\.\s+", r"\1<PERIOD> ", cleaned)
     cleaned = re.sub(r"\.{2,}", "<ELLIPSIS>", cleaned)
 
-    split_pattern = re.compile(r'([.?!]["\')\]]?)\s+(?=[A-Z"\'(0-9]|\[[A-Za-z\s])')
+    # 4. 문장 분할: 마침표/물음표/느낌표 뒤 공백 + 대문자 또는 [단어]/<단어>/빈칸 시작
+    split_pattern = re.compile(r'([.?!]["\')\]]?)\s+(?=[A-Z"\'(0-9]|\[|<)')
     splits = split_pattern.split(cleaned)
 
     raw_sentences = []
@@ -230,14 +231,79 @@ def split_fels_monologue_sentences(fels_text: str) -> str:
             raw_sentences.append(s)
 
     final_sentences = [
-        s.replace("<PERIOD>", ".").replace("<ELLIPSIS>", "...")
-        for s in raw_sentences
+        f"{idx + 1}. {s.replace('<PERIOD>', '.').replace('<ELLIPSIS>', '...')}"
+        for idx, s in enumerate(raw_sentences)
     ]
 
-    if prefix and final_sentences:
-        final_sentences[0] = prefix + final_sentences[0]
+    return final_sentences if as_list else "\n".join(final_sentences)
 
-    return "\n".join(final_sentences)
+
+def number_dialogue_turns(text: str) -> str:
+    """대화문(Dialogue) 텍스트의 각 턴에 화자별 순번(M1:, W1:, M2:, W2: ...) 부여"""
+    if not text:
+        return ""
+    lines = text.split("\n")
+    m_count = 0
+    w_count = 0
+    numbered_lines = []
+
+    speaker_turn_re = re.compile(r"^([MW]|Man|Woman|Boy|Girl|Male|Female|남|여)\d*\s*[:：]\s*(.*)$", re.IGNORECASE)
+
+    for line in lines:
+        trimmed = line.strip()
+        if not trimmed:
+            continue
+        m = speaker_turn_re.match(trimmed)
+        if m:
+            spk = m.group(1)
+            rest = m.group(2).strip()
+            is_male = bool(re.match(r"^(M|Man|Boy|Male|남)$", spk, re.IGNORECASE))
+            if is_male:
+                m_count += 1
+                label = f"M{m_count}:"
+            else:
+                w_count += 1
+                label = f"W{w_count}:"
+            numbered_lines.append(f"{label} {rest}")
+        else:
+            numbered_lines.append(trimmed)
+
+    return "\n".join(numbered_lines)
+
+
+def format_fels_text(fels_text: str, mode: str = "blank", title: str = "", question_type: str = "") -> str:
+    """
+    FELS 텍스트를 학생용(blank) 또는 교사용(answer) 규격으로 서식화
+    - 담화문: 화자 태그 제거 + 문장 단위 분할 + 문장 번호(1. , 2. ...) 부여
+    - 대화문: M1:, W1:, M2:, W2: 화자별 순번 부여
+    - 빈칸(blank): 텍스트 내 최장 단어 글자수 기준 균일 공백([        ]) 적용 (공백 축소 없이 100% 보존)
+    - 정답(answer): [단어] 정답 표시
+    """
+    if not fels_text:
+        return ""
+
+    is_dialogue = is_dialogue_script(fels_text, title=title, question_type=question_type)
+
+    if is_dialogue:
+        structured_text = number_dialogue_turns(fels_text)
+    else:
+        structured_text = split_fels_monologue_sentences(fels_text)
+
+    words = []
+    for m in re.finditer(r"<([^>]+?)>|\[([^\]]+?)\]", fels_text):
+        w = (m.group(1) or m.group(2) or "").strip()
+        if w:
+            words.append(w)
+    max_len = max([len(w) for w in words], default=5)
+
+    if mode == "blank":
+        blank_str = f"[{' ' * max_len}]"
+        def _replace_blank(m):
+            content = (m.group(1) or m.group(2) or "").strip()
+            return blank_str if content else m.group(0)
+        return re.sub(r"<([^>]+?)>|\[([^\]]+?)\]", _replace_blank, structured_text)
+    else:
+        return re.sub(r"<([^>]+?)>", r"[\1]", structured_text)
 
 
 def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = True, title: str = "", question_type: str = "") -> str:
@@ -248,6 +314,9 @@ def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = Tr
     """
     if not fels_text:
         return ""
+    if split_sentences_for_monologue:
+        return format_fels_text(fels_text, mode="blank", title=title, question_type=question_type)
+
     words = []
     for m in re.finditer(r"<([^>]+?)>|\[([^\]]+?)\]", fels_text):
         w = (m.group(1) or m.group(2) or "").strip()
@@ -260,11 +329,7 @@ def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = Tr
         content = (m.group(1) or m.group(2) or "").strip()
         return blank_str if content else m.group(0)
 
-    blank_text = re.sub(r"<([^>]+?)>|\[([^\]]+?)\]", _replace, fels_text)
-    if split_sentences_for_monologue and not is_dialogue_script(fels_text, title=title, question_type=question_type):
-        blank_text = split_fels_monologue_sentences(blank_text)
-
-    return blank_text
+    return re.sub(r"<([^>]+?)>|\[([^\]]+?)\]", _replace, fels_text)
 
 
 def analyze_fels(script_text: str) -> Dict[str, Any]:

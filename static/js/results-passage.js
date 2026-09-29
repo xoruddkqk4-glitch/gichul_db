@@ -17,6 +17,7 @@ import {
   btnCancelAnswer,
   btnCopyExplanation,
   btnCopyFels,
+  btnToggleFelsAnswer,
   btnCopyFelsBlank,
   btnCopyFelsAnswer,
   btnCopyPassage,
@@ -1496,6 +1497,8 @@ function applyPassageUpdate(fresh, focusId) {
   renderPassageView(appState.passagesData, focusId || fresh.id);
 }
 
+let currentFelsViewMode = "blank"; // default: 'blank' (학생용) | 'answer' (교사용)
+
 /**
  * 대본 또는 FELS 텍스트가 대화문(Dialogue)인지 여부 판별 (2중 교차 검증)
  * 1) 1차 검증: 발문(question_title) 및 문제유형(question_type) 키워드 교차 확인 ('대화' vs '다음을 듣고/하는 말/담화')
@@ -1523,64 +1526,36 @@ export function isDialogueScript(text, title = "", qType = "") {
   const speakerCount = matches ? matches.length : 0;
 
   // 3. 2중 교차 검증(Dual Verification) 종합 판정
-  // 3-1. 발문에 '대화'가 명시되고 스크립트에도 2턴 이상인 경우 -> 100% 대화문
-  if (hasDialogueTitle && speakerCount >= 2) {
-    return true;
-  }
-
-  // 3-2. 발문에 '담화/다음을 듣고/하는 말'이 있고 스크립트도 1턴 이하인 경우 -> 100% 담화문
-  if (hasMonologueTitle && speakerCount <= 1) {
-    return false;
-  }
-
-  // 3-3. 발문에 '대화'가 명시된 경우 (과거 기출 화자 태그 생략 지문 등) -> 대화문 우선
-  if (hasDialogueTitle && !hasMonologueTitle) {
-    return true;
-  }
-
-  // 3-4. 발문에 '담화' 또는 '다음을 듣고/하는 말'이 명시된 경우 -> 담화문 우선
-  if (hasMonologueTitle && !hasDialogueTitle) {
-    return false;
-  }
-
-  // 3-5. 발문이 축약('1.', '2번')되어 키워드가 없거나 모호한 경우: 실제 스크립트 화자 턴 수(2턴 이상 대화문) 기준
+  if (hasDialogueTitle && speakerCount >= 2) return true;
+  if (hasMonologueTitle && speakerCount <= 1) return false;
+  if (hasDialogueTitle && !hasMonologueTitle) return true;
+  if (hasMonologueTitle && !hasDialogueTitle) return false;
   return speakerCount >= 2;
 }
 
 /**
- * 담화문(Monologue) FELS 또는 대본 텍스트를 문장 단위로 분할하여 한 문장당 한 행(\n)으로 정렬 (유인물 형태)
- * - 선행 화자 태그(M:, W: 등) 보존
- * - 소수점(3.14), 약어(Mr., Ms., Dr., e.g., i.e., etc., U.S.), 단일 이니셜, 말줄임표 보호
- * - 문장 종결 부호([.?!]) 및 닫는 괄호/따옴표 뒤 공백 + 대문자 또는 [단어]/[  ] 토큰 기준 분할
+ * 담화문(Monologue) FELS 또는 대본 텍스트를 문장 단위로 분할하고 'M:', 'W:' 접두사를 완전히 제거하며
+ * 각 문장 앞에 문장 번호 (1. , 2. ...)를 부여하여 한 문장당 한 행(\n)으로 정렬 (유인물 형태)
  */
 export function splitFelsMonologueIntoSentences(felsText) {
-  if (!felsText) return "";
+  if (!felsText) return [];
 
-  // 1. 첫 줄 화자 태그(M:, W: 등) 감지 및 분리
-  let prefix = "";
   let body = felsText.trim();
-  const speakerMatch = body.match(/^(\s*(?:[MW]|Man|Woman|Boy|Girl|Host|Speaker|Teacher|Doctor|Officer)\s*[:：]\s*)/i);
-  if (speakerMatch) {
-    prefix = speakerMatch[1].trim() + " ";
-    body = body.slice(speakerMatch[0].length).trim();
-  }
+  // 1. 화자 태그(M:, W:, Man:, Woman: 등) 완전 제거 (담화문 지침)
+  body = body.replace(/(?:^|\n)\s*(?:[MW]|Man|Woman|Boy|Girl|Host|Speaker|Teacher|Doctor|Officer|Male|Female|남|여)\d*\s*[:：]\s*/gi, " ").trim();
 
   // 2. 개행 및 다중 공백 정규화
   let cleaned = body.replace(/[\r\n]+/g, " ").replace(/[ \t]+/g, " ").trim();
 
   // 3. 약어 및 마침표 보호
-  // 3-1. 소수점 보호 (예: 3.14 -> 3<PERIOD>14)
   cleaned = cleaned.replace(/(\d+)\.(\d+)/g, "$1<PERIOD>$2");
-  // 3-2. 호칭 및 일반 약어 보호 (Mr., Ms., Dr., Prof., e.g., i.e., etc., vs., U.S., U.K., No. 등)
   const abbrRegex = /\b(mr|mrs|ms|dr|prof|sr|jr|e\.g|i\.e|etc|vs|u\.s|u\.k|no)\./gi;
   cleaned = cleaned.replace(abbrRegex, (m) => m.replace(/\./g, "<PERIOD>"));
-  // 3-3. 단일 알파벳 이니셜 보호 (J. K.)
   cleaned = cleaned.replace(/\b([A-Za-z])\.\s+/g, "$1<PERIOD> ");
-  // 3-4. 말줄임표 보호 (...)
   cleaned = cleaned.replace(/\.{2,}/g, "<ELLIPSIS>");
 
-  // 4. 문장 종결 패턴 분할: [.?!] 뒤에 닫는 따옴표/괄호가 올 수 있고, 뒤이어 공백 및 대문자 또는 [단어]/[   ] 빈칸 시작
-  const splitPattern = /([.?!]["')\]]?)\s+(?=[A-Z"'(0-9]|\[[A-Za-z\s])/g;
+  // 4. 문장 종결 패턴 분할: [.?!] 뒤에 닫는 따옴표/괄호가 올 수 있고, 뒤이어 공백 및 대문자/숫자 또는 [단어]/<단어>/빈칸 시작
+  const splitPattern = /([.?!]["')\]]?)\s+(?=[A-Z"'(0-9]|\[|<)/g;
 
   const rawSentences = [];
   let lastIndex = 0;
@@ -1594,56 +1569,110 @@ export function splitFelsMonologueIntoSentences(felsText) {
   const remaining = cleaned.slice(lastIndex).trim();
   if (remaining) rawSentences.push(remaining);
 
-  // 5. 보호 토큰 복원
-  const finalSentences = rawSentences.map((s) => {
-    return s.replace(/<PERIOD>/g, ".").replace(/<ELLIPSIS>/g, "...");
+  // 5. 보호 토큰 복원 및 문장 번호(1. , 2. ...) 부여
+  return rawSentences.map((s, idx) => {
+    const restored = s.replace(/<PERIOD>/g, ".").replace(/<ELLIPSIS>/g, "...");
+    return `${idx + 1}. ${restored}`;
   });
-
-  if (prefix && finalSentences.length > 0) {
-    finalSentences[0] = prefix + finalSentences[0];
-  }
-
-  return finalSentences.join("\n");
 }
 
-/** FELS 학생용 빈칸 텍스트([ ]) 복사 (최장 단어 글자수 균일 공백 적용 + 담화문 문장별 유인물 정렬) */
-export function copyFelsBlankVersion() {
-  const felsText = currentDetailPassage ? (currentDetailPassage.fels_text || "") : "";
-  if (!felsText) {
-    showToast("복사할 FELS 텍스트가 없습니다.", "warning");
-    return;
+/**
+ * 대화문(Dialogue) 텍스트의 각 턴에 화자별 순번(M1:, W1:, M2:, W2: ...) 부여
+ */
+export function numberDialogueTurns(text) {
+  if (!text) return "";
+  const lines = text.split("\n");
+  let mCount = 0;
+  let wCount = 0;
+  const numberedLines = [];
+
+  for (let line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const mMatch = trimmed.match(/^([MW]|Man|Woman|Boy|Girl|Male|Female|남|여)\d*\s*[:：]\s*(.*)$/i);
+    if (mMatch) {
+      const spk = mMatch[1];
+      const rest = mMatch[2].trim();
+      const isMale = /^(M|Man|Boy|Male|남)$/i.test(spk);
+      let label = "";
+      if (isMale) {
+        mCount++;
+        label = `M${mCount}:`;
+      } else {
+        wCount++;
+        label = `W${wCount}:`;
+      }
+      numberedLines.push(`${label} ${rest}`);
+    } else {
+      numberedLines.push(trimmed);
+    }
   }
-  // 1. 모든 괄호 안의 기능어 단어 추출 (<단어> 및 [단어] 지원, 순수 공백 제외)
+
+  return numberedLines.join("\n");
+}
+
+/**
+ * FELS 텍스트를 학생용(blank) 또는 교사용(answer) 규격으로 서식화
+ * - 담화문: 선행 M:/W: 제거 + 문장 단위 분할 + 문장 번호(1. , 2. ...) 부여
+ * - 대화문: M1:, W1:, M2:, W2: 화자별 순번 부여
+ * - 빈칸(blank): 텍스트 내 최장 단어 글자수 기준 균일 공백([        ]) 적용 (공백 축소 없이 100% 보존)
+ * - 정답(answer): [단어] 정답 표시
+ */
+export function formatFelsText(felsText, mode = "blank", title = "", qType = "") {
+  if (!felsText) return "";
+
+  const isDialogue = isDialogueScript(felsText, title, qType);
+
+  let structuredText = "";
+  if (isDialogue) {
+    structuredText = numberDialogueTurns(felsText);
+  } else {
+    const sentences = splitFelsMonologueIntoSentences(felsText);
+    structuredText = sentences.join("\n");
+  }
+
+  // 최장 단어 글자수 계산 (<단어> 및 [단어])
   const matches = Array.from(felsText.matchAll(/<([^>]+?)>|\[([^\]]+?)\]/g));
   const words = matches
     .map((m) => (m[1] || m[2] || "").trim())
     .filter((w) => w.length > 0);
-
-  // 2. 들어가는 단어의 철자수와는 상관 없이 최고 긴 단어의 길이 계산
   let maxLen = 0;
   for (const w of words) {
     if (w.length > maxLen) maxLen = w.length;
   }
   if (maxLen === 0) maxLen = 5;
 
-  // 3. 최고 긴 단어의 길이에 맞게 모든 [ ]에 동일한 개수의 공백 빈칸 적용
-  const blankStr = `[${" ".repeat(maxLen)}]`;
-  let blankText = felsText.replace(/<([^>]+?)>|\[([^\]]+?)\]/g, (match, p1, p2) => {
-    const content = (p1 || p2 || "").trim();
-    return content ? blankStr : match;
-  });
-
-  // 4. 담화문(Monologue)의 경우 스크립트를 문장 단위로 분할하여 1문장 = 1행 유인물 형태로 변환 (발문+스크립트 2중 검증)
-  const title = currentDetailPassage ? (currentDetailPassage.question_title || "") : "";
-  const qType = currentDetailPassage ? (currentDetailPassage.question_type || "") : "";
-  const isDialogue = isDialogueScript(felsText, title, qType);
-  if (!isDialogue) {
-    blankText = splitFelsMonologueIntoSentences(blankText);
+  if (mode === "blank") {
+    const blankStr = `[${" ".repeat(maxLen)}]`;
+    return structuredText.replace(/<([^>]+?)>|\[([^\]]+?)\]/g, (match, p1, p2) => {
+      const content = (p1 || p2 || "").trim();
+      return content ? blankStr : match;
+    });
+  } else {
+    return structuredText.replace(/<([^>]+?)>/g, "[$1]");
   }
+}
+
+/** FELS 학생용 빈칸 텍스트([ ]) 복사 (최장 단어 글자수 균일 공백 보존 + 문장 번호/화자 순번 부여) */
+export function copyFelsBlankVersion() {
+  const felsText = currentDetailPassage ? (currentDetailPassage.fels_text || "") : "";
+  if (!felsText) {
+    showToast("복사할 FELS 텍스트가 없습니다.", "warning");
+    return;
+  }
+  const title = currentDetailPassage.question_title || "";
+  const qType = currentDetailPassage.question_type || "";
+  const isDialogue = isDialogueScript(felsText, title, qType);
+  const blankText = formatFelsText(felsText, "blank", title, qType);
+
+  // 최장 글자수 계산
+  const matches = Array.from(felsText.matchAll(/<([^>]+?)>|\[([^\]]+?)\]/g));
+  const maxLen = Math.max(...matches.map((m) => (m[1] || m[2] || "").trim().length), 5);
 
   copyToClipboard(
     blankText,
-    `FELS 학생용 빈칸([ ]) 텍스트가 클립보드에 복사되었습니다! (최장 ${maxLen}자 기준 공백${isDialogue ? "" : " · 담화문 문장별 유인물 정렬"} 적용)`
+    `FELS 학생용 빈칸([ ]) 텍스트가 클립보드에 복사되었습니다! (최장 ${maxLen}자 기준 공백${isDialogue ? " · M1/W1 대화 순번 부여" : " · 담화문 문장 번호 부여"} 적용)`
   );
 }
 
@@ -1654,21 +1683,97 @@ export function copyFelsAnswerVersion() {
     showToast("복사할 FELS 텍스트가 없습니다.", "warning");
     return;
   }
-  // <단어>가 있는 경우 [단어]로 일관되게 치환하여 교사용 정답지 생성 (학생용 [ ] 빈칸과 1:1 대응)
-  let answerText = felsText.replace(/<([^>]+?)>/g, "[$1]");
-
-  // 담화문(Monologue)의 경우 학생용 유인물과 1:1 대응되도록 문장 단위로 분할하여 1문장 = 1행 정답지로 변환 (발문+스크립트 2중 검증)
-  const title = currentDetailPassage ? (currentDetailPassage.question_title || "") : "";
-  const qType = currentDetailPassage ? (currentDetailPassage.question_type || "") : "";
+  const title = currentDetailPassage.question_title || "";
+  const qType = currentDetailPassage.question_type || "";
   const isDialogue = isDialogueScript(felsText, title, qType);
-  if (!isDialogue) {
-    answerText = splitFelsMonologueIntoSentences(answerText);
-  }
+  const answerText = formatFelsText(felsText, "answer", title, qType);
 
   copyToClipboard(
     answerText,
-    `FELS 교사용 정답 텍스트([단어])가 클립보드에 복사되었습니다! (정답지·해설용${isDialogue ? "" : " · 1:1 유인물 정렬"})`
+    `FELS 교사용 정답 텍스트([단어])가 클립보드에 복사되었습니다! (정답지·해설용${isDialogue ? " · M1/W1 1:1 대화 순번" : " · 1:1 문장 번호 정렬"})`
   );
+}
+
+/** FELS 좌측 하단 패널 렌더링 (default: 학생용 빈칸, 토글로 교사용 정답 전환) */
+export function renderFelsBottomLeftPanel(p, viewMode = currentFelsViewMode) {
+  if (!p) return;
+  currentFelsViewMode = viewMode;
+  const isListening = p.area === "listening";
+  if (!isListening) return;
+
+  const rawFels = (p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.").trim();
+  panelExplanation.dataset.rawFels = rawFels;
+
+  // 1. 헤더 타이틀, 배지 및 토글 버튼 상태 동적 갱신
+  if (viewMode === "blank") {
+    if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = "🎯 FELS (기능어 약형드랩)";
+    if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = "학생용 빈칸";
+    if (btnToggleFelsAnswer) {
+      btnToggleFelsAnswer.innerHTML = "👁️ 정답 보기";
+      btnToggleFelsAnswer.className = "btn btn-outline-success btn-sm";
+      btnToggleFelsAnswer.title = "교사용 정답([단어]) 화면 보기로 전환";
+    }
+  } else {
+    if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = "🎯 FELS (기능어 약형드랩)";
+    if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = "교사용 정답";
+    if (btnToggleFelsAnswer) {
+      btnToggleFelsAnswer.innerHTML = "🙈 정답 숨기기";
+      btnToggleFelsAnswer.className = "btn btn-outline-warning btn-sm";
+      btnToggleFelsAnswer.title = "학생용 빈칸([   ]) 화면 보기로 전환";
+    }
+  }
+
+  // 2. FELS 본문 구조화 및 서식화 (blank / answer)
+  const structuredText = formatFelsText(rawFels, viewMode, p.question_title || "", p.question_type || "");
+  let formattedFels = escapeHtml(structuredText);
+
+  // 2-1. 빈칸 [   ] 박스 스타일링
+  formattedFels = formattedFels.replace(
+    /\[(\s+)\]/g,
+    '<span class="fels-blank-box">[$1]</span>'
+  );
+
+  // 2-2. 교사용 [단어] 하이라이트 배지 스타일링
+  formattedFels = formattedFels.replace(
+    /(?:&lt;|\[)([^&\]\n\s]+?)(?:&gt;|\])/g,
+    (match, p1) => {
+      const word = (p1 || "").trim();
+      return word ? `<span class="fels-tag-word">[${word}]</span>` : match;
+    }
+  );
+
+  // 2-3. 화자 태그(M1:, W1:, M:, W: 등) 색상 배지 적용
+  formattedFels = formattedFels.replace(
+    /(^|\n)\s*(M\d*|W\d*|Man|Woman|Boy|Girl|남|여)\s*:\s*/g,
+    (match, p1, speaker) => {
+      const isMale = /^(M\d*|Man|Boy|남)$/i.test(speaker);
+      const cls = isMale ? "speaker-tag speaker-male" : "speaker-tag speaker-female";
+      return `${p1}<span class="${cls}">${speaker}:</span> `;
+    }
+  );
+
+  // 2-4. 문장 번호 (1. , 2. ...) 스타일링
+  formattedFels = formattedFels.replace(
+    /(^|\n)\s*(\d+\.)\s+/g,
+    '$1<span class="fels-sent-num">$2</span> '
+  );
+
+  formattedFels = formattedFels.trim();
+
+  // 3. 상단 가이드 배너 안내문 동적 구성
+  const guideBannerHtml = (viewMode === "blank")
+    ? `<span><strong>FELS 기능어 약형드랩 (학생용):</strong> 7대 기능어가 최장 단어 글자수 기준 균일 빈칸([        ])으로 처리되었습니다. 상단의 <strong>[👁️ 정답 보기]</strong> 버튼으로 정답을 확인할 수 있습니다.</span>`
+    : `<span><strong>FELS 기능어 약형드랩 (교사용):</strong> 7대 기능어가 [단어]로 추출되었습니다. 상단의 <strong>[🙈 정답 숨기기]</strong> 버튼으로 학생용 빈칸으로 전환할 수 있습니다.</span>`;
+
+  panelExplanation.innerHTML = `
+    <div class="listening-fels-container">
+      <div class="fels-guide-banner" style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: ${viewMode === "blank" ? "#f0f9ff" : "#f0fdf4"}; border-bottom: 1px solid ${viewMode === "blank" ? "#bae6fd" : "#bbf7d0"}; font-size: 0.8rem; color: ${viewMode === "blank" ? "#0369a1" : "#166534"};">
+        <span class="fels-badge-icon">${viewMode === "blank" ? "📝" : "🎯"}</span>
+        ${guideBannerHtml}
+      </div>
+      <div class="fels-content-box">${formattedFels}</div>
+    </div>
+  `;
 }
 
 /** 2x2 패널에 특정 지문 상세 정보 로드 */
@@ -1693,8 +1798,8 @@ function loadPassageDetail(p) {
   if (panelTitleTopRight) panelTitleTopRight.textContent = isListening ? "📝 영문 대본 텍스트 & 🎙️ 음성 듣기" : "📝 TXT 지문 본문 텍스트";
   const ttsLabel = (appState.ttsEngine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
   if (badgeTopRightSource) badgeTopRightSource.textContent = isListening ? ttsLabel : "순수 영문";
-  if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = isListening ? "🎯 FELS (기능어 약형드랩) 교사용 텍스트" : "📘 HWP 정답 및 해설";
-  if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = isListening ? "7대 기능어 추출" : "공식 해설지";
+  if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = isListening ? "🎯 FELS (기능어 약형드랩)" : "📘 HWP 정답 및 해설";
+  if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = isListening ? "학생용 빈칸" : "공식 해설지";
 
   // 2. 우측 상단 & 좌측 하단 버튼 그룹 표시 전환
   if (btnCopyPassage) btnCopyPassage.style.display = isListening ? "none" : "inline-flex";
@@ -1904,43 +2009,10 @@ function loadPassageDetail(p) {
     panelPassageText.innerHTML = highlightTextKeyword(rawPassageText, currentQuery, "passage-highlight");
   }
 
-  // [좌측 하단]: HWP 정답 및 해설 / FELS 교사용 텍스트
+  // [좌측 하단]: HWP 정답 및 해설 / FELS 학생용 빈칸 (default) 및 교사용 정답 토글
   if (isListening) {
-    let rawFels = (p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.").trim();
-    panelExplanation.dataset.rawFels = rawFels;
-
-    // 담화문인 경우 화면 뷰어에서도 문장별 줄바꿈을 적용하여 유인물과 동일한 레이아웃 제공 (발문 + 스크립트 2중 검증)
-    if (p.fels_text && !isDialogueScript(rawFels, p.question_title || "", p.question_type || "")) {
-      rawFels = splitFelsMonologueIntoSentences(rawFels);
-    }
-
-    let formattedFels = escapeHtml(rawFels);
-    formattedFels = formattedFels.replace(
-      /(?:&lt;|\[)([^&\]\n]+?)(?:&gt;|\])/g,
-      (match, p1) => {
-        const word = (p1 || "").trim();
-        return word ? `<span class="fels-tag-word">[${word}]</span>` : match;
-      }
-    );
-    formattedFels = formattedFels.replace(
-      /(^|\n)\s*(M|W|Man|Woman|Boy|Girl|남|여)\s*:\s*/g,
-      (match, p1, speaker) => {
-        const isMale = /^(M|Man|Boy|남)$/i.test(speaker);
-        const cls = isMale ? "speaker-tag speaker-male" : "speaker-tag speaker-female";
-        return `${p1}<span class="${cls}">${speaker}:</span> `;
-      }
-    );
-    formattedFels = formattedFels.trim();
-
-    panelExplanation.innerHTML = `
-      <div class="listening-fels-container">
-        <div class="fels-guide-banner" style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: #f0fdf4; border-bottom: 1px solid #bbf7d0; font-size: 0.8rem; color: #166534;">
-          <span class="fels-badge-icon">🎯</span>
-          <span><strong>FELS 기능어 약형드랩:</strong> 7대 기능어가 [단어]로 추출되었습니다. 상단의 <strong>[FELS 빈칸 복사 (학생용)]</strong> 또는 <strong>[FELS 정답 복사 (교사용)]</strong> 버튼을 통해 복사할 수 있습니다.</span>
-        </div>
-        <div class="fels-content-box">${formattedFels}</div>
-      </div>
-    `;
+    currentFelsViewMode = "blank";
+    renderFelsBottomLeftPanel(p, "blank");
   } else {
     let expText = p.explanation_text || "";
     if (p.isGroup && Array.isArray(p.subItems) && p.subItems.length > 1) {
@@ -2640,6 +2712,14 @@ export function init() {
   }
   if (btnCopyFels) {
     btnCopyFels.addEventListener("click", copyFelsBlankVersion);
+  }
+  if (btnToggleFelsAnswer) {
+    btnToggleFelsAnswer.addEventListener("click", () => {
+      const p = currentDetailPassage;
+      if (!p) return;
+      const nextMode = currentFelsViewMode === "blank" ? "answer" : "blank";
+      renderFelsBottomLeftPanel(p, nextMode);
+    });
   }
 
   if (btnCopyScript) {

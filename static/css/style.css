@@ -1701,6 +1701,15 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -1709,6 +1718,7 @@ button {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  white-space: nowrap;
 }
 
 .panel-content {
@@ -6753,6 +6763,43 @@ mark.passage-highlight {
   border-radius: 4px;
   display: inline-block;
   margin: 0 1px;
+}
+
+.fels-blank-box {
+  font-family: monospace;
+  font-weight: 700;
+  color: #334155;
+  background: #f1f5f9;
+  padding: 0 4px;
+  border-radius: 3px;
+  display: inline-block;
+  margin: 0 1px;
+  letter-spacing: 1px;
+  white-space: pre;
+}
+
+.fels-sent-num {
+  font-weight: 700;
+  color: #64748b;
+  margin-right: 4px;
+  display: inline-block;
+  user-select: none;
+}
+
+.fels-content-box {
+  white-space: pre-wrap;
+  line-height: 1.8;
+  padding: 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  word-break: break-word;
+}
+
+.listening-fels-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
 }
 
 /* 4. TTS 조작 버튼 공통 */
