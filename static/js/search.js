@@ -175,8 +175,14 @@ export async function executeSearch(source = "home", targetPassageId = null) {
   let correctRateRange = "";
   let tag = "";
 
-  if (source === "all" || source === "all_passages") {
-    // 전체 보기 (조건 없음)
+  const isHomeEmpty = source === "home" && (!mainSearchInput || !mainSearchInput.value.trim());
+  const isResultsEmpty = source !== "home" && source !== "all" && source !== "all_passages" && (!resultsSearchInput || !resultsSearchInput.value.trim());
+  const isNoKeywordSearch = (source === "all" || source === "all_passages") || isHomeEmpty || isResultsEmpty;
+
+  if (isNoKeywordSearch) {
+    // 검색창에 아무런 검색어 입력 없이 '검색'을 누른 경우:
+    // 이전의 모든 필터, 트리 네비게이션 및 지문 선택 상태를 완전히 초기화하여
+    // 해당 영역(독해/듣기) 전체 시험지 대상 최상위 학년 선택 화면(Case 1)으로 진입
     keyword = "";
     grade = "";
     year = "";
@@ -187,6 +193,37 @@ export async function executeSearch(source = "home", targetPassageId = null) {
     tag = "";
     resetYearFilter();
     updateMonthOptionsByGrade("");
+
+    if (mainSearchInput) mainSearchInput.value = "";
+    if (resultsSearchInput) resultsSearchInput.value = "";
+    if (filterGrade) filterGrade.value = "";
+    if (resultsFilterGrade) resultsFilterGrade.value = "";
+    if (filterYear) filterYear.value = "";
+    if (resultsFilterYear) resultsFilterYear.value = "";
+    if (filterMonth) filterMonth.value = "";
+    if (resultsFilterMonth) resultsFilterMonth.value = "";
+    if (filterExamType) filterExamType.value = "";
+    if (resultsFilterExamType) resultsFilterExamType.value = "";
+    if (filterQuestionType) filterQuestionType.value = "";
+    if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+    if (filterCorrectRate) filterCorrectRate.value = "";
+    if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
+    if (filterTag) filterTag.value = "";
+    if (btnClearMainSearch) btnClearMainSearch.style.display = "none";
+    if (btnClearResultsSearch) btnClearResultsSearch.style.display = "none";
+
+    if (typeof resetAllGrammarFilters === "function") {
+      resetAllGrammarFilters(false);
+    }
+    if (typeof setSearchWithinState === "function") {
+      setSearchWithinState(false);
+    }
+
+    targetPassageId = null;
+    appState.treeNavState = { grade: null, year: null, month: null };
+    appState.currentPassageId = null;
+    appState.currentPassageIndex = 0;
+    appState.currentExamQuestions = [];
   } else if (source === "home") {
     const parsed = parseSearchQuery(mainSearchInput.value);
     keyword = parsed.keyword;
@@ -645,39 +682,48 @@ export function setSearchArea(area, triggerSearch = true) {
   if (triggerSearch) {
     const isResultsVisible = resultsView && (resultsView.style.display === "flex" || resultsView.style.display === "block" || resultsView.offsetHeight > 0);
     if (isResultsVisible) {
+      const hasKeyword = !!((resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()));
       let targetPassageId = null;
-      // 1. 현재 보고 있는 지문(상세 화면 또는 문항 탭) 또는 트리 선택 상태에서 동일 시험지 정보 정확히 추출
-      const detailP = (typeof getCurrentDetailPassage === "function") ? getCurrentDetailPassage() : null;
-      const questionP = (appState.currentExamQuestions && appState.currentPassageIndex >= 0 && appState.currentExamQuestions[appState.currentPassageIndex]) || null;
-      const currentP = detailP || questionP;
-      const p = (currentP && currentP.isGroup && currentP.subItems) ? currentP.subItems[0] : currentP;
 
-      const grade = p?.grade || appState.treeNavState.grade || (resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value);
-      const year = p?.year || appState.treeNavState.year || (resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value);
-      const month = p?.month || appState.treeNavState.month || (resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value);
+      // 검색어가 있거나 특정 지문을 명시적으로 보고 있던 경우에만 문항 매핑 시도
+      if (hasKeyword) {
+        const detailP = (typeof getCurrentDetailPassage === "function") ? getCurrentDetailPassage() : null;
+        const questionP = (appState.currentExamQuestions && appState.currentPassageIndex >= 0 && appState.currentExamQuestions[appState.currentPassageIndex]) || null;
+        const currentP = detailP || questionP;
+        const p = (currentP && currentP.isGroup && currentP.subItems) ? currentP.subItems[0] : currentP;
 
-      if (grade && year && month) {
-        const yearNum = parseInt(String(year).replace(/[^0-9]/g, ""), 10);
-        const monthNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
-        if (yearNum && monthNum) {
-          // 듣기 영역 -> 1번 문항, 독해 영역 -> 18번 문항 (23번 등 시작 시험은 fallback으로 자동 처리)
-          const targetQ = (area === "listening") ? 1 : 18;
-          targetPassageId = `[${grade}-${yearNum}년-${String(monthNum).padStart(2, "0")}월-${String(targetQ).padStart(2, "0")}번]`;
-          appState.treeNavState.grade = grade;
-          appState.treeNavState.year = `${yearNum}년`;
-          appState.treeNavState.month = `${String(monthNum).padStart(2, "0")}월`;
+        const grade = p?.grade || appState.treeNavState.grade || (resultsFilterGrade && resultsFilterGrade.value) || (filterGrade && filterGrade.value);
+        const year = p?.year || appState.treeNavState.year || (resultsFilterYear && resultsFilterYear.value) || (filterYear && filterYear.value);
+        const month = p?.month || appState.treeNavState.month || (resultsFilterMonth && resultsFilterMonth.value) || (filterMonth && filterMonth.value);
 
-          // 특정 문항(1번 ↔ 18번)으로의 안전한 전환을 위해 문항 개별 필터(검색어, 문제유형, 정답률) 리셋
-          if (resultsSearchInput) resultsSearchInput.value = "";
-          if (mainSearchInput) mainSearchInput.value = "";
-          if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
-          if (filterQuestionType) filterQuestionType.value = "";
-          if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
-          if (filterCorrectRate) filterCorrectRate.value = "";
+        if (grade && year && month) {
+          const yearNum = parseInt(String(year).replace(/[^0-9]/g, ""), 10);
+          const monthNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
+          if (yearNum && monthNum) {
+            // 듣기 영역 -> 1번 문항, 독해 영역 -> 18번 문항 (23번 등 시작 시험은 fallback으로 자동 처리)
+            const targetQ = (area === "listening") ? 1 : 18;
+            targetPassageId = `[${grade}-${yearNum}년-${String(monthNum).padStart(2, "0")}월-${String(targetQ).padStart(2, "0")}번]`;
+            appState.treeNavState.grade = grade;
+            appState.treeNavState.year = `${yearNum}년`;
+            appState.treeNavState.month = `${String(monthNum).padStart(2, "0")}월`;
+
+            // 특정 문항(1번 ↔ 18번)으로의 안전한 전환을 위해 문항 개별 필터(검색어, 문제유형, 정답률) 리셋
+            if (resultsSearchInput) resultsSearchInput.value = "";
+            if (mainSearchInput) mainSearchInput.value = "";
+            if (resultsFilterQuestionType) resultsFilterQuestionType.value = "";
+            if (filterQuestionType) filterQuestionType.value = "";
+            if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = "";
+            if (filterCorrectRate) filterCorrectRate.value = "";
+          }
         }
-      }
 
-      executeSearch("results", targetPassageId);
+        executeSearch("results", targetPassageId);
+      } else {
+        // 검색어가 없는 경우: 특정 모의고사 세트로 직행하지 않고 해당 영역의 전체 학년 선택 화면으로 전환
+        targetPassageId = null;
+        appState.treeNavState = { grade: null, year: null, month: null };
+        executeSearch("all_passages", null);
+      }
     }
   }
 }
@@ -861,18 +907,19 @@ export function init() {
   });
 }
 
-/** 홈 화면 로드 직후 유휴 시간에 기본 독해 지문 메타데이터 백그라운드 프리페치 (0ms 즉각 전환) */
+/** 홈 화면 로드 직후 유휴 시간에 독해 및 듣기 지문 메타데이터 백그라운드 프리페치 (0ms 즉각 전환) */
 export async function prefetchPassageMetadata() {
   try {
-    const area = appState.currentArea || "reading";
-    const queryString = `area=${encodeURIComponent(area)}&limit=0&meta_only=true`;
-    if (appState.cachedPassageSearch && appState.cachedPassageSearch[queryString]) return;
+    for (const area of ["reading", "listening"]) {
+      const queryString = `area=${encodeURIComponent(area)}&limit=0&meta_only=true`;
+      if (appState.cachedPassageSearch && appState.cachedPassageSearch[queryString]) continue;
 
-    const res = await fetch(`/api/search/passages?${queryString}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (!appState.cachedPassageSearch) appState.cachedPassageSearch = {};
-      appState.cachedPassageSearch[queryString] = data;
+      const res = await fetch(`/api/search/passages?${queryString}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (!appState.cachedPassageSearch) appState.cachedPassageSearch = {};
+        appState.cachedPassageSearch[queryString] = data;
+      }
     }
   } catch (e) {
     // 백그라운드 프리페치는 무응답 무시

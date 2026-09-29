@@ -100,6 +100,7 @@ export function setHeaderSlotState(state) {
 export function showHomeScreen() {
   appState.currentPassageId = null;
   appState.currentPassageIndex = 0;
+  appState.treeNavState = { grade: null, year: null, month: null };
   homeSearchView.style.display = "flex";
   resultsView.style.display = "none";
   if (emptyResultsBox) emptyResultsBox.style.display = "none";

@@ -42,6 +42,7 @@ import {
   listeningBottomLeftActions,
   listeningTopRightActions,
   mainSearchInput,
+  resultsSearchInput,
   metaAnswer,
   metaAnswerStatus,
   metaCorrectRate,
@@ -850,7 +851,12 @@ export function renderPassageView(items, targetPassageId = null) {
     appState.treeNavState.month = singleExamCombo.month;
   } else {
     // 3) 복수 시험인 경우: 현재 선택된 상태가 유효한지 검사
-    if (!appState.treeNavState.grade || !tree[appState.treeNavState.grade]) {
+    const hasSearchKeyword = !!((resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()));
+    if (!targetPassageId && !hasSearchKeyword) {
+      appState.treeNavState.grade = null;
+      appState.treeNavState.year = null;
+      appState.treeNavState.month = null;
+    } else if (!appState.treeNavState.grade || !tree[appState.treeNavState.grade]) {
       if (grades.length === 1) {
         appState.treeNavState.grade = grades[0];
       } else {

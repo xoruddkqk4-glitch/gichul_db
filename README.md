@@ -1833,6 +1833,25 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py run.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code: 0)
   - 벤치마크 실측: 메타데이터 응답 크기 74.1 KB (99.1% 절감), 쿼리 시간 0.009s, 단일 시험 로드 15.1 KB (0.002s) 정상 확인 완료
 
+### [2026-09-29 10:50] 업데이트 이력 (Commit ID: c35ac7ff)
+- **수정 내용**:
+  - **검색어 미입력 시 전체 시험지 대상 최상위 학년 선택 단계 화면 노출 및 특정 모의고사 직행 방지**:
+    - **문제 해결**: 홈 화면 또는 결과창 검색창에서 검색어를 비워둔 채 '검색' 버튼(또는 엔터)을 눌렀을 때, 이전에 조회했던 특정 모의고사 세트(문항 탭 및 본문 패널)로 자동 직행하거나 남아있는 필터로 인해 단일 시험지만 조회되던 문제를 해결.
+    - **1) 검색 실행 로직 완전 초기화 (`static/js/search.js`)**:
+      - `executeSearch`: 검색어(keyword, tag)가 없는 상태(`isNoKeywordSearch`)일 경우 잔여 필터(`grade`, `year`, `month`, `examType`, `questionType`, `correctRate`, 어법 등)를 모두 전체(`""`)로 초기화.
+      - `targetPassageId = null;`, `appState.treeNavState = { grade: null, year: null, month: null };`로 리셋하여 전체 데이터베이스(독해 308회 / 듣기 321회) 대상 최상위 학년 선택 단계(`treeStepSelector`)로 진입 보장.
+    - **2) 독해 ↔ 듣기 영역 토글 시 최상위 학년 선택 단계 유지 (`static/js/search.js`)**:
+      - `setSearchArea`: 검색어가 비어있는 상태에서 영역을 전환할 때 이전 시험지 특정 문항(1번/18번)으로 강제 이동하지 않고, 전환된 영역의 전체 학년 선택 화면(독해: 308회차, 7,898문항 / 듣기: 321회차, 5,250문항)으로 깔끔하게 전환되도록 개선.
+    - **3) 독해 및 듣기 영역 메타데이터 듀얼 프리페치 (`static/js/search.js`)**:
+      - `prefetchPassageMetadata`: 페이지 유휴 시간에 독해(`reading`)와 듣기(`listening`) 74KB 메타데이터를 둘 다 백그라운드 사전 캐싱하여, 영역 전환 및 검색 버튼 클릭 시 지연 시간(0ms) 없이 즉시 화면이 나타나도록 최적화.
+    - **4) 지문 뷰 렌더링 안전장치 및 홈 복귀 상태 초기화 (`static/js/results-passage.js`, `static/js/navigation.js`)**:
+      - `renderPassageView`: 검색어와 `targetPassageId`가 없을 때 `treeNavState`를 `null`로 보장하여 특정 모의고사 문항 탭이 열리지 않도록 안전장치 강화.
+      - `showHomeScreen`: 결과창에서 홈으로 복귀할 때 잔여 트리 탐색 상태를 초기화.
+- **검증 결과**:
+  - `node --check static/js/search.js static/js/navigation.js static/js/results-passage.js`: 구문 오류 없음 (Exit Code: 0)
+  - 백엔드 메타데이터 API (`area=reading`, `area=listening`): 독해 8,817개 / 듣기 5,582개 정상 응답 및 그룹핑 후 7,898개 / 5,250개 화면 일치 확인
+
+
 
 
 
