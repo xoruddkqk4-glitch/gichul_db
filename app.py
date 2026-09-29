@@ -324,9 +324,10 @@ async def api_search_passages(
     tag: str = "",
     area: str = "reading",
     whole_word: bool = False,
-    limit: int = 0
+    limit: int = 0,
+    meta_only: bool = False
 ):
-    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 및 복수 연도, 영역(독해/듣기) 지원)"""
+    """지문 검색 API (2x2 화면용 - 온전한 단어 검색 및 복수 연도, 영역(독해/듣기) 지원, meta_only 초고속 경량 모드 지원)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
     if keyword and "#" in keyword:
         found_tags = re.findall(r"#([^\s#]+)", keyword)
@@ -341,7 +342,7 @@ async def api_search_passages(
         except Exception:
             years_list = None
 
-    cache_key = f"passages:{keyword}:{exam_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{area}:{whole_word}:{limit}"
+    cache_key = f"passages:{keyword}:{exam_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{area}:{whole_word}:{limit}:{meta_only}"
     cached_payload = search_cache.get(cache_key)
     if cached_payload is not None:
         return Response(content=cached_payload, media_type="application/json")
@@ -359,11 +360,27 @@ async def api_search_passages(
         tag=tag,
         area=area,
         whole_word=whole_word,
-        limit=limit
+        limit=limit,
+        meta_only=meta_only
     )
-    payload = fast_json_dumps({"count": len(results), "items": results})
+    payload = fast_json_dumps({"count": len(results), "items": results, "meta_only": meta_only})
     search_cache.set(cache_key, payload)
     return Response(content=payload, media_type="application/json")
+
+
+@app.get("/api/exams/{exam_id:path}/passages")
+async def api_get_exam_passages(exam_id: str):
+    """특정 시험의 전체 문항 본문/해설 일괄 조회 (단 28문항 안팎 초고속 온디맨드 로드)"""
+    cache_key = f"exam_passages:{exam_id}"
+    cached_payload = search_cache.get(cache_key)
+    if cached_payload is not None:
+        return Response(content=cached_payload, media_type="application/json")
+
+    passages = db.get_exam_passages(exam_id)
+    payload = fast_json_dumps({"exam_id": exam_id, "count": len(passages), "items": passages})
+    search_cache.set(cache_key, payload)
+    return Response(content=payload, media_type="application/json")
+
 
 
 @app.get("/api/search/sentences")

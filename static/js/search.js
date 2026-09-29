@@ -290,8 +290,25 @@ export async function executeSearch(source = "home", targetPassageId = null) {
       if (!targetPassageId) {
         appState.treeNavState = { grade: null, year: null, month: null };
       }
-      const res = await fetch(`/api/search/passages?${params.toString()}`);
-      const data = await res.json();
+
+      // 키워드/태그 검색어가 없는 경우(전체 조회 또는 트리 탐색) 29MB 대신 초경량 74KB 메타데이터 우선 전송 (0.03초)
+      const isMetaOnly = !keyword && !tag;
+      if (isMetaOnly) {
+        params.append("meta_only", "true");
+      }
+
+      const queryString = params.toString();
+
+      // 인메모리 프리페치 캐시 검사 (이미 백그라운드로 로드된 경우 0ms 즉각 반환)
+      let data = null;
+      if (appState.cachedPassageSearch && appState.cachedPassageSearch[queryString]) {
+        data = appState.cachedPassageSearch[queryString];
+      } else {
+        const res = await fetch(`/api/search/passages?${queryString}`);
+        data = await res.json();
+        if (!appState.cachedPassageSearch) appState.cachedPassageSearch = {};
+        appState.cachedPassageSearch[queryString] = data;
+      }
       
       // 데이터 수신 즉시 로딩 스피너를 닫아 체감 속도 극대화
       loadingIndicator.style.display = "none";
@@ -843,3 +860,22 @@ export function init() {
     }
   });
 }
+
+/** 홈 화면 로드 직후 유휴 시간에 기본 독해 지문 메타데이터 백그라운드 프리페치 (0ms 즉각 전환) */
+export async function prefetchPassageMetadata() {
+  try {
+    const area = appState.currentArea || "reading";
+    const queryString = `area=${encodeURIComponent(area)}&limit=0&meta_only=true`;
+    if (appState.cachedPassageSearch && appState.cachedPassageSearch[queryString]) return;
+
+    const res = await fetch(`/api/search/passages?${queryString}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (!appState.cachedPassageSearch) appState.cachedPassageSearch = {};
+      appState.cachedPassageSearch[queryString] = data;
+    }
+  } catch (e) {
+    // 백그라운드 프리페치는 무응답 무시
+  }
+}
+

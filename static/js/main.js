@@ -23,6 +23,7 @@ import { init as init_grammar } from "./grammar.js";
 import { init as init_ai_settings } from "./ai-settings.js";
 import { setHeaderSlotState, updateGrammarFiltersVisibility } from "./navigation.js";
 import { refreshAiStatusIndicator } from "./ai-settings.js";
+import { prefetchPassageMetadata } from "./search.js";
 
 // 모듈별 이벤트 바인딩 (원본 main.js 의 선언 순서와 동일)
 init_navigation();
@@ -38,3 +39,9 @@ init_ai_settings();
 setHeaderSlotState("home");
 updateGrammarFiltersVisibility();
 refreshAiStatusIndicator();
+
+// 홈 화면 로드 400ms 후 브라우저 유휴 시간에 초기 지문 메타데이터 백그라운드 프리페치 (지문 검색창 진입 시 0ms 즉각 전환)
+setTimeout(() => {
+  prefetchPassageMetadata();
+}, 400);
+

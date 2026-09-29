@@ -1246,11 +1246,21 @@ def search_passages(
     tag: str = "",
     area: str = "",
     whole_word: bool = False,
-    limit: int = 0
+    limit: int = 0,
+    meta_only: bool = False
 ) -> List[Dict[str, Any]]:
-    """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원)"""
-    query = """
-        SELECT p.*, e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q
+    """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원, meta_only 초고속 경량 모드 지원)"""
+    if meta_only:
+        select_clause = """
+            p.id, p.exam_id, p.q_num, p.question_type, p.area, p.correct_rate,
+            (p.passage_text IS NOT NULL AND LENGTH(p.passage_text) > 0) AS has_passage_text,
+            e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q
+        """
+    else:
+        select_clause = "p.*, e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q"
+
+    query = f"""
+        SELECT {select_clause}
         FROM passages p
         JOIN exams e ON p.exam_id = e.id
         WHERE 1=1
@@ -1338,6 +1348,10 @@ def search_passages(
         if not rows:
             return []
 
+        # meta_only 모드일 때는 태그 N+1 조회 및 대용량 choice_rates JSON 파싱을 생략하여 초고속 반환
+        if meta_only:
+            return [dict(r) for r in rows]
+
         passage_ids = [r["id"] for r in rows]
         tags_by_passage = defaultdict(list)
         chunk_size = 900
@@ -1363,6 +1377,16 @@ def search_passages(
                     p_dict["choice_rates_obj"] = None
             results.append(p_dict)
         return results
+
+
+def get_exam_passages(exam_id: str) -> List[Dict[str, Any]]:
+    """특정 시험 ID에 속한 모든 지문의 전체 상세 데이터(본문, 해설, 보기 등) 일괄 조회"""
+    if not exam_id:
+        return []
+    clean_eid = exam_id.strip()
+    if not clean_eid.startswith("["):
+        clean_eid = f"[{clean_eid}]"
+    return search_passages(exam_id=clean_eid, meta_only=False)
 
 
 def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:

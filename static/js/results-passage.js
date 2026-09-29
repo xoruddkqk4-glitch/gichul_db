@@ -1376,10 +1376,64 @@ function downloadExamAllZip(examId) {
 }
 
 
+// 시험 단위 지문 상세 데이터 로드 캐시 (28문항 안팎 온디맨드 초고속 로드)
+const loadedExamsCache = new Set();
+const loadingExamsMap = new Map(); // examId -> Promise
+
+export async function ensureExamPassagesLoaded(examId) {
+  if (!examId || loadedExamsCache.has(examId)) return;
+  if (loadingExamsMap.has(examId)) return loadingExamsMap.get(examId);
+
+  const fetchPromise = (async () => {
+    try {
+      const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/passages`);
+      if (res.ok) {
+        const data = await res.json();
+        const freshItems = data.items || [];
+        const freshMap = new Map(freshItems.map(it => [it.id, it]));
+
+        const updateList = (list) => {
+          if (!list) return;
+          list.forEach(p => {
+            if (freshMap.has(p.id)) {
+              Object.assign(p, freshMap.get(p.id));
+            }
+            if (p.subItems && p.subItems.length > 0) {
+              p.subItems.forEach(sub => {
+                if (freshMap.has(sub.id)) Object.assign(sub, freshMap.get(sub.id));
+              });
+            }
+          });
+        };
+
+        updateList(appState.passagesData);
+        updateList(appState.rawPassagesData);
+        loadedExamsCache.add(examId);
+
+        // 현재 보고 있는 지문이 해당 시험에 속해있다면 화면 즉시 갱신
+        if (currentDetailPassage && freshMap.has(currentDetailPassage.id)) {
+          loadPassageDetail(freshMap.get(currentDetailPassage.id));
+        }
+      }
+    } catch (e) {
+      console.error("Exam passages load error:", e);
+    } finally {
+      loadingExamsMap.delete(examId);
+    }
+  })();
+
+  loadingExamsMap.set(examId, fetchPromise);
+  return fetchPromise;
+}
+
 /** 최하위 문항별 탭 생성 (1행 10개 문항 초컴팩트 28px 버튼) */
 function renderPassageTabs(items) {
   passageTabBar.innerHTML = "";
   if (passageTabCount) passageTabCount.textContent = items.length;
+
+  if (items && items.length > 0 && items[0].exam_id && items[0].passage_text === undefined) {
+    ensureExamPassagesLoaded(items[0].exam_id);
+  }
 
   items.forEach((p, idx) => {
     const tabBtn = document.createElement("button");
@@ -1492,6 +1546,11 @@ function loadPassageDetail(p) {
   appState.currentPassage = p;
   appState.currentPassageId = p.id;
   setHeaderSlotState("passage");
+
+  // 만약 본문 텍스트가 아직 로드되지 않은 메타데이터 객체라면 해당 시험 전체 문항을 즉시 로드
+  if (p.passage_text === undefined && p.exam_id) {
+    ensureExamPassagesLoaded(p.exam_id);
+  }
 
   const isListening = p.area === "listening";
 

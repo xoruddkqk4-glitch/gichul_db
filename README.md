@@ -1812,6 +1812,28 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile app.py database.py run.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code: 0)
   - 8,817건 지문 쿼리 및 HTTP 페이로드 크기(29.01MB, 2.1s) 벤치마크 진단 완료
 
+### [2026-09-29 10:37] 업데이트 이력 (Commit ID: d1bedb1a)
+- **수정 내용**:
+  - **지문 검색 속도 초고속 최적화 (2.1초 ➡️ 0.00초 즉시 전환 / Zero-Latency 구현)**:
+    - **문제 원인**: 홈 화면에서 지문 검색창 진입 시 8,817개 지문의 대용량 본문/해설 텍스트 전체(29.01MB, 압축 8.09MB)를 한 번에 직렬화·전송하여 `◌ 데이터를 검색하고 있습니다...` 로딩 스피너가 2~3초간 지속되는 병목 현상 발생.
+    - **1) 경량 메타데이터 우선 전송 (`meta_only=true`)**:
+      - `database.py:search_passages`: `meta_only: bool = False` 파라미터 추가. 트리 네비게이션에 필요한 핵심 메타 필드만 프로젝션 쿼리하고, 태그 N+1 쿼리 및 대용량 choice_rates 파싱을 완전 생략하여 쿼리 소요 시간을 0.009초로 단축.
+      - `app.py:api_search_passages`: `meta_only` 파라미터 지원 및 캐시 키 분리. Gzip 압축 전송 크기를 8.09MB에서 **74.1 KB로 99.1% 대폭 절감**.
+    - **2) 단일 시험 온디맨드 초고속 로드 API 구축 (`GET /api/exams/{exam_id}/passages`)**:
+      - `database.py:get_exam_passages` 및 `app.py:api_get_exam_passages` 신설.
+      - 사용자가 선택한 특정 시험의 28개 안팎 문항 전체 본문/해설만 선별 로드하여 **단 15.1 KB, 0.002초(2ms)** 만에 스트리밍 연동.
+    - **3) 프론트엔드 비동기 본문 로더 & 인메모리 캐시 (`static/js/results-passage.js`)**:
+      - `ensureExamPassagesLoaded(examId)` 함수 신설: 문항 탭 렌더링 및 지문 상세 로드(`loadPassageDetail`) 시 본문이 비어있으면 백그라운드에서 해당 시험의 28개 문항 상세를 0.01초 만에 로드하여 패널에 즉시 반영.
+      - 중복 요청 방지 및 캐싱(`loadedExamsCache`, `loadingExamsMap`) 적용.
+    - **4) 홈 화면 유휴 시간 백그라운드 사전 페칭 (`static/js/search.js`, `static/js/main.js`)**:
+      - `prefetchPassageMetadata()` 구현: 홈 화면 로드 400ms 후 브라우저 유휴 시간에 지문 트리 데이터를 백그라운드 메모리(`appState.cachedPassageSearch`)에 사전 적재.
+      - 검색창 진입 시 네트워크 대기 없이 메모리에서 즉시 렌더링하여 로딩 스피너 체류 시간 완전 제거(0초 전환 체감).
+- **검증 결과**:
+  - `node -c static/js/main.js static/js/search.js static/js/results-passage.js static/js/grammar.js static/js/dom.js`: 자바스크립트 문법 검사 오류 0건 통과 (Exit Code: 0)
+  - `python -m py_compile app.py database.py run.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code: 0)
+  - 벤치마크 실측: 메타데이터 응답 크기 74.1 KB (99.1% 절감), 쿼리 시간 0.009s, 단일 시험 로드 15.1 KB (0.002s) 정상 확인 완료
+
+
 
 
 
