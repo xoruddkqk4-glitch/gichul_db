@@ -1871,61 +1871,138 @@
   </div>
 
   <!-- ====================================================================
-       모달 3-1: 나만의 커스텀 어법 체계 관리 모달창
+       모달 3-1: 나만의 커스텀 어법 체계 관리 모달창 (직관적 시각 편집기)
        ==================================================================== -->
   <div class="modal-backdrop" id="customGrammarTreeModal" style="display: none;">
-    <div class="modal-content" style="max-width: 680px; width: 90vw;">
+    <div class="modal-content modal-custom-tree-content">
       <div class="modal-header">
         <div style="flex: 1; padding-right: 1rem;">
           <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
             <span>⚙️ 나만의 어법 체계 관리 및 스마트 매핑</span>
           </h3>
           <p class="modal-subtitle" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-            기본 243개 표준 어법 체계를 나만의 커스텀 체계로 변경하여 관리합니다. AI 사전 분석 결과는 표준 243개와 1:1 스마트 매핑되어 토큰 비용(0원) 없이 실시간 연동됩니다.
+            기본 243개 표준 어법 체계를 나만의 커스텀 명칭으로 수정하고 불필요한 어법을 숨깁니다. AI 사전 분석 결과는 표준 ID(1~243)와 1:1 스마트 매핑되어 토큰 비용(0원) 없이 실시간 연동됩니다.
           </p>
         </div>
-        <button type="button" class="modal-close" id="btnCloseCustomTreeModal">&times;</button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" class="btn-modal-fullscreen" id="btnToggleCustomTreeFullscreen" title="전체 화면으로 확대" aria-label="전체 화면 토글">⛶</button>
+          <button type="button" class="modal-close" id="btnCloseCustomTreeModal">&times;</button>
+        </div>
       </div>
 
-      <div class="modal-body" style="padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;">
-        <!-- 사용 모드 토글 -->
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.85rem 1rem; background: var(--bg-hover); border-radius: 8px; border: 1px solid var(--border);">
-          <div>
-            <strong style="font-size: 0.95rem; color: var(--text-main);">나만의 커스텀 어법 체계 활성화</strong>
-            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;">
-              활성화 시 어법 선택 및 검색 화면에서 내가 정의한 어법 목록/트리만 노출됩니다.
-            </p>
+      <div class="modal-body custom-tree-modal-body">
+        <!-- 1. 활성화 스위치 & 실시간 요약 통계 바 -->
+        <div class="custom-tree-top-bar">
+          <div class="custom-tree-switch-group">
+            <label class="custom-tree-switch-label" title="커스텀 체계 활성화 토글">
+              <input type="checkbox" id="toggleUseCustomTree" class="custom-tree-checkbox">
+              <span class="custom-tree-slider"></span>
+            </label>
+            <div>
+              <strong id="labelUseCustomTree" style="font-size: 0.95rem; color: var(--text-main);">표준 체계 사용 중</strong>
+              <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0;">
+                활성화 시 검색 및 어법 선택 화면에서 내가 편집한 커스텀 체계가 적용됩니다.
+              </p>
+            </div>
           </div>
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-            <input type="checkbox" id="toggleUseCustomTree" style="transform: scale(1.3); cursor: pointer;">
-            <span style="font-size: 0.85rem; font-weight: 600;" id="labelUseCustomTree">표준 체계 사용 중</span>
-          </label>
+          <div class="custom-tree-stats-bar">
+            <span class="tree-stat-pill stat-total">전체: <strong id="statTotalGrammar">243</strong></span>
+            <span class="tree-stat-pill stat-active">사용: <strong id="statActiveGrammar">243</strong></span>
+            <span class="tree-stat-pill stat-modified">수정됨: <strong id="statModifiedGrammar">0</strong></span>
+            <span class="tree-stat-pill stat-hidden">숨김: <strong id="statHiddenGrammar">0</strong></span>
+          </div>
         </div>
 
-        <!-- 커스텀 트리 설명 및 도구 -->
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-main);">어법 체계 JSON 정의 (또는 기본 템플릿 복제)</span>
-          <div style="display: flex; gap: 6px;">
+        <!-- 2. 편집 모드 탭 (시각적 목록 편집 vs JSON 직접 편집) -->
+        <div class="custom-tree-tab-header">
+          <div class="custom-tree-tabs">
+            <button type="button" class="custom-tree-tab-btn active" id="tabBtnVisualEditor">🎨 직관적 목록 편집</button>
+            <button type="button" class="custom-tree-tab-btn" id="tabBtnJsonEditor">💻 JSON 직접 편집 (고급)</button>
+          </div>
+          <div class="custom-tree-tab-actions">
+            <button type="button" class="btn btn-secondary btn-xs" id="btnResetToStandardTree" style="color: #ef4444;" title="모든 수정을 버리고 기본 243개 표준으로 복원">
+              ↺ 표준 243개로 초기화
+            </button>
+          </div>
+        </div>
+
+        <!-- 3-A. 시각적 목록 편집기 뷰 (Visual Editor Pane) -->
+        <!-- 3-A. 시각적 계층 탐색 & 편집 뷰 (Visual Explorer Split Pane) -->
+        <div class="custom-tree-visual-pane" id="paneVisualEditor">
+          <div class="custom-tree-split-layout">
+            <!-- 좌측 사이드바: 계층 트리 탐색기 (Tree Explorer Sidebar) -->
+            <aside class="custom-tree-sidebar">
+              <div class="sidebar-search-box">
+                <span class="sidebar-search-icon">🔍</span>
+                <input type="text" id="inputCustomTreeSearch" class="sidebar-search-input" placeholder="어법/카테고리 실시간 검색...">
+                <button type="button" class="btn-clear-search" id="btnClearCustomTreeSearch" style="display: none;">&times;</button>
+              </div>
+
+              <div class="sidebar-tree-tools">
+                <button type="button" class="btn-sidebar-tool" id="btnExpandAllTree" title="모든 폴더 펼치기">▼ 모두 펼치기</button>
+                <button type="button" class="btn-sidebar-tool" id="btnCollapseAllTree" title="모든 폴더 접기">▶ 모두 접기</button>
+                <label class="sidebar-mod-filter-label" title="수정된 어법만 보기">
+                  <input type="checkbox" id="chkOnlyModified">
+                  <span>수정됨만</span>
+                </label>
+              </div>
+
+              <!-- 스크롤 가능한 계층 트리 네비게이션 컨테이너 -->
+              <div class="sidebar-tree-container" id="sidebarTreeContainer">
+                <!-- JS 동적 렌더링: 9개 품사 및 하위 카테고리 폴더 트리 -->
+              </div>
+            </aside>
+
+            <!-- 우측 메인: 선택된 어법 상세 편집 패널 (Detail Cards Pane) -->
+            <main class="custom-tree-detail-pane">
+              <!-- 패널 상단 브레드크럼 & 일괄 액션 툴바 -->
+              <div class="detail-pane-header">
+                <div class="detail-header-left">
+                  <div class="detail-breadcrumb" id="detailBreadcrumb">
+                    <span class="breadcrumb-item">📚 전체 어법 체계</span>
+                  </div>
+                  <div class="detail-header-stats">
+                    <span class="detail-badge-count" id="detailCountBadge">총 243개 어법</span>
+                    <span class="detail-substat" id="detailSubstat">사용 243 · 수정 0 · 숨김 0</span>
+                  </div>
+                </div>
+                <div class="detail-header-right">
+                  <button type="button" class="btn btn-secondary btn-xs" id="btnBulkEnableCurrent" title="현재 선택된 카테고리의 모든 어법 사용">✔ 현재 분류 전체 사용</button>
+                  <button type="button" class="btn btn-secondary btn-xs" id="btnBulkDisableCurrent" title="현재 선택된 카테고리의 모든 어법 숨기기">🚫 현재 분류 전체 숨김</button>
+                </div>
+              </div>
+
+              <!-- 2열 카드 그리드 컨테이너 -->
+              <div class="detail-card-grid" id="detailCardGrid">
+                <!-- JS 동적 렌더링: 어법 편집 카드들 -->
+              </div>
+            </main>
+          </div>
+        </div>
+
+        <!-- 3-B. JSON 직접 편집기 뷰 (JSON Editor Pane) -->
+        <div class="custom-tree-json-pane" id="paneJsonEditor" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 0.8rem; color: var(--text-muted);">JSON 데이터를 직접 복사하거나 외부 체계를 가져올 수 있습니다.</span>
             <button type="button" class="btn btn-secondary btn-xs" id="btnCopyStandardTree">📋 표준 템플릿 불러오기</button>
-            <button type="button" class="btn btn-secondary btn-xs" id="btnResetToStandardTree" style="color: #ef4444;">↺ 기본 표준으로 초기화</button>
           </div>
+          <textarea id="customTreeJsonEditor" rows="12" class="custom-tree-textarea" placeholder="표준 템플릿 JSON..."></textarea>
         </div>
 
-        <textarea 
-          id="customTreeJsonEditor" 
-          rows="12" 
-          style="width: 100%; font-family: monospace; font-size: 0.78rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-main); resize: vertical; line-height: 1.4;"
-          placeholder="표준 템플릿을 불러온 후 이름 변경, 불필요 범주 제거 등을 수행하세요..."
-        ></textarea>
-
-        <div style="background: rgba(59, 130, 246, 0.08); border-left: 3px solid var(--primary); padding: 8px 12px; border-radius: 4px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
-          💡 <strong>스마트 매핑 팁</strong>: 카테고리의 <code>id</code>(1~243)를 유지한 채 <code>leaf</code>나 <code>full_path</code> 이름을 원하는 명칭으로 바꾸면, 기존에 AI가 분석해 둔 방대한 기출 문장들이 추가 비용(0원) 없이 내 커스텀 이름으로 즉시 표시됩니다.
+        <!-- 하단 스마트 매핑 안내 박스 -->
+        <div class="custom-tree-notice">
+          💡 <strong>스마트 매핑(Smart Projection) 안내</strong>:
+          각 어법의 고유 ID(1~243)가 그대로 유지되면서 나만의 커스텀 명칭이 매핑됩니다.
+          수만 개 기출 문장에 대해 이미 완료된 AI 분석 데이터가 추가 토큰 비용(0원) 및 지연 시간 없이 내 커스텀 이름으로 즉시 표시됩니다.
         </div>
       </div>
 
-      <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 0.5rem;">
-        <button type="button" class="btn btn-secondary" id="btnCancelCustomTreeModal">닫기</button>
-        <button type="button" class="btn btn-primary" id="btnSaveCustomTreeModal">💾 커스텀 어법 체계 저장</button>
+      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="customTreeSaveStatus" style="font-size: 0.82rem; color: var(--text-muted);"></span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="btn btn-secondary" id="btnCancelCustomTreeModal">닫기</button>
+          <button type="button" class="btn btn-primary" id="btnSaveCustomTreeModal">💾 커스텀 어법 체계 저장</button>
+        </div>
       </div>
     </div>
   </div>

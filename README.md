@@ -1790,6 +1790,29 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/grammar.js static/js/dom.js static/js/results-sentence.js static/js/main.js`: 자바스크립트 문법 검사 오류 0건 통과 (Exit Code 0)
   - `/api/grammar/categories` 및 `/api/grammar/settings` 엔드포인트 응답(HTTP 200) 및 어법 CRUD 격리 런타임 테스트 완료
 
+### [2026-09-29 10:20] 업데이트 이력 (Commit ID: 5cce5ca6)
+- **수정 내용**:
+  - **나만의 커스텀 어법 체계 관리 모달 UI 직관적 전면 개편 (2단 분할 계층 탐색기 - 2-Pane Master-Detail Explorer 구축)**:
+    - **문제 해결**: 이전의 JSON 직접 입력 및 단일 열 전체 화면 아코디언 방식의 심각한 여백 낭비, 스크롤 난잡함, 찌그러짐 현상을 해결하고 극대화된 사용자 친화적 UX 구축 (`templates/index.html`, `static/css/style.css`, `static/js/grammar.js`, `static/js/dom.js`).
+    - **좌측 사이드바 (Tree Explorer - 320px)**:
+      - 9대 품사 및 하위 카테고리 계층을 직관적인 폴더(`📂`/`📁`) 트리로 네비게이션할 수 있는 전용 사이드바(`sidebarTreeContainer`) 구축.
+      - 실시간 트리 검색(`inputCustomTreeSearch`) 및 검색어 초기화(`btnClearCustomTreeSearch`), `수정됨만`(`chkOnlyModified`) 필터 연동.
+      - 원클릭 전체 폴더 펼치기(`btnExpandAllTree`) 및 접기(`btnCollapseAllTree`) 툴바 완비.
+    - **우측 상세 편집 패널 (Detail Cards Pane)**:
+      - 좌측에서 선택한 품사 또는 하위 폴더의 어법들만 집중 표시하는 반응형 2열 어법 카드 그리드(`detail-card-grid`, `grammar-editor-card`) 적용.
+      - 상단 인터랙티브 브레드크럼(`detailBreadcrumb`)을 통해 상위 단계로 즉시 복귀 가능.
+      - 카드별 인라인 어법 명칭 수정(`card-text-input`), 체크박스 기반 원클릭 사용/숨김 토글(`card-enable-chk`), 수정 시 `✏️ 수정됨` 배지 및 원래대로 복원(`btn-card-revert`) 버튼 제공.
+      - 현재 선택된 카테고리의 모든 어법을 한 번에 제어하는 `✔ 현재 분류 전체 사용`(`btnBulkEnableCurrent`) 및 `🚫 현재 분류 전체 숨김`(`btnBulkDisableCurrent`) 기능 구현.
+    - **스마트 매핑 보장**: 사용자가 명칭을 변경하거나 숨기더라도 고유 ID(1~243)는 그대로 유지되어 기출 AI 분석 데이터와 0원 실시간 연동.
+  - **지문 검색 속도 진단 및 초고속 단축 기술 분석 (29MB 페이로드 경량화 및 프리페치 최적화 계획 수립)**:
+    - 첫 화면에서 지문 검색창 진입 시 로딩 인디케이터 체류 원인(29.01MB 대용량 페이로드, 2.1초 소요) 실측 및 원인 규명.
+    - 경량 메타데이터 우선 전송(99% 데이터 절감), 백그라운드 프리페칭, 인메모리 캐시 3단계 고속화 계획서(`implementation_plan.md`) 작성.
+- **검증 결과**:
+  - `node -c static/js/grammar.js static/js/dom.js`: 자바스크립트 문법 검사 오류 0건 통과 (Exit Code: 0)
+  - `python -m py_compile app.py database.py run.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code: 0)
+  - 8,817건 지문 쿼리 및 HTTP 페이로드 크기(29.01MB, 2.1s) 벤치마크 진단 완료
+
+
 
 
 

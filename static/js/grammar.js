@@ -48,6 +48,7 @@ import {
   btnManageGrammarTree,
   customGrammarTreeModal,
   btnCloseCustomTreeModal,
+  btnToggleCustomTreeFullscreen,
   btnCancelCustomTreeModal,
   btnSaveCustomTreeModal,
   toggleUseCustomTree,
@@ -55,6 +56,27 @@ import {
   customTreeJsonEditor,
   btnCopyStandardTree,
   btnResetToStandardTree,
+  tabBtnVisualEditor,
+  tabBtnJsonEditor,
+  paneVisualEditor,
+  paneJsonEditor,
+  statTotalGrammar,
+  statActiveGrammar,
+  statModifiedGrammar,
+  statHiddenGrammar,
+  inputCustomTreeSearch,
+  btnClearCustomTreeSearch,
+  chkOnlyModified,
+  btnExpandAllTree,
+  btnCollapseAllTree,
+  sidebarTreeContainer,
+  detailBreadcrumb,
+  detailCountBadge,
+  detailSubstat,
+  btnBulkEnableCurrent,
+  btnBulkDisableCurrent,
+  detailCardGrid,
+  customTreeSaveStatus,
 } from "./dom.js";
 import { executeSearch, executeSearchWithinResults } from "./search.js";
 import { getGrammarBadgeClass, showGrammarPopover, showSentencesForPassage } from "./results-sentence.js";
@@ -1225,78 +1247,717 @@ export function init() {
 }
 
 /**
- * 나만의 커스텀 어법 체계 관리 모달 이벤트 초기화
+ * 나만의 커스텀 어법 체계 관리 모달 (직관적 시각 편집기) 초기화
  */
 function initCustomGrammarTreeModal() {
   if (!btnManageGrammarTree || !customGrammarTreeModal) return;
 
+  // 메모리 상의 243개 어법 항목 상태 목록
+  // { id, pos, path, full_path, leaf, original_leaf, custom_leaf, is_enabled }
+  let visualItems = [];
+  let standardFallbackList = [];
+  let currentActiveTab = "visual"; // 'visual' | 'json'
+  let selectedCategoryKey = "ALL"; // 'ALL' | 'POS:동사' | 'PATH:동사 > 시제'
+  let treeExpandedState = new Map(); // key -> boolean
+
   const closeCustomModal = () => {
+    const modalContent = customGrammarTreeModal.querySelector(".modal-custom-tree-content");
+    if (modalContent) modalContent.classList.remove("is-fullscreen");
+    if (btnToggleCustomTreeFullscreen) {
+      btnToggleCustomTreeFullscreen.textContent = "⛶";
+      btnToggleCustomTreeFullscreen.title = "전체 화면으로 확대";
+    }
     customGrammarTreeModal.style.display = "none";
   };
-
-  btnManageGrammarTree.addEventListener("click", async () => {
-    try {
-      const res = await fetch("/api/grammar/settings");
-      if (res.ok) {
-        const settings = await res.json();
-        if (toggleUseCustomTree) {
-          toggleUseCustomTree.checked = Boolean(settings.use_custom_tree);
-          if (labelUseCustomTree) {
-            labelUseCustomTree.textContent = settings.use_custom_tree ? "커스텀 체계 사용 중" : "표준 체계 사용 중";
-            labelUseCustomTree.style.color = settings.use_custom_tree ? "#059669" : "var(--text-main)";
-          }
-        }
-        if (customTreeJsonEditor) {
-          if (settings.custom_tree_json) {
-            customTreeJsonEditor.value = settings.custom_tree_json;
-          } else if (customGrammarTreeData) {
-            customTreeJsonEditor.value = JSON.stringify(customGrammarTreeData, null, 2);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Load grammar settings error:", err);
-    }
-    customGrammarTreeModal.style.display = "flex";
-  });
 
   if (btnCloseCustomTreeModal) btnCloseCustomTreeModal.addEventListener("click", closeCustomModal);
   if (btnCancelCustomTreeModal) btnCancelCustomTreeModal.addEventListener("click", closeCustomModal);
 
-  if (toggleUseCustomTree && labelUseCustomTree) {
-    toggleUseCustomTree.addEventListener("change", () => {
-      labelUseCustomTree.textContent = toggleUseCustomTree.checked ? "커스텀 체계 사용 중" : "표준 체계 사용 중";
-      labelUseCustomTree.style.color = toggleUseCustomTree.checked ? "#059669" : "var(--text-main)";
+  // 전체 화면 토글 핸들러
+  if (btnToggleCustomTreeFullscreen) {
+    btnToggleCustomTreeFullscreen.addEventListener("click", () => {
+      const modalContent = customGrammarTreeModal.querySelector(".modal-custom-tree-content");
+      if (!modalContent) return;
+      const isFs = modalContent.classList.toggle("is-fullscreen");
+      btnToggleCustomTreeFullscreen.textContent = isFs ? "🗗" : "⛶";
+      btnToggleCustomTreeFullscreen.title = isFs ? "기본 창 크기로 복원" : "전체 화면으로 확대";
     });
   }
 
-  if (btnCopyStandardTree) {
-    btnCopyStandardTree.addEventListener("click", async () => {
-      try {
-        const res = await fetch("/static/data/grammar_categories.json");
-        if (res.ok) {
-          const stdJson = await res.json();
-          if (customTreeJsonEditor) {
-            customTreeJsonEditor.value = JSON.stringify(stdJson, null, 2);
-            showToast("표준 243개 템플릿 JSON을 에디터에 로드했습니다.", "info");
+  // 탭 전환 핸들러 (시각적 탐색 편집기 vs JSON 직접 편집)
+  if (tabBtnVisualEditor && tabBtnJsonEditor) {
+    tabBtnVisualEditor.addEventListener("click", () => {
+      currentActiveTab = "visual";
+      tabBtnVisualEditor.classList.add("active");
+      tabBtnJsonEditor.classList.remove("active");
+      if (paneVisualEditor) paneVisualEditor.style.display = "flex";
+      if (paneJsonEditor) paneJsonEditor.style.display = "none";
+      renderVisualExplorer();
+    });
+
+    tabBtnJsonEditor.addEventListener("click", () => {
+      currentActiveTab = "json";
+      tabBtnJsonEditor.classList.add("active");
+      tabBtnVisualEditor.classList.remove("active");
+      if (paneVisualEditor) paneVisualEditor.style.display = "none";
+      if (paneJsonEditor) paneJsonEditor.style.display = "flex";
+      syncVisualToJson();
+    });
+  }
+
+  // 표준 243개 템플릿 로드 함수
+  async function loadStandardTemplate() {
+    if (standardFallbackList && standardFallbackList.length > 0) return standardFallbackList;
+    try {
+      const res = await fetch("/static/data/grammar_categories.json");
+      if (res.ok) {
+        const stdJson = await res.json();
+        standardFallbackList = stdJson.list || [];
+        return standardFallbackList;
+      }
+    } catch (e) {
+      console.error("Standard template load error:", e);
+    }
+    return grammarCategoriesList || [];
+  }
+
+  // 시각적 편집 상태 -> JSON 에디터 동기화
+  function syncVisualToJson() {
+    if (!customTreeJsonEditor) return;
+    const activeList = visualItems
+      .filter(item => item.is_enabled)
+      .map(item => {
+        const effectiveLeaf = (item.custom_leaf && item.custom_leaf.trim()) ? item.custom_leaf.trim() : item.original_leaf;
+        let effectiveFullPath = item.full_path;
+        if (effectiveLeaf !== item.original_leaf) {
+          const parts = item.full_path.split(" > ");
+          parts[parts.length - 1] = effectiveLeaf;
+          effectiveFullPath = parts.join(" > ");
+        }
+        return {
+          id: item.id,
+          pos: item.pos,
+          full_path: effectiveFullPath,
+          leaf: effectiveLeaf,
+          original_leaf: item.original_leaf
+        };
+      });
+
+    const exportObj = {
+      meta: {
+        title: "사용자 커스텀 어법 체계",
+        total_items: activeList.length,
+        updated_at: new Date().toISOString()
+      },
+      list: activeList
+    };
+    customTreeJsonEditor.value = JSON.stringify(exportObj, null, 2);
+  }
+
+  // 상단 헤더 통계 뱃지 갱신
+  function updateGlobalStats() {
+    const total = visualItems.length;
+    const active = visualItems.filter(i => i.is_enabled).length;
+    const modified = visualItems.filter(i => i.custom_leaf && i.custom_leaf.trim() !== i.original_leaf).length;
+    const hidden = total - active;
+
+    if (statTotalGrammar) statTotalGrammar.textContent = String(total);
+    if (statActiveGrammar) statActiveGrammar.textContent = String(active);
+    if (statModifiedGrammar) statModifiedGrammar.textContent = String(modified);
+    if (statHiddenGrammar) statHiddenGrammar.textContent = String(hidden);
+  }
+
+  // 검색어 하이라이트 헬퍼
+  function highlightSearch(text, query) {
+    if (!query || !text) return escapeHtml(text || "");
+    const escaped = escapeHtml(text);
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${escapedQuery})`, "gi");
+    return escaped.replace(regex, '<mark class="tree-search-mark">$1</mark>');
+  }
+
+  // 항목이 현재 검색어/수정 필터에 일치하는지 판별
+  function matchesFilter(item, query, onlyModified) {
+    if (onlyModified) {
+      const isMod = item.custom_leaf && item.custom_leaf.trim() !== item.original_leaf;
+      if (!isMod) return false;
+    }
+    if (query) {
+      const q = query.toLowerCase();
+      const matchName = (item.leaf || "").toLowerCase().includes(q);
+      const matchCustom = (item.custom_leaf || "").toLowerCase().includes(q);
+      const matchPath = (item.full_path || "").toLowerCase().includes(q);
+      const matchId = String(item.id).includes(q);
+      const matchPos = (item.pos || "").toLowerCase().includes(q);
+      if (!matchName && !matchCustom && !matchPath && !matchId && !matchPos) return false;
+    }
+    return true;
+  }
+
+  // =========================================================================
+  // 2-Pane Explorer: 계층 트리 구조 빌더 (사이드바용)
+  // =========================================================================
+  function buildSidebarTreeModel(query = "", onlyModified = false) {
+    const posOrder = ["명사", "대명사", "문장", "주어", "동사", "형용사", "부사", "전치사", "접속사", "특수구문"];
+    const posNodes = [];
+
+    posOrder.forEach(pos => {
+      const posItems = visualItems.filter(it => it.pos === pos);
+      if (posItems.length === 0) return;
+
+      const posNode = {
+        key: "POS:" + pos,
+        name: pos,
+        fullPath: pos,
+        isPos: true,
+        items: posItems,
+        children: new Map(), // name -> subNode
+        stats: { total: posItems.length, active: 0, modified: 0, hidden: 0 },
+        matchingItems: []
+      };
+
+      // 하위 카테고리 계층 구축 (리프 제외한 중간 폴더 경로)
+      posItems.forEach(item => {
+        const rawPath = (item.path && item.path.length > 0)
+          ? item.path
+          : (item.full_path ? item.full_path.split(" > ") : [item.pos, item.leaf]);
+        
+        const segments = (rawPath[0] === pos) ? rawPath.slice(1) : rawPath;
+        // 마지막 리프 어법명을 제외한 폴더 세그먼트들
+        const folderSegments = segments.slice(0, segments.length - 1);
+
+        let curr = posNode;
+        let currPath = pos;
+        folderSegments.forEach(seg => {
+          currPath += " > " + seg;
+          if (!curr.children.has(seg)) {
+            curr.children.set(seg, {
+              key: "PATH:" + currPath,
+              name: seg,
+              fullPath: currPath,
+              isPos: false,
+              items: [],
+              children: new Map(),
+              stats: { total: 0, active: 0, modified: 0, hidden: 0 },
+              matchingItems: []
+            });
+          }
+          curr = curr.children.get(seg);
+          curr.items.push(item);
+        });
+      });
+
+      // 통계 계산 헬퍼
+      function calcStats(node) {
+        node.stats = {
+          total: node.items.length,
+          active: node.items.filter(i => i.is_enabled).length,
+          modified: node.items.filter(i => i.custom_leaf && i.custom_leaf.trim() !== i.original_leaf).length,
+          hidden: node.items.filter(i => !i.is_enabled).length
+        };
+        node.matchingItems = node.items.filter(i => matchesFilter(i, query, onlyModified));
+
+        for (const child of node.children.values()) {
+          calcStats(child);
+        }
+      }
+
+      calcStats(posNode);
+      posNodes.push(posNode);
+    });
+
+    return posNodes;
+  }
+
+  // =========================================================================
+  // 2-Pane Explorer: 좌측 트리 사이드바 렌더러
+  // =========================================================================
+  function renderSidebar(treeModel, query = "", onlyModified = false) {
+    if (!sidebarTreeContainer) return;
+
+    // 루트 '전체 어법' 노드 통계 계산
+    const allFilteredItems = visualItems.filter(i => matchesFilter(i, query, onlyModified));
+    const allTotal = visualItems.length;
+
+    let html = `
+      <div class="sidebar-tree-row ${selectedCategoryKey === 'ALL' ? 'active' : ''}" data-cat-key="ALL" title="모든 품사의 243개 어법을 한 번에 확인합니다.">
+        <span class="sidebar-node-icon">📚</span>
+        <span class="sidebar-node-label" style="font-weight: 700;">전체 어법 (모든 품사)</span>
+        <span class="sidebar-node-badge">${query || onlyModified ? `${allFilteredItems.length}/${allTotal}` : allTotal}</span>
+      </div>
+    `;
+
+    // 하위 폴더 렌더링 재귀 헬퍼
+    function renderFolderNodeHtml(node) {
+      if (node.matchingItems.length === 0 && (query || onlyModified)) {
+        return ""; // 검색 조건에 맞는 항목이 없으면 숨김
+      }
+
+      // 검색어가 있으면 자동 펼침, 그렇지 않으면 treeExpandedState 따름 (기본 펼침)
+      const isCollapsed = query ? false : (treeExpandedState.has(node.key) ? !treeExpandedState.get(node.key) : false);
+      const isSelected = selectedCategoryKey === node.key;
+      const countText = (query || onlyModified) ? `${node.matchingItems.length}/${node.stats.total}` : `${node.stats.total}`;
+
+      let childrenHtml = "";
+      if (node.children.size > 0) {
+        for (const child of node.children.values()) {
+          childrenHtml += renderFolderNodeHtml(child);
+        }
+      }
+
+      const hasChildren = node.children.size > 0;
+
+      return `
+        <div class="sidebar-tree-node" data-cat-key="${escapeHtml(node.key)}">
+          <div class="sidebar-tree-row ${isSelected ? 'active' : ''}" data-cat-key="${escapeHtml(node.key)}" title="${escapeHtml(node.fullPath)}">
+            ${hasChildren 
+              ? `<span class="sidebar-node-toggle ${isCollapsed ? 'is-collapsed' : ''}" data-toggle-key="${escapeHtml(node.key)}">${isCollapsed ? '▶' : '▼'}</span>` 
+              : `<span class="sidebar-node-toggle" style="opacity: 0.2; pointer-events: none;">•</span>`}
+            <span class="sidebar-node-icon">${hasChildren ? (isCollapsed ? '📁' : '📂') : '🏷️'}</span>
+            <span class="sidebar-node-label">${highlightSearch(node.name, query)}</span>
+            <span class="sidebar-node-badge">${countText}</span>
+          </div>
+          ${hasChildren ? `
+            <div class="sidebar-tree-children ${isCollapsed ? 'collapsed' : ''}">
+              ${childrenHtml}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // 각 품사 노드 렌더링
+    treeModel.forEach(posNode => {
+      html += renderFolderNodeHtml(posNode);
+    });
+
+    sidebarTreeContainer.innerHTML = html;
+
+    // 사이드바 이벤트 바인딩
+    // 1. 접기/펼치기 토글
+    sidebarTreeContainer.querySelectorAll(".sidebar-node-toggle").forEach(toggle => {
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const key = toggle.dataset.toggleKey;
+        if (!key) return;
+        const currentCollapsed = toggle.classList.contains("is-collapsed");
+        treeExpandedState.set(key, currentCollapsed); // 접혀있었으면 true(펼침), 펼쳐있었으면 false(접음)
+        renderVisualExplorer();
+      });
+    });
+
+    // 2. 카테고리 선택
+    sidebarTreeContainer.querySelectorAll(".sidebar-tree-row").forEach(row => {
+      row.addEventListener("click", () => {
+        const catKey = row.dataset.catKey;
+        if (!catKey) return;
+        selectedCategoryKey = catKey;
+        // 사이드바 active 행 즉시 교체
+        sidebarTreeContainer.querySelectorAll(".sidebar-tree-row").forEach(r => r.classList.remove("active"));
+        row.classList.add("active");
+        renderDetailPane(query, onlyModified);
+      });
+    });
+  }
+
+  // =========================================================================
+  // 2-Pane Explorer: 우측 상세 편집 패널 렌더러
+  // =========================================================================
+  function renderDetailPane(query = "", onlyModified = false) {
+    if (!detailCardGrid) return;
+
+    // 1. 현재 선택된 카테고리에 속한 어법 목록 추출
+    let scopedItems = [];
+    let breadcrumbTitle = "";
+    let breadcrumbChain = [];
+
+    if (selectedCategoryKey === "ALL") {
+      scopedItems = visualItems;
+      breadcrumbTitle = "전체 어법 체계";
+      breadcrumbChain = [{ name: "📚 전체 어법 체계", key: "ALL" }];
+    } else if (selectedCategoryKey.startsWith("POS:")) {
+      const pos = selectedCategoryKey.substring(4);
+      scopedItems = visualItems.filter(it => it.pos === pos);
+      breadcrumbTitle = `${pos} 어법 체계`;
+      breadcrumbChain = [
+        { name: "📚 전체", key: "ALL" },
+        { name: pos, key: selectedCategoryKey }
+      ];
+    } else if (selectedCategoryKey.startsWith("PATH:")) {
+      const pathStr = selectedCategoryKey.substring(5);
+      scopedItems = visualItems.filter(it => it.full_path === pathStr || it.full_path.startsWith(pathStr + " > "));
+      const segments = pathStr.split(" > ");
+      breadcrumbChain = [{ name: "📚 전체", key: "ALL" }];
+      let builtPath = "";
+      segments.forEach((seg, idx) => {
+        if (idx === 0) {
+          builtPath = seg;
+          breadcrumbChain.push({ name: seg, key: "POS:" + seg });
+        } else {
+          builtPath += " > " + seg;
+          breadcrumbChain.push({ name: seg, key: "PATH:" + builtPath });
+        }
+      });
+      breadcrumbTitle = segments.join(" > ");
+    }
+
+    // 2. 검색어 및 수정됨 필터 적용
+    const filteredCards = scopedItems.filter(it => matchesFilter(it, query, onlyModified));
+
+    // 3. 브레드크럼 UI 업데이트
+    if (detailBreadcrumb) {
+      detailBreadcrumb.innerHTML = breadcrumbChain.map((crumb, idx) => {
+        const isLast = idx === breadcrumbChain.length - 1;
+        if (isLast) {
+          return `<span class="breadcrumb-item active" style="color: var(--primary); font-weight: 700;">${escapeHtml(crumb.name)}</span>`;
+        } else {
+          return `<span class="breadcrumb-item breadcrumb-link" data-cat-key="${escapeHtml(crumb.key)}" style="cursor: pointer; color: var(--text-muted); text-decoration: underline;" title="${escapeHtml(crumb.name)} 카테고리로 이동">${escapeHtml(crumb.name)}</span> <span style="color: var(--text-muted); font-size: 0.75rem;">&gt;</span>`;
+        }
+      }).join(" ");
+
+      detailBreadcrumb.querySelectorAll(".breadcrumb-link").forEach(link => {
+        link.addEventListener("click", () => {
+          selectedCategoryKey = link.dataset.catKey;
+          renderVisualExplorer();
+        });
+      });
+    }
+
+    // 4. 통계 뱃지 업데이트
+    const activeCount = filteredCards.filter(i => i.is_enabled).length;
+    const modifiedCount = filteredCards.filter(i => i.custom_leaf && i.custom_leaf.trim() !== i.original_leaf).length;
+    const hiddenCount = filteredCards.length - activeCount;
+
+    if (detailCountBadge) {
+      detailCountBadge.textContent = `총 ${filteredCards.length}개 어법`;
+    }
+    if (detailSubstat) {
+      detailSubstat.textContent = `사용 ${activeCount} · 수정 ${modifiedCount} · 숨김 ${hiddenCount}`;
+    }
+
+    // 5. 카드 그리드 렌더링
+    if (filteredCards.length === 0) {
+      detailCardGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; padding: 3.5rem 1rem; text-align: center; color: var(--text-muted);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">🔍</div>
+          <strong style="font-size: 0.95rem; color: var(--text-main);">조건에 일치하는 어법 항목이 없습니다.</strong>
+          <p style="font-size: 0.8rem; margin-top: 4px;">검색어를 변경하거나 좌측 트리에서 다른 카테고리를 선택해 보세요.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const cardsHtml = filteredCards.map(item => {
+      const isMod = item.custom_leaf && item.custom_leaf.trim() !== item.original_leaf;
+      const isHidden = !item.is_enabled;
+      const currentValue = item.custom_leaf !== undefined ? item.custom_leaf : item.original_leaf;
+
+      return `
+        <div class="grammar-editor-card ${isMod ? 'modified' : ''} ${isHidden ? 'hidden-item' : ''}" data-id="${item.id}">
+          <div class="card-header-row">
+            <div class="card-id-wrap">
+              <input type="checkbox" class="card-enable-chk" data-id="${item.id}" ${!isHidden ? "checked" : ""} title="${isHidden ? '현재 숨김 상태 (체크하여 사용)' : '현재 사용 중 (체크 해제하여 숨김)'}">
+              <span class="card-id-badge">#${item.id}</span>
+              <strong class="card-leaf-title" title="표준 명칭: ${escapeHtml(item.original_leaf)}">${highlightSearch(item.original_leaf, query)}</strong>
+            </div>
+            <div class="card-badges-wrap">
+              ${isMod ? '<span class="card-badge-modified">✏️ 수정됨</span>' : ''}
+              ${isHidden ? '<span class="card-badge-hidden">🚫 숨김</span>' : ''}
+              ${isMod ? `<button type="button" class="btn-card-revert" data-id="${item.id}" title="표준 명칭('${escapeHtml(item.original_leaf)}')으로 복원">↺ 원래대로</button>` : ''}
+            </div>
+          </div>
+          <div class="card-path-row" title="${escapeHtml(item.full_path)}">
+            📂 ${escapeHtml(item.full_path)}
+          </div>
+          <div class="card-input-row">
+            <span class="card-input-label">내 어법 명칭:</span>
+            <div class="card-input-wrapper">
+              <input 
+                type="text" 
+                class="card-text-input" 
+                data-id="${item.id}" 
+                value="${escapeHtml(currentValue)}" 
+                placeholder="${escapeHtml(item.original_leaf)}"
+                title="나만의 어법 명칭을 입력하세요"
+              >
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    detailCardGrid.innerHTML = cardsHtml;
+
+    // 6. 카드 이벤트 바인딩
+    // (1) 사용/숨김 체크박스
+    detailCardGrid.querySelectorAll(".card-enable-chk").forEach(chk => {
+      chk.addEventListener("change", () => {
+        const id = Number(chk.dataset.id);
+        const item = visualItems.find(x => x.id === id);
+        if (item) {
+          item.is_enabled = chk.checked;
+          const card = chk.closest(".grammar-editor-card");
+          if (card) {
+            if (item.is_enabled) card.classList.remove("hidden-item");
+            else card.classList.add("hidden-item");
+          }
+          updateGlobalStats();
+          // 통계 갱신
+          const curActive = filteredCards.filter(i => i.is_enabled).length;
+          const curHidden = filteredCards.length - curActive;
+          if (detailSubstat) {
+            detailSubstat.textContent = `사용 ${curActive} · 수정 ${modifiedCount} · 숨김 ${curHidden}`;
           }
         }
-      } catch (err) {
-        showToast("표준 템플릿 로드 실패", "error");
-      }
+      });
+    });
+
+    // (2) 인라인 명칭 수정
+    detailCardGrid.querySelectorAll(".card-text-input").forEach(input => {
+      input.addEventListener("input", () => {
+        const id = Number(input.dataset.id);
+        const item = visualItems.find(x => x.id === id);
+        if (item) {
+          item.custom_leaf = input.value;
+          const card = input.closest(".grammar-editor-card");
+          const isMod = item.custom_leaf.trim() !== item.original_leaf;
+          if (card) {
+            if (isMod) card.classList.add("modified");
+            else card.classList.remove("modified");
+          }
+          updateGlobalStats();
+        }
+      });
+    });
+
+    // (3) 원래대로 복원 버튼
+    detailCardGrid.querySelectorAll(".btn-card-revert").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = Number(btn.dataset.id);
+        const item = visualItems.find(x => x.id === id);
+        if (item) {
+          item.custom_leaf = item.original_leaf;
+          renderDetailPane(query, onlyModified);
+          updateGlobalStats();
+        }
+      });
     });
   }
 
+  // =========================================================================
+  // 전체 탐색기 렌더링 오케스트레이터
+  // =========================================================================
+  function renderVisualExplorer() {
+    const query = (inputCustomTreeSearch ? inputCustomTreeSearch.value : "").trim().toLowerCase();
+    const onlyModified = chkOnlyModified ? chkOnlyModified.checked : false;
+
+    if (btnClearCustomTreeSearch) {
+      btnClearCustomTreeSearch.style.display = query ? "block" : "none";
+    }
+
+    updateGlobalStats();
+
+    // 1. 트리 모델 구축
+    const treeModel = buildSidebarTreeModel(query, onlyModified);
+
+    // 2. 좌측 사이드바 렌더링
+    renderSidebar(treeModel, query, onlyModified);
+
+    // 3. 우측 상세 패널 렌더링
+    renderDetailPane(query, onlyModified);
+  }
+
+  // =========================================================================
+  // 툴바 버튼 이벤트 바인딩
+  // =========================================================================
+  // 1. 검색창 입력 & 초기화
+  if (inputCustomTreeSearch) {
+    inputCustomTreeSearch.addEventListener("input", () => {
+      renderVisualExplorer();
+    });
+  }
+
+  if (btnClearCustomTreeSearch) {
+    btnClearCustomTreeSearch.addEventListener("click", () => {
+      if (inputCustomTreeSearch) inputCustomTreeSearch.value = "";
+      renderVisualExplorer();
+    });
+  }
+
+  // 2. 수정됨만 필터
+  if (chkOnlyModified) {
+    chkOnlyModified.addEventListener("change", () => {
+      renderVisualExplorer();
+    });
+  }
+
+  // 3. 사이드바 전체 펼치기 / 접기
+  if (btnExpandAllTree) {
+    btnExpandAllTree.addEventListener("click", () => {
+      treeExpandedState.clear();
+      // 모든 키를 true로 설정
+      const model = buildSidebarTreeModel();
+      function expandAll(node) {
+        treeExpandedState.set(node.key, true);
+        for (const child of node.children.values()) expandAll(child);
+      }
+      model.forEach(expandAll);
+      renderVisualExplorer();
+    });
+  }
+
+  if (btnCollapseAllTree) {
+    btnCollapseAllTree.addEventListener("click", () => {
+      treeExpandedState.clear();
+      // 모든 키를 false로 설정
+      const model = buildSidebarTreeModel();
+      function collapseAll(node) {
+        treeExpandedState.set(node.key, false);
+        for (const child of node.children.values()) collapseAll(child);
+      }
+      model.forEach(collapseAll);
+      renderVisualExplorer();
+    });
+  }
+
+  // 4. 현재 선택된 카테고리 일괄 사용 / 숨김
+  if (btnBulkEnableCurrent) {
+    btnBulkEnableCurrent.addEventListener("click", () => {
+      let targets = [];
+      if (selectedCategoryKey === "ALL") {
+        targets = visualItems;
+      } else if (selectedCategoryKey.startsWith("POS:")) {
+        const pos = selectedCategoryKey.substring(4);
+        targets = visualItems.filter(i => i.pos === pos);
+      } else if (selectedCategoryKey.startsWith("PATH:")) {
+        const pathStr = selectedCategoryKey.substring(5);
+        targets = visualItems.filter(i => i.full_path === pathStr || i.full_path.startsWith(pathStr + " > "));
+      }
+
+      targets.forEach(i => { i.is_enabled = true; });
+      showToast(`${targets.length}개 어법이 모두 사용 처리되었습니다.`, "info");
+      renderVisualExplorer();
+    });
+  }
+
+  if (btnBulkDisableCurrent) {
+    btnBulkDisableCurrent.addEventListener("click", () => {
+      let targets = [];
+      if (selectedCategoryKey === "ALL") {
+        targets = visualItems;
+      } else if (selectedCategoryKey.startsWith("POS:")) {
+        const pos = selectedCategoryKey.substring(4);
+        targets = visualItems.filter(i => i.pos === pos);
+      } else if (selectedCategoryKey.startsWith("PATH:")) {
+        const pathStr = selectedCategoryKey.substring(5);
+        targets = visualItems.filter(i => i.full_path === pathStr || i.full_path.startsWith(pathStr + " > "));
+      }
+
+      targets.forEach(i => { i.is_enabled = false; });
+      showToast(`${targets.length}개 어법이 모두 숨김 처리되었습니다.`, "info");
+      renderVisualExplorer();
+    });
+  }
+
+  // =========================================================================
+  // 모달 오픈 핸들러
+  // =========================================================================
+  btnManageGrammarTree.addEventListener("click", async () => {
+    const stdList = await loadStandardTemplate();
+
+    let serverSettings = null;
+    try {
+      const res = await fetch("/api/grammar/settings");
+      if (res.ok) serverSettings = await res.json();
+    } catch (e) {
+      console.error("Load settings error:", e);
+    }
+
+    const useCustom = Boolean(serverSettings && serverSettings.use_custom_tree);
+    if (toggleUseCustomTree) {
+      toggleUseCustomTree.checked = useCustom;
+      if (labelUseCustomTree) {
+        labelUseCustomTree.textContent = useCustom ? "🟢 커스텀 체계 사용 중" : "⚪ 표준 체계 사용 중";
+        labelUseCustomTree.style.color = useCustom ? "#059669" : "var(--text-main)";
+      }
+    }
+
+    let customMap = {};
+    let customEnabledIds = null;
+
+    if (serverSettings && serverSettings.custom_tree_json) {
+      try {
+        const parsed = JSON.parse(serverSettings.custom_tree_json);
+        const cList = parsed.list || (Array.isArray(parsed) ? parsed : []);
+        if (cList.length > 0) {
+          customEnabledIds = new Set();
+          cList.forEach(c => {
+            if (c.id) {
+              customEnabledIds.add(Number(c.id));
+              customMap[c.id] = c.leaf || c.leaf_name || "";
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Parse custom tree json error:", e);
+      }
+    }
+
+    visualItems = stdList.map(item => {
+      const id = Number(item.id);
+      const originalLeaf = item.leaf || item.leaf_name || "";
+      const customLeaf = customMap[id] !== undefined ? customMap[id] : originalLeaf;
+      const isEnabled = customEnabledIds ? customEnabledIds.has(id) : true;
+      return {
+        id,
+        pos: item.pos || "",
+        path: item.path || (item.full_path ? item.full_path.split(" > ") : []),
+        full_path: item.full_path || "",
+        leaf: originalLeaf,
+        original_leaf: originalLeaf,
+        custom_leaf: customLeaf,
+        is_enabled: isEnabled
+      };
+    });
+
+    if (inputCustomTreeSearch) inputCustomTreeSearch.value = "";
+    if (chkOnlyModified) chkOnlyModified.checked = false;
+
+    currentActiveTab = "visual";
+    selectedCategoryKey = "ALL";
+    treeExpandedState.clear();
+
+    if (tabBtnVisualEditor) tabBtnVisualEditor.classList.add("active");
+    if (tabBtnJsonEditor) tabBtnJsonEditor.classList.remove("active");
+    if (paneVisualEditor) paneVisualEditor.style.display = "flex";
+    if (paneJsonEditor) paneJsonEditor.style.display = "none";
+
+    renderVisualExplorer();
+    syncVisualToJson();
+
+    customGrammarTreeModal.style.display = "flex";
+  });
+
+  // 토글 스위치 변경 시 레이블 업데이트
+  if (toggleUseCustomTree && labelUseCustomTree) {
+    toggleUseCustomTree.addEventListener("change", () => {
+      const isChecked = toggleUseCustomTree.checked;
+      labelUseCustomTree.textContent = isChecked ? "🟢 커스텀 체계 사용 중" : "⚪ 표준 체계 사용 중";
+      labelUseCustomTree.style.color = isChecked ? "#059669" : "var(--text-main)";
+    });
+  }
+
+  // 표준 243개로 초기화 버튼
   if (btnResetToStandardTree) {
     btnResetToStandardTree.addEventListener("click", async () => {
-      if (!confirm("정말 기본 243개 표준 어법 체계로 초기화하시겠습니까?")) return;
+      if (!confirm("모든 커스텀 어법 수정을 초기화하고, 기본 243개 표준 어법 체계로 복원하시겠습니까?")) return;
       try {
         const res = await fetch("/api/grammar/settings/reset", { method: "POST" });
         if (res.ok) {
-          showToast("기본 표준 어법 체계로 복원되었습니다.", "success");
+          showToast("기본 표준 243개 어법 체계로 복원되었습니다.", "success");
           if (toggleUseCustomTree) toggleUseCustomTree.checked = false;
           if (labelUseCustomTree) {
-            labelUseCustomTree.textContent = "표준 체계 사용 중";
+            labelUseCustomTree.textContent = "⚪ 표준 체계 사용 중";
             labelUseCustomTree.style.color = "var(--text-main)";
           }
           await loadGrammarCategories();
@@ -1309,23 +1970,45 @@ function initCustomGrammarTreeModal() {
     });
   }
 
+  // JSON 직접 편집 시 표준 템플릿 복사
+  if (btnCopyStandardTree) {
+    btnCopyStandardTree.addEventListener("click", async () => {
+      const stdList = await loadStandardTemplate();
+      if (customTreeJsonEditor) {
+        customTreeJsonEditor.value = JSON.stringify({
+          meta: { title: "표준 243개 체계", total_items: stdList.length },
+          list: stdList
+        }, null, 2);
+        showToast("표준 243개 JSON 템플릿을 에디터에 로드했습니다.", "info");
+      }
+    });
+  }
+
+  // 저장 버튼 핸들러
   if (btnSaveCustomTreeModal) {
     btnSaveCustomTreeModal.addEventListener("click", async () => {
       btnSaveCustomTreeModal.disabled = true;
       btnSaveCustomTreeModal.textContent = "⏳ 저장 중...";
+
       try {
         const useCustom = toggleUseCustomTree ? toggleUseCustomTree.checked : false;
-        let treeJsonStr = (customTreeJsonEditor && customTreeJsonEditor.value) ? customTreeJsonEditor.value.trim() : "";
+        let finalJsonStr = "";
 
-        if (useCustom && treeJsonStr) {
-          try {
-            JSON.parse(treeJsonStr);
-          } catch (jsonErr) {
-            showToast(`JSON 문법 오류: ${jsonErr.message}`, "error");
-            btnSaveCustomTreeModal.disabled = false;
-            btnSaveCustomTreeModal.textContent = "💾 커스텀 어법 체계 저장";
-            return;
+        if (currentActiveTab === "json") {
+          finalJsonStr = (customTreeJsonEditor && customTreeJsonEditor.value) ? customTreeJsonEditor.value.trim() : "";
+          if (useCustom && finalJsonStr) {
+            try {
+              JSON.parse(finalJsonStr);
+            } catch (jsonErr) {
+              showToast(`JSON 문법 오류: ${jsonErr.message}`, "error");
+              btnSaveCustomTreeModal.disabled = false;
+              btnSaveCustomTreeModal.textContent = "💾 커스텀 어법 체계 저장";
+              return;
+            }
           }
+        } else {
+          syncVisualToJson();
+          finalJsonStr = customTreeJsonEditor ? customTreeJsonEditor.value : "";
         }
 
         const res = await fetch("/api/grammar/settings", {
@@ -1333,13 +2016,13 @@ function initCustomGrammarTreeModal() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             use_custom_tree: useCustom,
-            custom_tree_json: treeJsonStr || null
+            custom_tree_json: finalJsonStr || null
           })
         });
 
         const data = await res.json();
         if (res.ok && data.success) {
-          showToast(data.message || "커스텀 어법 체계가 저장되었습니다.", "success");
+          showToast(data.message || "커스텀 어법 체계가 성공적으로 저장되었습니다.", "success");
           await loadGrammarCategories();
           renderGrammarModalView();
           closeCustomModal();
@@ -1347,7 +2030,7 @@ function initCustomGrammarTreeModal() {
           showToast(data.detail || "저장 실패", "error");
         }
       } catch (err) {
-        console.error("Save custom tree error:", err);
+        console.error("Save custom grammar tree error:", err);
         showToast("어법 체계 저장 중 오류 발생", "error");
       } finally {
         btnSaveCustomTreeModal.disabled = false;
@@ -1356,3 +2039,4 @@ function initCustomGrammarTreeModal() {
     });
   }
 }
+

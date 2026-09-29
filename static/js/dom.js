@@ -201,6 +201,7 @@ export const grammarTreeStatusBadge = document.getElementById("grammarTreeStatus
 export const btnManageGrammarTree = document.getElementById("btnManageGrammarTree");
 export const customGrammarTreeModal = document.getElementById("customGrammarTreeModal");
 export const btnCloseCustomTreeModal = document.getElementById("btnCloseCustomTreeModal");
+export const btnToggleCustomTreeFullscreen = document.getElementById("btnToggleCustomTreeFullscreen");
 export const btnCancelCustomTreeModal = document.getElementById("btnCancelCustomTreeModal");
 export const btnSaveCustomTreeModal = document.getElementById("btnSaveCustomTreeModal");
 export const toggleUseCustomTree = document.getElementById("toggleUseCustomTree");
@@ -208,6 +209,29 @@ export const labelUseCustomTree = document.getElementById("labelUseCustomTree");
 export const customTreeJsonEditor = document.getElementById("customTreeJsonEditor");
 export const btnCopyStandardTree = document.getElementById("btnCopyStandardTree");
 export const btnResetToStandardTree = document.getElementById("btnResetToStandardTree");
+
+export const tabBtnVisualEditor = document.getElementById("tabBtnVisualEditor");
+export const tabBtnJsonEditor = document.getElementById("tabBtnJsonEditor");
+export const paneVisualEditor = document.getElementById("paneVisualEditor");
+export const paneJsonEditor = document.getElementById("paneJsonEditor");
+export const statTotalGrammar = document.getElementById("statTotalGrammar");
+export const statActiveGrammar = document.getElementById("statActiveGrammar");
+export const statModifiedGrammar = document.getElementById("statModifiedGrammar");
+export const statHiddenGrammar = document.getElementById("statHiddenGrammar");
+export const inputCustomTreeSearch = document.getElementById("inputCustomTreeSearch");
+export const btnClearCustomTreeSearch = document.getElementById("btnClearCustomTreeSearch");
+export const chkOnlyModified = document.getElementById("chkOnlyModified");
+export const btnExpandAllTree = document.getElementById("btnExpandAllTree");
+export const btnCollapseAllTree = document.getElementById("btnCollapseAllTree");
+
+export const sidebarTreeContainer = document.getElementById("sidebarTreeContainer");
+export const detailBreadcrumb = document.getElementById("detailBreadcrumb");
+export const detailCountBadge = document.getElementById("detailCountBadge");
+export const detailSubstat = document.getElementById("detailSubstat");
+export const btnBulkEnableCurrent = document.getElementById("btnBulkEnableCurrent");
+export const btnBulkDisableCurrent = document.getElementById("btnBulkDisableCurrent");
+export const detailCardGrid = document.getElementById("detailCardGrid");
+export const customTreeSaveStatus = document.getElementById("customTreeSaveStatus");
 
 export const tabBtnBatchUpload = document.getElementById("tabBtnBatchUpload");
 export const tabBtnFilesStatus = document.getElementById("tabBtnFilesStatus");
