@@ -152,16 +152,40 @@ def generate_fels_text(script_text: str) -> str:
     return "\n".join(result_lines)
 
 
-def is_dialogue_script(text: str) -> bool:
-    """화자 발화 턴 개수를 확인하여 대화문(True) / 담화문(False) 판별"""
-    if not text:
-        return False
+def is_dialogue_script(text: str, title: str = "", question_type: str = "") -> bool:
+    """
+    스크립트 텍스트와 발문(question_title)/문제유형(question_type)을 2중 교차 검증하여
+    대화문(True) / 담화문(False) 판정
+    """
+    title_clean = (title or "").strip()
+    q_type_clean = (question_type or "").strip()
+    text_clean = (text or "").strip()
+
+    # 1. 발문(Title) 및 문제유형(Type) 키워드 신호 분석
+    has_dialogue_title = bool(re.search(r'(?:대화|두\s*사람)', title_clean))
+    has_monologue_title = bool(re.search(r'(?:다음을\s*듣고|하는\s*말|담화|안내\s*방송|안내문|설명을\s*듣고|이야기를\s*듣고)', title_clean))
+    if "담화" in q_type_clean:
+        has_monologue_title = True
+
+    # 2. 스크립트(Script) 화자 턴 신호 분석
     speaker_regex = re.compile(
         r"(?:^|\n)\s*(?:[MW]|Man|Woman|Boy|Girl|Male|Female|Teacher|Student|Doctor|Father|Mother|Son|Daughter|Host|Officer)\s*[:：]",
         re.IGNORECASE
     )
-    matches = speaker_regex.findall(text)
-    return len(matches) >= 2
+    speaker_tags = speaker_regex.findall(text_clean)
+    speaker_count = len(speaker_tags)
+
+    # 3. 2중 교차 검증(Dual Verification) 종합 판정
+    if has_dialogue_title and speaker_count >= 2:
+        return True
+    if has_monologue_title and speaker_count <= 1:
+        return False
+    if has_dialogue_title and not has_monologue_title:
+        return True
+    if has_monologue_title and not has_dialogue_title:
+        return False
+
+    return speaker_count >= 2
 
 
 def split_fels_monologue_sentences(fels_text: str) -> str:
@@ -216,11 +240,11 @@ def split_fels_monologue_sentences(fels_text: str) -> str:
     return "\n".join(final_sentences)
 
 
-def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = True) -> str:
+def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = True, title: str = "", question_type: str = "") -> str:
     """
     FELS 텍스트에서 [단어] 또는 <단어>를 최장 기능어 글자수에 맞춘 균일한 [       ] 빈칸으로 변환
     - 개별 단어의 글자수와 무관하게 해당 지문 내 최장 단어 글자수만큼의 공백을 모든 [ ]에 동일 적용
-    - 담화문의 경우 1문장 = 1행 유인물 형태로 자동 분할
+    - 담화문의 경우 1문장 = 1행 유인물 형태로 자동 분할 (발문 + 스크립트 2중 검증)
     """
     if not fels_text:
         return ""
@@ -237,7 +261,7 @@ def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = Tr
         return blank_str if content else m.group(0)
 
     blank_text = re.sub(r"<([^>]+?)>|\[([^\]]+?)\]", _replace, fels_text)
-    if split_sentences_for_monologue and not is_dialogue_script(fels_text):
+    if split_sentences_for_monologue and not is_dialogue_script(fels_text, title=title, question_type=question_type):
         blank_text = split_fels_monologue_sentences(blank_text)
 
     return blank_text

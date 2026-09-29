@@ -1497,14 +1497,54 @@ function applyPassageUpdate(fresh, focusId) {
 }
 
 /**
- * 대본 또는 FELS 텍스트가 대화문(Dialogue)인지 여부 판별
- * - 2개 이상의 화자 발화 태그(M:, W:, Man:, Woman: 등)가 존재하면 대화문으로 판정
+ * 대본 또는 FELS 텍스트가 대화문(Dialogue)인지 여부 판별 (2중 교차 검증)
+ * 1) 1차 검증: 발문(question_title) 및 문제유형(question_type) 키워드 교차 확인 ('대화' vs '다음을 듣고/하는 말/담화')
+ * 2) 2차 검증: 스크립트 텍스트 내 화자 발화 태그(M:, W:, Man:, Woman: 등) 턴 개수 분석
+ * @param {string} text - 스크립트 또는 FELS 텍스트
+ * @param {string} [title] - 문항 발문 텍스트 (예: '1. 다음을 듣고, 남자가 하는 말의...')
+ * @param {string} [qType] - 문제 유형 (예: '1담화 2문항', '화자의 의견' 등)
+ * @returns {boolean} 대화문이면 true, 담화문(독백/안내/강의)이면 false
  */
-export function isDialogueScript(text) {
-  if (!text) return false;
+export function isDialogueScript(text, title = "", qType = "") {
+  const textClean = (text || "").trim();
+  const titleClean = (title || "").trim();
+  const qTypeClean = (qType || "").trim();
+
+  // 1. 발문(Title) 및 유형(Type) 신호 분석
+  const hasDialogueTitle = /(?:대화|두\s*사람)/i.test(titleClean);
+  let hasMonologueTitle = /(?:다음을\s*듣고|하는\s*말|담화|안내\s*방송|안내문|설명을\s*듣고|이야기를\s*듣고)/i.test(titleClean);
+  if (/담화/i.test(qTypeClean)) {
+    hasMonologueTitle = true;
+  }
+
+  // 2. 스크립트(Script) 화자 턴 태그 분석
   const speakerRegex = /(?:^|\n)\s*(?:[MW]|Man|Woman|Boy|Girl|Male|Female|Teacher|Student|Doctor|Father|Mother|Son|Daughter|Host|Officer)\s*[:：]/gi;
-  const matches = text.match(speakerRegex);
-  return !!(matches && matches.length >= 2);
+  const matches = textClean.match(speakerRegex);
+  const speakerCount = matches ? matches.length : 0;
+
+  // 3. 2중 교차 검증(Dual Verification) 종합 판정
+  // 3-1. 발문에 '대화'가 명시되고 스크립트에도 2턴 이상인 경우 -> 100% 대화문
+  if (hasDialogueTitle && speakerCount >= 2) {
+    return true;
+  }
+
+  // 3-2. 발문에 '담화/다음을 듣고/하는 말'이 있고 스크립트도 1턴 이하인 경우 -> 100% 담화문
+  if (hasMonologueTitle && speakerCount <= 1) {
+    return false;
+  }
+
+  // 3-3. 발문에 '대화'가 명시된 경우 (과거 기출 화자 태그 생략 지문 등) -> 대화문 우선
+  if (hasDialogueTitle && !hasMonologueTitle) {
+    return true;
+  }
+
+  // 3-4. 발문에 '담화' 또는 '다음을 듣고/하는 말'이 명시된 경우 -> 담화문 우선
+  if (hasMonologueTitle && !hasDialogueTitle) {
+    return false;
+  }
+
+  // 3-5. 발문이 축약('1.', '2번')되어 키워드가 없거나 모호한 경우: 실제 스크립트 화자 턴 수(2턴 이상 대화문) 기준
+  return speakerCount >= 2;
 }
 
 /**
@@ -1593,8 +1633,10 @@ export function copyFelsBlankVersion() {
     return content ? blankStr : match;
   });
 
-  // 4. 담화문(Monologue)의 경우 스크립트를 문장 단위로 분할하여 1문장 = 1행 유인물 형태로 변환
-  const isDialogue = isDialogueScript(felsText);
+  // 4. 담화문(Monologue)의 경우 스크립트를 문장 단위로 분할하여 1문장 = 1행 유인물 형태로 변환 (발문+스크립트 2중 검증)
+  const title = currentDetailPassage ? (currentDetailPassage.question_title || "") : "";
+  const qType = currentDetailPassage ? (currentDetailPassage.question_type || "") : "";
+  const isDialogue = isDialogueScript(felsText, title, qType);
   if (!isDialogue) {
     blankText = splitFelsMonologueIntoSentences(blankText);
   }
@@ -1615,8 +1657,10 @@ export function copyFelsAnswerVersion() {
   // <단어>가 있는 경우 [단어]로 일관되게 치환하여 교사용 정답지 생성 (학생용 [ ] 빈칸과 1:1 대응)
   let answerText = felsText.replace(/<([^>]+?)>/g, "[$1]");
 
-  // 담화문(Monologue)의 경우 학생용 유인물과 1:1 대응되도록 문장 단위로 분할하여 1문장 = 1행 정답지로 변환
-  const isDialogue = isDialogueScript(felsText);
+  // 담화문(Monologue)의 경우 학생용 유인물과 1:1 대응되도록 문장 단위로 분할하여 1문장 = 1행 정답지로 변환 (발문+스크립트 2중 검증)
+  const title = currentDetailPassage ? (currentDetailPassage.question_title || "") : "";
+  const qType = currentDetailPassage ? (currentDetailPassage.question_type || "") : "";
+  const isDialogue = isDialogueScript(felsText, title, qType);
   if (!isDialogue) {
     answerText = splitFelsMonologueIntoSentences(answerText);
   }
@@ -1865,8 +1909,8 @@ function loadPassageDetail(p) {
     let rawFels = (p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.").trim();
     panelExplanation.dataset.rawFels = rawFels;
 
-    // 담화문인 경우 화면 뷰어에서도 문장별 줄바꿈을 적용하여 유인물과 동일한 레이아웃 제공
-    if (p.fels_text && !isDialogueScript(rawFels)) {
+    // 담화문인 경우 화면 뷰어에서도 문장별 줄바꿈을 적용하여 유인물과 동일한 레이아웃 제공 (발문 + 스크립트 2중 검증)
+    if (p.fels_text && !isDialogueScript(rawFels, p.question_title || "", p.question_type || "")) {
       rawFels = splitFelsMonologueIntoSentences(rawFels);
     }
 
