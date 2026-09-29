@@ -113,6 +113,10 @@ class QuestionTypeRequest(BaseModel):
     question_type: str
 
 
+class PassageMemoRequest(BaseModel):
+    memo: str
+
+
 class AnswerRequest(BaseModel):
     answer: str
     note: Optional[str] = ""
@@ -530,6 +534,21 @@ async def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
 
     success = db.update_passage_question_type(clean_id, req.question_type)
     return {"success": success, "question_type": req.question_type}
+
+
+# --- 지문 메모(수업/변형 노트) 저장 API ---
+@app.put("/api/passages/{passage_id}/memo")
+@app.patch("/api/passages/{passage_id}/memo")
+async def api_update_passage_memo(passage_id: str, req: PassageMemoRequest):
+    """지문의 사용자 메모(수업/변형 노트) 저장"""
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    res = db.update_passage_memo(clean_id, req.memo)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=f"지문 '{clean_id}'를 찾을 수 없거나 갱신하지 못했습니다.")
+    return res
 
 
 # --- 정답 수동 정정 API ---

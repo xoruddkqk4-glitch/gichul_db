@@ -114,6 +114,14 @@ export const choiceBarsList = document.getElementById("choiceBarsList");
 export const choiceRatesEmpty = document.getElementById("choiceRatesEmpty");
 export const btnUploadRateFromViewer = document.getElementById("btnUploadRateFromViewer");
 
+// 지문 메모 (수업/변형 노트) 요소
+export const passageMemoContainer = document.getElementById("passageMemoContainer");
+export const inputPassageMemo = document.getElementById("inputPassageMemo");
+export const btnSavePassageMemo = document.getElementById("btnSavePassageMemo");
+export const memoStatusBadge = document.getElementById("memoStatusBadge");
+export const memoCharCount = document.getElementById("memoCharCount");
+export const memoUpdatedAt = document.getElementById("memoUpdatedAt");
+
 // [문장 결과 화면] 요소
 export const sentenceViewContainer = document.getElementById("sentenceViewContainer");
 export const sentenceMatchCount = document.getElementById("sentenceMatchCount");

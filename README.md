@@ -1950,6 +1950,36 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/`: 76개 전체 기존 테스트 통과 (0.13s)
   - `test_fels_unit.py`: 담화문 분할, 화자 태그 제거, 문장 번호 부여, 대화 순번 부여 등 신규 단위 테스트 4건 전건 통과 (OK)
 
+### [2026-09-30 08:45] 업데이트 이력 (Commit ID: 23472737)
+- **수정 내용**:
+  - **지문 검색 화면 하단 패널 불필요한 여백 제거 및 레이아웃 최적화 (`static/css/style.css`)**:
+    - `.passage-view-container`의 하단 패딩을 `2rem`에서 `0.6rem`으로 축소하고 뷰포트 높이(`calc(100vh - 195px)`)에 고정.
+    - 2x2 그리드 상하 패널 비율을 `minmax(0, 1.15fr) minmax(0, 0.85fr)`로 설정하고 `height: 100%; overflow: hidden;`을 적용하여 자식 요소로 인한 불필요한 하단 스크롤/여백 팽창 방지.
+    - `.pdf-image-container` 및 `.listening-crops-container`에 독립 스크롤(`overflow-y: auto; height: 100%;`)을 보장하고, FELS 패널 중복 패딩 제거.
+  - **지문 사용자 메모(수업/변형 노트) 기능 신설 (`database.py`, `app.py`, `templates/index.html`, `static/js/dom.js`, `static/js/results-passage.js`)**:
+    - DB 스키마 확장: `passages` 테이블에 `user_memo TEXT`, `user_memo_updated_at TIMESTAMP` 컬럼 마이그레이션.
+    - REST API 엔드포인트 신설: `PUT /api/passages/{passage_id}/memo` 및 `PATCH` 구현.
+    - 우측 하단 패널 하단에 컴팩트 메모 텍스트박스, 글자수 카운터, 저장 상태 배지, 최근 수정 시간 표시 바 구축.
+    - 사용자 입력 500ms 디바운스 자동 저장, `Ctrl+Enter` 단축키 즉시 저장, 탭 전환/블러 시 안전 저장(blur-safe persistence) 구현.
+  - **듣기 대본 크롭 이미지 자동 트리밍 및 하단 공백 제거 (`listening_parser.py`, 1,095개 이미지 파일)**:
+    - PDF 해설지 파싱 시 하단 페이지 번호(`4/17` 등)가 대본 섹션에 포함되어 600~1,400px의 불필요한 빈 여백이 남던 버그 수정.
+    - `static/captures/` 내 기존 1,095개 전체 듣기 대본 크롭 이미지를 실제 텍스트 내용 영역에 맞추어 자동 여백 트리밍(+30px 패딩) 일괄 적용.
+  - **독해 ↔ 듣기 영역 전환 시 동일 모의고사 세트 내 캡처 이미지 미노출 버그 해결 (`database.py`, `static/js/results-passage.js`)**:
+    - **원인 분석**:
+      1. 프론트엔드 `loadedExamsCache` (Set)의 단방향 조회 플래그로 인해 독해를 먼저 본 후 듣기로 전환 시 `loadedExamsCache.has(examId)`가 이미 `true`여서 세부 정보(캡처 이미지 포함)가 병합되지 않고 조기 반환(`return`)되는 문제.
+      2. 백엔드 `meta_only=True` 프로젝션 쿼리에서 35바이트 수준의 경량 이미지 경로(`pdf_crop_image`, `script_crop_image`)가 제외되어 있던 문제.
+    - **해결 방안 적용**:
+      1. `database.py`: `search_passages`의 `meta_only=True` SELECT 절에 `p.pdf_crop_image, p.script_crop_image, p.user_memo, p.user_memo_updated_at` 추가 (초기 조회 시 0.00ms 즉각 캡처 렌더링).
+      2. `static/js/results-passage.js`: `loadedExamsCache` (Set)을 `examFullPassagesCache = new Map()` (시험 ID $\rightarrow$ `Map<문항ID, 상세데이터>`)으로 전면 교체.
+      3. 0ms 동기 병합: 영역 전환 시 메모리에 캐시된 전체 문항 맵을 `appState.passagesData`, `appState.rawPassagesData`, `appState.currentExamQuestions`에 즉시 병합.
+      4. `loadPassageDetail` 2중 안전망: 뷰어 로드 시 캐시 맵에서 직접 캡처 이미지 및 세부 속성을 복원하도록 안전장치 마련.
+      5. `savePassageMemo` 및 `applyPassageUpdate`: 사용자 메모 변경 및 수동 정정/재캡처 시에도 `examFullPassagesCache`에 실시간 동기화.
+- **검증 결과**:
+  - `python -m py_compile database.py app.py`: 파이썬 구문 오류 0건 통과 (Exit Code: 0)
+  - `node -c static/js/results-passage.js`: 자바스크립트 문법 오류 0건 통과 (Exit Code: 0)
+  - `[고2-2025년-06월]` 세트 `meta_only=True` 조회 검증: 듣기 1번(`q_num=1`) 및 독해 18번(`q_num=18`) 캡처 이미지 URL 정상 반환 확인
+  - 1,095개 듣기 대본 크롭 이미지 트리밍 및 해상도 최적화 확인
+
 
 
 

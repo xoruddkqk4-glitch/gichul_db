@@ -1633,17 +1633,24 @@ button {
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 1.25rem 2rem 2rem 2rem;
+  padding: 0.75rem 1.5rem 0.6rem 1.5rem;
   width: 100%;
+  height: calc(100vh - 64px - var(--results-nav-height, 108px));
+  min-height: 540px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .grid-2x2 {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 1.25rem;
-  min-height: calc(100vh - 250px);
+  grid-template-rows: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 0.75rem;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 /* 검색 결과 없음 */
@@ -1690,6 +1697,8 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   min-width: 0;
 }
@@ -1751,7 +1760,8 @@ button {
   min-height: 0;
   min-width: 0;
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .pdf-crop-img {
@@ -1821,17 +1831,17 @@ button {
   font-family: 'Inter', sans-serif;
 }
 
-/* 좌측 하단: 지문 정보 & 태그 관리 */
+/* 우측 하단: 지문 정보 & 태그 관리 */
 .tag-manager-box {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.65rem;
 }
 
 .meta-info-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.85rem;
   font-size: 0.85rem;
 }
 
@@ -1856,7 +1866,7 @@ button {
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
-  min-height: 38px;
+  min-height: 28px;
 }
 
 .tag-badge {
@@ -1891,14 +1901,145 @@ button {
 
 .tag-input {
   flex: 1;
-  padding: 0.45rem 0.75rem;
+  padding: 0.42rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   outline: none;
 }
 .tag-input:focus {
   border-color: var(--primary);
+}
+
+/* [신규] 지문 메모 (수업/변형 노트) 컴포넌트 */
+.passage-memo-container {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.25rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.8rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.passage-memo-container:focus-within {
+  border-color: #6366f1;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+}
+
+.memo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.memo-title-left {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.memo-icon {
+  font-size: 0.9rem;
+}
+
+.memo-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.memo-status-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #64748b;
+  transition: all 0.2s ease;
+}
+
+.memo-status-badge.badge-saved {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.memo-status-badge.badge-saving {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.memo-status-badge.badge-dirty {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.memo-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.memo-char-count {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.btn-memo-save {
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.memo-body {
+  width: 100%;
+}
+
+.memo-textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: #1e293b;
+  background-color: #ffffff;
+  resize: vertical;
+  min-height: 70px;
+  max-height: 240px;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.memo-textarea:focus {
+  border-color: #6366f1;
+}
+
+.memo-textarea::placeholder {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.memo-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.35rem;
+  font-size: 0.70rem;
+  color: var(--text-muted);
+}
+
+.memo-shortcut-hint {
+  color: #94a3b8;
 }
 
 /* ==========================================================================
@@ -6064,8 +6205,8 @@ mark.passage-highlight {
    2x2 지문 뷰어 우측 하단 [선지별 선택률 시각화 패널]
    ==================================================================== */
 .choice-rates-container {
-  margin-top: 0.75rem;
-  padding: 0.75rem 0.95rem;
+  margin-top: 0.4rem;
+  padding: 0.55rem 0.85rem;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: var(--radius-md);
@@ -6076,8 +6217,8 @@ mark.passage-highlight {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.65rem;
-  padding-bottom: 0.4rem;
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.3rem;
   border-bottom: 1px dashed #e2e8f0;
 }
 
@@ -6102,7 +6243,7 @@ mark.passage-highlight {
 .choice-bars-list {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .choice-bar-row {
@@ -6110,7 +6251,7 @@ mark.passage-highlight {
   grid-template-columns: 116px 1fr 82px;
   align-items: center;
   gap: 0.55rem;
-  padding: 3px 6px;
+  padding: 2px 6px;
   border-radius: 6px;
   transition: all 0.15s ease;
 }
@@ -6553,7 +6694,13 @@ mark.passage-highlight {
   gap: 12px;
   padding: 10px;
   background: #f8fafc;
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .listening-crop-section {
@@ -6720,22 +6867,30 @@ mark.passage-highlight {
 }
 
 /* 3. 좌측 하단: FELS (기능어 약형드랩) 교사용 텍스트 */
+.panel-content.fels-panel-content {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
 .listening-fels-container {
   display: flex;
   flex-direction: column;
   height: 100%;
+  width: 100%;
+  overflow: hidden;
 }
 
 .fels-guide-banner {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   background: #f0fdf4;
   border-bottom: 1px solid #bbf7d0;
   font-size: 0.78rem;
   color: #166534;
   line-height: 1.45;
+  flex-shrink: 0;
 }
 
 .fels-badge-icon {
@@ -6745,11 +6900,12 @@ mark.passage-highlight {
 
 .fels-content-box {
   flex: 1;
-  padding: 14px 16px;
-  font-size: 0.95rem;
-  line-height: 1.85;
+  padding: 10px 14px;
+  font-size: 0.93rem;
+  line-height: 1.8;
   color: #1e293b;
   white-space: pre-wrap;
+  word-break: break-word;
   overflow-y: auto;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
@@ -6784,22 +6940,6 @@ mark.passage-highlight {
   margin-right: 4px;
   display: inline-block;
   user-select: none;
-}
-
-.fels-content-box {
-  white-space: pre-wrap;
-  line-height: 1.8;
-  padding: 12px;
-  font-size: 0.95rem;
-  font-family: inherit;
-  word-break: break-word;
-}
-
-.listening-fels-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow-y: auto;
 }
 
 /* 4. TTS 조작 버튼 공통 */

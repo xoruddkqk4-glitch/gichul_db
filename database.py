@@ -104,6 +104,8 @@ def init_db():
             "ALTER TABLE passages ADD COLUMN script_text TEXT DEFAULT NULL;",
             "ALTER TABLE passages ADD COLUMN fels_text TEXT DEFAULT NULL;",
             "ALTER TABLE passages ADD COLUMN audio_file_path TEXT DEFAULT NULL;",
+            "ALTER TABLE passages ADD COLUMN user_memo TEXT DEFAULT '';",
+            "ALTER TABLE passages ADD COLUMN user_memo_updated_at TIMESTAMP DEFAULT NULL;",
             "ALTER TABLE exams ADD COLUMN listening_start_q INTEGER DEFAULT 1;",
             "ALTER TABLE exams ADD COLUMN listening_end_q INTEGER DEFAULT 17;",
             "ALTER TABLE exams ADD COLUMN subtype TEXT DEFAULT NULL;",
@@ -1253,6 +1255,7 @@ def search_passages(
     if meta_only:
         select_clause = """
             p.id, p.exam_id, p.q_num, p.question_type, p.area, p.correct_rate,
+            p.pdf_crop_image, p.script_crop_image, p.user_memo, p.user_memo_updated_at,
             (p.passage_text IS NOT NULL AND LENGTH(p.passage_text) > 0) AS has_passage_text,
             e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q
         """
@@ -2000,6 +2003,36 @@ def update_passage_script(
         cursor.execute(f"UPDATE passages SET {', '.join(updates)} WHERE id = ?", params)
         conn.commit()
         return cursor.rowcount > 0
+
+
+def update_passage_memo(passage_id: str, memo_text: str) -> Dict[str, Any]:
+    """특정 지문의 사용자 메모 업데이트 및 갱신 시간 기록"""
+    if not passage_id:
+        return {"success": False, "error": "passage_id is required"}
+    clean_id = passage_id.strip()
+    if not clean_id.startswith("["):
+        clean_id = f"[{clean_id}]"
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE passages SET user_memo = ?, user_memo_updated_at = ? WHERE id = ?",
+            (memo_text, now_str, clean_id)
+        )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                "UPDATE passages SET user_memo = ?, user_memo_updated_at = ? WHERE id = ?",
+                (memo_text, now_str, clean_id.strip("[]"))
+            )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        return {
+            "success": updated,
+            "passage_id": clean_id,
+            "memo": memo_text,
+            "updated_at": now_str if updated else None
+        }
 
 
 def get_db_stats() -> Dict[str, Any]:

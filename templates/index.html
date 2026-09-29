@@ -618,6 +618,35 @@
                 >
                 <button class="btn btn-primary btn-sm" id="btnAddPassageTag">추가</button>
               </div>
+
+              <!-- [신규] 지문 메모 (수업/변형 노트) 컨테이너 -->
+              <div class="passage-memo-container" id="passageMemoContainer">
+                <div class="memo-header">
+                  <div class="memo-title-left">
+                    <span class="memo-icon">📝</span>
+                    <span class="memo-title">지문 메모 (수업 / 변형 노트)</span>
+                    <span class="memo-status-badge badge-saved" id="memoStatusBadge">저장됨</span>
+                  </div>
+                  <div class="memo-actions-right">
+                    <span class="memo-char-count" id="memoCharCount">0자</span>
+                    <button type="button" class="btn btn-outline-primary btn-xs btn-memo-save" id="btnSavePassageMemo" title="즉시 저장 (Ctrl+Enter)">
+                      💾 저장
+                    </button>
+                  </div>
+                </div>
+                <div class="memo-body">
+                  <textarea 
+                    class="memo-textarea" 
+                    id="inputPassageMemo" 
+                    placeholder="이 지문에 대한 수업 포인트, 변형 문제 출제 아이디어, 주요 어휘/구문 특이사항을 자유롭게 기록하세요..."
+                    rows="3"
+                  ></textarea>
+                </div>
+                <div class="memo-footer">
+                  <span class="memo-updated-at" id="memoUpdatedAt">최근 수정: -</span>
+                  <span class="memo-shortcut-hint">Ctrl + Enter로 즉시 저장</span>
+                </div>
+              </div>
             </div>
           </section>
 

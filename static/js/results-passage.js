@@ -60,6 +60,12 @@ import {
   passageTabBar,
   passageTabCount,
   passageTagsList,
+  passageMemoContainer,
+  inputPassageMemo,
+  btnSavePassageMemo,
+  memoStatusBadge,
+  memoCharCount,
+  memoUpdatedAt,
   passageViewContainer,
   resultsSearchInput,
   selectQuestionType,
@@ -74,6 +80,106 @@ import { triggerSingleFileUpload } from "./upload.js";
 
 let currentDetailPassage = null;
 let isRecapturingPdf = false;
+let memoSaveTimer = null;
+let isMemoDirty = false;
+
+/** 지문 메모 바인딩 */
+function bindPassageMemo(p) {
+  if (!inputPassageMemo) return;
+  const memoText = (p && p.user_memo) ? p.user_memo : "";
+  inputPassageMemo.value = memoText;
+  isMemoDirty = false;
+
+  if (memoCharCount) {
+    memoCharCount.textContent = `${memoText.length}자`;
+  }
+  if (memoStatusBadge) {
+    memoStatusBadge.textContent = "저장됨";
+    memoStatusBadge.className = "memo-status-badge badge-saved";
+  }
+  if (memoUpdatedAt) {
+    if (p && p.user_memo_updated_at) {
+      memoUpdatedAt.textContent = `최근 수정: ${p.user_memo_updated_at}`;
+    } else {
+      memoUpdatedAt.textContent = "최근 수정: -";
+    }
+  }
+}
+
+/** 지문 메모 저장 API 호출 */
+async function savePassageMemo(silent = false) {
+  if (!currentDetailPassage || !inputPassageMemo) return;
+  const pid = currentDetailPassage.id;
+  const text = inputPassageMemo.value;
+
+  if (memoStatusBadge) {
+    memoStatusBadge.textContent = "저장 중...";
+    memoStatusBadge.className = "memo-status-badge badge-saving";
+  }
+
+  try {
+    const res = await fetch(`/api/passages/${encodeURIComponent(pid)}/memo`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memo: text }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      currentDetailPassage.user_memo = text;
+      currentDetailPassage.user_memo_updated_at = data.updated_at;
+      if (currentDetailPassage.exam_id && examFullPassagesCache.has(currentDetailPassage.exam_id)) {
+        const cached = examFullPassagesCache.get(currentDetailPassage.exam_id).get(currentDetailPassage.id);
+        if (cached) {
+          cached.user_memo = text;
+          cached.user_memo_updated_at = data.updated_at;
+        }
+      }
+      isMemoDirty = false;
+
+      if (memoStatusBadge) {
+        memoStatusBadge.textContent = "저장됨";
+        memoStatusBadge.className = "memo-status-badge badge-saved";
+      }
+      if (memoUpdatedAt && data.updated_at) {
+        memoUpdatedAt.textContent = `최근 수정: ${data.updated_at}`;
+      }
+      if (!silent) {
+        showToast("지문 메모가 안전하게 저장되었습니다.", "success");
+      }
+    } else {
+      throw new Error(data.detail || "저장 실패");
+    }
+  } catch (err) {
+    console.error("지문 메모 저장 실패:", err);
+    if (memoStatusBadge) {
+      memoStatusBadge.textContent = "저장 실패";
+      memoStatusBadge.className = "memo-status-badge badge-dirty";
+    }
+    if (!silent) {
+      showToast("메모 저장 중 오류가 발생했습니다.", "error");
+    }
+  }
+}
+
+/** 500ms 디바운스 자동 저장 핸들러 */
+function handleMemoInput() {
+  if (!inputPassageMemo) return;
+  isMemoDirty = true;
+  const len = inputPassageMemo.value.length;
+  if (memoCharCount) {
+    memoCharCount.textContent = `${len}자`;
+  }
+  if (memoStatusBadge) {
+    memoStatusBadge.textContent = "수정됨...";
+    memoStatusBadge.className = "memo-status-badge badge-dirty";
+  }
+  if (memoSaveTimer) {
+    clearTimeout(memoSaveTimer);
+  }
+  memoSaveTimer = setTimeout(() => {
+    savePassageMemo(true);
+  }, 500);
+}
 
 export function getCurrentDetailPassage() {
   return getCurrentActivePassage();
@@ -1381,12 +1487,48 @@ function downloadExamAllZip(examId) {
 }
 
 
-// 시험 단위 지문 상세 데이터 로드 캐시 (28문항 안팎 온디맨드 초고속 로드)
-const loadedExamsCache = new Set();
+// 시험 단위 지문 상세 데이터 로드 캐시 (시험 ID -> Map<문항ID, 상세데이터>)
+export const examFullPassagesCache = new Map();
 const loadingExamsMap = new Map(); // examId -> Promise
 
+function mergePassagesWithCache(freshMap) {
+  if (!freshMap) return;
+  const updateList = (list) => {
+    if (!list) return;
+    list.forEach(p => {
+      if (freshMap.has(p.id)) {
+        Object.assign(p, freshMap.get(p.id));
+      }
+      if (p.subItems && p.subItems.length > 0) {
+        p.subItems.forEach(sub => {
+          if (freshMap.has(sub.id)) Object.assign(sub, freshMap.get(sub.id));
+        });
+      }
+    });
+  };
+
+  updateList(appState.passagesData);
+  updateList(appState.rawPassagesData);
+  updateList(appState.currentExamQuestions);
+}
+
 export async function ensureExamPassagesLoaded(examId) {
-  if (!examId || loadedExamsCache.has(examId)) return;
+  if (!examId) return;
+
+  // 이미 캐시되어 있는 경우: 네트워크 요청 없이 즉시 메모리 동기 병합 (0ms)
+  if (examFullPassagesCache.has(examId)) {
+    const cachedMap = examFullPassagesCache.get(examId);
+    mergePassagesWithCache(cachedMap);
+
+    // 현재 보고 있는 지문이 해당 시험에 속해있다면 화면 즉시 갱신
+    if (currentDetailPassage && cachedMap.has(currentDetailPassage.id)) {
+      const merged = cachedMap.get(currentDetailPassage.id);
+      Object.assign(currentDetailPassage, merged);
+      loadPassageDetail(currentDetailPassage);
+    }
+    return;
+  }
+
   if (loadingExamsMap.has(examId)) return loadingExamsMap.get(examId);
 
   const fetchPromise = (async () => {
@@ -1397,27 +1539,17 @@ export async function ensureExamPassagesLoaded(examId) {
         const freshItems = data.items || [];
         const freshMap = new Map(freshItems.map(it => [it.id, it]));
 
-        const updateList = (list) => {
-          if (!list) return;
-          list.forEach(p => {
-            if (freshMap.has(p.id)) {
-              Object.assign(p, freshMap.get(p.id));
-            }
-            if (p.subItems && p.subItems.length > 0) {
-              p.subItems.forEach(sub => {
-                if (freshMap.has(sub.id)) Object.assign(sub, freshMap.get(sub.id));
-              });
-            }
-          });
-        };
+        // 캐시 저장
+        examFullPassagesCache.set(examId, freshMap);
 
-        updateList(appState.passagesData);
-        updateList(appState.rawPassagesData);
-        loadedExamsCache.add(examId);
+        // 데이터 목록에 병합
+        mergePassagesWithCache(freshMap);
 
         // 현재 보고 있는 지문이 해당 시험에 속해있다면 화면 즉시 갱신
         if (currentDetailPassage && freshMap.has(currentDetailPassage.id)) {
-          loadPassageDetail(freshMap.get(currentDetailPassage.id));
+          const merged = freshMap.get(currentDetailPassage.id);
+          Object.assign(currentDetailPassage, merged);
+          loadPassageDetail(currentDetailPassage);
         }
       }
     } catch (e) {
@@ -1468,6 +1600,10 @@ function renderPassageTabs(items) {
 /** 특정 문항 탭 선택 및 2x2 그리드 동기화 */
 export function selectPassageTab(idx, items) {
   stopAllListeningAudio();
+  if (isMemoDirty) {
+    if (memoSaveTimer) clearTimeout(memoSaveTimer);
+    savePassageMemo(true);
+  }
   if (!items || items.length === 0) return;
   if (idx < 0) idx = 0;
   if (idx >= items.length) idx = items.length - 1;
@@ -1490,6 +1626,12 @@ export function selectPassageTab(idx, items) {
 /** 서버에서 갱신된 단일 지문 데이터를 현재 결과 목록에 반영하고 뷰어를 다시 그림 */
 function applyPassageUpdate(fresh, focusId) {
   if (!fresh || !fresh.id) return;
+  if (fresh.exam_id && examFullPassagesCache.has(fresh.exam_id)) {
+    const map = examFullPassagesCache.get(fresh.exam_id);
+    if (map.has(fresh.id)) {
+      Object.assign(map.get(fresh.id), fresh);
+    }
+  }
   const flatten = (items) => items.flatMap((it) => (it.isGroup && it.subItems) ? it.subItems : [it]);
   const replaceIn = (items) => flatten(items).map((it) => (it.id === fresh.id ? { ...it, ...fresh } : it));
   if (appState.passagesData && appState.passagesData.length) appState.passagesData = groupPassageItems(replaceIn(appState.passagesData));
@@ -1779,6 +1921,21 @@ export function renderFelsBottomLeftPanel(p, viewMode = currentFelsViewMode) {
 /** 2x2 패널에 특정 지문 상세 정보 로드 */
 function loadPassageDetail(p) {
   if (!p) return;
+
+  // 만약 해당 시험 캐시가 이미 존재한다면, 렌더링 전에 동기적으로 상세 속성(캡처 이미지, 본문, 해설 등) 즉시 복원
+  if (p.exam_id && examFullPassagesCache.has(p.exam_id)) {
+    const cachedMap = examFullPassagesCache.get(p.exam_id);
+    const cachedItem = cachedMap.get(p.id);
+    if (cachedItem) {
+      Object.assign(p, cachedItem);
+    }
+    if (p.subItems && p.subItems.length > 0) {
+      p.subItems.forEach(sub => {
+        if (cachedMap.has(sub.id)) Object.assign(sub, cachedMap.get(sub.id));
+      });
+    }
+  }
+
   stopAllListeningAudio();
   currentDetailPassage = p;
   appState.currentPassage = p;
@@ -2011,13 +2168,16 @@ function loadPassageDetail(p) {
 
   // [좌측 하단]: HWP 정답 및 해설 / FELS 학생용 빈칸 (default) 및 교사용 정답 토글
   if (isListening) {
+    if (panelExplanation) panelExplanation.classList.add("fels-panel-content");
     currentFelsViewMode = "blank";
     renderFelsBottomLeftPanel(p, "blank");
   } else {
+    if (panelExplanation) panelExplanation.classList.remove("fels-panel-content");
     let expText = p.explanation_text || "";
     if (p.isGroup && Array.isArray(p.subItems) && p.subItems.length > 1) {
       expText = combineGroupExplanations(p.subItems);
     }
+    expText = (expText || "").replace(/\n{3,}/g, "\n\n").trim();
     panelExplanation.textContent = expText || "해설 정보가 등록되지 않았습니다.";
   }
 
@@ -2073,6 +2233,7 @@ function loadPassageDetail(p) {
 
   renderPassageTags(p.tags || []);
   renderChoiceRates(p);
+  bindPassageMemo(p);
 }
 
 function getDifficultyInfo(rate) {
@@ -2680,6 +2841,30 @@ export function init() {
   if (inputPassageTag) {
     inputPassageTag.addEventListener("keydown", (e) => {
       if (e.key === "Enter") addPassageTagAction();
+    });
+  }
+
+  // 지문 메모 (수업/변형 노트) 이벤트 리스너 바인딩
+  if (inputPassageMemo) {
+    inputPassageMemo.addEventListener("input", handleMemoInput);
+    inputPassageMemo.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (memoSaveTimer) clearTimeout(memoSaveTimer);
+        savePassageMemo(false);
+      }
+    });
+    inputPassageMemo.addEventListener("blur", () => {
+      if (isMemoDirty) {
+        if (memoSaveTimer) clearTimeout(memoSaveTimer);
+        savePassageMemo(true);
+      }
+    });
+  }
+  if (btnSavePassageMemo) {
+    btnSavePassageMemo.addEventListener("click", () => {
+      if (memoSaveTimer) clearTimeout(memoSaveTimer);
+      savePassageMemo(false);
     });
   }
 

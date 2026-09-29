@@ -450,6 +450,12 @@ def extract_listening_script_crops(
                             continue
 
                     if script_recording:
+                        # 페이지 하단 쪽번호(예: '4/17', '1 / 17') 또는 페이지 최하단 45pt 이내 쪽번호 배제
+                        b_strip = b_text.strip()
+                        if re.search(r'^\s*\d+\s*/\s*\d+\s*$', b_strip):
+                            continue
+                        if page.rect.height - b_rect.y1 < 45 and (re.search(r'^\s*\d+\s*$', b_strip) or re.search(r'\d+/\d+', b_strip)):
+                            continue
                         script_rects.append(b_rect)
 
             if current_qs and script_rects:
@@ -482,6 +488,15 @@ def _save_script_crop(
 
     page = doc[page_num]
     w, h = page.rect.width, page.rect.height
+
+    # Y좌표 기준 정렬 및 인접 블록 간 80pt 초과 거대 갭 발생 시 하단 잔여물(쪽번호 등) 분리
+    rects_sorted = sorted(rects, key=lambda r: r.y0)
+    filtered_rects = []
+    for idx, r in enumerate(rects_sorted):
+        if idx > 0 and (r.y0 - filtered_rects[-1].y1) > 80:
+            break
+        filtered_rects.append(r)
+    rects = filtered_rects or rects_sorted
 
     min_x = min(r.x0 for r in rects)
     min_y = min(r.y0 for r in rects)
