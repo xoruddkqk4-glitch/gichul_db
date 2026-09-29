@@ -152,10 +152,75 @@ def generate_fels_text(script_text: str) -> str:
     return "\n".join(result_lines)
 
 
-def generate_fels_blank(fels_text: str) -> str:
+def is_dialogue_script(text: str) -> bool:
+    """화자 발화 턴 개수를 확인하여 대화문(True) / 담화문(False) 판별"""
+    if not text:
+        return False
+    speaker_regex = re.compile(
+        r"(?:^|\n)\s*(?:[MW]|Man|Woman|Boy|Girl|Male|Female|Teacher|Student|Doctor|Father|Mother|Son|Daughter|Host|Officer)\s*[:：]",
+        re.IGNORECASE
+    )
+    matches = speaker_regex.findall(text)
+    return len(matches) >= 2
+
+
+def split_fels_monologue_sentences(fels_text: str) -> str:
+    """담화문(Monologue) FELS 텍스트를 문장 단위로 분할하여 한 문장당 한 행(\n)으로 정렬 (유인물 형태)"""
+    if not fels_text:
+        return ""
+
+    prefix = ""
+    body = fels_text.strip()
+    m_spk = re.match(
+        r"^(\s*(?:[MW]|Man|Woman|Boy|Girl|Host|Speaker|Teacher|Doctor|Officer)\s*[:：]\s*)",
+        body,
+        re.IGNORECASE
+    )
+    if m_spk:
+        prefix = m_spk.group(1).strip() + " "
+        body = body[m_spk.end():].strip()
+
+    cleaned = re.sub(r"[\r\n]+", " ", body)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned).strip()
+
+    cleaned = re.sub(r"(\d+)\.(\d+)", r"\1<PERIOD>\2", cleaned)
+    abbr_pattern = r"\b(mr|mrs|ms|dr|prof|sr|jr|e\.g|i\.e|etc|vs|u\.s|u\.k|no)\."
+    cleaned = re.sub(abbr_pattern, lambda m: m.group(0).replace(".", "<PERIOD>"), cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b([A-Za-z])\.\s+", r"\1<PERIOD> ", cleaned)
+    cleaned = re.sub(r"\.{2,}", "<ELLIPSIS>", cleaned)
+
+    split_pattern = re.compile(r'([.?!]["\')\]]?)\s+(?=[A-Z"\'(0-9]|\[[A-Za-z\s])')
+    splits = split_pattern.split(cleaned)
+
+    raw_sentences = []
+    i = 0
+    while i < len(splits):
+        s = splits[i]
+        if i + 1 < len(splits) and re.match(r'^[.?!]["\')\]]?$', splits[i + 1]):
+            s += splits[i + 1]
+            i += 2
+        else:
+            i += 1
+        s = s.strip()
+        if s:
+            raw_sentences.append(s)
+
+    final_sentences = [
+        s.replace("<PERIOD>", ".").replace("<ELLIPSIS>", "...")
+        for s in raw_sentences
+    ]
+
+    if prefix and final_sentences:
+        final_sentences[0] = prefix + final_sentences[0]
+
+    return "\n".join(final_sentences)
+
+
+def generate_fels_blank(fels_text: str, split_sentences_for_monologue: bool = True) -> str:
     """
     FELS 텍스트에서 [단어] 또는 <단어>를 최장 기능어 글자수에 맞춘 균일한 [       ] 빈칸으로 변환
     - 개별 단어의 글자수와 무관하게 해당 지문 내 최장 단어 글자수만큼의 공백을 모든 [ ]에 동일 적용
+    - 담화문의 경우 1문장 = 1행 유인물 형태로 자동 분할
     """
     if not fels_text:
         return ""
@@ -171,7 +236,11 @@ def generate_fels_blank(fels_text: str) -> str:
         content = (m.group(1) or m.group(2) or "").strip()
         return blank_str if content else m.group(0)
 
-    return re.sub(r"<([^>]+?)>|\[([^\]]+?)\]", _replace, fels_text)
+    blank_text = re.sub(r"<([^>]+?)>|\[([^\]]+?)\]", _replace, fels_text)
+    if split_sentences_for_monologue and not is_dialogue_script(fels_text):
+        blank_text = split_fels_monologue_sentences(blank_text)
+
+    return blank_text
 
 
 def analyze_fels(script_text: str) -> Dict[str, Any]:

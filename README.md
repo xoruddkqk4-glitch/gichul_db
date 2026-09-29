@@ -48,7 +48,7 @@
 - **Edge-TTS 100% 무료 음성 합성 (하이브리드/폴백)**: 인터넷이 연결된 환경에서 Microsoft Neural 고품질 음성(남성 `en-US-GuyNeural`, 여성 `en-US-JennyNeural` 등)으로 대화/독백 지문 실시간 무제한 보조 생성.
 - **화자 분리(M/W) 턴 자동 합성 & 17문항 ZIP 일괄 다운로드**: 남/여 대화문 및 독백을 분리 합성하여 단일 MP3로 제공하며, 시험지 전체 17문항 일괄 생성 및 ZIP 다운로드 지원.
 - **원클릭 자동 설치 및 실행 지원 (`install.bat`, `start.bat`)**: 완제품 패키지 보관소(`dist/`)를 통해 GPU 데스크탑 등 새 컴퓨터로 이전 시 Visual Studio C++ 빌드 도구 설치 없이 원클릭 초고속 설치 및 웹앱 자동 구동 지원.
-- **FELS 약형드랩 시스템**: 7대 기능어 추출, 학생용 최장 단어 기준 균일 공백(`[        ]`) 복사 및 교사용 정답(`[단어]`) 복사 1:1 지원.
+- **FELS 약형드랩 시스템**: 7대 기능어 추출, 학생용 최장 단어 기준 균일 공백(`[        ]`) 복사, 담화문(독백/안내/강의) 문장 단위 유인물(1문장 1행) 복사 및 교사용 정답(`[단어]`) 1:1 동기화 지원.
 
 ---
 
@@ -1877,6 +1877,30 @@ CREATE TABLE user_sentence_status (
   - `node --check static/js/results-passage.js static/js/navigation.js static/js/search.js static/js/results-sentence.js static/js/grammar.js static/js/ai-settings.js` 자바스크립트 구문 검사 통과 (오류 0건)
   - `python -m py_compile run.py` 파이썬 구문 검사 통과 (오류 0건)
   - 문항 이동, 트리 네비게이션, 영역 토글, 홈 복귀 시 재생 중이던 듣기 음성 즉시 완전 정지 확인
+
+### [2026-09-29 23:15] 업데이트 이력 (Commit ID: 8e10178d)
+- **수정 내용**:
+  - **FELS(약형드랩) 좌측 하단 패널 담화문 문장 단위 유인물(행 분할) 복사 및 뷰어 기능 구축 (`static/js/results-passage.js`, `fels_engine.py`)**:
+    - **문제 및 요구사항**: 기존 FELS 텍스트 복사 시, 대화문(Q2, Q4 등)은 화자 턴 단위로 개행이 분리되어 있으나, 담화문(Q1, Q3, Q9, Q16~17 등 독백/안내방송/강의)은 7~13개 문장이 단일 단락으로 뭉쳐 있어 학생용 활동지(유인물) 인쇄 및 배부 시 가독성과 편의성이 저하되던 문제 해결.
+    - **1) 대화문 vs 담화문 지능형 자동 판별 (`isDialogueScript`)**:
+      - 화자 발화 태그(`M:`, `W:`, `Man:`, `Woman:` 등) 교대 턴 개수를 기준으로 2턴 이상이면 대화문(기존 턴 개행 보존), 0~1턴이면 담화문으로 정밀 자동 판정.
+    - **2) 담화문 문장 분할 및 개행 정규화 알고리즘 (`splitFelsMonologueIntoSentences`)**:
+      - 선행 화자 태그(`M: `, `W: ` 등) 온전 보존.
+      - 소수점(`3.14`), 영문 호칭/약어(`Mr.`, `Mrs.`, `Ms.`, `Dr.`, `Prof.`, `e.g.`, `i.e.`, `etc.`, `vs.`, `U.S.`, `U.K.`), 단일 이니셜, 말줄임표(`<ELLIPSIS>`) 보호.
+      - 문장 종결 부호(`.`, `?`, `!`)와 기능어 대괄호(`[단어]`) 및 학생용 빈칸(`[        ]`) 패턴을 정확히 감지하여 1문장 = 1행(`\n`) 유인물 형태로 분할.
+    - **3) 학생용 빈칸 및 교사용 정답지 1:1 완벽 정렬 (`copyFelsBlankVersion`, `copyFelsAnswerVersion`)**:
+      - `[📝 FELS 빈칸 복사 (학생용)]`: 최장 글자수 균일 공백 일괄 적용 후, 담화문의 경우 1문장 1행으로 줄바꿈 복사.
+      - `[🔑 FELS 정답 복사 (교사용)]`: 학생용 유인물과 줄 번호 및 문장 위치가 1:1 일치하도록 동일한 문장 단위 행 분할 적용.
+    - **4) FELS 화면 뷰어 레이아웃 동기화 (`loadPassageDetail`)**:
+      - 좌측 하단 `.fels-content-box` 화면 뷰어에서도 담화문의 경우 문장별 줄바꿈을 반영하여 화면과 인쇄 복사물이 100% 동일한 레이아웃을 갖도록 개선.
+    - **5) 파이썬 백엔드 엔진 동기화 (`fels_engine.py`)**:
+      - `is_dialogue_script`, `split_fels_monologue_sentences`, `generate_fels_blank`에 문장 단위 정렬 옵션 반영 및 단위 테스트 검증 완료.
+- **검증 결과**:
+  - `node -c static/js/results-passage.js`: 자바스크립트 구문 검사 오류 0건 통과 (Exit Code: 0)
+  - `python -m py_compile fels_engine.py`: 파이썬 구문 검사 오류 0건 통과 (Exit Code: 0)
+  - `pytest tests/`: 76개 전체 기존 테스트 통과 (0.12s)
+  - `test_fels_unit.py`: 담화문 분할, 대화문 보존, 빈칸 치환 등 신규 단위 테스트 4건 전건 통과 (OK)
+
 
 
 

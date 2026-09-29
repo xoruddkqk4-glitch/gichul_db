@@ -1496,7 +1496,77 @@ function applyPassageUpdate(fresh, focusId) {
   renderPassageView(appState.passagesData, focusId || fresh.id);
 }
 
-/** FELS 학생용 빈칸 텍스트([ ]) 복사 (최장 단어 글자수 균일 공백 적용) */
+/**
+ * 대본 또는 FELS 텍스트가 대화문(Dialogue)인지 여부 판별
+ * - 2개 이상의 화자 발화 태그(M:, W:, Man:, Woman: 등)가 존재하면 대화문으로 판정
+ */
+export function isDialogueScript(text) {
+  if (!text) return false;
+  const speakerRegex = /(?:^|\n)\s*(?:[MW]|Man|Woman|Boy|Girl|Male|Female|Teacher|Student|Doctor|Father|Mother|Son|Daughter|Host|Officer)\s*[:：]/gi;
+  const matches = text.match(speakerRegex);
+  return !!(matches && matches.length >= 2);
+}
+
+/**
+ * 담화문(Monologue) FELS 또는 대본 텍스트를 문장 단위로 분할하여 한 문장당 한 행(\n)으로 정렬 (유인물 형태)
+ * - 선행 화자 태그(M:, W: 등) 보존
+ * - 소수점(3.14), 약어(Mr., Ms., Dr., e.g., i.e., etc., U.S.), 단일 이니셜, 말줄임표 보호
+ * - 문장 종결 부호([.?!]) 및 닫는 괄호/따옴표 뒤 공백 + 대문자 또는 [단어]/[  ] 토큰 기준 분할
+ */
+export function splitFelsMonologueIntoSentences(felsText) {
+  if (!felsText) return "";
+
+  // 1. 첫 줄 화자 태그(M:, W: 등) 감지 및 분리
+  let prefix = "";
+  let body = felsText.trim();
+  const speakerMatch = body.match(/^(\s*(?:[MW]|Man|Woman|Boy|Girl|Host|Speaker|Teacher|Doctor|Officer)\s*[:：]\s*)/i);
+  if (speakerMatch) {
+    prefix = speakerMatch[1].trim() + " ";
+    body = body.slice(speakerMatch[0].length).trim();
+  }
+
+  // 2. 개행 및 다중 공백 정규화
+  let cleaned = body.replace(/[\r\n]+/g, " ").replace(/[ \t]+/g, " ").trim();
+
+  // 3. 약어 및 마침표 보호
+  // 3-1. 소수점 보호 (예: 3.14 -> 3<PERIOD>14)
+  cleaned = cleaned.replace(/(\d+)\.(\d+)/g, "$1<PERIOD>$2");
+  // 3-2. 호칭 및 일반 약어 보호 (Mr., Ms., Dr., Prof., e.g., i.e., etc., vs., U.S., U.K., No. 등)
+  const abbrRegex = /\b(mr|mrs|ms|dr|prof|sr|jr|e\.g|i\.e|etc|vs|u\.s|u\.k|no)\./gi;
+  cleaned = cleaned.replace(abbrRegex, (m) => m.replace(/\./g, "<PERIOD>"));
+  // 3-3. 단일 알파벳 이니셜 보호 (J. K.)
+  cleaned = cleaned.replace(/\b([A-Za-z])\.\s+/g, "$1<PERIOD> ");
+  // 3-4. 말줄임표 보호 (...)
+  cleaned = cleaned.replace(/\.{2,}/g, "<ELLIPSIS>");
+
+  // 4. 문장 종결 패턴 분할: [.?!] 뒤에 닫는 따옴표/괄호가 올 수 있고, 뒤이어 공백 및 대문자 또는 [단어]/[   ] 빈칸 시작
+  const splitPattern = /([.?!]["')\]]?)\s+(?=[A-Z"'(0-9]|\[[A-Za-z\s])/g;
+
+  const rawSentences = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = splitPattern.exec(cleaned)) !== null) {
+    const endPos = match.index + match[1].length;
+    const sent = cleaned.slice(lastIndex, endPos).trim();
+    if (sent) rawSentences.push(sent);
+    lastIndex = match.index + match[0].length;
+  }
+  const remaining = cleaned.slice(lastIndex).trim();
+  if (remaining) rawSentences.push(remaining);
+
+  // 5. 보호 토큰 복원
+  const finalSentences = rawSentences.map((s) => {
+    return s.replace(/<PERIOD>/g, ".").replace(/<ELLIPSIS>/g, "...");
+  });
+
+  if (prefix && finalSentences.length > 0) {
+    finalSentences[0] = prefix + finalSentences[0];
+  }
+
+  return finalSentences.join("\n");
+}
+
+/** FELS 학생용 빈칸 텍스트([ ]) 복사 (최장 단어 글자수 균일 공백 적용 + 담화문 문장별 유인물 정렬) */
 export function copyFelsBlankVersion() {
   const felsText = currentDetailPassage ? (currentDetailPassage.fels_text || "") : "";
   if (!felsText) {
@@ -1518,14 +1588,20 @@ export function copyFelsBlankVersion() {
 
   // 3. 최고 긴 단어의 길이에 맞게 모든 [ ]에 동일한 개수의 공백 빈칸 적용
   const blankStr = `[${" ".repeat(maxLen)}]`;
-  const blankText = felsText.replace(/<([^>]+?)>|\[([^\]]+?)\]/g, (match, p1, p2) => {
+  let blankText = felsText.replace(/<([^>]+?)>|\[([^\]]+?)\]/g, (match, p1, p2) => {
     const content = (p1 || p2 || "").trim();
     return content ? blankStr : match;
   });
 
+  // 4. 담화문(Monologue)의 경우 스크립트를 문장 단위로 분할하여 1문장 = 1행 유인물 형태로 변환
+  const isDialogue = isDialogueScript(felsText);
+  if (!isDialogue) {
+    blankText = splitFelsMonologueIntoSentences(blankText);
+  }
+
   copyToClipboard(
     blankText,
-    `FELS 학생용 빈칸([ ]) 텍스트가 클립보드에 복사되었습니다! (최장 ${maxLen}자 기준 공백 일괄 적용)`
+    `FELS 학생용 빈칸([ ]) 텍스트가 클립보드에 복사되었습니다! (최장 ${maxLen}자 기준 공백${isDialogue ? "" : " · 담화문 문장별 유인물 정렬"} 적용)`
   );
 }
 
@@ -1537,10 +1613,17 @@ export function copyFelsAnswerVersion() {
     return;
   }
   // <단어>가 있는 경우 [단어]로 일관되게 치환하여 교사용 정답지 생성 (학생용 [ ] 빈칸과 1:1 대응)
-  const answerText = felsText.replace(/<([^>]+?)>/g, "[$1]");
+  let answerText = felsText.replace(/<([^>]+?)>/g, "[$1]");
+
+  // 담화문(Monologue)의 경우 학생용 유인물과 1:1 대응되도록 문장 단위로 분할하여 1문장 = 1행 정답지로 변환
+  const isDialogue = isDialogueScript(felsText);
+  if (!isDialogue) {
+    answerText = splitFelsMonologueIntoSentences(answerText);
+  }
+
   copyToClipboard(
     answerText,
-    "FELS 교사용 정답 텍스트([단어])가 클립보드에 복사되었습니다! (정답지·해설용)"
+    `FELS 교사용 정답 텍스트([단어])가 클립보드에 복사되었습니다! (정답지·해설용${isDialogue ? "" : " · 1:1 유인물 정렬"})`
   );
 }
 
@@ -1779,8 +1862,13 @@ function loadPassageDetail(p) {
 
   // [좌측 하단]: HWP 정답 및 해설 / FELS 교사용 텍스트
   if (isListening) {
-    const rawFels = (p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.").trim();
+    let rawFels = (p.fels_text || "FELS 데이터가 아직 생성되지 않았습니다.").trim();
     panelExplanation.dataset.rawFels = rawFels;
+
+    // 담화문인 경우 화면 뷰어에서도 문장별 줄바꿈을 적용하여 유인물과 동일한 레이아웃 제공
+    if (p.fels_text && !isDialogueScript(rawFels)) {
+      rawFels = splitFelsMonologueIntoSentences(rawFels);
+    }
 
     let formattedFels = escapeHtml(rawFels);
     formattedFels = formattedFels.replace(
