@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
-| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ⬜ 대기 |
+| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 다음: 3-B) |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
 
 ### 모든 단계 공통 검증 (Rule 2)
@@ -316,6 +316,34 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
 
 **[NEW] `services/grammar_service.py`**
 - `analyze_and_save_sentence(sentence_row, passage_cache) -> dict` — 단일/배치/백그라운드 3곳에 복제된 "전처리 → 분석 → 저장" 루프를 하나로 합칩니다.
+
+#### 3-A 적용 결과 (2026-10-04)
+- [NEW] `gichul/text_utils.py` (다른 gichul 모듈을 import하지 않음)
+  - `normalize_bracket_id`: **40곳** 교체 (app.py 20, database.py 19, listening_parser.py 1). 계획의 "app.py 20회"보다 넓게, 같은 3줄 패턴이 정확히 일치하는 곳만 스크립트로 찾아 바꿈 (변형 패턴 0건)
+  - `apply_answer_header`: **7곳** 교체 (app.py 3, database.py 2, hwp_parser.py 1, listening_parser.py 1). 계획의 4곳 외에 같은 로직 3곳을 더 찾음
+    - 유지한 곳: `listening_parser` L708 (헤더가 **없을 때만** 추가, 갱신 안 함 → 의미가 다름), `database` 마이그레이션의 "정답이 같으면 쓰지 않음" 조건은 그대로 두고 내부 계산만 교체
+    - 함수는 입력을 strip하지 않음. 호출하는 쪽의 기존 strip 여부를 그대로 유지
+  - `extract_answer_num` / `extract_choices` / `clean_choice_markers` 이동, `fill_blanks` 신설 (기존 코드 그대로 이동)
+- [MODIFY] `grammar_analyzer.py`: 위 함수를 `from .text_utils import ...`로 다시 내보냄 (같은 객체). `prepare_sentence_for_analysis`는 DB 보강 후 `fill_blanks` 호출만 함 (162줄 → 50줄)
+- [NEW] `gichul/services/grammar_service.py`: `analyze_and_save_sentence(sentence_row, passage_cache=None, sentence_id=None)` + `get_cached_passage`
+  - 단일 분석 API는 `sentence_id=clean_id`를 넘겨 기존처럼 요청 경로의 정규화 ID로 저장
+  - 배치 API는 지문 조회를 기존처럼 `try` 밖에서 실행 (`get_cached_passage`)
+  - 달라진 점 1건: 단일 분석 API에서 **전처리 단계** 예외가 나면, 전에는 일반 500, 지금은 `detail: "AI 어법 분석 실패: ..."`가 붙은 500 (상태 코드는 같음)
+- [NEW] `tests/test_text_utils.py` 49개 (서비스 테스트는 DB·LLM을 가짜로 바꿔 실제 DB/AI 호출 없음)
+- 검증
+  - `py_compile` (수정·신규 9개): 오류 0건
+  - `prepare_sentence_for_analysis` 전체 문장 스냅샷 (`scratch/a3_prepare_snapshot.py`): 71,872문장 중 차이 **0건**, sha256 동일 (DB 보강 경로 541문장, 변환되는 문장 572개 포함)
+  - `apply_answer_header` 실데이터 비교 (`scratch/a3_header_equiv.py`): 지문 14,399개 × (원본/strip) × 정답 6종 = 172,672회, 기존 두 형태 모두와 차이 **0건**
+  - 라우트 목록: 56개, 차이 0건
+  - `python -m pytest tests -q`: **128개** 전체 통과 (기존 79 + 신규 49)
+- **사용자 수동 확인**: 단일 문장 어법 분석 1회, 선택 문장 배치 분석 1회 (빈칸 문장이 정답으로 채워지는지)
+- **함께 수정한 버그 (사용자 제보, 같은 커밋)**
+  - 빈칸 문장이 예전 정답(오답 선지)으로 채워진 채 남던 문제 (예: 고3-2026년-05월 31번 ④ randomness → ② efficiency)
+    - [NEW] `database.refill_blank_sentences`: 지문 본문의 빈칸 문장을 틀로 삼아 오답 선지 구간만 정답으로 교체, AI 어법 초기화
+    - 정답이 바뀌는 5곳 + 분석 직전 안전망에서 호출. 실제 DB 90개 지문 91문장 교정 (백업 `gichul.backup-2026-10-04-blank-refill.db`)
+    - 남은 문제: 40번 요약문은 선지를 (A)만 추출하는 경우가 있어 제외함 (별도 수정 필요)
+  - 새 DB에서 `init_db()`가 `no such table: app_settings`로 실패하던 문제 (첫 설치·배포 시 기동 불가) → 테이블 생성 순서 조정
+  - 테스트: `tests/test_refill_blanks.py` 5개(임시 DB) + 서비스 안전망 1개 → 전체 134개 통과
 
 ### 3-B. import 부작용 제거 + 의존 방향 정리 (보고서 3-10)
 - [database.py:L2063](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/database.py#L2063)의 `init_db()` 자동 호출을 제거합니다. 대신 app.py의 FastAPI `lifespan`에서 호출합니다. `tools/*.py` 스크립트에는 `db.init_db()`를 명시적으로 넣습니다.

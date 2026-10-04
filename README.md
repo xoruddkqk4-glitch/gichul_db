@@ -2099,6 +2099,25 @@ CREATE TABLE user_sentence_status (
   - `python -m pytest tests -q`: 79개 전체 통과
   - 남은 조치: 실행 중이던 서버는 재시작 필요 (`start.bat` 또는 `python run.py`), 이후 검색·지문 이미지·듣기 재생·크롭 재생성 수동 확인
 
-
-
-
+### [2026-10-04 21:50] 업데이트 이력 (Commit ID: 9bda6567)
+- **수정 내용**:
+  - **로드맵 3-A: 공통 함수 추출 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - [NEW] `gichul/text_utils.py`: DB에 의존하지 않는 순수 함수 모음. `normalize_bracket_id`(ID 대괄호 정규화, 40곳 교체), `apply_answer_header`(해설 `[정답]` 헤더 갱신, 7곳 교체), `extract_answer_num`·`extract_choices`·`clean_choice_markers` 이동, `fill_blanks`(빈칸 정답 채우기) 신설.
+    - `grammar_analyzer.prepare_sentence_for_analysis`: DB 보강 후 `fill_blanks` 호출만 하도록 축소(162줄 → 50줄). 옮긴 함수는 기존 이름으로 다시 내보내 하위 호환 유지.
+    - [NEW] `gichul/services/grammar_service.py`: 단일/배치/백그라운드 3곳에 복제돼 있던 "전처리 → 분석 → 저장" 흐름을 `analyze_and_save_sentence`로 통합.
+    - 달라진 점 1건: 단일 분석 API에서 전처리 단계 예외가 나면 `detail: "AI 어법 분석 실패: ..."`가 붙은 500 (상태 코드는 동일).
+  - **버그 수정: 빈칸 문장에 오답 선지가 남아 있던 문제 (사용자 제보)**:
+    - 증상: 고3-2026년-05월 31번은 정답이 ② efficiency인데 문장 분석 창에는 ④ randomness가 들어가 있었음.
+    - 원인: 어법 분석 전처리가 빈칸을 정답 선지로 채운 문장을 DB에 덮어써 원래 빈칸이 사라짐. 이후 정답이 바뀌어도(정답 키·JSON·CSV 등) 문장은 다시 채워지지 않았고, 재업로드도 "같은 문장"으로 판정해 예전 선지를 유지함.
+    - 해결: [NEW] `database.refill_blank_sentences` — 지문 본문(빈칸 유지)의 빈칸 문장을 틀로 삼아, 저장 문장에 "틀 + 오답 선지"가 있고 "틀 + 정답 선지"가 없을 때만 그 구간을 정답 선지로 교체. 바뀐 문장은 AI 어법 주석을 지우고 재분석 대상으로 되돌림(사용자 주석 유지).
+    - 호출 위치: 수동 정답 수정·CSV(`update_passage_answers`), 정답 JSON 업로드, 정답표 이미지, HWP 해설 동기화, 시험지 업로드 트랜잭션, 분석 직전 안전망.
+    - 오탐 방지: 빈칸 밖 단어 2개 미만·채운 결과 4단어 미만 제외, 복수 빈칸인데 정답 선지를 빈칸 수만큼 나눌 수 없으면 제외(40번 요약문 선지 추출이 불완전한 경우가 있어 별도 수정 필요).
+  - **버그 수정: 새 DB에서 `init_db()` 실패**: 마이그레이션 버전을 `app_settings`에서 읽는데 테이블이 그 뒤에 만들어져, 첫 설치·배포 시 `no such table: app_settings`로 기동 불가. 테이블 생성 순서를 앞으로 옮김.
+  - **문서**: 로드맵 3-A 적용 결과·함께 수정한 버그 기록, 진행 현황을 커밋 해시로 갱신.
+- **검증 결과**:
+  - `py_compile`(수정·신규 파일) 오류 0건, `import gichul.app` 정상(라우트 56개)
+  - 3-A 회귀: `prepare_sentence_for_analysis` 전체 71,872문장 전후 차이 0건(sha256 동일), `apply_answer_header` 실데이터 172,672회 비교 차이 0건, 라우트 목록 차이 0건
+  - 빈칸 버그: 실제 DB 백업(`gichul.backup-2026-10-04-blank-refill.db`, Git 제외) 후 적용 → 90개 지문 91문장 교정(31번: "... lies in its efficiency."), 재실행 시 바꿀 문장 0건
+  - 새 테스트: `tests/test_text_utils.py` 50개, `tests/test_refill_blanks.py` 5개(임시 DB, 실제 DB 미사용)
+  - `python -m pytest tests -q`: 134개 전체 통과
+  - 후속 조치: 교정된 91문장은 AI 어법 분석 재실행 필요, 서버 재시작 필요(`python run.py`)
