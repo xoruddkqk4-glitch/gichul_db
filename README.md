@@ -2122,7 +2122,7 @@ CREATE TABLE user_sentence_status (
   - `python -m pytest tests -q`: 134개 전체 통과
   - 후속 조치: 교정된 91문장은 AI 어법 분석 재실행 필요, 서버 재시작 필요(`python run.py`)
 
-### [2026-10-04 23:00] 업데이트 이력 (Commit ID: e1165e51)
+### [2026-10-04 23:00] 업데이트 이력 (Commit ID: 3555d9f7)
 - **수정 내용**:
   - **40번 요약문 선지 (A)만 추출되어 빈칸 채우기가 불완전하던 문제 전면 개선**:
     - **증상 및 원인**:
@@ -2146,4 +2146,37 @@ CREATE TABLE user_sentence_status (
   - `python -m pytest tests/test_text_utils.py`: 53개 전체 통과 (신규 3개 포함, 0.19s)
   - `python -m pytest tests -q`: 137개 전체 통과 (16.04s)
   - 실제 DB 기출 40번 요약문 211건 대상 검증: 선지 분할 성공률 **97.6% (206/211)** 및 요약문 빈칸 1:1 자연어 문장 완성 확인.
+
+### [2026-10-04 23:35] 업데이트 이력 (Commit ID: f3258671)
+- **수정 내용**:
+  - **로드맵 3-B: import 부작용 제거 및 의존 방향 정리 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **DB 초기화 자동 실행 제거**: `gichul/database.py` 모듈 로드 시의 `init_db()` 자동 호출을 제거하고, `gichul/app.py`의 FastAPI `lifespan` 컨텍스트 매니저에서 서버 기동 시 1회만 안전하게 실행되도록 변경. 단독 실행 스크립트인 `tools/resync_answers.py`에는 `db.init_db()`를 명시적으로 호출.
+    - **PyTorch/torchaudio 지연 로드**: `gichul/tts_service.py` 상단에서 모듈 로드 시 실행되던 torchaudio monkeypatch를 `_patch_torchaudio_load()` 함수로 감싸고, `_get_or_load_xtts_model()`에서 TTS 모델을 실제로 불러올 때 1회만 실행하도록 지연 처리. 웹 서버 기동 시 불필요한 PyTorch/CUDA 라이브러리 로딩 방지.
+    - **`grammar_analyzer` 역방향 의존성 제거**: `database.py`와 `validator.py`에서 `grammar_analyzer`를 역참조하던 경로를 완전히 제거하고 `text_utils.fill_blanks`를 직접 호출하도록 구조 개선.
+    - **문장 검색(N+1 쿼리) 일괄 최적화 (`search_sentences`)**: 문장 검색 중 빈칸(`__`)이 남아 있는 문장의 지문 정보(본문·정답·해설)를 행마다 반복 조회하던 N+1 구조를 제거하고, 900개 단위 청크 `IN` 쿼리로 한 번에 조회한 뒤 `fill_blanks`로 정답 선지를 일괄 치환하도록 최적화.
+    - **`init_db` v1 마이그레이션**: 별도 커넥션/재귀 조회를 열던 로직을 동일 트랜잭션 내 `fill_blanks` 직접 호출로 단순화.
+    - **검증 데이터 파이프라인 정리 (`validator.py`)**: `cross_validate_and_merge` 단계에서 지문/정답/해설을 이미 보유하고 있으므로 DB 조회 없이 `fill_blanks`를 즉시 호출.
+  - **등급별 데이터 접근 제어 및 필터링 훅 마련 (`gichul/access.py` 신규 & `gichul/app.py`, `gichul/database.py`)**:
+    - [NEW] `gichul/access.py`:
+      - 사용자 역할 등급 상수 정의: `ROLE_ADMIN` (관리자), `ROLE_MEMBER` (회원), `ROLE_GUEST` (비회원)
+      - 로컬 단독 사용 기본값: `DEFAULT_ROLE = "admin"` (기존 로컬 개발 및 단독 실행 환경과 100% 동일 동작 보장)
+      - 등급별 필터링 함수: `filter_passage`, `filter_passages`, `filter_sentence`, `filter_sentences`
+        - 관리자(`admin`): 모든 데이터(정답률, 태그, 어법 분석, 관리자 메모, 정답 출처/검증 상태, 즐겨찾기 등) 온전히 유지
+        - 회원(`member`): 코어 문항 데이터 + 메타 정보(정답률, 선지 선택률, 태그, 어법 분석 범주) 노출, 관리자 전용 필드(메모, 정답 출처, 일치율 등) 제외
+        - 비회원(`guest`): 코어 문항 데이터(발문, 지문, 정답, 해설, 크롭 이미지)만 노출하고 정답률/선지 선택률/태그/어법 범주/메모 일체 제외
+      - `allowed_search_filters`: 비회원 등급에서 정답률 구간·태그·어법 범주로 역추적 검색하는 것을 방지하기 위해 검색 조건 자체를 무시하도록 보안 가드 구축
+    - **DB 조회 함수 파라미터 연동**: `database.search_passages`, `get_exam_passages`, `get_passage`, `search_sentences`에 `user_role: str = access.DEFAULT_ROLE` 매개변수 신설 및 응답 필터링 연동
+    - **FastAPI 의존성 주입(`Depends`) 연동**: `app.py`에 `get_current_role()` 함수를 정의하고 4대 핵심 조회 엔드포인트(`/api/search/passages`, `/api/exams/{id}/passages`, `/api/search/sentences`, `/api/passages/{id}`)에 `user_role: str = Depends(get_current_role)` 주입. 등급별 검색 캐시 격리를 위해 `search_cache` 캐시 키에 `user_role` 포함.
+  - **40번 요약문 빈칸 채우기 후속 회귀 방지 및 안전화 (`gichul/text_utils.py`, `gichul/database.py`)**:
+    - `_BLANK_PATTERN`에서 단순 괄호 `(A)`, `[A]`가 일반 어법 네모 문항이나 37번 순서 문항의 단락 식별 기호와 혼동되지 않도록 언더스코어로 감싸진 요약문 고유 표지(`___(A)___`, `____ (A)` 등)로 엄격화.
+    - `extract_choices`: ⑤번 선지 추출 시 깨진 글리프 문자열 및 후속 저작권 문구 배제 처리 보강.
+    - `split_choice_parts`: 선지 파트 분할 시 유니코드 공백 정규화.
+- **검증 결과**:
+  - `python -m py_compile` 백엔드 전체 모듈 구문 검증 오류 0건 통과
+  - `search_sentences` 전체 71,872문장 스냅샷 비교 검증 (`scratch/b3_search_snapshot.py`): 전후 차이 0건 (`diffs 0`, sha256 100% 동일)
+  - `gichul.app` 모듈 import 시 `init_db` 호출 0회, `torch` 및 `torchaudio` 미로드 확인 (지연 로딩 성공)
+  - FastAPI 라우트 51개 유지 및 lifespan 정상 등록 확인
+  - 신규 등급별 필터링 단위 테스트 `tests/test_access.py` 8개 통과 (관리자/회원/비회원별 필드 마스킹, 검색 조건 차단, 일괄 빈칸 채우기, lifespan 구동)
+  - `python -m pytest tests -q`: 전체 149개 테스트 100% 통과 (16.44s)
+
 
