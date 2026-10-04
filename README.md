@@ -2050,11 +2050,25 @@ CREATE TABLE user_sentence_status (
   - 1단계 검증 스크립트 재실행 결과 유지
   - 남은 조치: WAV 내용인 `.mp3` 1개(`고3-2025년-11월-01번.mp3`)는 해당 문항 음성 재생성 시 정상 MP3로 교체됨
 
-
-
-
-
-
+### [2026-10-04 19:05] 업데이트 이력 (Commit ID: 148942a5)
+- **수정 내용**:
+  - **수능 성우(XTTS) 및 Edge-TTS 엔진 선택 스위처 도입 (`app.py`, `tts_service.py`, `templates/index.html`, `static/js/results-passage.js`, `static/css/style.css`)**:
+    - `POST /api/settings/tts-engine` 엔드포인트 신설 및 런타임 활성 TTS 엔진 전환 지원 (`xtts` vs `edge-tts`).
+    - 수능 평가원 성우 복제(XTTS-v2 실감 음성)와 Microsoft Edge-TTS(초고속 생성, 무료) 간 상호 선택 가능한 원클릭 토글 스위처(`tts-engine-switcher`) UI 구축.
+    - 음성 합성 진행 중 오디오 중복 재생 방지 및 합성 진행률(%) 실시간 인디케이터 연동.
+  - **오디오 다운로드 기능 세분화 및 동적 ZIP 범위 지원 (`database.py`, `results-passage.js`, `templates/index.html`, `static/css/style.css`)**:
+    - 문항 단일 다운로드(`문항 MP3`)와 시험지 세트 전체 일괄 다운로드(`전체 ZIP`) 버튼 역할 및 시각 테마 명확히 분리.
+    - `database.py`의 `search_passages` 및 `get_passage`에 `listening_start_q`, `listening_end_q` 컬럼 조인 반영.
+    - 하드코딩 제거: 시험지별 듣기 문항 수 체제(2013년 1~22문항, 현행 1~17문항 등)를 감지하여 전체 ZIP 버튼 내 동적 범위 배지(`1~17`, `1~22`) 실시간 표기 및 메타데이터 동기화.
+  - **듣기 패널 헤더 1행(One-line) 가로 배열 최적화 (`style.css`, `templates/index.html`)**:
+    - 좌측 패널 헤더: `[📋 대본 복사]` 버튼을 타이틀(`🎧 영문 대본 & 음성`) 바로 옆으로 이동 배치하여 작업 직관성 제고.
+    - 우측 상단 툴바: 엔진 스위처, 생성 세그먼트, 다운로드 세그먼트의 3개 제어 그룹을 높이 `25px`의 컴팩트한 규격으로 통일하고 여백/패딩을 최적화하여 한 줄(1행)에 완벽하게 정렬(화면 오버플로 및 불필요한 줄바꿈 제거).
+  - **단위 테스트 구축 (`tests/test_tts_engine.py`)**:
+    - TTS 엔진 변경 API, 잘못된 엔진 파라미터 유효성 검사, 듣기 문항 범위 메타데이터 조회를 검증하는 테스트 케이스 구축.
+- **검증 결과**:
+  - `python -m py_compile app.py database.py tts_service.py`: 구문 검사 통과 (오류 0건)
+  - `node --check static/js/results-passage.js`: 문법 검증 통과 (오류 0건)
+  - `pytest tests/test_tts_engine.py -q`: 3 passed, 0 failed
 
 
 
