@@ -100,6 +100,9 @@
 │   ├── resync_answers.py       # 정답 키 → DB 정답/해설 헤더/형광펜 크롭 재동기화
 │   └── audit_keys_with_vision.py # 다중 Vision 모델 합의로 정답 키 재감사
 ├── .claude/skills/         # Claude Code 슬래시 명령(/git-commit, /ask, /scratchpad) 미러 (원본: .agents/skills)
+├── docs/                   # 계획서·리뷰 보관소 (목록과 상태: docs/README.md)
+│   ├── plans/              # 구현 계획서 YYYY-MM-DD_<슬러그>.md (/ask 작성, /apply 실행)
+│   └── reviews/            # 코드 리뷰·분석 보고서
 ├── templates/
 │   └── index.html          # 구글 스타일 검색 + 2x2 그리드 + 문장 테이블 + AI 설정 모달 SPA
 └── static/
