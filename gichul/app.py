@@ -15,7 +15,8 @@ import io
 import zipfile
 from urllib.parse import quote
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 import logging
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +35,7 @@ except ImportError:
         return json.dumps(obj, ensure_ascii=False).encode("utf-8")
 
 from . import database as db
+from . import access
 from . import grammar_analyzer
 import pymupdf as fitz
 from .pdf_parser import extract_pdf_columns_and_questions, detect_listening_range
@@ -58,7 +60,25 @@ UPLOADS_DIR = paths.UPLOADS_DIR
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
-app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """서버 기동 시 1회: DB 테이블/마이그레이션 초기화 (예전에는 database.py import 시점에 자동 실행)"""
+    db.init_db()
+    yield
+
+
+app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)", lifespan=lifespan)
+
+
+def get_current_role() -> str:
+    """요청한 사용자의 등급 (admin / member / guest). 조회 API가 Depends로 받아 DB 함수의 user_role로 넘긴다.
+
+    지금은 로그인이 없는 로컬 단독 사용이므로 항상 관리자(예전과 같은 응답)다.
+    배포 시에는 이 함수만 바꾸면 된다. 예) def get_current_role(request: Request) -> str:
+        세션/토큰에서 사용자를 찾아 users.role을 돌려주고, 로그인 전이면 access.ROLE_GUEST.
+    쓰기 API(업로드·수정·삭제·AI 분석)는 그때 관리자 전용 가드를 따로 붙인다.
+    """
+    return access.DEFAULT_ROLE
 
 # GZip 압축 미들웨어 등록 (1KB 이상의 모든 JSON/텍스트 응답을 80~90% 초고속 압축하여 전송 지연 해결)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -372,7 +392,8 @@ def api_search_passages(
     area: str = "reading",
     whole_word: bool = False,
     limit: int = 0,
-    meta_only: bool = False
+    meta_only: bool = False,
+    user_role: str = Depends(get_current_role)
 ):
     """지문 검색 API (2x2 화면용 - 온전한 단어 검색 및 복수 연도, 영역(독해/듣기) 지원, meta_only 초고속 경량 모드 지원)"""
     # 검색어 내 #태그 자동 파싱 (예: "#빈칸" 또는 "climate #빈칸")
@@ -389,7 +410,8 @@ def api_search_passages(
         except Exception:
             years_list = None
 
-    cache_key = f"passages:{keyword}:{exam_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{area}:{whole_word}:{limit}:{meta_only}"
+    # 등급별로 응답이 다르므로 캐시 키에 등급을 넣는다
+    cache_key = f"passages:{user_role}:{keyword}:{exam_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{area}:{whole_word}:{limit}:{meta_only}"
     cached_payload = search_cache.get(cache_key)
     if cached_payload is not None:
         return Response(content=cached_payload, media_type="application/json")
@@ -408,7 +430,8 @@ def api_search_passages(
         area=area,
         whole_word=whole_word,
         limit=limit,
-        meta_only=meta_only
+        meta_only=meta_only,
+        user_role=user_role
     )
     payload = fast_json_dumps({"count": len(results), "items": results, "meta_only": meta_only})
     search_cache.set(cache_key, payload)
@@ -416,14 +439,14 @@ def api_search_passages(
 
 
 @app.get("/api/exams/{exam_id:path}/passages")
-def api_get_exam_passages(exam_id: str):
+def api_get_exam_passages(exam_id: str, user_role: str = Depends(get_current_role)):
     """특정 시험의 전체 문항 본문/해설 일괄 조회 (단 28문항 안팎 초고속 온디맨드 로드)"""
-    cache_key = f"exam_passages:{exam_id}"
+    cache_key = f"exam_passages:{user_role}:{exam_id}"
     cached_payload = search_cache.get(cache_key)
     if cached_payload is not None:
         return Response(content=cached_payload, media_type="application/json")
 
-    passages = db.get_exam_passages(exam_id)
+    passages = db.get_exam_passages(exam_id, user_role=user_role)
     payload = fast_json_dumps({"exam_id": exam_id, "count": len(passages), "items": passages})
     search_cache.set(cache_key, payload)
     return Response(content=payload, media_type="application/json")
@@ -447,7 +470,8 @@ def api_search_sentences(
     grammar_pos: Optional[str] = None,
     area: str = "reading",
     whole_word: bool = False,
-    limit: int = 0
+    limit: int = 0,
+    user_role: str = Depends(get_current_role)
 ):
     """문장 검색 API (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역(독해/듣기) 지원)"""
     # 검색어 내 #태그 자동 파싱
@@ -464,7 +488,7 @@ def api_search_sentences(
         except Exception:
             years_list = None
 
-    cache_key = f"sentences:{keyword}:{passage_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{is_starred}:{grammar_cat_id}:{grammar_pos}:{area}:{whole_word}:{limit}"
+    cache_key = f"sentences:{user_role}:{keyword}:{passage_id}:{grade}:{year}:{years}:{month}:{exam_type}:{question_type}:{correct_rate_range}:{tag}:{is_starred}:{grammar_cat_id}:{grammar_pos}:{area}:{whole_word}:{limit}"
     cached_payload = search_cache.get(cache_key)
     if cached_payload is not None:
         return Response(content=cached_payload, media_type="application/json")
@@ -485,7 +509,8 @@ def api_search_sentences(
         grammar_pos=grammar_pos,
         area=area,
         whole_word=whole_word,
-        limit=limit
+        limit=limit,
+        user_role=user_role
     )
     payload = fast_json_dumps({"count": len(results), "items": results})
     search_cache.set(cache_key, payload)
@@ -494,11 +519,11 @@ def api_search_sentences(
 
 # --- 단일 지문 상세 API (2x2 그리드 뷰용) ---
 @app.get("/api/passages/{passage_id}")
-def api_get_passage(passage_id: str):
+def api_get_passage(passage_id: str, user_role: str = Depends(get_current_role)):
     """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형, 정답률 및 선지 선택률, 듣기 대본/FELS/오디오)"""
     clean_id = normalize_bracket_id(passage_id)
 
-    data = db.get_passage(clean_id)
+    data = db.get_passage(clean_id, user_role=user_role)
     if not data:
         raise HTTPException(status_code=404, detail="해당 지문을 찾을 수 없습니다.")
     return data

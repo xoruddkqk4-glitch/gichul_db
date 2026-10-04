@@ -9,6 +9,7 @@ import re
 import difflib
 from typing import Dict, List, Tuple, Optional
 from .sentence_tokenizer import create_sentence_records
+from .text_utils import fill_blanks
 
 
 def normalize_for_comparison(text: str) -> str:
@@ -99,15 +100,15 @@ def cross_validate_and_merge(
         sentence_records = create_sentence_records(passage_id, final_passage_text)
 
         # 밑줄/빈칸에 정답 선지 자동 채움 및 선지 기호 정제 적용 (온전한 문장 완성)
+        # 지문 본문·정답·해설이 이미 여기 있으므로 DB 조회 없이 text_utils.fill_blanks 를 바로 쓴다
+        # (정답이 없으면 빈칸을 남겨 두고, 저장 후 refill_blank_sentences / 검색 시 채우기가 처리한다)
         try:
-            from .grammar_analyzer import prepare_sentence_for_analysis
             for sr in sentence_records:
-                completed = prepare_sentence_for_analysis(
+                completed = fill_blanks(
                     sr["sentence_text"],
-                    passage_id=passage_id,
-                    passage_text=final_passage_text,
-                    answer_text=ans_text,
-                    explanation_text=exp_text
+                    final_passage_text or "",
+                    ans_text or "",
+                    exp_text or ""
                 )
                 if completed and completed != sr["sentence_text"]:
                     sr["sentence_text"] = completed

@@ -15,10 +15,11 @@ from typing import List, Dict, Optional, Any
 from collections import defaultdict
 
 from . import paths
+from . import access
 from .text_utils import (
     normalize_bracket_id, apply_answer_header,
     extract_answer_num, extract_choices, fill_blanks,
-    split_choice_parts, _CHOICE_PART_SPLIT_PATTERN,
+    split_choice_parts, _CHOICE_PART_SPLIT_PATTERN, _BLANK_PATTERN,
 )
 
 DB_PATH = paths.DB_PATH
@@ -232,7 +233,8 @@ def init_db():
                 cursor.execute("SELECT id, passage_id, sentence_text FROM sentences WHERE sentence_text LIKE '%\\_\\_%' ESCAPE '\\'")
                 unfilled_rows = cursor.fetchall()
                 if unfilled_rows:
-                    from .grammar_analyzer import prepare_sentence_for_analysis
+                    # 지문 정보는 같은 트랜잭션에서 읽어 text_utils.fill_blanks 로 직접 채운다
+                    # (grammar_analyzer 역방향 import 및 별도 연결로 DB를 다시 여는 일을 없앰)
                     for ur in unfilled_rows:
                         cur_p = None
                         pid = ur["passage_id"]
@@ -241,12 +243,11 @@ def init_db():
                             p_row = cursor.fetchone()
                             if p_row:
                                 cur_p = dict(p_row)
-                        prep_text = prepare_sentence_for_analysis(
+                        prep_text = fill_blanks(
                             ur["sentence_text"],
-                            passage_id=pid,
-                            passage_text=cur_p.get("passage_text", "") if cur_p else "",
-                            answer_text=cur_p.get("answer_text", "") if cur_p else "",
-                            explanation_text=cur_p.get("explanation_text", "") if cur_p else ""
+                            (cur_p.get("passage_text") or "") if cur_p else "",
+                            (cur_p.get("answer_text") or "") if cur_p else "",
+                            (cur_p.get("explanation_text") or "") if cur_p else ""
                         )
                         if prep_text and prep_text != ur["sentence_text"]:
                             words = re.findall(r"\b[\w'-]+\b", prep_text)
@@ -1128,12 +1129,7 @@ def save_sentences(sentences: List[dict]):
 # 재업로드 시 "같은 문장" 판정용 정규화.
 # 저장된 문장은 어법 분석 전처리(grammar_analyzer.prepare_sentence_for_analysis)를 거쳐
 # 선지 기호 제거·빈칸 정답 채움·구두점 공백 정리가 되어 있을 수 있으므로, 단어 토큰만 비교한다.
-_SENTENCE_BLANK_RE = re.compile(
-    r'(?:[_=]{2,}\s*)?\(\s*[A-E]\s*\)(?:\s*[_=]{2,})?'
-    r'|(?:[_=]{2,}\s*)?\[\s*[A-E]\s*\](?:\s*[_=]{2,})?'
-    r'|_{2,}|={2,}'
-    r'|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>'
-)
+_SENTENCE_BLANK_RE = _BLANK_PATTERN  # text_utils.fill_blanks 와 같은 빈칸 기준
 _SENTENCE_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣']+")
 
 
@@ -1333,7 +1329,7 @@ def refill_blank_sentences(exam_id: Optional[str] = None,
                 if len(_sentence_tokens(_SENTENCE_BLANK_RE.sub(" ", piece))) < 2:
                     continue  # 문맥이 너무 짧으면 다른 문장의 같은 단어와 헷갈릴 수 있어 건너뜀
                 n_blanks = len(_SENTENCE_BLANK_RE.findall(piece))
-                if n_blanks >= 2 and len(_CHOICE_PART_SPLIT_RE.split(choices[ans_num].strip())) != n_blanks:
+                if n_blanks >= 2 and len(split_choice_parts(choices[ans_num])) != n_blanks:
                     continue  # 요약문 등 복수 빈칸인데 정답 선지를 빈칸 수만큼 나눌 수 없으면 건너뜀
                 right_text = fill_blanks(piece, passage_text, str(ans_num), explanation_text)
                 if _SENTENCE_BLANK_RE.search(right_text):
@@ -1568,14 +1564,21 @@ def search_passages(
     whole_word: bool = False,
     limit: int = 0,
     meta_only: bool = False,
+    user_role: str = access.DEFAULT_ROLE,
     _use_fts: bool = True
 ) -> List[Dict[str, Any]]:
     """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원, meta_only 초고속 경량 모드 지원)
 
+    user_role: 등급별 데이터 필터 (access.py). 기본값 관리자 = 예전과 같은 결과.
+               비회원이면 정답률/태그 검색 조건을 무시하고, 응답에서 메타·관리자 전용 필드를 뺀다.
     _use_fts: 내부 전용. FTS 쿼리가 실패하면 False로 자기 자신을 다시 호출해 LIKE 검색으로 대체한다.
     """
     # FTS 실패 시 같은 인자로 재호출하기 위해 최초 인자를 보관 (반드시 함수 첫 줄에 둔다)
     _call_args = {k: v for k, v in locals().items() if k != "_use_fts"}
+    # 등급별 검색 조건 제한: 메타 정보로 걸러 보는 것 자체가 메타 정보를 드러내므로 막는다
+    if not access.allowed_search_filters(user_role)["meta"]:
+        correct_rate_range = ""
+        tag = ""
     if meta_only:
         select_clause = """
             p.id, p.exam_id, p.q_num, p.question_type, p.area, p.correct_rate,
@@ -1685,7 +1688,7 @@ def search_passages(
 
         # meta_only 모드일 때는 태그 N+1 조회 및 대용량 choice_rates JSON 파싱을 생략하여 초고속 반환
         if meta_only:
-            return [dict(r) for r in rows]
+            return access.filter_passages([dict(r) for r in rows], user_role)
 
         passage_ids = [r["id"] for r in rows]
         tags_by_passage = defaultdict(list)
@@ -1711,19 +1714,26 @@ def search_passages(
                 except Exception:
                     p_dict["choice_rates_obj"] = None
             results.append(p_dict)
-        return results
+        return access.filter_passages(results, user_role)
 
 
-def get_exam_passages(exam_id: str) -> List[Dict[str, Any]]:
-    """특정 시험 ID에 속한 모든 지문의 전체 상세 데이터(본문, 해설, 보기 등) 일괄 조회"""
+def get_exam_passages(exam_id: str, user_role: str = access.DEFAULT_ROLE) -> List[Dict[str, Any]]:
+    """특정 시험 ID에 속한 모든 지문의 전체 상세 데이터(본문, 해설, 보기 등) 일괄 조회
+
+    user_role: 등급별 데이터 필터 (access.py). 기본값 관리자 = 예전과 같은 결과.
+    """
     if not exam_id:
         return []
     clean_eid = normalize_bracket_id(exam_id)
-    return search_passages(exam_id=clean_eid, meta_only=False)
+    return search_passages(exam_id=clean_eid, meta_only=False, user_role=user_role)
 
 
-def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:
-    """지문 ID로 단일 지문 정보 조회"""
+def get_passage(passage_id: str, user_role: str = access.DEFAULT_ROLE) -> Optional[Dict[str, Any]]:
+    """지문 ID로 단일 지문 정보 조회
+
+    user_role: 등급별 데이터 필터 (access.py). 기본값 관리자 = 예전과 같은 결과.
+               내부 처리(빈칸 채우기, 어법 분석 등)는 기본값으로 호출해 전체 데이터를 쓴다.
+    """
     if not passage_id:
         return None
     clean_id = normalize_bracket_id(passage_id)
@@ -1752,7 +1762,7 @@ def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:
                     p_dict["choice_rates_obj"] = json.loads(p_dict["choice_rates"])
                 except Exception:
                     p_dict["choice_rates_obj"] = None
-            return p_dict
+            return access.filter_passage(p_dict, user_role)
         return None
 
 
@@ -2118,18 +2128,31 @@ def search_sentences(
     limit: int = 0,
     exam_id: str = "",
     sentence_ids: Optional[List[str]] = None,
+    user_role: str = access.DEFAULT_ROLE,
     _use_fts: bool = True
 ) -> List[Dict[str, Any]]:
     """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역 지원)
 
     exam_id: 해당 시험지의 문장만 조회 (대괄호 없이 넣어도 됨)
     sentence_ids: 지정한 문장 ID만 조회. 빈 리스트면 즉시 [] 반환 (None이면 조건 없음)
+    user_role: 등급별 데이터 필터 (access.py). 기본값 관리자 = 예전과 같은 결과.
+               회원 미만이면 정답률/태그/어법 범주 조건을, 관리자가 아니면 즐겨찾기 조건을 무시하고
+               응답에서 해당 등급이 볼 수 없는 필드를 뺀다.
     _use_fts: 내부 전용. FTS 쿼리가 실패하면 False로 자기 자신을 다시 호출해 LIKE 검색으로 대체한다.
     """
     # FTS 실패 시 같은 인자로 재호출하기 위해 최초 인자를 보관 (반드시 함수 첫 줄에 둔다)
     _call_args = {k: v for k, v in locals().items() if k != "_use_fts"}
     if sentence_ids is not None and len(sentence_ids) == 0:
         return []
+    # 등급별 검색 조건 제한 (조건으로 걸러 보는 것만으로도 메타/개인 데이터가 드러나므로)
+    _allowed = access.allowed_search_filters(user_role)
+    if not _allowed["meta"]:
+        correct_rate_range = ""
+        tag = ""
+        grammar_cat_id = None
+        grammar_pos = None
+    if not _allowed["admin"]:
+        is_starred = None
 
     query = """
         SELECT s.*, p.q_num, p.correct_rate, p.question_type, p.area, e.grade, e.year, e.month, e.exam_type, e.subtype
@@ -2263,6 +2286,19 @@ def search_sentences(
             for ar in cursor.fetchall():
                 annos_by_sent[ar["sentence_id"]].append(dict(ar))
 
+        # 3. 아직 밑줄/빈칸이 남은 문장의 지문 정보(본문·정답·해설)를 한 번에 조회 (예전: 문장마다 지문을 따로 조회하는 N+1)
+        blank_pids = list({r["passage_id"] for r in rows if r["passage_id"] and "__" in (r["sentence_text"] or "")})
+        passage_info: Dict[str, Dict[str, Any]] = {}
+        for i in range(0, len(blank_pids), chunk_size):
+            chunk = blank_pids[i:i + chunk_size]
+            placeholders = ",".join(["?"] * len(chunk))
+            cursor.execute(
+                f"SELECT id, passage_text, answer_text, explanation_text FROM passages WHERE id IN ({placeholders})",
+                chunk
+            )
+            for pr in cursor.fetchall():
+                passage_info[pr["id"]] = dict(pr)
+
         results = []
         for idx, r in enumerate(rows, 1):
             s_dict = dict(r)
@@ -2275,15 +2311,20 @@ def search_sentences(
             # 만약 문장에 아직 밑줄/빈칸이 남아있는 경우 온전한 정답 선지 문장으로 실시간 변환
             if "__" in s_dict.get("sentence_text", ""):
                 try:
-                    from .grammar_analyzer import prepare_sentence_for_analysis
-                    prep = prepare_sentence_for_analysis(s_dict["sentence_text"], passage_id=s_dict.get("passage_id"))
+                    p_info = passage_info.get(s_dict.get("passage_id")) or {}
+                    prep = fill_blanks(
+                        s_dict["sentence_text"],
+                        p_info.get("passage_text") or "",
+                        p_info.get("answer_text") or "",
+                        p_info.get("explanation_text") or ""
+                    )
                     if prep and prep != s_dict["sentence_text"]:
                         s_dict["sentence_text"] = prep
                 except Exception:
                     pass
 
             results.append(s_dict)
-        return results
+        return access.filter_sentences(results, user_role)
 
 
 def get_listening_passages_by_exam(exam_id: str) -> List[Dict[str, Any]]:
@@ -2403,5 +2444,6 @@ def get_db_stats() -> Dict[str, Any]:
         }
 
 
-# 모듈 로드 시 DB 자동 초기화
-init_db()
+# init_db()는 import 시점에 자동 실행하지 않는다 (import 부작용 제거).
+# - 웹 서버: app.py의 FastAPI lifespan에서 기동 시 1회 호출
+# - tools/*.py 등 단독 스크립트: main()에서 db.init_db()를 직접 호출

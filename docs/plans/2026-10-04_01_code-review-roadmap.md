@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
-| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 다음: 3-B) |
+| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 미커밋 · 다음: 3-C) |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
 
 ### 모든 단계 공통 검증 (Rule 2)
@@ -350,6 +350,37 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
 - [tts_service.py:L34-L51](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/tts_service.py#L34-L51)의 torch/torchaudio 패치를 `_get_or_load_xtts_model()` 안으로 옮겨서 필요할 때만 실행합니다.
 - [database.search_sentences:L1923-L1931](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/database.py#L1923-L1931): 아직 빈칸이 남은 문장의 지문 정보를 **한 번에 조회**한 뒤 `text_utils.fill_blanks`를 호출합니다. 지금은 행마다 DB를 따로 조회하는 N+1 구조이고, `grammar_analyzer`를 import하는 역방향 의존도 함께 없어집니다.
 - [validator.py:L102-L117](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/validator.py#L102-L117): `text_utils.fill_blanks`를 직접 사용합니다. 지문 정보가 이미 다 있으므로 DB 조회가 필요 없습니다.
+
+#### 3-B 적용 결과 (2026-10-04, 미커밋)
+- import 부작용 제거
+  - `database.py` 맨 아래 `init_db()` 자동 호출 삭제 → `app.py` FastAPI `lifespan`에서 기동 시 1회 호출
+  - `tools/resync_answers.py`에 `db.init_db()` 명시 (다른 tools 스크립트는 `database`를 import하지 않아 변경 없음)
+  - `tts_service.py` torchaudio 패치 → `_patch_torchaudio_load()`로 감싸 `_get_or_load_xtts_model()`에서 TTS import 직전에 1회 실행
+  - 확인: `gichul.app` import 중 `init_db` 호출 0회, torch/torchaudio 미로드
+- 의존 방향 정리 (`database.py`·`validator.py`의 `grammar_analyzer` import 0건)
+  - `search_sentences`: 빈칸이 남은 문장의 지문(본문·정답·해설)을 900개 단위 `IN` 쿼리로 한 번에 조회 후 `fill_blanks`
+  - `init_db` 마이그레이션 v1의 빈칸 채우기도 `fill_blanks` 직접 호출 (트랜잭션 도중 별도 연결을 열던 문제도 없어짐)
+  - `validator.cross_validate_and_merge`: `fill_blanks` 직접 호출
+    - 달라진 점 1건: 업로드 자료에 정답이 없을 때 예전에는 DB의 **예전 정답**으로 채웠으나, 지금은 빈칸을 남긴다 (저장 직후 `refill_blank_sentences`와 검색 시 채우기가 처리)
+- **등급별 데이터 필터 훅 (사용자 요청 추가)**
+  - [NEW] `gichul/access.py`: `ROLE_ADMIN/MEMBER/GUEST`, `DEFAULT_ROLE = admin`, `filter_passage(s)`, `filter_sentence(s)`, `allowed_search_filters`
+    - 회원: 관리자 전용 필드(메모, 정답 출처·검증, 일치율, 비고, 즐겨찾기)만 제외
+    - 비회원: 메타(정답률·선지 선택률·태그·어법 범주)까지 제외, 메타 검색 조건(정답률 구간·태그·어법 범주) 무시
+    - 모르는 등급 문자열은 guest로 처리 (fail-closed), 관리자는 원본 dict 그대로 반환 (비용 0)
+  - `database.search_passages / get_exam_passages / get_passage / search_sentences`에 `user_role: str = access.DEFAULT_ROLE` 파라미터
+  - `app.py`: `get_current_role()` 의존성(지금은 항상 admin) → 조회 API 4개(`/api/search/passages`, `/api/exams/{id}/passages`, `/api/search/sentences`, `/api/passages/{id}`)가 `Depends`로 받아 전달, 검색 캐시 키에 등급 포함
+  - 배포 시 할 일: `get_current_role()`을 세션/토큰 기반으로 교체, `users` 테이블 추가, 쓰기 API에 관리자 가드, 내부 호출(빈칸 채우기·어법 분석)은 기본값(admin) 유지
+- **함께 수정한 회귀 (커밋 `3555d9f7`의 40번 요약문 수정에서 생김, DB 손상 없음)**
+  - 원인: `_BLANK_PATTERN`이 밑줄 없는 `(A)`/`[A]`도 빈칸으로 봐서, 어법 네모 문항·순서(37번) 단락 표지가 선지로 바뀔 수 있었음
+  - 수정: 밑줄로 감싼 표지(`___(A)___` 등)만 빈칸, `fill_blanks` 처리 순서 원복, 표지별 부분 채우기, ⑤ 선지의 각주/깨진 글리프 혼입 차단
+  - 검증: 전체 74,402건 중 변경 119건 (모두 정답 개선), refill dry-run 후보 4건 (모두 정당한 40번 교정, DB 미적용)
+- 검증
+  - `py_compile` (수정·신규 7개): 오류 0건
+  - `search_sentences` 전체 스냅샷 (`scratch/b3_search_snapshot.py`): 71,872문장 차이 **0건**, sha256 동일
+  - 라우트 데코레이터 51개, 변경 전과 동일
+  - [NEW] `tests/test_access.py` 8개 (등급 필터, DB 훅, 빈칸 일괄 채우기, lifespan의 init_db)
+  - `python -m pytest tests -q`: **149개** 전체 통과
+- **사용자 수동 확인**: 서버 재시작 후 문장 검색(빈칸 문장이 정답으로 보이는지), 지문 상세, XTTS 음성 생성 1회(설치된 경우)
 
 ### 3-C. 시험 프로파일을 데이터로 관리 (보고서 3-12)
 **[NEW] `exam_profiles.py`**

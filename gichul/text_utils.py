@@ -12,11 +12,15 @@ _ANSWER_HEADER_DETECT = re.compile(r"^\s*\[\s*정답\s*\]")
 _ANSWER_HEADER_REPLACE = r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?"
 
 # 빈칸/밑줄 패턴 (fill_blanks)
-# ___(A)___, (A), [A] 등 요약문 복수 빈칸 표기와 일반 밑줄/빈칸 모두 감지
+# - 요약문 복수 빈칸 표기(___(A)___, (A)___, ___(A))는 하나의 빈칸으로 본다.
+# - 밑줄 없는 맨 (A)/[A]는 빈칸이 아니다: 글의 순서(36·37번) 문단 표지, 어법 네모 (A)/(B)/(C) 표지로 쓰인다.
+#   (실제 DB 40번 요약문 중 밑줄 없이 맨 (A)(B)만 쓴 문장은 0건)
 _BLANK_PATTERN = re.compile(
-    r'(?:[_=]{2,}\s*)?\(\s*[A-E]\s*\)(?:\s*[_=]{2,})?'   # ___(A)___, (A)___, ___(A), (A)
-    r'|(?:[_=]{2,}\s*)?\[\s*[A-E]\s*\](?:\s*[_=]{2,})?'  # ___[A]___, [A]
-    r'|_{2,}|={2,}'                                       # ______, ======
+    r'_{2,}\s*\(\s*[A-E]\s*\)(?:\s*_{2,})?'   # ___(A)___, ___(A)
+    r'|\(\s*[A-E]\s*\)\s*_{2,}'               # (A)___
+    r'|_{2,}\s*\[\s*[A-E]\s*\](?:\s*_{2,})?'  # ___[A]___, ___[A]
+    r'|\[\s*[A-E]\s*\]\s*_{2,}'               # [A]___
+    r'|_{2,}'                                 # ______
     r'|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>'
 )
 
@@ -34,9 +38,14 @@ def split_choice_parts(choice_text: str) -> list:
     clean_parts = []
     for p in parts:
         cp = re.sub(r'^[\s\-―－\.\u00b7\u2026\\~]+|[\s\-―－\.\u00b7\u2026\\~]+$', '', p).strip()
+        cp = re.sub(r'\s+', ' ', cp)  # 전각 공백(\u3000) 등을 공백 하나로
         if cp:
             clean_parts.append(cp)
     return clean_parts
+
+
+# 빈칸에 붙은 (A)~(E) 표지 추출용 (_BLANK_PATTERN 매치 문자열 안에서 찾는다)
+_BLANK_LABEL_RE = re.compile(r'[\(\[]\s*([A-E])\s*[\)\]]')
 
 
 def clean_hwp_glitches(text: str) -> str:
@@ -50,6 +59,16 @@ def clean_hwp_glitches(text: str) -> str:
     t = re.sub(r'[\u0590-\u0fff]+[A-Za-z가-힣]*', ' ', t)
     return t
 
+
+_WORD_CHAR_RE = re.compile(r'[A-Za-z0-9가-힣]')
+
+
+def _drop_glyph_segments(text: str) -> str:
+    """탭/줄바꿈으로 나뉜 조각 중 글자·숫자가 하나도 없는 조각(깨진 HWP 글립 등)을 버린다.
+    ……, --- 같은 구분자 조각도 빠지지만, 남은 조각을 탭으로 다시 잇기 때문에 split_choice_parts 는 그대로 나뉜다.
+    """
+    segs = [s.strip() for s in re.split(r'[\t\r\n]+', text)]
+    return "\t".join(s for s in segs if s and _WORD_CHAR_RE.search(s))
 
 def normalize_bracket_id(raw: str) -> str:
     """앞뒤 공백을 제거하고, 대괄호로 시작하지 않으면 '[...]'로 감싼다.
@@ -111,22 +130,24 @@ def extract_choices(passage_text: str, explanation_text: str = "") -> Dict[int, 
 
         if p1 != -1 and p2 != -1 and p3 != -1 and p4 != -1:
             positions = [p1, p2, p3, p4, p5]
+            prev_line_count = 1
             for i in range(5):
                 start = positions[i] + 1
                 if i < 4:
                     raw_chunk = text_to_search[start:positions[i + 1]]
+                    # ⑤ 뒤에는 다음 원문자가 없으므로, 바로 앞 선지(④)가 차지한 줄 수만큼만 가져온다
+                    prev_line_count = max(1, len([l for l in raw_chunk.splitlines() if l.strip()]))
                 else:
                     tail = text_to_search[start:]
                     stop_match = re.search(r'\n\s*(?:(?:4[1-9]|50)\.|\d+\s*번|[【\[]\s*\d+|\*(?!\*))', tail)
                     if stop_match:
-                        raw_chunk = tail[:stop_match.start()]
-                    else:
-                        lines = [l for l in tail.splitlines() if l.strip()]
-                        raw_chunk = "\n".join(lines[:3]) if lines else tail
+                        tail = tail[:stop_match.start()]
+                    lines = [l for l in tail.splitlines() if l.strip()]
+                    raw_chunk = "\n".join(lines[:prev_line_count])
 
                 chunk_clean = re.sub(r'\[\d+점\]', '', raw_chunk)
-                # 줄바꿈을 탭으로 변환하여 멀티라인 (A)/(B) 선지의 경계 유지
-                chunk_clean = re.sub(r'[\r\n]+', '\t', chunk_clean).strip()
+                # 줄바꿈을 탭으로 바꿔 멀티라인 (A)/(B) 선지의 경계를 유지하고, 글립만 있는 조각은 버린다
+                chunk_clean = _drop_glyph_segments(chunk_clean)
                 if chunk_clean:
                     choices[i + 1] = chunk_clean
 
@@ -137,8 +158,7 @@ def extract_choices(passage_text: str, explanation_text: str = "") -> Dict[int, 
         if len(matches) >= 3:
             for m in matches:
                 idx = num_map.get(m.group(1))
-                val = m.group(2).strip()
-                val = re.sub(r'\[\d+점\]', '', val).strip()
+                val = _drop_glyph_segments(re.sub(r'\[\d+점\]', '', m.group(2)))
                 if idx and val and idx not in choices:
                     choices[idx] = val
 
@@ -158,8 +178,7 @@ def extract_choices(passage_text: str, explanation_text: str = "") -> Dict[int, 
         if len(matches_exp) >= 3:
             for m in matches_exp:
                 idx = num_map.get(m.group(1))
-                val = m.group(2).strip()
-                val = re.sub(r'\[\d+점\]', '', val).strip()
+                val = _drop_glyph_segments(re.sub(r'\[\d+점\]', '', m.group(2)))
                 if idx and val and idx not in choices:
                     choices[idx] = val
 
@@ -193,60 +212,62 @@ def fill_blanks(
 ) -> str:
     """
     문장 분석(어법/문법 분석)을 위한 순수 전처리 (DB 조회 없음):
-    1. 한국어 발문 또는 단순 헤더는 치환하지 않고 원문 반환
-    2. 깨진 HWP 특수문자 엔티티(&#56192;&#56379;, &#61440; 등) 및 불릿 기호 제거
+    1. 깨진 HWP 특수문자 엔티티(&#56192;&#56379;, &#61440; 등) 및 불릿 기호 제거
+    2. 선지 식별 기호(1, 2, 3, 4, 5, ①~⑤, (1)~(5), (a)~(e) 등) 제거
     3. 단일 밑줄/빈칸(____)은 정답 선지 텍스트로 치환
-    4. 40번 요약문 등 2개 이상의 빈칸(A/B)은 선지 구분자(……, ..., ~, \\t 등)로 분할하여 각각의 빈칸에 1:1 순서대로 치환
-    5. 선지 식별 기호 제거 및 구두점/공백 정리하여 완전한 자연어 문장 완성
+    4. 40번 요약문 등 2개 이상의 빈칸(A/B)은 선지를 split_choice_parts 로 나눠 각 빈칸에 1:1 순서대로 치환
+    5. 빈칸을 채운 경우에만 구두점 및 불필요한 공백 정리 (빈칸이 없는 문장은 1~2단계만 적용)
     """
     if not sentence_text:
         return ""
 
-    # 한국어 발문 또는 단순 (A)/(B) 헤더는 빈칸 치환 대상이 아니므로 그대로 유지
-    if re.search(r'다음\s*글의\s*내용|가장\s*적절한\s*것은', sentence_text):
-        return sentence_text
-    if re.match(r'^\s*\(?\s*A\s*\)?\s*[\t\s]+\(?\s*B\s*\)?\s*$', sentence_text):
-        return sentence_text
-
-    # 1. HWP HTML 엔티티 및 특수 기호 정리
-    cleaned = clean_hwp_glitches(sentence_text)
-    cleaned = re.sub(r'&#\d+;', ' ', cleaned)
+    # 1. HWP HTML 엔티티 제거 (&#56192;&#56379;, &#61440; 등)
+    cleaned = re.sub(r'&#\d+;', ' ', sentence_text)
+    # 빈칸 표지 (A)/(B) 기록: 다음 단계에서 ___(B)___ 의 (B)가 지워지므로 먼저 순서대로 읽어 둔다
+    labels = []
+    for m in _BLANK_PATTERN.finditer(cleaned):
+        lm = _BLANK_LABEL_RE.search(m.group(0))
+        labels.append(ord(lm.group(1)) - ord('A') if lm else None)
+    # 2. 선지 기호 정리 (___(A)___ 의 (A)도 여기서 빠져 ______ 로 남는다)
+    cleaned = clean_choice_markers(cleaned)
+    # 3. 특수 유니코드 박스/불릿 기호 정리
     cleaned = re.sub(r'[\uF000-\uFFFF]', ' ', cleaned)
 
-    # 2. 밑줄 / 빈칸 패턴 탐색 및 정답 선지 삽입
+    # 4. 밑줄 / 빈칸 패턴 탐색 및 정답 선지 삽입
     blank_matches = list(_BLANK_PATTERN.finditer(cleaned))
+    if len(labels) != len(blank_matches):
+        labels = [None] * len(blank_matches)  # 짝이 맞지 않으면 표지는 쓰지 않는다
 
     if blank_matches:
         choices = extract_choices(passage_text, explanation_text)
         ans_num = extract_answer_num(answer_text)
         if ans_num and ans_num in choices:
-            raw_choice = choices[ans_num]
-            # 배점 제거 ([3점] 등)
-            raw_choice = re.sub(r'\[\d+점\]', '', raw_choice).strip()
+            raw_choice = re.sub(r'\[\d+점\]', '', choices[ans_num]).strip()  # 배점 제거
             split_parts = split_choice_parts(raw_choice)
+            # 단일 빈칸용: 선지 전체 (선지 기호 제거, 줄바꿈/탭은 공백 하나로)
+            whole_choice = re.sub(r'\s+', ' ', clean_choice_markers(raw_choice)).strip()
+            multi = len(blank_matches) >= 2 and len(split_parts) >= 2
 
-            # 빈칸이 2개 이상이고, 선지도 복수 파트로 분할되는 경우 (40번 요약문 등)
-            if len(blank_matches) >= 2 and len(split_parts) >= 2:
-                res = []
-                last_idx = 0
-                for i, m in enumerate(blank_matches):
-                    res.append(cleaned[last_idx:m.start()])
-                    replacement = split_parts[i] if i < len(split_parts) else split_parts[-1]
-                    res.append(f" {replacement.strip()} ")
-                    last_idx = m.end()
-                res.append(cleaned[last_idx:])
-                cleaned = "".join(res)
-            elif len(blank_matches) == 1 and len(split_parts) >= 1:
-                m = blank_matches[0]
-                cleaned = cleaned[:m.start()] + f" {split_parts[0].strip()} " + cleaned[m.end():]
-            elif len(split_parts) == 1:
-                cleaned = _BLANK_PATTERN.sub(f" {split_parts[0].strip()} ", cleaned)
+            def _replacement(i: int) -> str:
+                label = labels[i]
+                if len(split_parts) >= 2 and label is not None and label < len(split_parts):
+                    return split_parts[label]  # ___(B)___ -> 선지의 (B) 부분 (빈칸이 다른 문장에 나뉘어 있어도)
+                if multi:
+                    return split_parts[i] if i < len(split_parts) else split_parts[-1]  # 순서대로 1:1
+                return whole_choice  # 단일 빈칸 또는 선지를 나눌 수 없는 경우: 선지 전체
 
-    # 3. 잔여 선지 기호 정리
-    cleaned = clean_choice_markers(cleaned)
-    # 구두점 앞 불필요한 공백 제거 (예: "create state authority : " -> "create state authority:")
-    cleaned = re.sub(r'\s+([,.:;?!])', r'\1', cleaned)
-    # 중복 공백 정리
-    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned).strip()
+            res = []
+            last_idx = 0
+            for i, m in enumerate(blank_matches):
+                res.append(cleaned[last_idx:m.start()])
+                res.append(_replacement(i))
+                last_idx = m.end()
+            res.append(cleaned[last_idx:])
+            cleaned = "".join(res)
+
+            # 구두점 앞 불필요한 공백 제거 (예: "create state authority : " -> "create state authority:")
+            cleaned = re.sub(r'\s+([,.:;?!])', r'\1', cleaned)
+            # 중복 공백 정리
+            cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned).strip()
 
     return cleaned

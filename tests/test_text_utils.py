@@ -115,16 +115,49 @@ def test_fill_blanks_summary_multiline_choices():
         "③identify\n…… psychological\n"
         "④replace\n…… psychological\n"
         "⑤replace\n…… environmental\n"
+        "*footnote line that must not leak into choice 5\n"
     )
-    raw_sentence = "We must (A) the factor and ____(B)____ the outcome."
-    filled = tu.fill_blanks(raw_sentence, passage, "②")
-    assert filled == "We must associate the factor and environmental the outcome."
+    raw_sentence = "We must ___(A)___ the factor and ____(B)____ the outcome."
+    assert tu.fill_blanks(raw_sentence, passage, "②") == "We must associate the factor and environmental the outcome."
+    # ⑤는 ④와 같은 줄 수(2줄)만 가져온다
+    assert tu.extract_choices(passage)[5] == "replace\t…… environmental"
 
 
-def test_fill_blanks_korean_prompt_ignored():
+def test_fill_blanks_korean_prompt_not_filled():
     prompt = "40. 다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?"
     passage = "① good …… bad ② high …… low ③ fast …… slow ④ big …… small ⑤ hot …… cold"
-    assert tu.fill_blanks(prompt, passage, "①") == prompt
+    out = tu.fill_blanks(prompt, passage, "①")
+    assert "good" not in out and "bad" not in out
+
+
+# ---------- 회귀 방지: 밑줄 없는 맨 (A)/(B)는 빈칸이 아니다 ----------
+
+def test_fill_blanks_ordering_paragraph_marker_untouched():
+    passage = "① (A)-(C)-(B) ② (B)-(A)-(C) ③ (B)-(C)-(A) ④ (C)-(A)-(B) ⑤ (C)-(B)-(A)"
+    assert tu.fill_blanks("(A) Once upon a time there was a king.", passage, "②") == "Once upon a time there was a king."
+
+
+def test_fill_blanks_grammar_box_label_untouched():
+    passage = "① good …… was ② goods …… were ③ good …… were ④ goods …… was ⑤ good …… is"
+    out = tu.fill_blanks("Americans could not buy all of the (A) good / goods .", passage, "②")
+    assert out == "Americans could not buy all of the good / goods ."
+
+
+def test_fill_blanks_labeled_blank_in_separate_sentence():
+    # (A), (B) 빈칸이 서로 다른 문장에 있으면 문장마다 빈칸이 1개 -> 표지로 선지 파트를 고른다
+    passage = (
+        "① What is worse\t……\tLikewise\n② What is worse\t……\tInstead\n"
+        "③ As a result\t……\tLikewise\n④ On the contrary\t……\tLikewise\n⑤ On the contrary\t……\tInstead"
+    )
+    assert tu.fill_blanks("___(A)___, you are busy.", passage, "②") == "What is worse, you are busy."
+    assert tu.fill_blanks("___(B)___, find special occasions.", passage, "②") == "Instead, find special occasions."
+
+
+def test_extract_choices_drops_broken_glyph_segments():
+    passage = "① In fact\t\u0d00\u0100\t----     Instead\n② In fact\t\u0d00\u0100\t----     In\u3000addition\n" \
+              "③ Otherwise\t\u07c0\u0100\t----     In short\n④ Nevertheless\t\u031c\u0100\t----     As a result\n" \
+              "⑤ Nevertheless\t\u031c\u0100\t----     Otherwise"
+    assert tu.split_choice_parts(tu.extract_choices(passage)[2]) == ["In fact", "In addition"]
 
 
 def test_fill_blanks_no_answer_keeps_blank():

@@ -33,24 +33,34 @@ from . import paths
 logger = logging.getLogger(__name__)
 
 # Windows 환경에서 torchaudio 2.11+가 torchcodec(FFmpeg DLL) 부재로 인해 발생하는 AudioDecoder 에러 완벽 방지 패치
-try:
-    import torch
-    import torchaudio
-    import soundfile as sf
+# import 시점에 torch를 올리지 않도록, XTTS 모델을 처음 불러올 때(_get_or_load_xtts_model) 한 번만 적용한다
+_TORCHAUDIO_PATCHED = False
 
-    def _safe_torchaudio_load(filepath, *args, **kwargs):
-        data, sr = sf.read(filepath, dtype="float32")
-        tensor = torch.from_numpy(data)
-        if tensor.ndim == 1:
-            tensor = tensor.unsqueeze(0)
-        else:
-            tensor = tensor.t()
-        return tensor, sr
 
-    torchaudio.load = _safe_torchaudio_load
-    logger.info("[Audio] torchaudio.load patched with reliable soundfile backend.")
-except Exception as _patch_err:
-    logger.warning(f"[Audio] torchaudio.load patch skipped: {_patch_err}")
+def _patch_torchaudio_load() -> None:
+    """torchaudio.load 를 soundfile 기반으로 교체 (1회만, 실패해도 경고만 남김)"""
+    global _TORCHAUDIO_PATCHED
+    if _TORCHAUDIO_PATCHED:
+        return
+    try:
+        import torch
+        import torchaudio
+        import soundfile as sf
+
+        def _safe_torchaudio_load(filepath, *args, **kwargs):
+            data, sr = sf.read(filepath, dtype="float32")
+            tensor = torch.from_numpy(data)
+            if tensor.ndim == 1:
+                tensor = tensor.unsqueeze(0)
+            else:
+                tensor = tensor.t()
+            return tensor, sr
+
+        torchaudio.load = _safe_torchaudio_load
+        _TORCHAUDIO_PATCHED = True
+        logger.info("[Audio] torchaudio.load patched with reliable soundfile backend.")
+    except Exception as _patch_err:
+        logger.warning(f"[Audio] torchaudio.load patch skipped: {_patch_err}")
 
 BASE_DIR = paths.ROOT_DIR
 AUDIO_DIR = paths.AUDIO_DIR
@@ -324,6 +334,8 @@ def _get_or_load_xtts_model():
     if _GLOBAL_XTTS_MODEL is not None:
         return _GLOBAL_XTTS_MODEL
 
+    # torchaudio 패치는 TTS 라이브러리 import 전에 적용한다 (예전 import 시점 패치와 같은 순서)
+    _patch_torchaudio_load()
     try:
         import torch
         from TTS.api import TTS

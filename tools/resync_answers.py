@@ -49,6 +49,7 @@ def main():
     if args.only:
         files = [f for f in files if os.path.basename(f) == args.only + ".json"]
 
+    db.init_db()  # database.py는 import 시 자동 초기화하지 않으므로 단독 스크립트에서 직접 호출
     conn = db.get_connection()
     cur = conn.cursor()
     total_changed, total_crops, exams_changed = 0, 0, []
