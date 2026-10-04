@@ -46,6 +46,8 @@ from . import tts_service
 from . import listening_parser
 from . import fels_engine
 from . import paths
+from .text_utils import normalize_bracket_id, apply_answer_header
+from .services import grammar_service
 
 
 BASE_DIR = paths.ROOT_DIR
@@ -494,9 +496,7 @@ def api_search_sentences(
 @app.get("/api/passages/{passage_id}")
 def api_get_passage(passage_id: str):
     """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형, 정답률 및 선지 선택률, 듣기 대본/FELS/오디오)"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     data = db.get_passage(clean_id)
     if not data:
@@ -516,9 +516,7 @@ async def api_generate_passage_audio(passage_id: str, job_id: Optional[str] = No
     """특정 듣기 문항의 대본을 Edge-TTS 또는 ElevenLabs M/W 듀얼 보이스로 합성하여 MP3 생성
     (job_id 쿼리를 주면 /api/tts/progress/{job_id}로 진행률을 조회할 수 있다)"""
     try:
-        clean_id = passage_id.strip()
-        if not clean_id.startswith("["):
-            clean_id = f"[{clean_id}]"
+        clean_id = normalize_bracket_id(passage_id)
         result = await tts_service.generate_passage_audio(clean_id, job_id=job_id)
         if not result.get("success"):
             return JSONResponse(status_code=400, content=result)
@@ -535,9 +533,7 @@ async def api_generate_passage_audio(passage_id: str, job_id: Optional[str] = No
 async def api_generate_exam_listening_audio(exam_id: str, job_id: Optional[str] = None):
     """시험지의 1~17번 전체 듣기 문항 오디오를 일괄 생성 (job_id로 진행률 조회 가능)"""
     try:
-        clean_id = exam_id.strip()
-        if not clean_id.startswith("["):
-            clean_id = f"[{clean_id}]"
+        clean_id = normalize_bracket_id(exam_id)
         result = await tts_service.generate_exam_listening_audio(clean_id, job_id=job_id)
         return result
     except Exception as e:
@@ -551,9 +547,7 @@ async def api_generate_exam_listening_audio(exam_id: str, job_id: Optional[str] 
 @app.get("/api/exams/{exam_id}/download-listening-zip")
 def api_download_listening_zip(exam_id: str):
     """시험지의 전체 듣기 MP3 파일들을 ZIP 파일로 묶어서 다운로드"""
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
     try:
         result = tts_service.create_listening_zip(clean_id)
     except ValueError as e:
@@ -571,9 +565,7 @@ def api_download_listening_zip(exam_id: str):
 @_ingest_serialized
 def api_sync_exam_listening(exam_id: str):
     """기존 시험지의 듣기 문항(1~17번) 크롭 이미지 및 대본/FELS 재동기화"""
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
     result = listening_parser.sync_exam_listening(clean_id)
     # sync_exam_listening은 dict를 반환하므로 개수만 꺼낸다 (기존에는 dict 전체가 synced_count로 나감)
     synced = result.get("synced_count", 0) if isinstance(result, dict) else result
@@ -584,9 +576,7 @@ def api_sync_exam_listening(exam_id: str):
 @app.patch("/api/passages/{passage_id}/question-type")
 def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
     """지문의 문제 유형 변경/저장"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     success = db.update_passage_question_type(clean_id, req.question_type)
     return {"success": success, "question_type": req.question_type}
@@ -597,9 +587,7 @@ def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
 @app.patch("/api/passages/{passage_id}/memo")
 def api_update_passage_memo(passage_id: str, req: PassageMemoRequest):
     """지문의 사용자 메모(수업/변형 노트) 저장"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     res = db.update_passage_memo(clean_id, req.memo)
     if not res.get("success"):
@@ -612,9 +600,7 @@ def api_update_passage_memo(passage_id: str, req: PassageMemoRequest):
 @_ingest_serialized
 def api_update_answer(passage_id: str, req: AnswerRequest):
     """교사가 확인한 정답으로 정정: DB 정답/해설 헤더/검증 상태 갱신 + 키 파일 기록 + 형광펜 크롭 재생성"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
     new_ans = answer_resolver.normalize_answer(req.answer)
     if not new_ans:
         raise HTTPException(status_code=400, detail="정답은 ①~⑤ 또는 1~5 로 입력해야 합니다.")
@@ -661,9 +647,7 @@ def api_update_answer(passage_id: str, req: AnswerRequest):
 @_ingest_serialized
 def api_recapture_passage_pdf(passage_id: str):
     """지문 PDF 크롭 이미지 다시 캡처 (원본 PDF로부터 형광펜 하이라이트 문항 크롭 재생성)"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     passage = db.get_passage(clean_id)
     if not passage:
@@ -711,9 +695,7 @@ def api_recapture_passage_pdf(passage_id: str):
 @app.post("/api/passages/{passage_id}/tags")
 def api_add_passage_tag(passage_id: str, req: TagRequest):
     """지문 태그 추가"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     success = db.add_passage_tag(clean_id, req.tag_name)
     tags = db.get_passage_tags(clean_id)
@@ -723,9 +705,7 @@ def api_add_passage_tag(passage_id: str, req: TagRequest):
 @app.delete("/api/passages/{passage_id}/tags/{tag_name}")
 def api_delete_passage_tag(passage_id: str, tag_name: str):
     """지문 태그 삭제"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     success = db.remove_passage_tag(clean_id, tag_name)
     tags = db.get_passage_tags(clean_id)
@@ -735,9 +715,7 @@ def api_delete_passage_tag(passage_id: str, tag_name: str):
 @app.post("/api/sentences/{sentence_id}/tags")
 def api_add_sentence_tag(sentence_id: str, req: TagRequest):
     """문장 태그 추가"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     success = db.add_sentence_tag(clean_id, req.tag_name)
     tags = db.get_sentence_tags(clean_id)
@@ -747,9 +725,7 @@ def api_add_sentence_tag(sentence_id: str, req: TagRequest):
 @app.delete("/api/sentences/{sentence_id}/tags/{tag_name}")
 def api_delete_sentence_tag(sentence_id: str, tag_name: str):
     """문장 태그 삭제"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     success = db.remove_sentence_tag(clean_id, tag_name)
     tags = db.get_sentence_tags(clean_id)
@@ -978,9 +954,7 @@ async def api_preview_edge_tts(req: Dict[str, Any] = Body(...)):
 @app.post("/api/sentences/{sentence_id}/star")
 def api_toggle_sentence_star(sentence_id: str):
     """문장 별표(⭐ 중요 문장 플래그) 토글 API"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     new_state = db.toggle_sentence_star(clean_id)
     return {"sentence_id": clean_id, "is_starred": new_state}
@@ -989,9 +963,7 @@ def api_toggle_sentence_star(sentence_id: str):
 @app.post("/api/sentences/{sentence_id}/analyze-grammar")
 def api_analyze_sentence_grammar(sentence_id: str):
     """단일 문장 실시간 AI 어법 분석 및 DB 저장"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     target = db.get_sentence(clean_id)
     if not target:
@@ -1001,33 +973,13 @@ def api_analyze_sentence_grammar(sentence_id: str):
     if not target:
         raise HTTPException(status_code=404, detail="문장을 찾을 수 없습니다.")
 
-    passage = db.get_passage(target["passage_id"]) if target.get("passage_id") else None
-
-    # 밑줄 빈칸 문제의 경우 정답 선지를 반영하고 선지 기호를 정제하여 온전한 문장 생성
-    prep_text = grammar_analyzer.prepare_sentence_for_analysis(
-        target["sentence_text"],
-        passage_id=target.get("passage_id"),
-        passage_text=passage.get("passage_text", "") if passage else "",
-        answer_text=passage.get("answer_text", "") if passage else "",
-        explanation_text=passage.get("explanation_text", "") if passage else ""
-    )
-    if prep_text and prep_text != target["sentence_text"]:
-        db.update_sentence_text(clean_id, prep_text)
-        target["sentence_text"] = prep_text
-
     try:
-        annos = grammar_analyzer.analyze_sentence(
-            target["sentence_text"],
-            passage_id=target.get("passage_id"),
-            passage_text=passage.get("passage_text", "") if passage else "",
-            answer_text=passage.get("answer_text", "") if passage else "",
-            explanation_text=passage.get("explanation_text", "") if passage else ""
-        )
-        db.save_grammar_annotations(clean_id, annos, source_type="AI", ai_model="Multi-LLM")
+        result = grammar_service.analyze_and_save_sentence(target, sentence_id=clean_id)
+        annos = result["annotations"]
         return {
             "success": True,
             "sentence_id": clean_id,
-            "sentence_text": target["sentence_text"],
+            "sentence_text": result["sentence_text"],
             "annotations": annos,
             "count": len(annos),
             "grammar_analyzed": 1
@@ -1076,9 +1028,7 @@ def api_reset_grammar_settings(user_id: str = "default_user"):
 @app.post("/api/sentences/{sentence_id}/grammar-annotations")
 def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotationRequest):
     """문장에 수동/사용자 어법 범주 추가"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     try:
         data = req.dict()
@@ -1103,9 +1053,7 @@ def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotationReques
 @app.delete("/api/sentences/{sentence_id}/grammar-annotations/{identifier}")
 def api_delete_grammar_annotation(sentence_id: str, identifier: int, source_type: Optional[str] = None):
     """문장의 특정 어법 범주 삭제 (source_type 선택적 필터)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     try:
         db.delete_sentence_grammar_annotation(clean_id, identifier, source_type=source_type)
@@ -1123,9 +1071,7 @@ def api_delete_grammar_annotation(sentence_id: str, identifier: int, source_type
 @app.delete("/api/sentences/{sentence_id}/grammar")
 def api_reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None):
     """문장의 어법 분석 결과 초기화 (AI 또는 USER 개별 초기화 또는 전체 초기화)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     try:
         db.reset_sentence_grammar(clean_id, source_type=source_type)
@@ -1143,9 +1089,7 @@ def api_reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = No
 @app.post("/api/sentences/{sentence_id}/grammar-annotations/batch")
 def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGrammarAnnotationsRequest):
     """문장의 어법 범주 목록을 모달 선택값으로 일괄 저장 (지정된 source_type 항목만 교체)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     try:
         updated = db.set_sentence_grammar_annotations(
@@ -1193,33 +1137,12 @@ def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
     passages_cache = {}
     results = []
     for s in sentences:
-        pid = s.get("passage_id")
-        p_data = None
-        if pid:
-            if pid not in passages_cache:
-                passages_cache[pid] = db.get_passage(pid)
-            p_data = passages_cache[pid]
+        # 지문 조회는 기존처럼 try 밖에서 (실패 시 요청 전체 오류)
+        grammar_service.get_cached_passage(s.get("passage_id"), passages_cache)
 
         try:
-            prep_text = grammar_analyzer.prepare_sentence_for_analysis(
-                s["sentence_text"],
-                passage_id=pid,
-                passage_text=p_data.get("passage_text", "") if p_data else "",
-                answer_text=p_data.get("answer_text", "") if p_data else "",
-                explanation_text=p_data.get("explanation_text", "") if p_data else ""
-            )
-            if prep_text and prep_text != s["sentence_text"]:
-                db.update_sentence_text(s["id"], prep_text)
-                s["sentence_text"] = prep_text
-
-            annos = grammar_analyzer.analyze_sentence(
-                s["sentence_text"],
-                passage_id=pid,
-                passage_text=p_data.get("passage_text", "") if p_data else "",
-                answer_text=p_data.get("answer_text", "") if p_data else "",
-                explanation_text=p_data.get("explanation_text", "") if p_data else ""
-            )
-            db.save_grammar_annotations(s["id"], annos, source_type="AI", ai_model="Multi-LLM")
+            result = grammar_service.analyze_and_save_sentence(s, passages_cache)
+            annos = result["annotations"]
             results.append({
                 "sentence_id": s["id"],
                 "sentence_text": s.get("sentence_text", ""),
@@ -1258,32 +1181,7 @@ def background_auto_analyze_exam_grammar(exam_id: str):
             try:
                 if s.get("grammar_analyzed") or s.get("grammar_annotations"):
                     continue
-                pid = s.get("passage_id")
-                p_data = None
-                if pid:
-                    if pid not in passages_cache:
-                        passages_cache[pid] = db.get_passage(pid)
-                    p_data = passages_cache[pid]
-
-                prep_text = grammar_analyzer.prepare_sentence_for_analysis(
-                    s["sentence_text"],
-                    passage_id=pid,
-                    passage_text=p_data.get("passage_text", "") if p_data else "",
-                    answer_text=p_data.get("answer_text", "") if p_data else "",
-                    explanation_text=p_data.get("explanation_text", "") if p_data else ""
-                )
-                if prep_text and prep_text != s["sentence_text"]:
-                    db.update_sentence_text(s["id"], prep_text)
-                    s["sentence_text"] = prep_text
-
-                annos = grammar_analyzer.analyze_sentence(
-                    s["sentence_text"],
-                    passage_id=pid,
-                    passage_text=p_data.get("passage_text", "") if p_data else "",
-                    answer_text=p_data.get("answer_text", "") if p_data else "",
-                    explanation_text=p_data.get("explanation_text", "") if p_data else ""
-                )
-                db.save_grammar_annotations(s["id"], annos, source_type="AI", ai_model="Multi-LLM")
+                grammar_service.analyze_and_save_sentence(s, passages_cache)
             except Exception as ex:
                 print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
     except Exception as e:
@@ -1473,14 +1371,7 @@ def api_upload_exam(
             if q_num in explanations:
                 explanations[q_num]["answer"] = final_ans
                 exp_body = explanations[q_num].get("explanation", "").strip()
-                if re.search(r"^\s*\[\s*정답\s*\]", exp_body):
-                    explanations[q_num]["explanation"] = re.sub(
-                        r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?",
-                        f"[정답] {final_ans}",
-                        exp_body
-                    )
-                else:
-                    explanations[q_num]["explanation"] = f"[정답] {final_ans}\n\n{exp_body}".strip()
+                explanations[q_num]["explanation"] = apply_answer_header(exp_body, final_ans)
             else:
                 explanations[q_num] = {"answer": final_ans, "explanation": f"[정답] {final_ans}"}
 
@@ -1540,6 +1431,9 @@ def api_upload_exam(
 
             # 문항별 정답 출처/검증 상태 기록
             db.set_answer_status(exam_id, resolution["sources"], resolution["verified"], conn=conn)
+
+            # 재업로드로 정답이 바뀌었으면 예전 정답 선지로 채워진 빈칸 문장을 다시 채움
+            db.refill_blank_sentences(exam_id=exam_id, conn=conn)
 
             # 정답률 데이터가 파싱된 경우 passages 테이블에 일괄 반영 (실패해도 본 저장은 유지)
             if rates_dict:
@@ -1736,9 +1630,7 @@ def api_upload_exam_single_file(
     기존 등록된 특정 시험지에 대해 단독 파일(정답표 이미지, PDF, HWP, 정답률 CSV)을 업로드 및 갱신하는 API
     특히 정답표 이미지(ans) 또는 정답률 CSV(csv) 업로드 시 데이터 추출 + DB 갱신 자동 수행
     """
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
 
     # 1. 시험지 정보 조회
     with db.get_connection() as conn:
@@ -1789,16 +1681,14 @@ def api_upload_exam_single_file(
                             target_ans = json_answers[q_int]
                             answers_dict[q_int] = target_ans
                             exp_body = p["explanation_text"] or ""
-                            if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
-                                new_exp = f"[정답] {target_ans}\n\n{exp_body}".strip()
-                            else:
-                                new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {target_ans}", exp_body)
+                            new_exp = apply_answer_header(exp_body, target_ans)
                             cursor.execute(
                                 "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = 'uploaded_json', answer_verified = 1 WHERE id = ?",
                                 (target_ans, new_exp, p["id"])
                             )
                         elif p["answer_text"]:
                             answers_dict[q_int] = p["answer_text"]
+                    db.refill_blank_sentences(exam_id=clean_id, conn=conn)
                     conn.commit()
 
                 pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict)
@@ -1849,15 +1739,13 @@ def api_upload_exam_single_file(
 
                     if target_ans:
                         exp_body = p["explanation_text"] or ""
-                        if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
-                            new_exp = f"[정답] {target_ans}\n\n{exp_body}".strip()
-                        else:
-                            new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {target_ans}", exp_body)
+                        new_exp = apply_answer_header(exp_body, target_ans)
 
                         cursor.execute(
                             "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = ?, answer_verified = ? WHERE id = ?",
                             (target_ans, new_exp, src, ver, p["id"])
                         )
+                db.refill_blank_sentences(exam_id=clean_id, conn=conn)
                 conn.commit()
 
             # (3) 원본 PDF가 있으면 정답 선지 형광펜 하이라이트 크롭 이미지 재생성
@@ -2005,6 +1893,7 @@ def api_upload_exam_single_file(
                                     (new_exp, update_ans, update_src, p["id"])
                                 )
                                 updated_count += 1
+                    db.refill_blank_sentences(exam_id=clean_id, conn=conn)
                     conn.commit()
 
             # 원본 PDF가 있으면 형광펜 재생성 시도

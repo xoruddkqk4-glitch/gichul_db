@@ -21,6 +21,7 @@ from . import database as db
 from . import hwp_parser
 from . import answer_keys
 from . import paths
+from .text_utils import normalize_bracket_id, apply_answer_header
 
 BASE_DIR = paths.ROOT_DIR
 CAPTURES_DIR = paths.CAPTURES_DIR
@@ -566,9 +567,7 @@ def sync_exam_listening(
     5. 대본 PDF(또는 해설 PDF)가 주어지면 스크립트 크롭 이미지(_script.png) 생성
     6. passages 테이블에 area='listening'으로 문항 정보 등록/갱신
     """
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
 
     # 필요한 DB 값(시험지 정보, 기존 듣기 정답)을 먼저 읽고 연결을 바로 닫는다
     # (예전에는 with 없이 연 연결이 파싱 내내 열려 있었음)
@@ -775,10 +774,7 @@ def sync_all_missing_listening_answers() -> int:
                 if not current_ans and q in verified_key and verified_key[q]:
                     target_ans = verified_key[q]
                     exp_text = p["explanation_text"] or ""
-                    if not re.search(r"^\s*\[\s*정답\s*\]", exp_text):
-                        new_exp = f"[정답] {target_ans}\n\n{exp_text}".strip()
-                    else:
-                        new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {target_ans}", exp_text)
+                    new_exp = apply_answer_header(exp_text, target_ans)
                     cursor.execute(
                         "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = 'verified_key', answer_verified = 1 WHERE id = ?",
                         (target_ans, new_exp, p["id"])

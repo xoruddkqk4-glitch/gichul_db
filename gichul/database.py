@@ -15,6 +15,10 @@ from typing import List, Dict, Optional, Any
 from collections import defaultdict
 
 from . import paths
+from .text_utils import (
+    normalize_bracket_id, apply_answer_header,
+    extract_answer_num, extract_choices, fill_blanks,
+)
 
 DB_PATH = paths.DB_PATH
 
@@ -198,6 +202,16 @@ def init_db():
         except sqlite3.OperationalError:
             pass  # 이미 컬럼이 존재함
 
+        # 7. 시스템 설정 테이블 (AI API 키, 선택된 모델 등 로컬 저장)
+        #    아래 마이그레이션 버전(db_migration_version)을 여기서 읽으므로, 새 DB에서도 먼저 만들어 둔다
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         # 일회성 데이터 마이그레이션 버전 관리 (기동 시 7만 문장/1.3만 지문 반복 전수 순회 차단 -> 0.05초 즉각 기동)
         cursor.execute("SELECT value FROM app_settings WHERE key = 'db_migration_version'")
         mig_row = cursor.fetchone()
@@ -254,10 +268,10 @@ def init_db():
                     if m:
                         cur_ans = m.group(1)
                         if cur_ans != ans:
-                            new_exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp)
+                            new_exp = apply_answer_header(exp, ans)
                             cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
                     else:
-                        new_exp = f"[정답] {ans}\n\n{exp.strip()}".strip()
+                        new_exp = apply_answer_header(exp.strip(), ans)
                         cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
             except Exception as sync_err:
                 print(f"[Init DB Answer Sync Error] {sync_err}")
@@ -329,15 +343,6 @@ def init_db():
                 use_custom_tree INTEGER DEFAULT 0,
                 custom_tree_json TEXT,
                 custom_mapping_json TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        # 7. 시스템 설정 테이블 (AI API 키, 선택된 모델 등 로컬 저장)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
@@ -656,9 +661,7 @@ def get_exam_raw_files(exam_id: str) -> Optional[Dict[str, Any]]:
     특정 시험지에 해당하는 5종 원본 파일(문제 PDF, 해설 HWP, 대본 PDF, 정답 JSON/PNG, 정답률 CSV)의
     디스크 존재 여부, 파일명, 크기, 절대 경로 등을 조회하여 반환
     """
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
 
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -1040,14 +1043,13 @@ def update_passage_answers(exam_id: str, answers: Dict[int, str], source: str, v
             if not row:
                 continue
             exp = (row["explanation_text"] or "").strip()
-            if re.search(r"^\s*\[\s*정답\s*\]", exp):
-                exp = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp, count=1)
-            else:
-                exp = f"[정답] {ans}\n\n{exp}".strip()
+            exp = apply_answer_header(exp, ans)
             cursor.execute(
                 "UPDATE passages SET answer_text = ?, explanation_text = ?, answer_source = ?, answer_verified = ? WHERE id = ?",
                 (ans, exp, source, verified, row["id"])
             )
+        # 정답이 바뀌었으면, 예전 정답 선지로 채워 저장된 빈칸 문장을 새 정답으로 다시 채움
+        refill_blank_sentences(exam_id=exam_id, conn=conn)
         conn.commit()
 
 
@@ -1057,9 +1059,7 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]],
     특정 시험지의 문항별 정답률 및 선지 선택률 일괄 DB 갱신 (정답은 건드리지 않음 - 정답 교차검증은 answer_resolver 담당)
     rates_dict: { q_num: { 'correct_rate': float, 'choice_rates': dict, 'correct_ans_circle': str } }
     """
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
 
     updated_count = 0
     rates_collected = []
@@ -1249,11 +1249,157 @@ def replace_passage_sentences(passage_id: str, sentences: List[dict],
     return stats
 
 
+# 지문 본문에서 빈칸이 들어 있는 문장 조각을 찾기 위한 분할 기준 (문장 끝 부호 뒤 공백, 줄바꿈)
+_BLANK_TEMPLATE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+|(?<=[.!?][”"’)])\s+|[\r\n]+')
+_TOKEN_CHARS = "A-Za-z0-9가-힣'"
+# 요약문 선지 "(A) …… (B)" 구분자 (text_utils.fill_blanks 의 분할 기준과 동일)
+_CHOICE_PART_SPLIT_RE = re.compile(r'\s*(?:[\u2025\u2026\u22EF]+|\.{2,}|~|\t|\s{3,})\s*')
+
+
+def _contains_tokens(haystack: List[str], needle: List[str]) -> bool:
+    """needle 토큰열이 haystack 안에 연속으로 들어 있는지"""
+    n = len(needle)
+    return any(haystack[i:i + n] == needle for i in range(len(haystack) - n + 1))
+
+
+def _token_span_regex(tokens: List[str]) -> "re.Pattern":
+    """토큰열을 원문에서 찾는 정규식 (토큰 사이에는 공백·구두점 등 토큰이 아닌 문자 허용, 대소문자 무시)"""
+    sep = f"[^{_TOKEN_CHARS}]+"
+    body = sep.join(re.escape(t) for t in tokens)
+    return re.compile(f"(?<![{_TOKEN_CHARS}]){body}(?![{_TOKEN_CHARS}])", re.IGNORECASE)
+
+
+def _token_core(text: str) -> str:
+    """첫 토큰 시작 ~ 마지막 토큰 끝 구간 (앞뒤 구두점 제외)"""
+    toks = list(_SENTENCE_TOKEN_RE.finditer(text or ""))
+    return text[toks[0].start():toks[-1].end()] if toks else ""
+
+
+def refill_blank_sentences(exam_id: Optional[str] = None,
+                           passage_ids: Optional[List[str]] = None,
+                           conn: Optional[sqlite3.Connection] = None,
+                           dry_run: bool = False) -> List[Dict[str, Any]]:
+    """빈칸 문장이 **현재 정답이 아닌 선지**로 채워져 저장돼 있으면 현재 정답 선지로 다시 채운다.
+
+    어법 분석 전처리는 빈칸을 정답 선지로 채운 문장을 DB에 덮어써서 원래 빈칸이 사라진다.
+    그 뒤에 정답이 고쳐지면(정답 JSON·정답표·수동 수정 등) 문장에는 예전 선지가 그대로 남는다.
+    지문 본문(passage_text)에는 빈칸이 남아 있으므로, 그 문장을 틀로 삼아 판정한다.
+
+    - 틀: 지문 본문에서 빈칸이 들어 있는 문장 조각 (빈칸 밖 단어 2개 이상, 채운 결과 4단어 이상인 것만)
+    - 판정: 저장된 문장 안에 "틀 + 오답 선지" 단어열이 그대로 들어 있고, "틀 + 정답 선지" 단어열은 없을 때만 교체
+    - 교체: 그 구간만 "틀 + 정답 선지"로 바꾼다 (문장 분할이 달라 앞 문장이 붙어 있어도 나머지는 유지)
+    - 바뀐 문장은 AI 어법 주석을 지우고 grammar_analyzed 를 다시 계산한다 (사용자 주석은 유지, 재분석 필요)
+
+    exam_id 또는 passage_ids 로 대상을 정한다 (둘 다 없으면 전체 지문).
+    반환: 바뀐(또는 dry_run 이면 바뀔) 문장 목록 [{sentence_id, passage_id, old_text, new_text, wrong_choice, answer}]
+    """
+    changes: List[Dict[str, Any]] = []
+    with _use_conn(conn) as c:
+        cursor = c.cursor()
+        query = "SELECT id, passage_text, answer_text, explanation_text FROM passages"
+        params: list = []
+        if passage_ids is not None:
+            if not passage_ids:
+                return changes
+            query += " WHERE id IN (SELECT value FROM json_each(?))"
+            params.append(json.dumps([normalize_bracket_id(p) for p in passage_ids], ensure_ascii=False))
+        elif exam_id:
+            query += " WHERE exam_id = ?"
+            params.append(normalize_bracket_id(exam_id))
+
+        for p in cursor.execute(query, params).fetchall():
+            passage_text = p["passage_text"] or ""
+            if not _SENTENCE_BLANK_RE.search(passage_text):
+                continue
+            ans_num = extract_answer_num(p["answer_text"] or "")
+            if not ans_num:
+                continue
+            explanation_text = p["explanation_text"] or ""
+            choices = extract_choices(passage_text, explanation_text)
+            if ans_num not in choices:
+                continue
+
+            # 틀마다 (정답 채움 토큰, 정답 채움 원문, [(오답 번호, 오답 채움 토큰)])
+            plans = []
+            for piece in _BLANK_TEMPLATE_SPLIT_RE.split(passage_text):
+                if not piece or not _SENTENCE_BLANK_RE.search(piece):
+                    continue
+                if len(_sentence_tokens(_SENTENCE_BLANK_RE.sub(" ", piece))) < 2:
+                    continue  # 문맥이 너무 짧으면 다른 문장의 같은 단어와 헷갈릴 수 있어 건너뜀
+                n_blanks = len(_SENTENCE_BLANK_RE.findall(piece))
+                if n_blanks >= 2 and len(_CHOICE_PART_SPLIT_RE.split(choices[ans_num].strip())) != n_blanks:
+                    continue  # 요약문 등 복수 빈칸인데 정답 선지를 빈칸 수만큼 나눌 수 없으면 건너뜀
+                right_text = fill_blanks(piece, passage_text, str(ans_num), explanation_text)
+                if _SENTENCE_BLANK_RE.search(right_text):
+                    continue
+                right_tokens = _sentence_tokens(right_text)
+                wrongs = []
+                for k in sorted(choices):
+                    if k == ans_num:
+                        continue
+                    w_tokens = _sentence_tokens(fill_blanks(piece, passage_text, str(k), explanation_text))
+                    # 오답 채움 결과가 4단어 미만이면 우연히 겹칠 수 있어 비교하지 않음
+                    if len(w_tokens) >= 4 and w_tokens != right_tokens:
+                        wrongs.append((k, w_tokens))
+                if wrongs:
+                    plans.append((right_tokens, right_text, wrongs))
+            if not plans:
+                continue
+
+            sentences = cursor.execute(
+                "SELECT id, sentence_text FROM sentences WHERE passage_id = ?", (p["id"],)
+            ).fetchall()
+            for s in sentences:
+                old_text = s["sentence_text"] or ""
+                if _SENTENCE_BLANK_RE.search(old_text):
+                    continue  # 아직 빈칸이 남은 문장은 분석할 때 현재 정답으로 채워짐
+                stored_tokens = _sentence_tokens(old_text)
+                for right_tokens, right_text, wrongs in plans:
+                    if _contains_tokens(stored_tokens, right_tokens):
+                        break  # 이미 정답으로 채워져 있음
+                    hit = next(((k, wt) for k, wt in wrongs if _contains_tokens(stored_tokens, wt)), None)
+                    if not hit:
+                        continue
+                    m = _token_span_regex(hit[1]).search(old_text)
+                    core = _token_core(right_text)
+                    if not m or not core:
+                        break
+                    new_text = (old_text[:m.start()] + core + old_text[m.end():]).strip()
+                    if _sentence_tokens(new_text) == stored_tokens:
+                        break
+                    changes.append({
+                        "sentence_id": s["id"],
+                        "passage_id": p["id"],
+                        "old_text": old_text,
+                        "new_text": new_text,
+                        "wrong_choice": hit[0],
+                        "answer": ans_num,
+                    })
+                    if not dry_run:
+                        words = re.findall(r"\b[\w'-]+\b", new_text)
+                        cursor.execute(
+                            "UPDATE sentences SET sentence_text = ?, word_count = ? WHERE id = ?",
+                            (new_text, len(words), s["id"])
+                        )
+                        cursor.execute(
+                            "DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND COALESCE(source_type, 'AI') = 'AI'",
+                            (s["id"],)
+                        )
+                        cursor.execute("""
+                            UPDATE sentences SET grammar_analyzed = CASE
+                                WHEN EXISTS (SELECT 1 FROM sentence_grammar_annotations WHERE sentence_id = ?) THEN 1 ELSE 0 END
+                            WHERE id = ?
+                        """, (s["id"], s["id"]))
+                    break
+
+    if changes and not dry_run:
+        invalidate_exams_cache()
+    return changes
+
+
 def update_sentence_text(sentence_id: str, new_text: str, word_count: Optional[int] = None) -> bool:
     """단일 문장의 본문 텍스트 및 단어 수 수정 업데이트"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     if word_count is None:
         words = re.findall(r"\b[\w'-]+\b", new_text)
         word_count = len(words)
@@ -1447,9 +1593,7 @@ def search_passages(
     params = []
 
     if exam_id:
-        clean_eid = exam_id.strip()
-        if not clean_eid.startswith("["):
-            clean_eid = f"[{clean_eid}]"
+        clean_eid = normalize_bracket_id(exam_id)
         query += " AND p.exam_id = ?"
         params.append(clean_eid)
 
@@ -1568,9 +1712,7 @@ def get_exam_passages(exam_id: str) -> List[Dict[str, Any]]:
     """특정 시험 ID에 속한 모든 지문의 전체 상세 데이터(본문, 해설, 보기 등) 일괄 조회"""
     if not exam_id:
         return []
-    clean_eid = exam_id.strip()
-    if not clean_eid.startswith("["):
-        clean_eid = f"[{clean_eid}]"
+    clean_eid = normalize_bracket_id(exam_id)
     return search_passages(exam_id=clean_eid, meta_only=False)
 
 
@@ -1578,9 +1720,7 @@ def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:
     """지문 ID로 단일 지문 정보 조회"""
     if not passage_id:
         return None
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -1614,9 +1754,7 @@ def get_sentence(sentence_id: str) -> Optional[Dict[str, Any]]:
     """문장 ID로 단일 문장 정보 조회"""
     if not sentence_id:
         return None
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM sentences WHERE id = ?", (clean_id,))
@@ -1656,9 +1794,7 @@ def save_grammar_annotations(
     - source_type='AI'인 경우: 기존 AI 분석 결과만 교체하고 사용자가 직접 등록한 어법('USER')은 안전하게 영구 보존
     - source_type='USER'인 경우: 사용자 분석 결과로 저장 (동일 사용자의 어법만 갱신)
     """
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         if source_type == "AI":
@@ -1705,9 +1841,7 @@ def add_sentence_grammar_annotation(
     ai_model: Optional[str] = None
 ) -> bool:
     """문장에 어법 범주 단일 추가 (기본: 사용자 직접 등록)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     cat_id = annotation.get("category_id", 0)
     pos = annotation.get("pos", "")
     full_path = annotation.get("full_path", "")
@@ -1733,9 +1867,7 @@ def add_sentence_grammar_annotation(
 
 def delete_sentence_grammar_annotation(sentence_id: str, identifier: int, source_type: Optional[str] = None) -> bool:
     """문장에서 특정 어법 범주 삭제 (category_id 또는 annotation row id 기준, source_type 선택 가능)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         if source_type:
@@ -1759,9 +1891,7 @@ def delete_sentence_grammar_annotation(sentence_id: str, identifier: int, source
 
 def reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None) -> bool:
     """문장의 어법 분석 결과 초기화 (특정 source_type만 초기화하거나 전체 초기화)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         if source_type:
@@ -1779,9 +1909,7 @@ def reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None) 
 
 def get_sentence_grammar_annotations(sentence_id: str, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
     """특정 문장의 어법 범주 분석 목록 조회 (AI 및 USER 출처 포함, 사용자 분석 우선 정렬)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         if source_type:
@@ -1810,9 +1938,7 @@ def set_sentence_grammar_annotations(
     user_id: str = "default_user"
 ) -> List[Dict[str, Any]]:
     """문장의 어법 범주 목록을 일괄 설정 (기존 해당 source_type 항목만 교체하여 AI와 USER 상호 보존)"""
-    clean_id = sentence_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(sentence_id)
 
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -2015,16 +2141,12 @@ def search_sentences(
             query += " AND (p.area = 'reading' OR p.area IS NULL)"
 
     if passage_id:
-        clean_pid = passage_id.strip()
-        if not clean_pid.startswith("["):
-            clean_pid = f"[{clean_pid}]"
+        clean_pid = normalize_bracket_id(passage_id)
         query += " AND s.passage_id = ?"
         params.append(clean_pid)
 
     if exam_id:
-        clean_eid = exam_id.strip()
-        if not clean_eid.startswith("["):
-            clean_eid = f"[{clean_eid}]"
+        clean_eid = normalize_bracket_id(exam_id)
         query += " AND p.exam_id = ?"
         params.append(clean_eid)
 
@@ -2160,9 +2282,7 @@ def search_sentences(
 
 def get_listening_passages_by_exam(exam_id: str) -> List[Dict[str, Any]]:
     """특정 시험지의 듣기 문항(area='listening' 또는 q_num <= 17) 목록 조회 (q_num 순 정렬)"""
-    clean_id = exam_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(exam_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -2188,9 +2308,7 @@ def get_listening_passages_by_exam(exam_id: str) -> List[Dict[str, Any]]:
 
 def update_passage_audio(passage_id: str, audio_file_path: str) -> bool:
     """문항 오디오 파일 경로 갱신"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE passages SET audio_file_path = ? WHERE id = ?", (audio_file_path, clean_id))
@@ -2205,9 +2323,7 @@ def update_passage_script(
     script_crop_image: Optional[str] = None
 ) -> bool:
     """문항 대본 텍스트, FELS 텍스트 및 대본 크롭 이미지 경로 갱신"""
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
     updates = []
     params = []
     if script_text is not None:
@@ -2233,9 +2349,7 @@ def update_passage_memo(passage_id: str, memo_text: str) -> Dict[str, Any]:
     """특정 지문의 사용자 메모 업데이트 및 갱신 시간 기록"""
     if not passage_id:
         return {"success": False, "error": "passage_id is required"}
-    clean_id = passage_id.strip()
-    if not clean_id.startswith("["):
-        clean_id = f"[{clean_id}]"
+    clean_id = normalize_bracket_id(passage_id)
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with get_connection() as conn:

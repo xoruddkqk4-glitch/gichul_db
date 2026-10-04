@@ -13,6 +13,8 @@ import struct
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional, Tuple
 
+from .text_utils import apply_answer_header
+
 
 def sanitize_text(text: str) -> str:
     """한글 문서의 특수 제어문자 및 유니코드 서로게이트 문자 정제"""
@@ -853,10 +855,7 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
         exp_body = exp_info.get("explanation", "").strip()
         if ans:
             # 해설 본문 맨 앞의 [정답] 표기 표준화 (없으면 추가, 있으면 갱신)
-            if not re.search(r"^\s*\[\s*정답\s*\]", exp_body):
-                exp_info["explanation"] = f"[정답] {ans}\n\n{exp_body}".strip()
-            else:
-                exp_info["explanation"] = re.sub(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?", f"[정답] {ans}", exp_body)
+            exp_info["explanation"] = apply_answer_header(exp_body, ans)
 
     return explanations
 
