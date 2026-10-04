@@ -18,6 +18,7 @@ from . import paths
 from .text_utils import (
     normalize_bracket_id, apply_answer_header,
     extract_answer_num, extract_choices, fill_blanks,
+    split_choice_parts, _CHOICE_PART_SPLIT_PATTERN,
 )
 
 DB_PATH = paths.DB_PATH
@@ -1127,7 +1128,12 @@ def save_sentences(sentences: List[dict]):
 # 재업로드 시 "같은 문장" 판정용 정규화.
 # 저장된 문장은 어법 분석 전처리(grammar_analyzer.prepare_sentence_for_analysis)를 거쳐
 # 선지 기호 제거·빈칸 정답 채움·구두점 공백 정리가 되어 있을 수 있으므로, 단어 토큰만 비교한다.
-_SENTENCE_BLANK_RE = re.compile(r'_{2,}|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>')
+_SENTENCE_BLANK_RE = re.compile(
+    r'(?:[_=]{2,}\s*)?\(\s*[A-E]\s*\)(?:\s*[_=]{2,})?'
+    r'|(?:[_=]{2,}\s*)?\[\s*[A-E]\s*\](?:\s*[_=]{2,})?'
+    r'|_{2,}|={2,}'
+    r'|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>'
+)
 _SENTENCE_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣']+")
 
 
@@ -1253,7 +1259,7 @@ def replace_passage_sentences(passage_id: str, sentences: List[dict],
 _BLANK_TEMPLATE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+|(?<=[.!?][”"’)])\s+|[\r\n]+')
 _TOKEN_CHARS = "A-Za-z0-9가-힣'"
 # 요약문 선지 "(A) …… (B)" 구분자 (text_utils.fill_blanks 의 분할 기준과 동일)
-_CHOICE_PART_SPLIT_RE = re.compile(r'\s*(?:[\u2025\u2026\u22EF]+|\.{2,}|~|\t|\s{3,})\s*')
+_CHOICE_PART_SPLIT_RE = _CHOICE_PART_SPLIT_PATTERN
 
 
 def _contains_tokens(haystack: List[str], needle: List[str]) -> bool:

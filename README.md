@@ -2121,3 +2121,29 @@ CREATE TABLE user_sentence_status (
   - 새 테스트: `tests/test_text_utils.py` 50개, `tests/test_refill_blanks.py` 5개(임시 DB, 실제 DB 미사용)
   - `python -m pytest tests -q`: 134개 전체 통과
   - 후속 조치: 교정된 91문장은 AI 어법 분석 재실행 필요, 서버 재시작 필요(`python run.py`)
+
+### [2026-10-04 23:00] 업데이트 이력 (Commit ID: e1165e51)
+- **수정 내용**:
+  - **40번 요약문 선지 (A)만 추출되어 빈칸 채우기가 불완전하던 문제 전면 개선**:
+    - **증상 및 원인**:
+      - 40번 요약문 선지에서 (A)만 추출되고 (B)가 누락되어, 빈칸 채우기 분석 시 (A)와 (B) 빈칸 모두에 (A) 단어가 중복 삽입되거나 괄호가 남아 문장이 불완전해지던 문제.
+      - 원인 1: `extract_choices` 정규식 `[^①②③④⑤\n\r\t]+`이 선지 구분자로 쓰인 `\t`(탭) 문자에서 선지를 단절시켜 `\t` 뒤의 (B) 선지 누락 (2025/2024 대수능 등 36개 주요 문항).
+      - 원인 2: 평가원/교육청 일부 기출에서 (A)와 (B) 선지가 줄바꿈으로 나뉜 경우(`① associate\n…… genetic`), 줄바꿈에서 선지가 끊겨 (B) 누락.
+      - 원인 3: `_BLANK_PATTERN`이 `_{2,}`만 인식하여 `___(A)___`, `____ (A) ____`, `(A)`/`(B)` 등 요약문 고유 빈칸 표기를 단일 빈칸으로 처리하지 못함.
+      - 원인 4: 선지 분할 구분자 정규식에 `---`, `·····`(가운뎃점), `\t` 등이 누락되어 선지 파트 분할 실패.
+    - **해결 (`gichul/text_utils.py`, `gichul/database.py`)**:
+      - `extract_choices`: 지문 하단 선지 블록을 마지막 `⑤`부터 역추적(`rfind`)하여 본문 내 원문자와 혼동 없이 안전하게 추출. 줄바꿈(`\r\n`)을 `\t`로 변환 보존하여 멀티라인 (A)/(B) 선지 단절 방지. HWP 깨진 글립 및 선지 꼬리 저작권 문구(`이 문제지에 관한 저작권은...`) 자동 정리. `\t`를 허용하는 정규식 폴백 유지.
+      - `_BLANK_PATTERN` 및 `_SENTENCE_BLANK_RE`: `___(A)___`, `____ (A) ____`, `(A)`, `(B)`, `[A]`, `[B]` 및 언더스코어 빈칸을 모두 단일 빈칸 토큰으로 인식하도록 확장.
+      - `split_choice_parts` 및 `_CHOICE_PART_SPLIT_PATTERN` 신설/통합: `\t+`, `[-―－]{2,}`, `[\.\u00b7\u2022\u318d]{2,}`(가운뎃점/말줄임표), `~`, 2칸 이상 공백을 포괄 분할하고 앞뒤 잔여 기호 strip.
+      - `fill_blanks`: 한국어 문제 발문(`다음 글의 내용을...`) 및 단순 헤더(`(A) (B)`) 오염 방지 가드 추가. 복수 빈칸에 선지 파트들을 1:1 순서대로 대치하여 완전한 자연어 문장 완성.
+      - `database.py`: `_SENTENCE_BLANK_RE`와 `_CHOICE_PART_SPLIT_RE`를 `text_utils`와 동기화.
+  - **테스트 추가 (`tests/test_text_utils.py`)**:
+    - `test_fill_blanks_summary_q40_underscores_and_markers`: `___(A)___`, `___(B)___` 형태 빈칸 채우기 검증
+    - `test_fill_blanks_summary_multiline_choices`: 멀티라인 선지 추출 및 1:1 빈칸 채우기 검증
+    - `test_fill_blanks_korean_prompt_ignored`: 한국어 발문 오염 방지 검증
+- **검증 결과**:
+  - `python -m py_compile gichul/text_utils.py gichul/database.py tests/test_text_utils.py`: 오류 0건
+  - `python -m pytest tests/test_text_utils.py`: 53개 전체 통과 (신규 3개 포함, 0.19s)
+  - `python -m pytest tests -q`: 137개 전체 통과 (16.04s)
+  - 실제 DB 기출 40번 요약문 211건 대상 검증: 선지 분할 성공률 **97.6% (206/211)** 및 요약문 빈칸 1:1 자연어 문장 완성 확인.
+

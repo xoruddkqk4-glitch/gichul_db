@@ -89,6 +89,44 @@ def test_fill_blanks_two_blanks_split_choice():
     assert out == "It is up and down."
 
 
+def test_fill_blanks_summary_q40_underscores_and_markers():
+    passage = (
+        "In the past, color was considered an ___(A)___ to the truth.\n"
+        "(A) \t (B)\n"
+        "① controllability ---\tchallenge\n"
+        "② predictability ---\tsupport\n"
+        "③ manageability ---\tintensify\n"
+        "④ affordability ---\treverse\n"
+        "⑤ accessibility ---\tquestion\n"
+    )
+    raw_sentence = (
+        "The ___(A)___ of the process may ___(B)___ people's commonly held assumption."
+    )
+    filled = tu.fill_blanks(raw_sentence, passage, "①")
+    assert filled == "The controllability of the process may challenge people's commonly held assumption."
+
+
+def test_fill_blanks_summary_multiline_choices():
+    passage = (
+        "Summary text here.\n"
+        "(A)\n(B)\n"
+        "①associate\n…… genetic\n"
+        "②associate\n…… environmental\n"
+        "③identify\n…… psychological\n"
+        "④replace\n…… psychological\n"
+        "⑤replace\n…… environmental\n"
+    )
+    raw_sentence = "We must (A) the factor and ____(B)____ the outcome."
+    filled = tu.fill_blanks(raw_sentence, passage, "②")
+    assert filled == "We must associate the factor and environmental the outcome."
+
+
+def test_fill_blanks_korean_prompt_ignored():
+    prompt = "40. 다음 글의 내용을 한 문장으로 요약하고자 한다. 빈칸 (A), (B)에 들어갈 말로 가장 적절한 것은?"
+    passage = "① good …… bad ② high …… low ③ fast …… slow ④ big …… small ⑤ hot …… cold"
+    assert tu.fill_blanks(prompt, passage, "①") == prompt
+
+
 def test_fill_blanks_no_answer_keeps_blank():
     assert tu.fill_blanks("Keep ____ here", "", "") == "Keep ____ here"
 
