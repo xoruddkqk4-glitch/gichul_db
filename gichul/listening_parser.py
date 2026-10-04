@@ -15,14 +15,15 @@ from typing import Dict, Any, List, Optional, Tuple
 import pymupdf as fitz
 from PIL import Image
 
-import pdf_parser
-import fels_engine
-import database as db
-import hwp_parser
-import answer_keys
+from . import pdf_parser
+from . import fels_engine
+from . import database as db
+from . import hwp_parser
+from . import answer_keys
+from . import paths
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CAPTURES_DIR = os.path.join(BASE_DIR, "static", "captures")
+BASE_DIR = paths.ROOT_DIR
+CAPTURES_DIR = paths.CAPTURES_DIR
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 # 12대 듣기 문제 유형 정의 (+ 기타)

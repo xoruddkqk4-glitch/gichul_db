@@ -10,7 +10,8 @@ import json
 from datetime import datetime
 from typing import Dict, Any, Union
 
-KEYS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "answer_keys")
+from .paths import KEYS_DIR
+
 CIRCLED = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
 
 

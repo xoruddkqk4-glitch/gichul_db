@@ -11,8 +11,8 @@
 
 | 단계 | 주제 | 위험도 | 상태 |
 |---|---|---|---|
-| A단계 | 안전 정리: 빈 파일 삭제, Git에 남은 생성물 추적 해제 | 낮음 | ✅ 완료 (2026-10-04, 미커밋) |
-| B단계 | 파이썬 모듈 13개를 `gichul/` 패키지로 이동 + 경로 상수 한곳으로 모으기 | 중간 | ⬜ 대기 (로드맵 2단계 완료 후) |
+| A단계 | 안전 정리: 빈 파일 삭제, Git에 남은 생성물 추적 해제 | 낮음 | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
+| B단계 | 파이썬 모듈 13개를 `gichul/` 패키지로 이동 + 경로 상수 한곳으로 모으기 | 중간 | ✅ 완료 (2026-10-04, 미커밋) |
 | C단계 | (선택) 실행 중 생기는 데이터 폴더 분리, README 이력 분리, wheel 폴더 이름 변경 | 중간 | ⬜ 대기 |
 
 > **결정 (2026-10-04)**: 실행 순서는 **① A → 로드맵 1·2 → B → 로드맵 3·4**로 진행합니다. A-2(MP3 추적 해제)는 승인되었습니다.
@@ -24,6 +24,24 @@
   - `static/audio/*.wav`는 계획에 없던 추가 항목입니다. 로드맵 2-5에서 XTTS 결과를 `.wav`로 저장하게 되므로 미리 넣었습니다
   - `*.backup-*.db`는 기존 `*.db` 규칙으로도 이미 제외되지만, 용도를 드러내려고 명시했습니다
 - 검증: `git status`에 `.gitignore` 수정 1건과 MP3 26건의 추적 해제(D)만 있음. `git check-ignore`로 새 규칙 4개가 동작하는 것을 확인
+
+### B단계 적용 결과 (2026-10-04)
+- 사전 준비: DB 백업 `gichul.backup-2026-10-04-b-stage.db` (SQLite 온라인 백업, Git 제외). 이동 전 라우트·경로 스냅샷 `scratch/b_stage_snapshot_before.json`
+- `git mv`로 13개 모듈 → `gichul/`, `tools/crop_2013_09.py` → `gichul/special_crops/crop_2013_09.py` (히스토리 유지, `git status`에 R 14건)
+- [NEW] `gichul/__init__.py`, `gichul/special_crops/__init__.py`, `gichul/paths.py`
+  - `paths.py`는 계획의 `Path` 대신 **`str` 상수**로 만들었습니다. 기존 코드가 전부 `os.path.join` 문자열 경로를 써서, 감싸기(`str()`) 없이 그대로 바꿔 끼울 수 있게 하려는 것입니다
+  - 경로 기준점 교체: app.py(4), database.py(DB_PATH + 함수 안 4곳), answer_keys, grammar_analyzer, listening_parser, pdf_parser, tts_service, crop_2013_09
+- 내부 import 26곳 → 패키지 상대 import (`from . import database as db`, `from .special_crops.crop_2013_09 import ...` 등)
+- `run.py`: `"gichul.app:app"` + `app_dir=base_dir`(다른 폴더에서 실행해도 패키지를 찾도록, 계획에 없던 추가). `reload_dirs`를 `gichul/`·`templates/`로 좁히고 긴 `reload_excludes` 목록을 `__pycache__`/`*.pyc` 3개로 줄임
+- tools 4개 import 변경, `regenerate_group_crops.py`의 DB 경로 → `gichul.paths.DB_PATH`. `build_answer_keys.py`는 패키지를 import하지 않는 독립 스크립트라 그대로 둠
+- tests 4개 파일 import 변경 (`test_tts_engine.py` 포함, 계획 작성 후 추가된 파일). `conftest.py`는 그대로
+- 문서: README 프로젝트 구조, 로드맵 3단계 이후 링크 14줄을 `gichul/` 경로로 갱신 + 안내 노트
+- 검증 결과
+  - `python -m compileall -q gichul tools tests run.py`: 오류 0건
+  - 스냅샷 비교: 라우트 56 → 56 (차이 0건), 경로 값 14개 차이 0건 (`DB_PATH`가 같은 루트 `gichul.db`)
+  - 루트 모듈 이름 import 잔존 grep: 0건
+  - `python -m pytest tests -q`: 79개 전체 통과
+- **사용자 수동 확인 필요**: 실행 중이던 서버는 옛 `app:app`을 바라보므로 **재시작해야 합니다** (`start.bat` 또는 `python run.py`). 이후 검색 / 지문 뷰어 이미지 / 듣기 오디오 재생 / 시험지 1개 크롭 재생성 확인
 
 ---
 

@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import fitz
-import pdf_parser
+from gichul import pdf_parser
 import sqlite3
 from PIL import Image
 

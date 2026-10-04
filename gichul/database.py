@@ -14,7 +14,9 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from collections import defaultdict
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gichul.db")
+from . import paths
+
+DB_PATH = paths.DB_PATH
 
 
 def _regexp_func(expr: Optional[str], item: Optional[str]) -> bool:
@@ -215,7 +217,7 @@ def init_db():
                 cursor.execute("SELECT id, passage_id, sentence_text FROM sentences WHERE sentence_text LIKE '%\\_\\_%' ESCAPE '\\'")
                 unfilled_rows = cursor.fetchall()
                 if unfilled_rows:
-                    from grammar_analyzer import prepare_sentence_for_analysis
+                    from .grammar_analyzer import prepare_sentence_for_analysis
                     for ur in unfilled_rows:
                         cur_p = None
                         pid = ur["passage_id"]
@@ -468,9 +470,8 @@ def get_all_exams_with_stats(force_refresh: bool = False) -> List[Dict[str, Any]
         return _EXAMS_STATS_CACHE
 
     import os, re
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    uploads_dir = os.path.join(base_dir, "uploads")
-    captures_dir = os.path.join(base_dir, "static", "captures")
+    uploads_dir = paths.UPLOADS_DIR
+    captures_dir = paths.CAPTURES_DIR
 
     # 1. uploads/ 및 static/captures/ 디스크 파일을 1회 단일 스캔하여 (grade, year, month) 키로 사전 인덱싱 (0.04s)
     uploads_by_key = {}
@@ -683,9 +684,8 @@ def get_exam_raw_files(exam_id: str) -> Optional[Dict[str, Any]]:
     month = int(exam["month"])
     subtype = exam.get("subtype")
 
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    uploads_dir = os.path.join(base_dir, "uploads")
-    keys_dir = os.path.join(base_dir, "data", "answer_keys")
+    uploads_dir = paths.UPLOADS_DIR
+    keys_dir = paths.KEYS_DIR
 
     matched_entries = []
     prefix1 = f"{grade}_{year}_{month:02d}"
@@ -792,9 +792,8 @@ def selective_delete_exam(
     - delete_rate: 코어 본문은 유지하고 문항별 정답률/선지선택률(correct_rate, choice_rates) 및 uploads/ 정답률 CSV 삭제
     """
     import glob
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    uploads_dir = os.path.join(base_dir, "uploads")
-    captures_dir = os.path.join(base_dir, "static", "captures")
+    uploads_dir = paths.UPLOADS_DIR
+    captures_dir = paths.CAPTURES_DIR
 
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -1929,7 +1928,7 @@ def get_effective_grammar_categories(user_id: str = "default_user") -> Dict[str,
             print(f"[Custom Grammar Tree Parse Error] {e}")
 
     # 기본 243개 표준 JSON 로드
-    std_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "data", "grammar_categories.json")
+    std_path = paths.GRAMMAR_CATEGORIES_JSON
     if os.path.exists(std_path):
         try:
             with open(std_path, "r", encoding="utf-8") as f:
@@ -2148,7 +2147,7 @@ def search_sentences(
             # 만약 문장에 아직 밑줄/빈칸이 남아있는 경우 온전한 정답 선지 문장으로 실시간 변환
             if "__" in s_dict.get("sentence_text", ""):
                 try:
-                    from grammar_analyzer import prepare_sentence_for_analysis
+                    from .grammar_analyzer import prepare_sentence_for_analysis
                     prep = prepare_sentence_for_analysis(s_dict["sentence_text"], passage_id=s_dict.get("passage_id"))
                     if prep and prep != s_dict["sentence_text"]:
                         s_dict["sentence_text"] = prep

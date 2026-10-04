@@ -27,7 +27,8 @@ import time
 from typing import List, Dict, Any, Optional, Tuple
 
 import edge_tts
-import database as db
+from . import database as db
+from . import paths
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +52,9 @@ try:
 except Exception as _patch_err:
     logger.warning(f"[Audio] torchaudio.load patch skipped: {_patch_err}")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-AUDIO_DIR = os.path.join(BASE_DIR, "static", "audio")
-VOICES_DIR = os.path.join(BASE_DIR, "static", "voices")
+BASE_DIR = paths.ROOT_DIR
+AUDIO_DIR = paths.AUDIO_DIR
+VOICES_DIR = paths.VOICES_DIR
 os.makedirs(AUDIO_DIR, exist_ok=True)
 os.makedirs(VOICES_DIR, exist_ok=True)
 

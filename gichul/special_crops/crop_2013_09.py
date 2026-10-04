@@ -1,7 +1,9 @@
 """
-tools/crop_2013_09.py
+gichul/special_crops/crop_2013_09.py (구 tools/crop_2013_09.py)
 고3 2013년 9월 A형 및 B형 전용 고화질 200 DPI PDF 크롭 & 정답 형광펜 생성 모듈
 벡터 곡선(Drawings)으로 변환된 문항 번호와 발문을 정밀 기하 레이아웃 및 여백 감지로 완벽 크롭
+- 앱(gichul/app.py)이 실행 중에 import 합니다.
+- 단독 실행: 프로젝트 루트에서 `python -m gichul.special_crops.crop_2013_09`
 """
 
 import os
@@ -11,14 +13,16 @@ import json
 import fitz
 from PIL import Image
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "gichul.db")
-CAPTURES_DIR = os.path.join(BASE_DIR, "static", "captures")
+from .. import paths
+
+BASE_DIR = paths.ROOT_DIR
+DB_PATH = paths.DB_PATH
+CAPTURES_DIR = paths.CAPTURES_DIR
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 # PDF paths
-PDF_A = os.path.join(BASE_DIR, "uploads", "고3_2013_09_고3-[2013-09-A].pdf")
-PDF_B = os.path.join(BASE_DIR, "uploads", "고3_2013_09_고3-[2013-09-B].pdf")
+PDF_A = os.path.join(paths.UPLOADS_DIR, "고3_2013_09_고3-[2013-09-A].pdf")
+PDF_B = os.path.join(paths.UPLOADS_DIR, "고3_2013_09_고3-[2013-09-B].pdf")
 
 # Geometry
 X_L0, X_L1 = 85.0, 420.0

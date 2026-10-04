@@ -16,9 +16,9 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import database as db  # noqa: E402
-import pdf_parser  # noqa: E402
-from answer_keys import KEYS_DIR  # noqa: E402
+from gichul import database as db  # noqa: E402
+from gichul import pdf_parser  # noqa: E402
+from gichul.answer_keys import KEYS_DIR  # noqa: E402
 
 HEADER_RE = re.compile(r"^\s*\[\s*정답\s*\]\s*[①②③④⑤1-5]?")
 

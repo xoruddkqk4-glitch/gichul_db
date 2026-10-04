@@ -1,7 +1,7 @@
 """rate_parser.py 회귀 테스트 — 정답률 CSV 파싱(실제 교육청 포맷), 인코딩, 매력적 오답, 난이도 배지"""
 import pytest
 
-from rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
+from gichul.rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
 
 # 실제 업로드 CSV(uploads/고1_2022_03_*.csv)와 동일한 컬럼 구조
 REAL_HEADER = "과목명,번호,무응답,1번,2번,3번,4번,5번,중복답,정답,정답률"

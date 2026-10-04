@@ -300,12 +300,16 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
 
 > 동작은 그대로 두고 구조만 정리합니다. 단계 안에서도 **3-A → 3-E 순서로 하나씩** 적용하기를 권장합니다. 각 항목을 따로 `/apply 3-A`처럼 요청하셔도 됩니다.
 
+> [!NOTE]
+> **루트 정리 B단계 반영 (2026-10-04)**: 백엔드 모듈이 `gichul/` 패키지로 이동했습니다. 아래 링크는 `gichul/<모듈>.py`로 갱신했지만, `#L` 줄 번호는 import·경로 줄 변경으로 몇 줄 어긋날 수 있으니 적용 시 함수 이름으로 다시 찾아 주세요.
+> 3단계에서 새로 만드는 모듈(`text_utils.py`, `routers/`, `services/` 등)은 모두 `gichul/` 아래에 만들고, 경로는 `gichul/paths.py` 상수를 씁니다.
+
 ### 3-A. 공통 함수 추출 (보고서 3-11 일부)
 **[NEW] `text_utils.py`** (DB에 의존하지 않는 순수 함수만)
 - `normalize_bracket_id(raw) -> str` — app.py에 20회 넘게 반복되는 `clean_id` 패턴을 대체합니다.
-- `apply_answer_header(explanation, answer) -> str` — `[정답]` 헤더 갱신 코드 4곳을 대체합니다 ([app.py:L1404](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1404-L1411), [L1696](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1696-L1699), [L1756](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1756-L1759), [database.py:L207](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/database.py#L207-L215))
-- `extract_answer_num`, `extract_choices`, `clean_choice_markers`를 [grammar_analyzer.py:L606-L680](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/grammar_analyzer.py#L606-L680)에서 옮겨옵니다.
-- `fill_blanks(sentence, passage_text, answer_text, explanation_text) -> str` — [prepare_sentence_for_analysis](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/grammar_analyzer.py#L683-L765)에서 DB 조회 부분(L701-L722)을 뺀 순수 버전입니다.
+- `apply_answer_header(explanation, answer) -> str` — `[정답]` 헤더 갱신 코드 4곳을 대체합니다 ([app.py:L1404](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1404-L1411), [L1696](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1696-L1699), [L1756](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1756-L1759), [database.py:L207](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/database.py#L207-L215))
+- `extract_answer_num`, `extract_choices`, `clean_choice_markers`를 [grammar_analyzer.py:L606-L680](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/grammar_analyzer.py#L606-L680)에서 옮겨옵니다.
+- `fill_blanks(sentence, passage_text, answer_text, explanation_text) -> str` — [prepare_sentence_for_analysis](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/grammar_analyzer.py#L683-L765)에서 DB 조회 부분(L701-L722)을 뺀 순수 버전입니다.
 
 **[MODIFY] grammar_analyzer.py**
 - `prepare_sentence_for_analysis`는 "DB에서 지문 정보를 보강한 뒤 `fill_blanks` 호출"만 하도록 줄입니다. 옮긴 함수들은 기존 이름으로 다시 내보내서 하위 호환을 유지합니다.
@@ -314,10 +318,10 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
 - `analyze_and_save_sentence(sentence_row, passage_cache) -> dict` — 단일/배치/백그라운드 3곳에 복제된 "전처리 → 분석 → 저장" 루프를 하나로 합칩니다.
 
 ### 3-B. import 부작용 제거 + 의존 방향 정리 (보고서 3-10)
-- [database.py:L2063](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/database.py#L2063)의 `init_db()` 자동 호출을 제거합니다. 대신 app.py의 FastAPI `lifespan`에서 호출합니다. `tools/*.py` 스크립트에는 `db.init_db()`를 명시적으로 넣습니다.
-- [tts_service.py:L34-L51](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L34-L51)의 torch/torchaudio 패치를 `_get_or_load_xtts_model()` 안으로 옮겨서 필요할 때만 실행합니다.
-- [database.search_sentences:L1923-L1931](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/database.py#L1923-L1931): 아직 빈칸이 남은 문장의 지문 정보를 **한 번에 조회**한 뒤 `text_utils.fill_blanks`를 호출합니다. 지금은 행마다 DB를 따로 조회하는 N+1 구조이고, `grammar_analyzer`를 import하는 역방향 의존도 함께 없어집니다.
-- [validator.py:L102-L117](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/validator.py#L102-L117): `text_utils.fill_blanks`를 직접 사용합니다. 지문 정보가 이미 다 있으므로 DB 조회가 필요 없습니다.
+- [database.py:L2063](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/database.py#L2063)의 `init_db()` 자동 호출을 제거합니다. 대신 app.py의 FastAPI `lifespan`에서 호출합니다. `tools/*.py` 스크립트에는 `db.init_db()`를 명시적으로 넣습니다.
+- [tts_service.py:L34-L51](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/tts_service.py#L34-L51)의 torch/torchaudio 패치를 `_get_or_load_xtts_model()` 안으로 옮겨서 필요할 때만 실행합니다.
+- [database.search_sentences:L1923-L1931](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/database.py#L1923-L1931): 아직 빈칸이 남은 문장의 지문 정보를 **한 번에 조회**한 뒤 `text_utils.fill_blanks`를 호출합니다. 지금은 행마다 DB를 따로 조회하는 N+1 구조이고, `grammar_analyzer`를 import하는 역방향 의존도 함께 없어집니다.
+- [validator.py:L102-L117](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/validator.py#L102-L117): `text_utils.fill_blanks`를 직접 사용합니다. 지문 정보가 이미 다 있으므로 DB 조회가 필요 없습니다.
 
 ### 3-C. 시험 프로파일을 데이터로 관리 (보고서 3-12)
 **[NEW] `exam_profiles.py`**
@@ -334,9 +338,9 @@ class ExamProfile:
 def get_exam_profile(grade, year, month, subtype=None) -> ExamProfile: ...
 ```
 - 대체 대상 (텍스트 기반 감지 `detect_listening_range`는 유지하고, 프로파일은 **기본값**만 제공):
-  - app.py: [L218-L221](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L218-L221), [L272-L277](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L271-L277), [L1303-L1308](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1303-L1308), [L1660-L1661](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1660-L1661)
-  - pdf_parser.py: [L205-L213](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/pdf_parser.py#L205-L213), [L239-L240](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/pdf_parser.py#L239-L240), [L337-L341](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/pdf_parser.py#L337-L341)
-  - hwp_parser.py: [L556-L560](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/hwp_parser.py#L556-L560)
+  - app.py: [L218-L221](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L218-L221), [L272-L277](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L271-L277), [L1303-L1308](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1303-L1308), [L1660-L1661](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1660-L1661)
+  - pdf_parser.py: [L205-L213](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/pdf_parser.py#L205-L213), [L239-L240](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/pdf_parser.py#L239-L240), [L337-L341](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/pdf_parser.py#L337-L341)
+  - hwp_parser.py: [L556-L560](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/hwp_parser.py#L556-L560)
   - listening_parser.py: 연도/문항 번호 분기 (적용할 때 grep으로 모든 위치를 확정)
 - **회귀 방지**: 바꾸기 전에 `scratch/profile_snapshot.py`로 DB에 있는 모든 시험의 (grade, year, month, subtype)에 대해 기존 로직의 결과값을 JSON으로 저장합니다. 바꾼 뒤 새 프로파일 결과와 비교해서 **차이가 0건**이어야 합니다.
 
@@ -376,7 +380,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 ## 4단계 — 품질 기반
 
 ### 4-A. 테스트 확충 (보고서 3-13)
-- [database.py:L16](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/database.py#L16): `DB_PATH = os.environ.get("GICHUL_DB_PATH") or <기본값>`
+- [database.py:L16](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/database.py#L16): `DB_PATH = os.environ.get("GICHUL_DB_PATH") or <기본값>`
 - **[MODIFY] tests/conftest.py**: `tmp_path` 임시 DB 픽스처(`init_db` 호출)와 `TestClient` 픽스처를 추가합니다. `httpx`는 0.28.1이 이미 설치되어 있지만 requirements에는 없어서 개발/테스트 섹션에 추가합니다.
 - **[NEW] 테스트 파일**
   | 파일 | 검증 내용 |
@@ -389,14 +393,14 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - `scratch/`의 116개 스크립트 중 회귀 가치가 있는 것(`test_smart_resolver`, `test_dedup_algorithm` 등)은 검토해서 옮길지 정하고, 목록만 보고합니다.
 
 ### 4-B. 보안과 안전성 (보고서 3-15)
-- 업로드 파일명: `safe_name = os.path.basename(f.filename)`에 허용 문자 화이트리스트를 적용합니다 ([app.py:L1249-L1279](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1249-L1279), [L1665-L1667](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L1665-L1667)). `{grade}_{year}_{month}_` 접두사는 크롭 재생성 glob이 이 이름에 의존하므로 유지합니다.
-- 시드 API 제거: [api_seed_sample_data](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/app.py#L2041-L2179), `dom.js`의 `btnSeedSample`, [upload.js:L1599-L1620](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/upload.js#L1599-L1620) 핸들러. HTML에는 해당 버튼이 없습니다.
+- 업로드 파일명: `safe_name = os.path.basename(f.filename)`에 허용 문자 화이트리스트를 적용합니다 ([app.py:L1249-L1279](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1249-L1279), [L1665-L1667](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1665-L1667)). `{grade}_{year}_{month}_` 접두사는 크롭 재생성 glob이 이 이름에 의존하므로 유지합니다.
+- 시드 API 제거: [api_seed_sample_data](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L2041-L2179), `dom.js`의 `btnSeedSample`, [upload.js:L1599-L1620](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/upload.js#L1599-L1620) 핸들러. HTML에는 해당 버튼이 없습니다.
 - 토스트: [utils.js:L44](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/utils.js#L44)에서 `innerHTML` → `span.textContent`로 바꿉니다. HTML을 넘기는 `showToast` 호출이 0건인 것을 확인했습니다.
 - `DELETE /api/exams/{exam_id}`에도 `normalize_bracket_id`를 적용합니다.
 - (선택) API 키를 Windows `keyring`에 저장. 의존성이 추가되고 기존 키를 옮겨야 해서, 적용할지는 그때 결정합니다.
 
 ### 4-C. 교차검증 수치 바로잡기 (보고서 3-16)
-- [validator.py:L80](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/validator.py#L80): 한쪽 본문이 없으면 `ratio=None`, `remarks="비교 불가 (HWP/PDF 중 한쪽 없음)"`으로 기록합니다.
+- [validator.py:L80](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/validator.py#L80): 한쪽 본문이 없으면 `ratio=None`, `remarks="비교 불가 (HWP/PDF 중 한쪽 없음)"`으로 기록합니다.
 - `ratio < 0.9`이면 `remarks`에 `⚠ 검토 필요`를 붙입니다.
 - 프론트엔드 일치율 표시 부분이 `None`(null)을 받아도 깨지지 않도록 처리합니다 (적용할 때 grep으로 위치 확정).
 

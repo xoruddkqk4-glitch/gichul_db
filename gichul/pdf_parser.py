@@ -13,7 +13,8 @@ from typing import List, Dict, Tuple, Optional
 import pymupdf as fitz
 from PIL import Image
 
-CAPTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "captures")
+from .paths import CAPTURES_DIR
+
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}

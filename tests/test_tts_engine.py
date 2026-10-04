@@ -2,8 +2,8 @@
 import pytest
 from starlette.testclient import TestClient
 
-from app import app
-import database as db
+from gichul.app import app
+from gichul import database as db
 
 
 @pytest.fixture

@@ -35,22 +35,19 @@ if __name__ == "__main__":
     # 브라우저 자동 오픈 스레드 실행
     threading.Thread(target=open_browser_later, daemon=True).start()
 
-    # Uvicorn 서버 구동 (Git 커밋 및 대용량 파일 변경 시 FileNotFoundError 방지 설정 적용)
+    # Uvicorn 서버 구동
+    # - 백엔드 코드는 gichul/ 패키지에 있으므로 감시 대상을 gichul/ 과 templates/ 로 좁힘
+    #   (uploads/, static/captures/, gichul.db 등 대용량·자주 바뀌는 파일 변경으로 인한 불필요한 재시작 방지)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     uvicorn.run(
-        "app:app",
+        "gichul.app:app",
+        app_dir=base_dir,
         host="127.0.0.1",
         port=8000,
         reload=True,
-        reload_dirs=[base_dir],
-        reload_excludes=[
-            ".git", ".git/*", ".git/**/*",
-            "uploads", "uploads/*", "uploads/**/*",
-            "static", "static/*", "static/**/*", "static/captures/*",
-            "scratch", "scratch/*", "scratch/**/*",
-            ".gemini", ".gemini/*",
-            "data", "data/*", "data/**/*",
-            "gichul.db*", "*.db*", "*.db-wal", "*.db-shm", "*.sqlite*",
-            "*.png", "*.jpg", "*.jpeg", "*.hwp", "*.hwpx", "*.pdf", "*.json", "*.csv"
-        ]
+        reload_dirs=[
+            os.path.join(base_dir, "gichul"),
+            os.path.join(base_dir, "templates"),
+        ],
+        reload_excludes=["__pycache__", "__pycache__/*", "*.pyc"],
     )

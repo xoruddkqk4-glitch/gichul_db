@@ -10,10 +10,9 @@ import time
 import sqlite3
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-import pdf_parser
+from gichul import pdf_parser
+from gichul.paths import DB_PATH
 from PIL import Image
-
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "gichul.db")
 
 def find_pdf_for_exam(grade: str, year: int, month: int, subtype: str = None) -> str:
     patterns = [

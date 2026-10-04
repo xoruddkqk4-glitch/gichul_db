@@ -1,7 +1,7 @@
 """answer_resolver.py 회귀 테스트 — 정답 정규화, CSV 후보 산출, 소스 우선순위, 검증 강등, 다른 시험 CSV 판정"""
 import pytest
 
-import answer_resolver as ar
+from gichul import answer_resolver as ar
 
 
 def _csv_item(ans="", rate=None, rates=None):
@@ -241,7 +241,7 @@ def test_uploaded_json_stays_verified_even_with_csv_rate_discrepancy():
 
 
 def test_parse_answer_json_various_formats():
-    import answer_keys as ak
+    from gichul import answer_keys as ak
 
     # 1) dict with numbers
     assert ak.parse_answer_json({"18": 2, "19": 1}) == {18: "②", 19: "①"}

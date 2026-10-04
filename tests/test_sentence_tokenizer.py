@@ -1,5 +1,5 @@
 """sentence_tokenizer.py 회귀 테스트 — 문장 분할, 지문 정제, 문장 레코드 생성"""
-from sentence_tokenizer import clean_passage_for_sentences, split_sentences, create_sentence_records
+from gichul.sentence_tokenizer import clean_passage_for_sentences, split_sentences, create_sentence_records
 
 
 # ---------- split_sentences: 기본 분할 ----------

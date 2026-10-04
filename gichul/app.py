@@ -33,24 +33,25 @@ except ImportError:
     def fast_json_dumps(obj: Any) -> bytes:
         return json.dumps(obj, ensure_ascii=False).encode("utf-8")
 
-import database as db
-import grammar_analyzer
+from . import database as db
+from . import grammar_analyzer
 import pymupdf as fitz
-from pdf_parser import extract_pdf_columns_and_questions, detect_listening_range
-from hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP, get_hwp_text, convert_hwp_to_pdf
-import answer_keys
-import answer_resolver
-from validator import cross_validate_and_merge
-from rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
-import tts_service
-import listening_parser
-import fels_engine
+from .pdf_parser import extract_pdf_columns_and_questions, detect_listening_range
+from .hwp_parser import parse_hwp_questions, parse_hwp_explanations, read_answer_image, CIRCLED_MAP, get_hwp_text, convert_hwp_to_pdf
+from . import answer_keys
+from . import answer_resolver
+from .validator import cross_validate_and_merge
+from .rate_parser import parse_correct_rate_csv, get_difficulty_badge_info
+from . import tts_service
+from . import listening_parser
+from . import fels_engine
+from . import paths
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
+BASE_DIR = paths.ROOT_DIR
+STATIC_DIR = paths.STATIC_DIR
+TEMPLATES_DIR = paths.TEMPLATES_DIR
+UPLOADS_DIR = paths.UPLOADS_DIR
 
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -310,7 +311,7 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
 
         # [특수 예외 폴백] 고3 2013년 9월 등 벡터 폰트 외곽선 변환 문서 전용 크롭 연동
         if not crop_results and grade == "고3" and year == 2013 and month == 9:
-            from tools.crop_2013_09 import generate_crops_for_exam
+            from .special_crops.crop_2013_09 import generate_crops_for_exam
             sub = subtype or ("A형" if "-A" in exam_id else "B형")
             if generate_crops_for_exam(exam_id, sub):
                 print(f"[Crops] {exam_id} 전용 고정밀 기하 크롭 생성 완료")
@@ -2149,7 +2150,7 @@ def api_batch_delete_exams(req: BatchDeleteRequest):
 @app.post("/api/seed-sample-data")
 def api_seed_sample_data():
     """실제 수능/모의고사 대표 기출 지문 3개와 문장 20여 개를 즉시 DB에 주입"""
-    from sentence_tokenizer import create_sentence_records
+    from .sentence_tokenizer import create_sentence_records
 
     # 샘플 시험지 1: 2024년 6월 모평 고3
     exam1 = {

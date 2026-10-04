@@ -12,10 +12,11 @@ import urllib.request
 import urllib.error
 from typing import Dict, List, Any, Optional, Tuple
 
-import database
+from . import database
+from . import paths
 
 # 범주표 로드 및 캐싱
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "data", "grammar_categories.json")
+DATA_PATH = paths.GRAMMAR_CATEGORIES_JSON
 
 _CATEGORIES_DATA: Optional[Dict[str, Any]] = None
 _CATEGORY_ID_MAP: Dict[int, Dict[str, Any]] = {}

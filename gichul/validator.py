@@ -8,7 +8,7 @@
 import re
 import difflib
 from typing import Dict, List, Tuple, Optional
-from sentence_tokenizer import create_sentence_records
+from .sentence_tokenizer import create_sentence_records
 
 
 def normalize_for_comparison(text: str) -> str:
@@ -100,7 +100,7 @@ def cross_validate_and_merge(
 
         # 밑줄/빈칸에 정답 선지 자동 채움 및 선지 기호 정제 적용 (온전한 문장 완성)
         try:
-            from grammar_analyzer import prepare_sentence_for_analysis
+            from .grammar_analyzer import prepare_sentence_for_analysis
             for sr in sentence_records:
                 completed = prepare_sentence_for_analysis(
                     sr["sentence_text"],

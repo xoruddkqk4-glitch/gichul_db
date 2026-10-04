@@ -79,26 +79,35 @@
 
 ```text
 05-gichul_db/
-├── database.py             # SQLite DB 스키마, CRUD, 인덱스, 어법 태그 및 검색 헬퍼
-├── sentence_tokenizer.py   # 약어/소수점/인용구 보존 영문 문장 분할 모듈
-├── grammar_analyzer.py     # Gemini/ChatGPT/Claude Multi-LLM 243개 어법 분석 엔진
-├── pdf_parser.py           # PDF 2단 칼럼 분할 파싱 및 문항별 고화질 이미지 크롭
-├── hwp_parser.py           # HWP/HWPX 문제지 파싱 및 정답/해설 추출
-├── validator.py            # HWP vs PDF 상호 교차 검증 및 데이터 무결성 검사
-├── rate_parser.py          # OMR/채점 통계 CSV 파서 (정답률, 선지별 선택률, 매력적 오답 탐지)
-├── answer_keys.py          # 검증 정답 키(data/answer_keys) 로더 및 수동 정정 기록
-├── answer_resolver.py      # 정답 소스 결합·우선순위·검증 판정, CSV 정답률 교차검증
-├── listening_parser.py     # 듣기 대본 HWP/PDF 추출 및 어휘 블록 자동 정제
-├── fels_engine.py          # 7대 기능어 약형드랩 및 최장 단어 기준 균일 빈칸 생성 모듈
-├── tts_service.py          # Edge-TTS(무료) 및 수능 성우 복제(XTTS-v2) 듀얼 보이스 음성 합성 엔진
-├── app.py                  # FastAPI REST API 및 웹 서버 엔드포인트
-├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기
+├── run.py                  # 원클릭 로컬 웹 애플리케이션 구동기 (uvicorn "gichul.app:app")
+├── start.bat · install.bat # 사용자 실행/설치 배치 파일
+├── gichul/                 # ★ 백엔드 파이썬 패키지
+│   ├── __init__.py
+│   ├── paths.py            # 모든 경로 상수(DB, static, uploads, captures, audio 등)를 여기서만 정의 (GICHUL_DB_PATH 환경변수 지원)
+│   ├── app.py              # FastAPI REST API 및 웹 서버 엔드포인트
+│   ├── database.py         # SQLite DB 스키마, CRUD, 인덱스, 어법 태그 및 검색 헬퍼
+│   ├── sentence_tokenizer.py   # 약어/소수점/인용구 보존 영문 문장 분할 모듈
+│   ├── grammar_analyzer.py     # Gemini/ChatGPT/Claude Multi-LLM 243개 어법 분석 엔진
+│   ├── pdf_parser.py           # PDF 2단 칼럼 분할 파싱 및 문항별 고화질 이미지 크롭
+│   ├── hwp_parser.py           # HWP/HWPX 문제지 파싱 및 정답/해설 추출
+│   ├── validator.py            # HWP vs PDF 상호 교차 검증 및 데이터 무결성 검사
+│   ├── rate_parser.py          # OMR/채점 통계 CSV 파서 (정답률, 선지별 선택률, 매력적 오답 탐지)
+│   ├── answer_keys.py          # 검증 정답 키(data/answer_keys) 로더 및 수동 정정 기록
+│   ├── answer_resolver.py      # 정답 소스 결합·우선순위·검증 판정, CSV 정답률 교차검증
+│   ├── listening_parser.py     # 듣기 대본 HWP/PDF 추출 및 어휘 블록 자동 정제
+│   ├── fels_engine.py          # 7대 기능어 약형드랩 및 최장 단어 기준 균일 빈칸 생성 모듈
+│   ├── tts_service.py          # Edge-TTS(무료) 및 수능 성우 복제(XTTS-v2) 듀얼 보이스 음성 합성 엔진
+│   └── special_crops/
+│       └── crop_2013_09.py     # 고3 2013년 9월(벡터 외곽선 문서) 전용 크롭 — 앱이 실행 중 import
 ├── data/
 │   └── answer_keys/        # 시험지별 검증 정답 키 JSON (101세트) + _manual.json(직접 재판독 확정값)
-├── tools/
+├── tests/                  # pytest 회귀 테스트 (python -m pytest tests -q)
+├── tools/                  # 일회성 관리 스크립트 (from gichul import ... 로 패키지 사용)
 │   ├── build_answer_keys.py    # 이중 전사(_passA/_passB) + CSV 계층 검증 → 정답 키 생성
 │   ├── resync_answers.py       # 정답 키 → DB 정답/해설 헤더/형광펜 크롭 재동기화
-│   └── audit_keys_with_vision.py # 다중 Vision 모델 합의로 정답 키 재감사
+│   ├── audit_keys_with_vision.py # 다중 Vision 모델 합의로 정답 키 재감사
+│   ├── regenerate_group_crops.py # 41~45번 묶음 문항 통합 크롭 재생성
+│   └── fix_2012_11_and_2013_03.py # 2012-11 / 2013-03 크롭 보정
 ├── .claude/skills/         # Claude Code 슬래시 명령(/git-commit, /ask, /scratchpad) 미러 (원본: .agents/skills)
 ├── docs/                   # 계획서·리뷰 보관소 (목록과 상태: docs/README.md)
 │   ├── plans/              # 구현 계획서 YYYY-MM-DD_<슬러그>.md (/ask 작성, /apply 실행)

@@ -16,8 +16,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from answer_keys import KEYS_DIR  # noqa: E402
-from hwp_parser import read_answer_image  # noqa: E402
+from gichul.answer_keys import KEYS_DIR  # noqa: E402
+from gichul.hwp_parser import read_answer_image  # noqa: E402
 
 OUT_PATH = os.path.join(ROOT, "scratch", "vision_audit.json")
 

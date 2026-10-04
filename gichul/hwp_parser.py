@@ -466,7 +466,7 @@ def classify_question_type(title: str, q_num: int = 0, is_50_questions: bool = F
     # 듣기 문항(1~17번)인 경우 듣기 분류 엔진 연동
     if 1 <= q_num <= 17:
         try:
-            from listening_parser import classify_listening_question_type
+            from .listening_parser import classify_listening_question_type
             return classify_listening_question_type(title, q_num)
         except Exception:
             pass
@@ -588,7 +588,7 @@ def parse_hwp_questions(
     if not full_text:
         return {}
 
-    from pdf_parser import detect_listening_range
+    from .pdf_parser import detect_listening_range
     detected_start, detected_end = detect_listening_range(full_text, year=year)
 
     if reading_start is not None:
@@ -966,7 +966,7 @@ def read_answer_image(image_path: str) -> Dict[str, Any]:
     }
     """
     import base64
-    import grammar_analyzer
+    from . import grammar_analyzer
 
     result: Dict[str, Any] = {"status": "failed", "readings": {}, "consensus": {}, "disputed": {}, "dissent": {}, "errors": [], "reader_count": 0}
     if not image_path or not os.path.exists(image_path):
