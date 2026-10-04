@@ -61,6 +61,7 @@ app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 from collections import OrderedDict
+import functools
 import threading
 
 class FastSearchCache:
@@ -90,6 +91,19 @@ class FastSearchCache:
             self._cache.clear()
 
 search_cache = FastSearchCache(maxsize=256)
+
+# PyMuPDF는 여러 스레드에서 동시에 쓰는 것이 보장되지 않는다.
+# 라우트가 스레드풀에서 실행(def)되므로, 업로드·크롭 재생성·듣기 동기화는 한 번에 하나씩만 처리한다.
+INGEST_LOCK = threading.Lock()
+
+
+def _ingest_serialized(fn):
+    """PDF/HWP 처리 라우트를 INGEST_LOCK으로 직렬화하는 데코레이터 (FastAPI 시그니처는 functools.wraps로 유지)"""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with INGEST_LOCK:
+            return fn(*args, **kwargs)
+    return wrapper
 
 # 정적 파일 마운트 (/static -> static/)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -319,7 +333,7 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
 
 # --- 웹 페이지 루트 ---
 @app.get("/", response_class=HTMLResponse)
-async def serve_index():
+def serve_index():
     """메인 웹 UI 페이지 서빙"""
     index_file = os.path.join(TEMPLATES_DIR, "index.html")
     if os.path.exists(index_file):
@@ -330,14 +344,14 @@ async def serve_index():
 
 # --- 통계 API ---
 @app.get("/api/stats")
-async def api_stats():
+def api_stats():
     """DB 통계 반환"""
     return db.get_db_stats()
 
 
 # --- 검색 API ---
 @app.get("/api/search/passages")
-async def api_search_passages(
+def api_search_passages(
     keyword: str = "",
     exam_id: str = "",
     grade: str = "",
@@ -395,7 +409,7 @@ async def api_search_passages(
 
 
 @app.get("/api/exams/{exam_id:path}/passages")
-async def api_get_exam_passages(exam_id: str):
+def api_get_exam_passages(exam_id: str):
     """특정 시험의 전체 문항 본문/해설 일괄 조회 (단 28문항 안팎 초고속 온디맨드 로드)"""
     cache_key = f"exam_passages:{exam_id}"
     cached_payload = search_cache.get(cache_key)
@@ -410,7 +424,7 @@ async def api_get_exam_passages(exam_id: str):
 
 
 @app.get("/api/search/sentences")
-async def api_search_sentences(
+def api_search_sentences(
     keyword: str = "",
     passage_id: str = "",
     grade: str = "",
@@ -473,7 +487,7 @@ async def api_search_sentences(
 
 # --- 단일 지문 상세 API (2x2 그리드 뷰용) ---
 @app.get("/api/passages/{passage_id}")
-async def api_get_passage(passage_id: str):
+def api_get_passage(passage_id: str):
     """특정 지문의 상세 데이터 (HWP 해설, PDF 캡처, txt 본문, 태그, 문제유형, 정답률 및 선지 선택률, 듣기 대본/FELS/오디오)"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -523,7 +537,7 @@ async def api_generate_exam_listening_audio(exam_id: str):
 
 
 @app.get("/api/exams/{exam_id}/download-listening-zip")
-async def api_download_listening_zip(exam_id: str):
+def api_download_listening_zip(exam_id: str):
     """시험지의 전체 듣기 MP3 파일들을 ZIP 파일로 묶어서 다운로드"""
     clean_id = exam_id.strip()
     if not clean_id.startswith("["):
@@ -542,18 +556,21 @@ async def api_download_listening_zip(exam_id: str):
 
 
 @app.post("/api/exams/{exam_id}/sync-listening")
-async def api_sync_exam_listening(exam_id: str):
+@_ingest_serialized
+def api_sync_exam_listening(exam_id: str):
     """기존 시험지의 듣기 문항(1~17번) 크롭 이미지 및 대본/FELS 재동기화"""
     clean_id = exam_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
-    count = listening_parser.sync_exam_listening(clean_id)
-    return {"success": True, "exam_id": clean_id, "synced_count": count}
+    result = listening_parser.sync_exam_listening(clean_id)
+    # sync_exam_listening은 dict를 반환하므로 개수만 꺼낸다 (기존에는 dict 전체가 synced_count로 나감)
+    synced = result.get("synced_count", 0) if isinstance(result, dict) else result
+    return {"success": True, "exam_id": clean_id, "synced_count": synced}
 
 
 # --- 문제 유형 수정 API ---
 @app.patch("/api/passages/{passage_id}/question-type")
-async def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
+def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
     """지문의 문제 유형 변경/저장"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -566,7 +583,7 @@ async def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
 # --- 지문 메모(수업/변형 노트) 저장 API ---
 @app.put("/api/passages/{passage_id}/memo")
 @app.patch("/api/passages/{passage_id}/memo")
-async def api_update_passage_memo(passage_id: str, req: PassageMemoRequest):
+def api_update_passage_memo(passage_id: str, req: PassageMemoRequest):
     """지문의 사용자 메모(수업/변형 노트) 저장"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -580,7 +597,8 @@ async def api_update_passage_memo(passage_id: str, req: PassageMemoRequest):
 
 # --- 정답 수동 정정 API ---
 @app.patch("/api/passages/{passage_id}/answer")
-async def api_update_answer(passage_id: str, req: AnswerRequest):
+@_ingest_serialized
+def api_update_answer(passage_id: str, req: AnswerRequest):
     """교사가 확인한 정답으로 정정: DB 정답/해설 헤더/검증 상태 갱신 + 키 파일 기록 + 형광펜 크롭 재생성"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -628,7 +646,8 @@ async def api_update_answer(passage_id: str, req: AnswerRequest):
 
 # --- PDF 문항 크롭 다시 캡처 API ---
 @app.post("/api/passages/{passage_id:path}/recapture")
-async def api_recapture_passage_pdf(passage_id: str):
+@_ingest_serialized
+def api_recapture_passage_pdf(passage_id: str):
     """지문 PDF 크롭 이미지 다시 캡처 (원본 PDF로부터 형광펜 하이라이트 문항 크롭 재생성)"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -678,7 +697,7 @@ async def api_recapture_passage_pdf(passage_id: str):
 
 # --- 태그 관리 API ---
 @app.post("/api/passages/{passage_id}/tags")
-async def api_add_passage_tag(passage_id: str, req: TagRequest):
+def api_add_passage_tag(passage_id: str, req: TagRequest):
     """지문 태그 추가"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -690,7 +709,7 @@ async def api_add_passage_tag(passage_id: str, req: TagRequest):
 
 
 @app.delete("/api/passages/{passage_id}/tags/{tag_name}")
-async def api_delete_passage_tag(passage_id: str, tag_name: str):
+def api_delete_passage_tag(passage_id: str, tag_name: str):
     """지문 태그 삭제"""
     clean_id = passage_id.strip()
     if not clean_id.startswith("["):
@@ -702,7 +721,7 @@ async def api_delete_passage_tag(passage_id: str, tag_name: str):
 
 
 @app.post("/api/sentences/{sentence_id}/tags")
-async def api_add_sentence_tag(sentence_id: str, req: TagRequest):
+def api_add_sentence_tag(sentence_id: str, req: TagRequest):
     """문장 태그 추가"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -714,7 +733,7 @@ async def api_add_sentence_tag(sentence_id: str, req: TagRequest):
 
 
 @app.delete("/api/sentences/{sentence_id}/tags/{tag_name}")
-async def api_delete_sentence_tag(sentence_id: str, tag_name: str):
+def api_delete_sentence_tag(sentence_id: str, tag_name: str):
     """문장 태그 삭제"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -727,7 +746,7 @@ async def api_delete_sentence_tag(sentence_id: str, tag_name: str):
 
 # --- AI 어법 분석 및 설정 API ---
 @app.get("/api/settings/ai")
-async def api_get_ai_settings():
+def api_get_ai_settings():
     """현재 저장된 모든 AI Provider의 설정 및 활성화 현황 종합 반환"""
     cfg = grammar_analyzer.get_all_ai_configs()
     # 레거시 하위 호환 필드 결합
@@ -741,14 +760,14 @@ async def api_get_ai_settings():
 
 
 @app.get("/api/openrouter/top-models")
-async def api_get_openrouter_top_models(force_refresh: bool = False):
+def api_get_openrouter_top_models(force_refresh: bool = False):
     """OpenRouter Top 5 추천 모델 정보 실시간 조회 및 반환"""
     models = grammar_analyzer.get_openrouter_top_models(force_refresh=force_refresh)
     return {"success": True, "models": models}
 
 
 @app.get("/api/openrouter/models")
-async def api_get_openrouter_all_models(force_refresh: bool = False):
+def api_get_openrouter_all_models(force_refresh: bool = False):
     """OpenRouter 전체 실시간 모델 목록 및 현재 설정된 앙상블 3개 모델 반환"""
     models = grammar_analyzer.get_all_openrouter_models(force_refresh=force_refresh)
     top_models = grammar_analyzer.get_openrouter_top_models(force_refresh=force_refresh)
@@ -763,7 +782,7 @@ async def api_get_openrouter_all_models(force_refresh: bool = False):
 
 
 @app.get("/api/lmstudio/models")
-async def api_get_lmstudio_models(base_url: Optional[str] = None):
+def api_get_lmstudio_models(base_url: Optional[str] = None):
     """LM Studio 로컬 서버에서 다운로드/로드된 모델 목록 실시간 조회"""
     b_url = base_url or grammar_analyzer.get_lmstudio_base_url()
     models = grammar_analyzer.get_available_lmstudio_models(b_url)
@@ -777,7 +796,7 @@ def describe_non_ascii(value: str) -> str:
 
 
 @app.post("/api/settings/ai/test")
-async def api_test_single_ai_provider(req: SingleProviderTestRequest):
+def api_test_single_ai_provider(req: SingleProviderTestRequest):
     """특정 AI Provider 개별 연결 핑 테스트"""
     p = req.provider.strip().lower()
     k = req.api_key.strip() if req.api_key else ""
@@ -816,7 +835,7 @@ async def api_test_single_ai_provider(req: SingleProviderTestRequest):
 
 
 @app.post("/api/settings/ai")
-async def api_save_ai_settings(req: AISettingsRequest):
+def api_save_ai_settings(req: AISettingsRequest):
     """AI 설정 일괄/단일 저장 및 연결 테스트"""
     import json
 
@@ -898,7 +917,7 @@ async def api_save_ai_settings(req: AISettingsRequest):
 
 
 @app.get("/api/settings/tts/hardware")
-async def api_get_tts_hardware():
+def api_get_tts_hardware():
     """현재 머신의 GPU(CUDA) 및 XTTS 설치 하드웨어 상태 반환"""
     return tts_service.get_hardware_status()
 
@@ -932,7 +951,7 @@ async def api_preview_edge_tts(req: Dict[str, Any] = Body(...)):
 
 
 @app.post("/api/sentences/{sentence_id}/star")
-async def api_toggle_sentence_star(sentence_id: str):
+def api_toggle_sentence_star(sentence_id: str):
     """문장 별표(⭐ 중요 문장 플래그) 토글 API"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -943,7 +962,7 @@ async def api_toggle_sentence_star(sentence_id: str):
 
 
 @app.post("/api/sentences/{sentence_id}/analyze-grammar")
-async def api_analyze_sentence_grammar(sentence_id: str):
+def api_analyze_sentence_grammar(sentence_id: str):
     """단일 문장 실시간 AI 어법 분석 및 DB 저장"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -993,19 +1012,19 @@ async def api_analyze_sentence_grammar(sentence_id: str):
 
 
 @app.get("/api/grammar/categories")
-async def api_get_grammar_categories(user_id: str = "default_user"):
+def api_get_grammar_categories(user_id: str = "default_user"):
     """현재 사용자에게 유효한 어법 범주표 및 커스텀 체계 메타데이터 반환"""
     return db.get_effective_grammar_categories(user_id)
 
 
 @app.get("/api/grammar/settings")
-async def api_get_grammar_settings(user_id: str = "default_user"):
+def api_get_grammar_settings(user_id: str = "default_user"):
     """사용자 커스텀 어법 체계 설정 조회"""
     return db.get_user_grammar_settings(user_id)
 
 
 @app.post("/api/grammar/settings")
-async def api_save_grammar_settings(req: UserGrammarSettingsRequest):
+def api_save_grammar_settings(req: UserGrammarSettingsRequest):
     """사용자 커스텀 어법 트리 및 매핑 설정 저장"""
     try:
         db.save_user_grammar_settings(
@@ -1020,7 +1039,7 @@ async def api_save_grammar_settings(req: UserGrammarSettingsRequest):
 
 
 @app.post("/api/grammar/settings/reset")
-async def api_reset_grammar_settings(user_id: str = "default_user"):
+def api_reset_grammar_settings(user_id: str = "default_user"):
     """사용자 커스텀 어법 설정을 기본 243개 표준 체계로 초기화"""
     try:
         db.reset_user_grammar_settings(user_id)
@@ -1030,7 +1049,7 @@ async def api_reset_grammar_settings(user_id: str = "default_user"):
 
 
 @app.post("/api/sentences/{sentence_id}/grammar-annotations")
-async def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotationRequest):
+def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotationRequest):
     """문장에 수동/사용자 어법 범주 추가"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -1057,7 +1076,7 @@ async def api_add_grammar_annotation(sentence_id: str, req: AddGrammarAnnotation
 
 
 @app.delete("/api/sentences/{sentence_id}/grammar-annotations/{identifier}")
-async def api_delete_grammar_annotation(sentence_id: str, identifier: int, source_type: Optional[str] = None):
+def api_delete_grammar_annotation(sentence_id: str, identifier: int, source_type: Optional[str] = None):
     """문장의 특정 어법 범주 삭제 (source_type 선택적 필터)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -1077,7 +1096,7 @@ async def api_delete_grammar_annotation(sentence_id: str, identifier: int, sourc
 
 
 @app.delete("/api/sentences/{sentence_id}/grammar")
-async def api_reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None):
+def api_reset_sentence_grammar(sentence_id: str, source_type: Optional[str] = None):
     """문장의 어법 분석 결과 초기화 (AI 또는 USER 개별 초기화 또는 전체 초기화)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -1097,7 +1116,7 @@ async def api_reset_sentence_grammar(sentence_id: str, source_type: Optional[str
 
 
 @app.post("/api/sentences/{sentence_id}/grammar-annotations/batch")
-async def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGrammarAnnotationsRequest):
+def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGrammarAnnotationsRequest):
     """문장의 어법 범주 목록을 모달 선택값으로 일괄 저장 (지정된 source_type 항목만 교체)"""
     clean_id = sentence_id.strip()
     if not clean_id.startswith("["):
@@ -1121,7 +1140,7 @@ async def api_batch_set_grammar_annotations(sentence_id: str, req: BatchSetGramm
 
 
 @app.post("/api/sentences/batch-analyze-grammar")
-async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
+def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
     """다중 문장 배치 AI 어법 분석 (선택된 활성 모델 엄격 교집합 적용)"""
     active_configs = grammar_analyzer.get_active_ai_configs()
     valid_configs = [c for c in active_configs if c["api_key"]]
@@ -1252,7 +1271,8 @@ def background_auto_analyze_exam_grammar(exam_id: str):
 
 # --- 파일 업로드 및 상호 검증 파이프라인 API ---
 @app.post("/api/upload")
-async def api_upload_exam(
+@_ingest_serialized
+def api_upload_exam(
     background_tasks: BackgroundTasks,
     grade: str = Form("고3"),
     year: int = Form(2024),
@@ -1353,7 +1373,8 @@ async def api_upload_exam(
             listening_start = 1
             listening_end = (effective_reading_start - 1) if effective_reading_start > 1 else 17
 
-        db.save_exam({
+        # 시험지 정보는 파싱이 끝난 뒤 지문·문장과 함께 한 트랜잭션으로 저장한다 (중간 실패 시 반쯤 저장 방지)
+        exam_record = {
             "id": exam_id,
             "grade": grade,
             "year": year,
@@ -1364,7 +1385,7 @@ async def api_upload_exam(
             "reading_end_q": effective_reading_end,
             "listening_start_q": listening_start,
             "listening_end_q": listening_end
-        })
+        }
 
         # 3. 정답 소스 수집
         # (1) 정답표 파일 처리:
@@ -1472,40 +1493,55 @@ async def api_upload_exam(
             subtype=subtype
         )
 
-        # 7. SQLite DB 일괄 저장
+        # 7. SQLite DB 일괄 저장 (한 트랜잭션: 어느 단계에서든 예외가 나면 이번 업로드 저장분 전체 롤백)
         saved_passages_count = 0
         saved_sentences_count = 0
+        sentence_stats = {"inserted": 0, "updated": 0, "text_changed": 0, "removed": 0}
+        warnings: List[str] = []
 
-        for pkg in merged_packages:
-            db.save_passage(pkg["passage_data"])
-            saved_passages_count += 1
-            if pkg["sentences"]:
-                db.save_sentences(pkg["sentences"])
-                saved_sentences_count += len(pkg["sentences"])
+        with db.transaction() as conn:
+            db.save_exam(exam_record, conn=conn)
 
-        # 문항별 정답 출처/검증 상태 기록
-        db.set_answer_status(exam_id, resolution["sources"], resolution["verified"])
+            for pkg in merged_packages:
+                db.save_passage(pkg["passage_data"], conn=conn)
+                saved_passages_count += 1
+                if pkg["sentences"]:
+                    res = db.replace_passage_sentences(pkg["passage_data"]["id"], pkg["sentences"], conn=conn)
+                    for k in sentence_stats:
+                        sentence_stats[k] += res[k]
+                    saved_sentences_count += len(pkg["sentences"])
+                else:
+                    warnings.append(f"{pkg['passage_data'].get('q_num')}번: 문장 분할 결과가 비어 있어 기존 문장을 그대로 두었습니다.")
 
-        # 정답률 데이터가 파싱된 경우 passages 테이블에 일괄 반영
-        if rates_dict:
-            try:
-                db.save_exam_correct_rates(exam_id, rates_dict)
-            except Exception as e:
-                print(f"[Upload] 정답률 DB 갱신 실패: {e}")
+            # 문항별 정답 출처/검증 상태 기록
+            db.set_answer_status(exam_id, resolution["sources"], resolution["verified"], conn=conn)
 
-        # 8. 듣기 영역(1~17번) 자동 크롭 및 스크립트/FELS 추출 동기화
+            # 정답률 데이터가 파싱된 경우 passages 테이블에 일괄 반영 (실패해도 본 저장은 유지)
+            if rates_dict:
+                try:
+                    db.save_exam_correct_rates(exam_id, rates_dict, conn=conn)
+                except Exception as e:
+                    print(f"[Upload] 정답률 DB 갱신 실패: {e}")
+                    warnings.append(f"정답률 반영 실패: {e}")
+
+        # 8. 듣기 영역(1~17번) 자동 크롭 및 스크립트/FELS 추출 동기화 (독해 저장 커밋 후 별도 수행)
         listening_count = 0
         try:
-            listening_count = listening_parser.sync_exam_listening(
+            listening_result = listening_parser.sync_exam_listening(
                 exam_id=exam_id,
                 question_pdf_path=pdf_save_path,
                 script_pdf_path=script_save_path,
                 explanation_hwp_path=exp_save_path or hwp_save_path,
                 answers_dict=answers_dict
             )
+            if isinstance(listening_result, dict):
+                listening_count = listening_result.get("saved_count", 0) or 0
+            else:
+                listening_count = int(listening_result or 0)
             print(f"[Upload] {exam_id} 듣기 문항 {listening_count}개 동기화 완료")
         except Exception as l_err:
             print(f"[Upload] 듣기 문항 동기화 중 경고: {l_err}")
+            warnings.append(f"듣기 문항 동기화 실패: {l_err}")
 
         # AI API 키가 설정되어 있는 경우 백그라운드 어법 자동 분석 스케줄링
         _, ai_key, _ = grammar_analyzer.get_ai_config()
@@ -1514,15 +1550,23 @@ async def api_upload_exam(
 
         report = resolution["report"]
         msg = f"성공적으로 독해 {saved_passages_count}개 문항과 듣기 {listening_count}개 문항을 상호 검증하여 저장했습니다."
+        if sentence_stats["removed"]:
+            msg += f" (이전 업로드의 남은 문장 {sentence_stats['removed']}개 정리)"
         if report["unverified_questions"]:
             msg += f" ⚠ 정답 미검증 {len(report['unverified_questions'])}문항 - 정답표 이미지/정답률 CSV를 확인하세요."
+        if warnings:
+            msg += f" ⚠ 경고 {len(warnings)}건"
         return {
             "status": "success",
             "exam_id": exam_id,
             "passages_count": saved_passages_count,
             "listening_count": listening_count,
             "sentences_count": saved_sentences_count,
+            "sentences_inserted": sentence_stats["inserted"],
+            "sentences_text_changed": sentence_stats["text_changed"],
+            "sentences_removed": sentence_stats["removed"],
             "answer_report": report,
+            "warnings": warnings,
             "message": msg
         }
 
@@ -1534,7 +1578,7 @@ async def api_upload_exam(
 
 # --- 시험지 관리 및 삭제 API ---
 @app.get("/api/exams")
-async def api_get_exams():
+def api_get_exams():
     """등록된 모든 시험지 목록 및 통계 반환"""
     try:
         exams = db.get_all_exams_with_stats()
@@ -1544,7 +1588,7 @@ async def api_get_exams():
 
 
 @app.delete("/api/exams/{exam_id}")
-async def api_delete_exam(exam_id: str):
+def api_delete_exam(exam_id: str):
     """지정된 시험지 및 관련 모든 데이터(지문, 문장, 어법, 태그, 캡처 이미지) 연쇄 삭제"""
     try:
         res = db.delete_exam(exam_id)
@@ -1558,7 +1602,7 @@ async def api_delete_exam(exam_id: str):
 
 
 @app.get("/api/exams/{exam_id}/raw-files")
-async def api_get_exam_raw_files(exam_id: str):
+def api_get_exam_raw_files(exam_id: str):
     """특정 시험지에 등록된 5종 원본 파일(문제 PDF, 해설 HWP, 대본 PDF, 정답 JSON/PNG, 정답률 CSV) 현황 조회"""
     data = db.get_exam_raw_files(exam_id)
     if not data:
@@ -1586,7 +1630,7 @@ async def api_get_exam_raw_files(exam_id: str):
 
 
 @app.get("/api/exams/{exam_id}/download-file")
-async def api_download_exam_file(exam_id: str, file_type: str = Query(...)):
+def api_download_exam_file(exam_id: str, file_type: str = Query(...)):
     """특정 시험지의 단일 원본 파일(pdf, hwp, script, ans, csv)을 다운로드"""
     data = db.get_exam_raw_files(exam_id)
     if not data:
@@ -1626,7 +1670,7 @@ async def api_download_exam_file(exam_id: str, file_type: str = Query(...)):
 
 
 @app.get("/api/exams/{exam_id}/download-zip")
-async def api_download_exam_all_zip(exam_id: str):
+def api_download_exam_all_zip(exam_id: str):
     """특정 시험지의 보관된 모든 원본 파일(문제, 해설, 대본, 정답, 정답률)을 하나의 ZIP으로 일괄 압축 다운로드"""
     data = db.get_exam_raw_files(exam_id)
     if not data:
@@ -1657,7 +1701,8 @@ async def api_download_exam_all_zip(exam_id: str):
 
 
 @app.post("/api/exams/{exam_id}/upload-file")
-async def api_upload_exam_single_file(
+@_ingest_serialized
+def api_upload_exam_single_file(
     exam_id: str,
     file_type: str = Form(...),  # "ans" | "pdf" | "hwp" | "csv"
     file: UploadFile = File(...)
@@ -2021,7 +2066,7 @@ class SelectiveDeleteRequest(BaseModel):
 
 
 @app.post("/api/exams/selective-delete")
-async def api_selective_delete_exams(req: SelectiveDeleteRequest):
+def api_selective_delete_exams(req: SelectiveDeleteRequest):
     """
     모의고사 데이터를 4개 영역(원본 파일, 코어 본문, 메타데이터, 정답률 데이터)으로 구분하여 선택적 삭제
     """
@@ -2060,7 +2105,7 @@ async def api_selective_delete_exams(req: SelectiveDeleteRequest):
 
 
 @app.post("/api/exams/batch-delete")
-async def api_batch_delete_exams(req: BatchDeleteRequest):
+def api_batch_delete_exams(req: BatchDeleteRequest):
     """복수 시험지 일괄 완전 삭제 (하위 호환)"""
     try:
         results = []
@@ -2078,7 +2123,7 @@ async def api_batch_delete_exams(req: BatchDeleteRequest):
 
 # --- 데모/샘플 데이터 즉시 시드 API (사용자가 바로 화면을 테스트할 수 있도록 제공) ---
 @app.post("/api/seed-sample-data")
-async def api_seed_sample_data():
+def api_seed_sample_data():
     """실제 수능/모의고사 대표 기출 지문 3개와 문장 20여 개를 즉시 DB에 주입"""
     from sentence_tokenizer import create_sentence_records
 

@@ -9,6 +9,7 @@ import sqlite3
 import os
 import json
 import re
+from contextlib import contextmanager
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from collections import defaultdict
@@ -26,12 +27,29 @@ def _regexp_func(expr: Optional[str], item: Optional[str]) -> bool:
         return False
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """`with get_connection() as conn:` 블록이 끝나면 commit/rollback 후 연결까지 닫는 연결 클래스.
+
+    기본 sqlite3.Connection의 with 블록은 트랜잭션만 끝내고 연결은 열어 둔다.
+    기존 사용처(50여 곳)를 고치지 않고도 연결이 쌓이지 않도록 여기서 닫는다.
+    """
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)  # 성공 시 commit, 예외 시 rollback
+        finally:
+            self.close()
+
+
 def get_connection() -> sqlite3.Connection:
-    """SQLite 데이터베이스 연결 반환 (ROW 딕셔너리 팩토리 및 REGEXP 함수 등록)"""
-    conn = sqlite3.connect(DB_PATH)
+    """SQLite 데이터베이스 연결 반환 (ROW 딕셔너리 팩토리 및 REGEXP 함수 등록)
+
+    - with 블록이 끝나면 연결이 자동으로 닫힌다 (_ClosingConnection)
+    - timeout=15: 라우트가 스레드풀에서 동시에 실행되므로, 다른 쓰기가 끝날 때까지 최대 15초 기다린다
+    - journal_mode=WAL은 DB 파일에 영구 저장되는 설정이라 init_db()에서 한 번만 설정한다
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=15, factory=_ClosingConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA journal_mode = WAL;")
     conn.execute("PRAGMA synchronous = NORMAL;")
     conn.execute("PRAGMA cache_size = -64000;")
     conn.execute("PRAGMA mmap_size = 268435456;")
@@ -40,9 +58,35 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+@contextmanager
+def transaction():
+    """여러 저장 함수를 하나의 트랜잭션으로 묶는다. 블록이 예외 없이 끝나면 commit, 예외면 전부 rollback.
+
+    사용 예:
+        with db.transaction() as conn:
+            db.save_exam(exam, conn=conn)
+            db.save_passage(p, conn=conn)
+    """
+    with get_connection() as conn:
+        yield conn
+
+
+@contextmanager
+def _use_conn(conn: Optional[sqlite3.Connection] = None):
+    """conn이 주어지면 그대로 쓴다(commit은 호출한 쪽 트랜잭션 담당).
+    없으면 새 연결을 열고, 블록이 끝나면 commit 후 닫는다."""
+    if conn is not None:
+        yield conn
+    else:
+        with get_connection() as own_conn:
+            yield own_conn
+
+
 def init_db():
     """데이터베이스 테이블 및 FTS5 가상 테이블 초기화"""
     with get_connection() as conn:
+        # WAL은 DB 파일에 영구 저장되는 설정이므로 연결마다가 아니라 여기서 한 번만 지정한다
+        conn.execute("PRAGMA journal_mode = WAL;")
         cursor = conn.cursor()
 
         # 1. 시험지 마스터 테이블
@@ -349,31 +393,31 @@ def init_db():
                     DELETE FROM sentences_fts WHERE sentence_id = old.id;
                 END;
             """)
-            cursor.execute("""
-                CREATE TRIGGER IF NOT EXISTS trg_sentences_au AFTER UPDATE ON sentences BEGIN
-                    DELETE FROM sentences_fts WHERE sentence_id = old.id;
-                    INSERT INTO sentences_fts(sentence_id, sentence_text) VALUES (new.id, new.sentence_text);
-                END;
-            """)
-
-            cursor.execute("""
-                CREATE TRIGGER IF NOT EXISTS trg_passages_ai AFTER INSERT ON passages BEGIN
-                    INSERT INTO passages_fts(passage_id, passage_text, question_title, explanation_text, script_text) 
-                    VALUES (new.id, new.passage_text, new.question_title, new.explanation_text, new.script_text);
-                END;
-            """)
-            cursor.execute("""
-                CREATE TRIGGER IF NOT EXISTS trg_passages_ad AFTER DELETE ON passages BEGIN
-                    DELETE FROM passages_fts WHERE passage_id = old.id;
-                END;
-            """)
-            cursor.execute("""
-                CREATE TRIGGER IF NOT EXISTS trg_passages_au AFTER UPDATE ON passages BEGIN
-                    DELETE FROM passages_fts WHERE passage_id = old.id;
-                    INSERT INTO passages_fts(passage_id, passage_text, question_title, explanation_text, script_text) 
-                    VALUES (new.id, new.passage_text, new.question_title, new.explanation_text, new.script_text);
-                END;
-            """)
+            # 갱신 트리거는 텍스트 컬럼이 바뀔 때만 동작하도록 교체한다 (구버전은 별표·메모·정답률 등 어떤 컬럼을 바꿔도 FTS 재색인)
+            # CREATE TRIGGER IF NOT EXISTS는 기존 트리거를 바꾸지 않으므로, 정의가 다르면 지우고 다시 만든다
+            _fts_update_triggers = {
+                "trg_sentences_au": """
+                    CREATE TRIGGER trg_sentences_au AFTER UPDATE OF sentence_text ON sentences BEGIN
+                        DELETE FROM sentences_fts WHERE sentence_id = old.id;
+                        INSERT INTO sentences_fts(sentence_id, sentence_text) VALUES (new.id, new.sentence_text);
+                    END;
+                """,
+                "trg_passages_au": """
+                    CREATE TRIGGER trg_passages_au AFTER UPDATE OF passage_text, question_title, explanation_text, script_text ON passages BEGIN
+                        DELETE FROM passages_fts WHERE passage_id = old.id;
+                        INSERT INTO passages_fts(passage_id, passage_text, question_title, explanation_text, script_text) 
+                        VALUES (new.id, new.passage_text, new.question_title, new.explanation_text, new.script_text);
+                    END;
+                """,
+            }
+            for trg_name, trg_sql in _fts_update_triggers.items():
+                row = cursor.execute(
+                    "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?", (trg_name,)
+                ).fetchone()
+                if row is None or "UPDATE OF" not in (row["sql"] or ""):
+                    cursor.execute(f"DROP TRIGGER IF EXISTS {trg_name}")
+                    cursor.execute(trg_sql)
+                    print(f"[Init DB] FTS 갱신 트리거 교체: {trg_name} (텍스트 컬럼 변경 시에만 재색인)")
         except Exception as fts_err:
             print(f"[Init DB FTS5 Warning] {fts_err}")
 
@@ -382,16 +426,16 @@ def init_db():
 
 # --- CRUD 및 검색 헬퍼 함수 ---
 
-def save_exam(exam_data: dict) -> str:
-    """시험지 정보 저장 (기존 존재 시 갱신)"""
+def save_exam(exam_data: dict, conn: Optional[sqlite3.Connection] = None) -> str:
+    """시험지 정보 저장 (기존 존재 시 갱신). conn을 주면 호출한 쪽 트랜잭션에 참여한다."""
     if "listening_start_q" not in exam_data:
         exam_data["listening_start_q"] = 1
     if "listening_end_q" not in exam_data:
         exam_data["listening_end_q"] = 17
     if "subtype" not in exam_data:
         exam_data["subtype"] = None
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    with _use_conn(conn) as c:
+        cursor = c.cursor()
         cursor.execute("""
             INSERT INTO exams (id, grade, year, month, exam_type, subtype, reading_start_q, reading_end_q, listening_start_q, listening_end_q)
             VALUES (:id, :grade, :year, :month, :exam_type, :subtype, :reading_start_q, :reading_end_q, :listening_start_q, :listening_end_q)
@@ -406,9 +450,8 @@ def save_exam(exam_data: dict) -> str:
                 listening_start_q = excluded.listening_start_q,
                 listening_end_q = excluded.listening_end_q
         """, exam_data)
-        conn.commit()
-        invalidate_exams_cache()
-        return exam_data["id"]
+    invalidate_exams_cache()
+    return exam_data["id"]
 
 
 _EXAMS_STATS_CACHE: Optional[List[Dict[str, Any]]] = None
@@ -921,8 +964,8 @@ def delete_exam(exam_id: str) -> Dict[str, Any]:
     return selective_delete_exam(exam_id, delete_raw=True, delete_core=True, delete_metadata=True, delete_rate=True)
 
 
-def save_passage(passage_data: dict) -> str:
-    """지문 정보 저장"""
+def save_passage(passage_data: dict, conn: Optional[sqlite3.Connection] = None) -> str:
+    """지문 정보 저장. conn을 주면 호출한 쪽 트랜잭션에 참여한다."""
     if "question_type" not in passage_data or not passage_data.get("question_type") or not str(passage_data["question_type"]).strip():
         passage_data["question_type"] = "기타"
     if "correct_rate" not in passage_data:
@@ -941,8 +984,8 @@ def save_passage(passage_data: dict) -> str:
     if "audio_file_path" not in passage_data:
         passage_data["audio_file_path"] = None
 
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    with _use_conn(conn) as c:
+        cursor = c.cursor()
         cursor.execute("""
             INSERT INTO passages (
                 id, exam_id, q_num, question_title, question_type, passage_text,
@@ -971,21 +1014,20 @@ def save_passage(passage_data: dict) -> str:
                 fels_text = COALESCE(excluded.fels_text, passages.fels_text),
                 audio_file_path = COALESCE(excluded.audio_file_path, passages.audio_file_path)
         """, passage_data)
-        conn.commit()
-        invalidate_exams_cache()
-        return passage_data["id"]
+    invalidate_exams_cache()
+    return passage_data["id"]
 
 
-def set_answer_status(exam_id: str, sources: Dict[int, str], verified: Dict[int, bool]):
+def set_answer_status(exam_id: str, sources: Dict[int, str], verified: Dict[int, bool],
+                      conn: Optional[sqlite3.Connection] = None):
     """문항별 정답 출처(answer_source)와 검증 여부(answer_verified) 기록"""
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    with _use_conn(conn) as c:
+        cursor = c.cursor()
         for q_num, source in sources.items():
             cursor.execute(
                 "UPDATE passages SET answer_source = ?, answer_verified = ? WHERE exam_id = ? AND q_num = ?",
                 (source, 1 if verified.get(q_num) else 0, exam_id, q_num)
             )
-        conn.commit()
 
 
 def update_passage_answers(exam_id: str, answers: Dict[int, str], source: str, verified: int):
@@ -1010,7 +1052,8 @@ def update_passage_answers(exam_id: str, answers: Dict[int, str], source: str, v
         conn.commit()
 
 
-def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]],
+                            conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
     """
     특정 시험지의 문항별 정답률 및 선지 선택률 일괄 DB 갱신 (정답은 건드리지 않음 - 정답 교차검증은 answer_resolver 담당)
     rates_dict: { q_num: { 'correct_rate': float, 'choice_rates': dict, 'correct_ans_circle': str } }
@@ -1022,8 +1065,8 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]])
     updated_count = 0
     rates_collected = []
 
-    with get_connection() as conn:
-        cursor = conn.cursor()
+    with _use_conn(conn) as c:
+        cursor = c.cursor()
         cursor.execute("SELECT id, q_num, answer_text, explanation_text FROM passages WHERE exam_id = ?", (clean_id,))
         passages = cursor.fetchall()
 
@@ -1043,8 +1086,7 @@ def save_exam_correct_rates(exam_id: str, rates_dict: Dict[int, Dict[str, Any]])
                 if c_rate is not None:
                     rates_collected.append(c_rate)
 
-        conn.commit()
-        invalidate_exams_cache()
+    invalidate_exams_cache()
 
     avg_rate = round(sum(rates_collected) / len(rates_collected), 1) if rates_collected else None
     return {
@@ -1081,6 +1123,131 @@ def save_sentences(sentences: List[dict]):
             """, s)
         conn.commit()
         invalidate_exams_cache()
+
+
+# 재업로드 시 "같은 문장" 판정용 정규화.
+# 저장된 문장은 어법 분석 전처리(grammar_analyzer.prepare_sentence_for_analysis)를 거쳐
+# 선지 기호 제거·빈칸 정답 채움·구두점 공백 정리가 되어 있을 수 있으므로, 단어 토큰만 비교한다.
+_SENTENCE_BLANK_RE = re.compile(r'_{2,}|\[빈칸\]|\(빈칸\)|\[밑줄\]|\(밑줄\)|<u>\s*</u>|<u>\s*_{1,}\s*</u>')
+_SENTENCE_TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣']+")
+
+
+def _sentence_tokens(text: Optional[str]) -> List[str]:
+    """HWP 엔티티·특수 기호·선지 표식을 걷어낸 뒤 소문자 단어 토큰 목록을 만든다."""
+    t = re.sub(r'&#\d+;', ' ', text or "")
+    t = re.sub(r'[\uF000-\uFFFF]', ' ', t)
+    t = re.sub(r'\(\s*[①②③④⑤1-5a-eA-E]\s*\)', ' ', t)   # (1)~(5), (a)~(e) 선지 표식
+    t = re.sub(r'^\s*\([A-E]\)\s*', ' ', t)               # 문두 (A)~(E) 문단 표식
+    t = re.sub(r'^\s*\[?[1-5]\]?[\.\)]\s*', ' ', t)       # 문두 1. / 2) / [3] 번호
+    return [tok.lower() for tok in _SENTENCE_TOKEN_RE.findall(t)]
+
+
+def _sentence_equivalent(stored_text: Optional[str], incoming_text: Optional[str]) -> bool:
+    """저장된 문장과 새로 파싱한 문장이 같은 문장인지 판정한다.
+
+    새 문장에 빈칸(____ 등)이 있으면, 저장본에서는 그 자리가 정답으로 채워졌을 수 있으므로
+    빈칸 자리는 임의 개수(0개 이상)의 단어와 일치하는 것으로 본다.
+    """
+    stored = _sentence_tokens(stored_text)
+    parts = _SENTENCE_BLANK_RE.split(incoming_text or "")
+    if len(parts) == 1:
+        return stored == _sentence_tokens(incoming_text)
+
+    segments = [_sentence_tokens(p) for p in parts]
+    first, last = segments[0], segments[-1]
+    n = len(stored)
+    if len(first) + len(last) > n:
+        return False
+    if stored[:len(first)] != first:
+        return False
+    if last and stored[n - len(last):] != last:
+        return False
+    pos, end = len(first), n - len(last)
+    for seg in segments[1:-1]:
+        if not seg:
+            continue
+        found = -1
+        for i in range(pos, end - len(seg) + 1):
+            if stored[i:i + len(seg)] == seg:
+                found = i
+                break
+        if found < 0:
+            return False
+        pos = found + len(seg)
+    return True
+
+
+def replace_passage_sentences(passage_id: str, sentences: List[dict],
+                              conn: Optional[sqlite3.Connection] = None) -> Dict[str, int]:
+    """지문의 문장 목록을 새 파싱 결과로 교체한다 (재업로드 시 옛 문장이 남지 않도록).
+
+    - 새 목록에 없는 기존 문장은 삭제 (태그·어법 주석은 FK CASCADE로 함께 삭제)
+    - 같은 ID이고 같은 문장(_sentence_equivalent)이면 저장된 텍스트·별표·어법 분석을 그대로 두고 순서/비고만 갱신
+    - 같은 ID인데 내용이 바뀌었으면 텍스트를 덮어쓰고 AI 어법 주석만 삭제 (사용자 주석은 유지)
+    - 빈 목록이면 아무것도 지우지 않는다 (파싱 실패로 문장이 통째로 사라지는 것을 방지; 호출 쪽에서 경고)
+    """
+    stats = {"inserted": 0, "updated": 0, "text_changed": 0, "removed": 0}
+    if not sentences:
+        return stats
+
+    with _use_conn(conn) as c:
+        cursor = c.cursor()
+        existing = {
+            row["id"]: row["sentence_text"]
+            for row in cursor.execute(
+                "SELECT id, sentence_text FROM sentences WHERE passage_id = ?", (passage_id,)
+            ).fetchall()
+        }
+        new_ids = set()
+        for s in sentences:
+            sid = s["id"]
+            new_ids.add(sid)
+            order_index = s.get("order_index", 0)
+            new_text = s.get("sentence_text", "")
+            remarks = s.get("remarks")
+            word_count = s.get("word_count", 0)
+
+            if sid not in existing:
+                cursor.execute("""
+                    INSERT INTO sentences (id, passage_id, order_index, sentence_text, word_count, remarks)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        passage_id = excluded.passage_id,
+                        order_index = excluded.order_index,
+                        sentence_text = excluded.sentence_text,
+                        word_count = excluded.word_count,
+                        remarks = excluded.remarks
+                """, (sid, passage_id, order_index, new_text, word_count, remarks))
+                stats["inserted"] += 1
+            elif _sentence_equivalent(existing[sid], new_text):
+                cursor.execute(
+                    "UPDATE sentences SET order_index = ?, remarks = ? WHERE id = ?",
+                    (order_index, remarks, sid)
+                )
+                stats["updated"] += 1
+            else:
+                cursor.execute(
+                    "UPDATE sentences SET order_index = ?, sentence_text = ?, word_count = ?, remarks = ? WHERE id = ?",
+                    (order_index, new_text, word_count, remarks, sid)
+                )
+                cursor.execute(
+                    "DELETE FROM sentence_grammar_annotations WHERE sentence_id = ? AND COALESCE(source_type, 'AI') = 'AI'",
+                    (sid,)
+                )
+                cursor.execute("""
+                    UPDATE sentences SET grammar_analyzed = CASE
+                        WHEN EXISTS (SELECT 1 FROM sentence_grammar_annotations WHERE sentence_id = ?) THEN 1 ELSE 0 END
+                    WHERE id = ?
+                """, (sid, sid))
+                stats["text_changed"] += 1
+
+        stale_ids = [sid for sid in existing if sid not in new_ids]
+        for sid in stale_ids:
+            cursor.execute("DELETE FROM sentences WHERE id = ?", (sid,))
+        stats["removed"] = len(stale_ids)
+
+    invalidate_exams_cache()
+    return stats
 
 
 def update_sentence_text(sentence_id: str, new_text: str, word_count: Optional[int] = None) -> bool:

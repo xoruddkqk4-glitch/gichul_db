@@ -569,10 +569,23 @@ def sync_exam_listening(
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
 
-    conn = db.get_connection()
-    exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (clean_id,)).fetchone()
-    if not exam_row:
-        exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (clean_id.strip("[]"),)).fetchone()
+    # 필요한 DB 값(시험지 정보, 기존 듣기 정답)을 먼저 읽고 연결을 바로 닫는다
+    # (예전에는 with 없이 연 연결이 파싱 내내 열려 있었음)
+    db_answers = {}
+    with db.get_connection() as conn:
+        exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (clean_id,)).fetchone()
+        if not exam_row:
+            exam_row = conn.execute("SELECT * FROM exams WHERE id = ?", (clean_id.strip("[]"),)).fetchone()
+        if exam_row:
+            try:
+                rows = conn.execute(
+                    "SELECT q_num, answer_text FROM passages WHERE exam_id = ? AND area = 'listening'", (clean_id,)
+                ).fetchall()
+                for r in rows:
+                    if r["answer_text"]:
+                        db_answers[r["q_num"]] = r["answer_text"]
+            except Exception:
+                pass
     if not exam_row:
         raise ValueError(f"시험지를 찾을 수 없습니다: {clean_id}")
 
@@ -627,17 +640,8 @@ def sync_exam_listening(
         except Exception as e:
             print(f"[Sync Listening Warning] HWP 해설 파싱 실패: {e}")
 
-    # 정답 사전 사전 구축 (verified_key 우선, answers_dict 결합, DB 기존값 및 HWP 해설 보완)
+    # 정답 사전 사전 구축 (verified_key 우선, answers_dict 결합, DB 기존값(위에서 읽음) 및 HWP 해설 보완)
     verified_key = answer_keys.load_answer_key(grade, year, month)
-    db_answers = {}
-    try:
-        cur = conn.cursor()
-        rows = cur.execute("SELECT q_num, answer_text FROM passages WHERE exam_id = ? AND area = 'listening'", (clean_id,)).fetchall()
-        for r in rows:
-            if r["answer_text"]:
-                db_answers[r["q_num"]] = r["answer_text"]
-    except Exception:
-        pass
 
     listening_answers = {}
     for q in range(start_q, end_q + 1):
@@ -737,7 +741,7 @@ def sync_exam_listening(
         "saved_count": saved_count,
         "synced_count": saved_count,
         "has_pdf": bool(pdf_files),
-        "has_hwp": bool(hwp_files),
+        "has_hwp": bool(target_hwp),
         "script_crops_count": len(script_crops)
     }
 

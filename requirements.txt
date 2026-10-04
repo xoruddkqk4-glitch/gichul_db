@@ -20,3 +20,4 @@ pytest==9.1.1             # 회귀 테스트 (tests/)
 
 # 음성 합성 (TTS)
 edge-tts>=7.2.8           # Microsoft Neural 무료 음성 합성 (영어 듣기 평가 M/W 듀얼 보이스)
+lameenc>=1.8              # XTTS 출력(WAV)을 실제 MP3로 인코딩 (tts_service.py, 의존성 없는 휠, LGPL)

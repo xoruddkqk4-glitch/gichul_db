@@ -12,8 +12,8 @@
 
 | 단계 | 주제 | 상태 |
 |---|---|---|
-| 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 미커밋) |
-| 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ⬜ 대기 |
+| 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
+| 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 미커밋) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ⬜ 대기 |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
 
@@ -250,6 +250,49 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
   3. 같은 시험지를 다시 업로드했을 때 응답의 `sentences_removed` 값과 문장 목록에 중복이 없는지
   4. **XTTS**로 대사가 여러 개인 듣기 1문항을 생성해 **끝까지** 재생되는지 (예: `고3-2025년-11월-01번` 재생성)
   5. Edge-TTS로도 1문항을 생성해 재생되는지, 듣기 ZIP에 두 파일이 모두 담기는지
+
+### 2단계 적용 결과 (2026-10-04)
+**계획과 다르게 적용한 점**
+- 2-1
+  - `async def` → `def` 변환은 44개입니다. `async`는 미들웨어 2개와 TTS 라우트 4개만 남았습니다.
+  - `INGEST_LOCK`은 함수 본문에 직접 거는 대신 `@_ingest_serialized` 데코레이터(`functools.wraps`로 FastAPI 시그니처 유지)로 5개 라우트에 적용했습니다. `api_update_answer`는 크롭 재생성 부분만이 아니라 라우트 전체를 직렬화합니다.
+  - COM 스레드 초기화는 `pythoncom.CoInitialize`를 `try/except`로 감싼 함수로 했습니다 (초기화 실패 시 실행기가 고장 나지 않도록). 이미 COM 스레드에서 불리면 바로 실행해 교착을 막습니다.
+  - 종료 시 Quit은 `threading._register_atexit`에 등록했습니다. 실행기는 일반 `atexit`보다 먼저 작업 수신을 멈추기 때문입니다. `atexit` 등록도 안전망으로 남겨 두었습니다.
+  - 함께 발견한 버그: `api_sync_exam_listening`이 결과 dict 전체를 `synced_count`로 돌려주던 것을 숫자만 돌려주도록 고쳤습니다.
+- 2-2
+  - 저장 함수는 `_use_conn(conn)` 헬퍼를 씁니다. `conn`을 주면 그대로 쓰고, 없으면 새 연결을 열어 끝날 때 commit 후 닫습니다. `transaction()`은 `_ClosingConnection`의 `with`를 그대로 쓰는 형태로 구현했습니다.
+  - **같은 문장 판정 규칙 추가**: 저장된 문장은 어법 분석 전처리로 선지 기호 제거·빈칸 정답 채움·구두점 공백 정리가 되어 있을 수 있습니다. 단순 문자열 비교를 하면 재업로드할 때마다 AI 분석이 지워집니다. 그래서 소문자 단어 토큰으로 비교하고, 새 문장의 빈칸 자리는 임의의 단어와 일치하는 것으로 봅니다 (`_sentence_equivalent`). 같은 문장이면 저장된 텍스트·별표·어법을 그대로 두고 순서와 비고만 갱신합니다.
+  - 텍스트가 바뀐 문장은 `grammar_analyzed`를 무조건 0으로 두지 않고, 남은(사용자) 어법이 있으면 1, 없으면 0으로 둡니다.
+  - 새 문장 목록이 **비어 있으면 교체하지 않습니다** (파싱 실패로 문장이 통째로 지워지는 것을 막기 위함). 이 경우 응답 `warnings`에 문항 번호를 남깁니다.
+  - 정답률 저장 실패는 트랜잭션 안에서 잡아 `warnings`에 담고, 독해 저장은 유지합니다 (기존 동작과 동일).
+  - 응답에 `sentences_inserted`, `sentences_text_changed`, `sentences_removed`, `warnings`를 추가했습니다.
+  - 함께 발견한 버그 2건
+    - `listening_parser.sync_exam_listening`은 업로드처럼 HWP 경로를 직접 넘겨받으면 마지막 줄의 `hwp_files`가 정의되지 않아 **항상 NameError**를 냈습니다 (듣기 문항 저장은 된 뒤). `bool(target_hwp)`로 고쳤습니다.
+    - `api_upload_exam`은 듣기 동기화 결과 dict를 그대로 `listening_count`에 넣어 메시지에 표시했습니다. `saved_count`를 꺼내도록 고쳤습니다.
+- 2-3
+  - `listening_parser.py`의 `with` 없는 연결은 `try/finally` 대신 `with` 블록으로 바꿨습니다. 시험지 정보와 기존 듣기 정답을 함수 앞부분에서 한 번에 읽고 바로 닫습니다.
+  - `with` 블록 뒤에 `conn`/커서를 쓰는 코드는 AST 검사로 확인했습니다 (문제를 일부러 넣은 샘플로 검사기 동작도 확인). 적용 후 재검사에서 7건이 나왔지만, 모두 새로 추가한 `conn` 파라미터를 `_use_conn(conn)`에 넘기는 부분이라 검사기 오탐입니다. 실제 문제는 0건입니다.
+- 2-4: 트리거는 매번 지우지 않고, 기존 정의에 `UPDATE OF`가 없을 때만 교체합니다. 교체할 때 `[Init DB] FTS 갱신 트리거 교체` 메시지를 출력합니다. **서버를 다음에 켤 때 실제 DB에서 한 번 교체됩니다.**
+- 2-5
+  - `lameenc 1.8.4`를 설치했습니다. XTTS 경로는 합성을 시작하기 전에 `lameenc` 설치 여부부터 확인합니다. 상태는 `get_hardware_status()["mp3_encoder_installed"]`에 표시합니다.
+  - 품질 설정은 `set_quality(2)`(고품질)입니다. XTTS 출력(24kHz)은 MPEG-2 Layer III 프레임(`FF F3`)으로 인코딩됩니다.
+
+**검증**
+- `python -m py_compile app.py database.py hwp_parser.py tts_service.py listening_parser.py` 통과, `pytest tests -q` 76개 통과
+- 실제 DB의 **임시 사본**으로 확인 (실제 DB는 바꾸지 않음)
+  - `init_db`: `_au` 트리거 2개가 `UPDATE OF` 형태로 교체됨. `ai`/`ad` 트리거 4개 유지
+  - `transaction()` 안에서 예외 발생 시 저장분 롤백. `conn` 없이 호출하면 자체 커밋
+  - `replace_passage_sentences` (문장 34개·어법 28개인 지문)
+    - 같은 목록 재저장: 34개 모두 `updated`, 어법 주석 그대로
+    - 빈 목록: 아무것도 삭제하지 않음
+    - 1개 변경·1개 제거·1개 추가: `{inserted 1, updated 32, text_changed 1, removed 1}`. 변경 문장은 AI 어법 삭제와 FTS 재색인, 제거 문장은 어법까지 CASCADE 삭제
+  - 별표를 바꿔도 FTS 행이 다시 만들어지지 않음 (rowid 동일)
+  - `_sentence_equivalent`: 선지 기호 차이, 빈칸↔정답 채움(문두·문중·문미)은 같은 문장으로, 단어가 다르면 다른 문장으로 판정
+- `_wav_turns_to_mp3`: 1초 WAV 2개 → MP3 헤더 `FF F3`, 약 2.66초 (42,624바이트, 128kbps)
+- COM 전용 스레드: 서로 다른 스레드 3개에서 호출해도 모두 `hwp-com_0` 한 스레드에서 실행
+- `sync_exam_listening(없는 시험지)`: 연결을 닫고 `ValueError`
+- 1단계 검증 스크립트 재실행: FTS→LIKE 대체, 캐시 무효화, ZIP 404 모두 유지
+- 내용이 WAV인 `.mp3`: `고3-2025년-11월-01번.mp3` 1개 (해당 문항 음성을 다시 생성하면 정상 MP3로 바뀜)
 
 ---
 

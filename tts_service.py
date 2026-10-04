@@ -79,6 +79,63 @@ FEMALE_SPEAKER_PATTERN = re.compile(
 _GLOBAL_XTTS_MODEL = None
 _HARDWARE_STATUS_CACHE: Optional[Dict[str, Any]] = None
 
+# XTTS 출력(WAV) → MP3 변환 설정
+MP3_BITRATE_KBPS = 128
+TURN_PAUSE_SEC = 0.6  # 화자 턴 사이 무음 길이(초)
+LAMEENC_INSTALL_HINT = (
+    "XTTS 음성을 MP3로 저장하려면 lameenc 패키지가 필요합니다.\n"
+    "터미널에서 'pip install lameenc'를 실행해 주세요."
+)
+
+
+def _lameenc_available() -> bool:
+    """lameenc(MP3 인코더) 설치 여부 (import 없이 확인)"""
+    import importlib.util
+    return importlib.util.find_spec("lameenc") is not None
+
+
+def _wav_turns_to_mp3(wav_chunks: List[bytes], pause_sec: float = TURN_PAUSE_SEC) -> bytes:
+    """XTTS 턴별 WAV를 하나의 PCM 스트림으로 잇고(턴 사이 무음) 실제 MP3로 인코딩한다.
+
+    예전에는 WAV 파일 바이트를 그대로 이어 붙여 .mp3로 저장해, 플레이어가 첫 턴 WAV 헤더에 적힌
+    길이만큼만 재생하거나 MP3를 기대하는 프로그램에서 열리지 않았다.
+    """
+    try:
+        import lameenc
+    except ImportError as e:
+        raise RuntimeError(LAMEENC_INSTALL_HINT) from e
+    import wave
+
+    params = None  # (channels, sampwidth, framerate)
+    pcm = bytearray()
+    for chunk in wav_chunks:
+        if not chunk:
+            continue
+        with wave.open(io.BytesIO(chunk), "rb") as w:
+            cur = (w.getnchannels(), w.getsampwidth(), w.getframerate())
+            frames = w.readframes(w.getnframes())
+        if params is None:
+            if cur[1] != 2:
+                raise RuntimeError(f"16비트 PCM WAV만 MP3로 변환할 수 있습니다 (현재 {cur[1] * 8}비트).")
+            params = cur
+        elif cur != params:
+            raise RuntimeError(f"턴별 WAV 형식이 서로 다릅니다: {params} / {cur}")
+        else:
+            channels, sampwidth, rate = params
+            pcm.extend(b"\x00" * (int(rate * pause_sec) * channels * sampwidth))
+        pcm.extend(frames)
+
+    if params is None or not pcm:
+        return b""
+
+    channels, _, rate = params
+    encoder = lameenc.Encoder()
+    encoder.set_bit_rate(MP3_BITRATE_KBPS)
+    encoder.set_in_sample_rate(rate)
+    encoder.set_channels(channels)
+    encoder.set_quality(2)  # 2 = 고품질, 7 = 고속
+    return bytes(encoder.encode(bytes(pcm))) + bytes(encoder.flush())
+
 
 def get_hardware_status() -> Dict[str, Any]:
     """
@@ -103,6 +160,7 @@ def get_hardware_status() -> Dict[str, Any]:
             "device": "cuda" if cuda_ok else "cpu",
             "device_name": dev_name,
             "tts_installed": tts_installed,
+            "mp3_encoder_installed": _lameenc_available(),
             "status_text": f"NVIDIA GPU 가속 활성화 ({dev_name})" if cuda_ok else "CPU 모드 구동 (외장 GPU 미검출)",
             "ready": tts_installed
         }
@@ -113,6 +171,7 @@ def get_hardware_status() -> Dict[str, Any]:
             "device": "cpu",
             "device_name": "미설치",
             "tts_installed": False,
+            "mp3_encoder_installed": _lameenc_available(),
             "status_text": "PyTorch / TTS 패키지 미설치 (터미널에서 'pip install torch TTS' 설치 시 활성화)",
             "ready": False
         }
@@ -408,14 +467,22 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
                 "수능 성우 로컬 복제(XTTS-v2) 구동을 위한 PyTorch/TTS 패키지가 설치되지 않았습니다.\n"
                 "터미널에서 'pip install torch TTS'를 실행하거나, 상단 [AI 설정]에서 'Edge-TTS'를 선택해 주세요."
             )
-        loop = asyncio.get_event_loop()
+        if not _lameenc_available():
+            # 긴 합성을 시작하기 전에 MP3 인코더 유무부터 확인
+            raise RuntimeError(LAMEENC_INSTALL_HINT)
+        loop = asyncio.get_running_loop()
+        wav_chunks: List[bytes] = []
         for turn in turns:
             spk = turn["speaker"]
             turn_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, turn["text"], spk)
             if turn_bytes:
-                combined_audio.extend(turn_bytes)
+                wav_chunks.append(turn_bytes)
+        if wav_chunks:
+            # 턴별 WAV를 PCM으로 잇고 실제 MP3로 인코딩 (CPU 작업이라 스레드에서 실행)
+            mp3_bytes = await loop.run_in_executor(None, _wav_turns_to_mp3, wav_chunks)
+            combined_audio.extend(mp3_bytes)
     else:
-        # Edge-TTS
+        # Edge-TTS (턴별 결과가 이미 MP3 프레임이라 이어 붙여도 재생됨)
         edge_cfg = tts_cfg.get("edge_tts", {})
         male_voice = edge_cfg.get("voice_male") or DEFAULT_EDGE_TTS_VOICE_MALE
         female_voice = edge_cfg.get("voice_female") or DEFAULT_EDGE_TTS_VOICE_FEMALE

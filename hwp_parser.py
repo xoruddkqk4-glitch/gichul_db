@@ -235,10 +235,38 @@ def restore_foreground_window(target_hwnd: int):
 
 import threading
 import atexit
+from concurrent.futures import ThreadPoolExecutor
 
 _shared_hwp = None
 _shared_hwp_lock = threading.Lock()
 _hwp_text_cache: Dict[Tuple[str, float], str] = {}
+
+
+# --- 한글 COM 전용 스레드 ---
+# 라우트가 스레드풀의 여러 스레드에서 실행되므로, COM 객체를 만든 스레드와 다른 스레드에서 호출하면
+# CoInitialize 누락/아파트먼트 불일치 오류가 난다. 그래서 모든 한글 COM 호출을 스레드 1개에서만 실행한다.
+_COM_THREAD_PREFIX = "hwp-com"
+
+
+def _com_thread_init():
+    """COM 전용 스레드가 처음 만들어질 때 한 번 CoInitialize"""
+    try:
+        import pythoncom
+        pythoncom.CoInitialize()
+    except Exception as e:
+        print(f"[HWP COM 스레드 초기화 경고] {e}")
+
+
+_COM_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix=_COM_THREAD_PREFIX, initializer=_com_thread_init
+)
+
+
+def _run_on_com_thread(fn, *args):
+    """fn을 COM 전용 스레드에서 실행하고 결과를 기다려 돌려준다 (이미 그 스레드면 바로 실행)."""
+    if threading.current_thread().name.startswith(_COM_THREAD_PREFIX):
+        return fn(*args)
+    return _COM_EXECUTOR.submit(fn, *args).result()
 
 
 def get_shared_hwp():
@@ -282,8 +310,7 @@ def get_shared_hwp():
             restore_foreground_window(fg_hwnd)
 
 
-def cleanup_shared_hwp():
-    """서버 종료 시 공유 HWP 인스턴스 안전 종료"""
+def _cleanup_shared_hwp_impl():
     global _shared_hwp
     with _shared_hwp_lock:
         if _shared_hwp is not None:
@@ -294,11 +321,28 @@ def cleanup_shared_hwp():
             _shared_hwp = None
 
 
+def cleanup_shared_hwp():
+    """서버 종료 시 공유 HWP 인스턴스 안전 종료 (COM 전용 스레드에서 Quit)"""
+    if _shared_hwp is None:
+        return
+    try:
+        _run_on_com_thread(_cleanup_shared_hwp_impl)
+    except RuntimeError:
+        # 실행기가 이미 종료된 경우 (인터프리터 종료 단계) 직접 시도
+        _cleanup_shared_hwp_impl()
+
+
+# ThreadPoolExecutor는 인터프리터 종료 시 atexit보다 먼저 작업 수신을 멈추므로,
+# 그보다 앞서 실행되는 threading 종료 훅에 등록해 COM 스레드에서 Quit할 수 있게 한다.
+# (비공개 API라 없으면 atexit만 사용. 두 번 불려도 두 번째는 아무것도 하지 않는다)
+try:
+    threading._register_atexit(cleanup_shared_hwp)  # type: ignore[attr-defined]
+except Exception:
+    pass
 atexit.register(cleanup_shared_hwp)
 
 
-def extract_hwp_text_pyhwpx(file_path: str) -> str:
-    """pyhwpx를 사용하여 HWP 텍스트 추출 (단일 백그라운드 인스턴스 재사용 + 포커스 보호)"""
+def _extract_hwp_text_pyhwpx_impl(file_path: str) -> str:
     fg_hwnd = get_current_foreground_window()
     try:
         hwp = get_shared_hwp()
@@ -327,8 +371,12 @@ def extract_hwp_text_pyhwpx(file_path: str) -> str:
         restore_foreground_window(fg_hwnd)
 
 
-def convert_hwp_to_pdf(hwp_path: str, pdf_path: str) -> bool:
-    """단일 백그라운드 HWP 인스턴스를 활용한 고속 무결점 PDF 변환 (포커스 탈취 방지)"""
+def extract_hwp_text_pyhwpx(file_path: str) -> str:
+    """pyhwpx를 사용하여 HWP 텍스트 추출 (단일 백그라운드 인스턴스 재사용 + 포커스 보호, COM 전용 스레드에서 실행)"""
+    return _run_on_com_thread(_extract_hwp_text_pyhwpx_impl, file_path)
+
+
+def _convert_hwp_to_pdf_impl(hwp_path: str, pdf_path: str) -> bool:
     fg_hwnd = get_current_foreground_window()
     try:
         hwp = get_shared_hwp()
@@ -350,6 +398,11 @@ def convert_hwp_to_pdf(hwp_path: str, pdf_path: str) -> bool:
         return False
     finally:
         restore_foreground_window(fg_hwnd)
+
+
+def convert_hwp_to_pdf(hwp_path: str, pdf_path: str) -> bool:
+    """단일 백그라운드 HWP 인스턴스를 활용한 고속 무결점 PDF 변환 (포커스 탈취 방지, COM 전용 스레드에서 실행)"""
+    return _run_on_com_thread(_convert_hwp_to_pdf_impl, hwp_path, pdf_path)
 
 
 def get_hwp_text(file_path: str) -> str:
