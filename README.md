@@ -2007,6 +2007,29 @@ CREATE TABLE user_sentence_status (
   - `AGENTS.md`, `GEMINI.md`, `.agents/rules/rules.md` 파일 해시 동일 확인
   - `docs/` 내 옛 파일명(`2026-10-04_code-review-roadmap.md`) 참조 0건 확인
 
+### [2026-10-04 17:46] 업데이트 이력 (Commit ID: ab3a4ee7)
+- **수정 내용**:
+  - **루트 폴더 정리 A단계 (`docs/plans/2026-10-04_02_root-folder-cleanup.md`)**:
+    - 실행 순서를 권장안 ①(정리 A → 로드맵 1·2 → 정리 B → 로드맵 3·4)로 확정.
+    - A-1: 0바이트 빈 DB 파일 3개(`database.db`, `database.sqlite3`, `exam_database.db`) 삭제 (Git 미추적, 코드 참조 0건).
+    - A-2: `static/audio/*.mp3` 26개(약 8.5 MB)를 `git rm --cached`로 추적 해제. 로컬 파일은 그대로 유지되어 앱 재생에 영향 없음. 과거 커밋에는 남아 있음.
+    - A-3: `.gitignore`에 `.pytest_cache/`, `logs/`, `*.backup-*.db`, `static/audio/*.wav` 추가.
+  - **코드 리뷰 로드맵 1단계: 확정 버그 5건 수정 (`app.py`, `database.py`, `static/js/upload.js`)**:
+    - 1-1 검색 캐시 무효화: 데이터를 바꾸는 `/api/` 요청(`/api/settings/` 제외)이 끝나면 검색 캐시와 시험지 통계 캐시를 비우는 미들웨어 추가. 업로드 후 백그라운드 어법 분석도 끝날 때 직접 비움. 태그·정답 변경 후 재검색해도 이전 결과가 보이던 문제 해결.
+    - 1-2 듣기 ZIP 다운로드: `create_listening_zip()`이 반환하는 dict를 파일 경로로 다뤄 항상 실패하던 버그 수정. 받을 MP3가 없으면 500 대신 404와 안내 메시지 반환.
+    - 1-3 문장 조회 SQL화: `search_sentences`에 `exam_id`, `sentence_ids` 조건 추가(`json_each`로 ID 개수 제한 없음). 단일·일괄·업로드 후 자동 어법 분석에서 7만 문장 전체를 읽던 방식을 제거. 자동 분석이 최신 1,000문장만 보고 일부 문장을 빠뜨리던 문제도 함께 해결.
+    - 1-4 FTS → LIKE 대체 경로: `search_passages`, `search_sentences`에서 FTS 쿼리 실행이 실패하면 같은 인자로 LIKE 검색을 다시 수행하도록 구현 (기존 `try/except`는 문자열 조립만 감싸 실제로 동작하지 않았음).
+    - 1-5 HWP 단독 업로드: 해설 파싱 실패 또는 해설 0건이면 `status: "partial"`과 경고 메시지 반환. 프론트엔드는 단일 업로드에서 ⚠️ 경고, 일괄 갱신에서 실패로 집계하고 사유 표시.
+  - **로드맵 2-5 계획 변경**: XTTS 음성을 `lameenc`로 진짜 MP3로 저장하도록 변경(모든 음성 파일 MP3 통일). 기본 TTS 엔진은 XTTS 유지.
+  - **문서**: 로드맵 1단계 완료와 적용 결과, 루트 정리 A단계 완료, `docs/README.md` 상태(두 계획서 🔄 진행 중) 갱신.
+- **검증 결과**:
+  - `python -m py_compile app.py database.py`: 오류 0건 (Exit Code: 0)
+  - `node --check static/js/upload.js`: 오류 0건 (Exit Code: 0)
+  - `pytest tests -q`: 76개 전체 통과
+  - 실제 DB 읽기 전용 확인: `search_sentences(exam_id=...)` 235건 = 직접 집계값, `sentence_ids` 5개 조회 2ms(기존 전체 문장 로드 904ms), FTS 구문 오류 유발 시 지문·문장 검색 모두 LIKE로 대체
+  - `TestClient` 확인: 쓰기 요청 후 캐시 비움, `/api/settings/` 쓰기·GET 요청은 캐시 유지, 없는 시험지 ZIP 요청 시 404
+  - 로드맵 2단계 전 DB 백업 완료 (`gichul.backup-2026-10-04.db`, Git 제외 확인)
+
 
 
 
