@@ -2079,6 +2079,25 @@ CREATE TABLE user_sentence_status (
   - `node --check static/js/results-passage.js`: 문법 검증 통과 (오류 0건)
   - `pytest tests/test_tts_engine.py -q`: 3 passed, 0 failed
 
+### [2026-10-04 21:12] 업데이트 이력 (Commit ID: 0f6d7a02)
+- **수정 내용**:
+  - **루트 폴더 정리 B단계: 백엔드 모듈을 `gichul/` 패키지로 이동 (`docs/plans/2026-10-04_02_root-folder-cleanup.md`)**:
+    - `git mv`로 백엔드 모듈 13개(`app`, `database`, `grammar_analyzer`, `hwp_parser`, `pdf_parser`, `listening_parser`, `tts_service`, `answer_keys`, `answer_resolver`, `validator`, `rate_parser`, `sentence_tokenizer`, `fels_engine`)를 `gichul/`로 이동. 파일 히스토리 유지.
+    - 앱이 실행 중에 import하는 `tools/crop_2013_09.py`를 `gichul/special_crops/crop_2013_09.py`로 이동.
+    - 루트에는 `run.py`, `start.bat`, `install.bat`, 설정·문서 파일만 남음.
+  - **경로 상수 통합 (`gichul/paths.py` 신규)**:
+    - 각 모듈이 `__file__`로 따로 계산하던 경로 9곳을 `ROOT_DIR`, `DB_PATH`, `STATIC_DIR`, `TEMPLATES_DIR`, `UPLOADS_DIR`, `CAPTURES_DIR`, `AUDIO_DIR`, `VOICES_DIR`, `KEYS_DIR`, `GRAMMAR_CATEGORIES_JSON` 상수로 교체.
+    - 기존 코드가 문자열 경로를 쓰므로 `str` 상수로 제공. `GICHUL_DB_PATH` 환경변수로 DB 경로 덮어쓰기 가능(로드맵 4-A 테스트용 임시 DB 대비).
+  - **import 정리**: 패키지 내부 import 26곳을 상대 import(`from . import database as db` 등)로, tools 4개·tests 4개는 `from gichul import ...`로 변경. `regenerate_group_crops.py`의 DB 경로도 `gichul.paths.DB_PATH` 사용.
+  - **`run.py`**: `uvicorn.run("gichul.app:app", app_dir=base_dir, ...)`. 자동 재시작 감시 대상을 `gichul/`·`templates/`로 좁히고 긴 제외 목록을 단순화.
+  - **문서**: README 프로젝트 구조를 패키지 구조로 갱신, 로드맵 3단계 이후 파일 링크를 `gichul/` 경로로 갱신하고 안내 노트 추가, 계획서 진행 현황·`docs/README.md` 상태 갱신.
+- **검증 결과**:
+  - 작업 전 DB 백업: `gichul.backup-2026-10-04-b-stage.db` (Git 제외)
+  - `python -m compileall -q gichul tools tests run.py`: 오류 0건
+  - 이동 전/후 스냅샷 비교: 라우트 56 → 56 (차이 0건), 경로 값 14개(`DB_PATH` 포함) 차이 0건
+  - 루트 모듈 이름으로 된 import 잔존 grep: 0건
+  - `python -m pytest tests -q`: 79개 전체 통과
+  - 남은 조치: 실행 중이던 서버는 재시작 필요 (`start.bat` 또는 `python run.py`), 이후 검색·지문 이미지·듣기 재생·크롭 재생성 수동 확인
 
 
 
