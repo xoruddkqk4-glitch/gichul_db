@@ -1983,6 +1983,30 @@ CREATE TABLE user_sentence_status (
   - `[고2-2025년-06월]` 세트 `meta_only=True` 조회 검증: 듣기 1번(`q_num=1`) 및 독해 18번(`q_num=18`) 캡처 이미지 URL 정상 반환 확인
   - 1,095개 듣기 대본 크롭 이미지 트리밍 및 해상도 최적화 확인
 
+### [2026-10-04 16:53] 업데이트 이력 (Commit ID: 7d701307)
+- **수정 내용**:
+  - **코드 리뷰 보고서 작성 (`docs/reviews/2026-10-04_code-review-report.md`)**:
+    - 프로젝트 전체 코드의 장점과 단점을 분석하고, 단점마다 대안을 정리.
+    - 확정 버그(검색 캐시 미무효화, 듣기 ZIP 다운로드 오류, 문장 전체 로드, FTS→LIKE 대체 경로 미작동, HWP 파싱 실패 시 성공 응답)와 안정성·구조·품질 개선점을 정리.
+  - **단계별 개선 로드맵 작성 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - 1단계 확정 버그 수정 → 2단계 안정성 → 3단계 구조 개선 → 4단계 품질 기반의 4단계 계획. 단계별 검증 방법과 사용자 수동 확인 항목 포함.
+    - 4-D 정정: `dist/`는 `install.bat`이 XTTS 오프라인 설치(`pip install --find-links=dist ...`)에 사용하므로 삭제 대상에서 제외. 빈 DB 파일 삭제는 루트 정리 A-1로 이관.
+  - **루트(메인) 폴더 정리 계획서 작성 (`docs/plans/2026-10-04_02_root-folder-cleanup.md`)**:
+    - A단계(빈 파일 삭제, Git에 남은 생성물 추적 해제), B단계(백엔드 모듈 13개를 `gichul/` 패키지로 이동 + `paths.py`로 경로 일원화), C단계(선택 항목).
+    - 권장 실행 순서: 정리 A → 로드맵 1·2 → 정리 B → 로드맵 3·4 (로드맵 1·2단계의 줄 번호 참조를 유지하기 위함).
+  - **계획서·리뷰 문서 보관소 `docs/` 신설 (`docs/README.md`)**:
+    - 계획서/리뷰 목록과 상태(⬜ 대기 · 🔄 진행 중 · ✅ 완료 · ⏸ 보류 · ❌ 폐기), 파일명 규칙(`YYYY-MM-DD_<슬러그>.md`, 같은 날은 `_01_`, `_02_`) 정의.
+    - 루트 `implementation_plan.md`를 `docs/plans/2026-09-30_area-switch-capture-cache.md`로 이동(`git mv`, 이력 유지).
+    - 덮어쓰기로 사라졌던 과거 계획서 4건을 Git 히스토리에서 복원(`2026-09-27_01~03`, `2026-09-29`).
+  - **에이전트 규칙·스킬 갱신 (`AGENTS.md`, `GEMINI.md`, `.agents/rules/rules.md`, `CLAUDE.md`, `.agents/skills/{ask,apply}`, `.claude/skills/{ask,apply}`)**:
+    - `/ask` 계획서는 `docs/plans/`에 날짜별 새 파일로 저장하고 `docs/README.md`에 등록. 리뷰 보고서는 `docs/reviews/`에 저장.
+    - `/apply`는 지정한 계획서·단계 또는 최신 대기 계획서를 실행한 뒤 계획서와 `docs/README.md`의 상태를 갱신.
+  - **README 프로젝트 구조에 `docs/` 폴더 추가**.
+- **검증 결과**:
+  - 소스 코드 변경 없음 (문서·규칙 파일만 변경)
+  - `AGENTS.md`, `GEMINI.md`, `.agents/rules/rules.md` 파일 해시 동일 확인
+  - `docs/` 내 옛 파일명(`2026-10-04_code-review-roadmap.md`) 참조 0건 확인
+
 
 
 
