@@ -23,6 +23,7 @@ import asyncio
 import zipfile
 import tempfile
 import logging
+import time
 from typing import List, Dict, Any, Optional, Tuple
 
 import edge_tts
@@ -438,7 +439,119 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|\[\]\s]', '_', name).strip('_')
 
 
-async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
+# --- 음성 합성 진행률 추적 ---
+# 프론트가 만든 job_id별로 "끝난 단계 / 전체 단계"를 기록한다.
+# 단계 = 대사(턴) 1개 합성. XTTS는 마지막에 MP3 인코딩 1단계가 더 붙는다.
+# 합성은 이벤트 루프에서 갱신하고, 진행률 조회 라우트는 읽기만 하므로 별도 잠금은 두지 않는다.
+_TTS_PROGRESS: Dict[str, Dict[str, Any]] = {}
+_PROGRESS_KEEP_SEC = 600  # 끝난 작업 기록 보관 시간
+
+
+class TtsProgress:
+    """job_id 하나의 진행 상황. job_id가 없으면 아무것도 기록하지 않는다."""
+
+    def __init__(self, job_id: Optional[str], total: int = 0):
+        self.job_id = (job_id or "").strip() or None
+        self.done = 0
+        self.total = total
+        if self.job_id:
+            _prune_progress()
+            now = time.time()
+            _TTS_PROGRESS[self.job_id] = {
+                "status": "running", "done": 0, "total": total, "label": "",
+                "started_at": now, "last_step_at": now, "finished_at": None,
+            }
+
+    def _push(self, **extra):
+        if not self.job_id:
+            return
+        st = _TTS_PROGRESS.get(self.job_id)
+        if st is None:
+            return
+        st["done"] = min(self.done, self.total) if self.total else self.done
+        st["total"] = self.total
+        st.update(extra)
+
+    def add_total(self, n: int):
+        self.total += max(0, n)
+        self._push()
+
+    def step(self, label: str = ""):
+        self.done += 1
+        self._push(label=label, last_step_at=time.time())
+
+    def jump_to(self, done: int):
+        """실패한 문항의 남은 단계를 건너뛸 때 사용"""
+        if done > self.done:
+            self.done = done
+            self._push(last_step_at=time.time())
+
+    def finish(self, ok: bool = True, message: str = ""):
+        if ok:
+            self.done = self.total
+        self._push(status="done" if ok else "error", label=message, finished_at=time.time())
+
+
+def _prune_progress():
+    now = time.time()
+    for key in [k for k, v in _TTS_PROGRESS.items()
+                if v.get("finished_at") and now - v["finished_at"] > _PROGRESS_KEEP_SEC]:
+        _TTS_PROGRESS.pop(key, None)
+
+
+def get_tts_progress(job_id: str) -> Dict[str, Any]:
+    """진행률 조회. 프론트가 단계 사이를 부드럽게 채울 수 있도록 경과 시간도 함께 돌려준다."""
+    st = _TTS_PROGRESS.get((job_id or "").strip())
+    if not st:
+        return {"found": False}
+    now = time.time()
+    total = st["total"] or 0
+    done = st["done"] or 0
+    percent = 100.0 if st["status"] == "done" else (round(done / total * 100, 1) if total else 0.0)
+    return {
+        "found": True,
+        "status": st["status"],
+        "done": done,
+        "total": total,
+        "percent": percent,
+        "label": st.get("label", ""),
+        "elapsed_sec": round(now - st["started_at"], 2),
+        "steps_elapsed_sec": round(st["last_step_at"] - st["started_at"], 2),  # 끝난 단계들에 걸린 시간
+        "since_step_sec": round(now - st["last_step_at"], 2),                  # 현재 단계 경과 시간
+    }
+
+
+def _count_progress_units(script_text: str, engine: str) -> int:
+    """문항 하나의 진행 단계 수 (대사 수 + XTTS면 MP3 인코딩 1)"""
+    turns = split_script_by_speaker(script_text or "")
+    if not turns:
+        return 0
+    return len(turns) + (1 if engine == "xtts" else 0)
+
+
+async def generate_passage_audio(passage_id: str, job_id: Optional[str] = None,
+                                 progress: Optional[TtsProgress] = None) -> Dict[str, Any]:
+    """
+    단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
+    (XTTS-v2 수능 성우 로컬 복제 기본 또는 Edge-TTS 무료 보조 하이브리드 지원)
+    - job_id: 진행률 조회용 작업 ID (단일 생성)
+    - progress: 일괄 생성에서 넘겨받는 공용 진행 상황 (이 경우 전체 단계 수는 호출 쪽이 관리)
+    """
+    owns_progress = progress is None
+    if owns_progress:
+        progress = TtsProgress(job_id)
+    try:
+        result = await _generate_passage_audio_impl(passage_id, progress, owns_progress)
+    except Exception as e:
+        if owns_progress:
+            progress.finish(ok=False, message=str(e))
+        raise
+    if owns_progress:
+        progress.finish(ok=True)
+    return result
+
+
+async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, owns_progress: bool) -> Dict[str, Any]:
     """
     단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
     (XTTS-v2 수능 성우 로컬 복제 기본 또는 Edge-TTS 무료 보조 하이브리드 지원)
@@ -457,6 +570,8 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
     turns = split_script_by_speaker(script_text)
     if not turns:
         raise ValueError("대본에서 추출된 발화가 없습니다.")
+    if owns_progress:
+        progress.add_total(len(turns) + (1 if engine == "xtts" else 0))
 
     combined_audio = bytearray()
 
@@ -472,15 +587,17 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
             raise RuntimeError(LAMEENC_INSTALL_HINT)
         loop = asyncio.get_running_loop()
         wav_chunks: List[bytes] = []
-        for turn in turns:
+        for t_idx, turn in enumerate(turns, 1):
             spk = turn["speaker"]
             turn_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, turn["text"], spk)
             if turn_bytes:
                 wav_chunks.append(turn_bytes)
+            progress.step(f"{passage_id} 대사 {t_idx}/{len(turns)}")
         if wav_chunks:
             # 턴별 WAV를 PCM으로 잇고 실제 MP3로 인코딩 (CPU 작업이라 스레드에서 실행)
             mp3_bytes = await loop.run_in_executor(None, _wav_turns_to_mp3, wav_chunks)
             combined_audio.extend(mp3_bytes)
+        progress.step(f"{passage_id} MP3 인코딩")
     else:
         # Edge-TTS (턴별 결과가 이미 MP3 프레임이라 이어 붙여도 재생됨)
         edge_cfg = tts_cfg.get("edge_tts", {})
@@ -488,11 +605,12 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
         female_voice = edge_cfg.get("voice_female") or DEFAULT_EDGE_TTS_VOICE_FEMALE
         rate = edge_cfg.get("rate") or DEFAULT_EDGE_TTS_RATE
 
-        for turn in turns:
+        for t_idx, turn in enumerate(turns, 1):
             voice = female_voice if turn["speaker"] == "female" else male_voice
             turn_bytes = await synthesize_edge_tts_turn(turn["text"], voice, rate=rate)
             if turn_bytes:
                 combined_audio.extend(turn_bytes)
+            progress.step(f"{passage_id} 대사 {t_idx}/{len(turns)}")
 
     if not combined_audio:
         raise RuntimeError("음성 데이터 생성에 실패했습니다.")
@@ -537,16 +655,25 @@ async def generate_passage_audio(passage_id: str) -> Dict[str, Any]:
     }
 
 
-async def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
+async def generate_exam_listening_audio(exam_id: str, job_id: Optional[str] = None) -> Dict[str, Any]:
     """
     해당 시험지의 모든 듣기 문항(1~17번)에 대해 순차적으로 음성 합성 진행
+    - job_id: 진행률 조회용 작업 ID (전체 문항의 대사 수를 미리 세어 하나의 진행률로 표시)
     """
+    progress = TtsProgress(job_id)
     passages = db.get_listening_passages_by_exam(exam_id)
     if not passages:
+        progress.finish(ok=False, message="듣기 문항 없음")
         raise ValueError(f"시험지 '{exam_id}'에 등록된 듣기 문항이 없습니다.")
 
     tts_cfg = get_tts_config()
     engine = tts_cfg.get("engine", "xtts")
+
+    units_by_id = {
+        p["id"]: _count_progress_units(p.get("script_text") or p.get("passage_text") or "", engine)
+        for p in passages
+    }
+    progress.add_total(sum(units_by_id.values()))
 
     results = []
     success_count = 0
@@ -565,8 +692,9 @@ async def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
             fail_count += 1
             continue
 
+        target_done = progress.done + units_by_id.get(p_id, 0)
         try:
-            res = await generate_passage_audio(p_id)
+            res = await generate_passage_audio(p_id, progress=progress)
             results.append({
                 "passage_id": p_id,
                 "q_num": p.get("q_num"),
@@ -582,8 +710,16 @@ async def generate_exam_listening_audio(exam_id: str) -> Dict[str, Any]:
                 "error": str(e)
             })
             fail_count += 1
+        # 실패한 문항은 남은 단계를 건너뛰어 진행률이 멈추지 않게 한다
+        progress.jump_to(target_done)
 
+    progress.finish(ok=True, message=f"성공 {success_count} / 실패 {fail_count}")
+    first_error = next((r.get("error") for r in results if not r.get("success")), "")
     return {
+        # 프론트(results-passage.js)는 success 값으로 성공/실패를 판단한다
+        "success": success_count > 0,
+        "message": (f"성공 {success_count}개, 실패 {fail_count}개" if success_count > 0
+                    else f"모든 문항 음성 생성에 실패했습니다: {first_error}"),
         "exam_id": exam_id,
         "engine": engine,
         "total": len(passages),

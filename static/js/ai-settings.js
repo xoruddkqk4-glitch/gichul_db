@@ -474,6 +474,9 @@ export async function refreshAiStatusIndicator() {
       // 서버 DB에 설정된 실제 TTS 엔진(xtts 또는 edge-tts)을 프론트엔드 상태에 실시간 동기화 (하드코딩 방지)
       if (data.tts && data.tts.engine) {
         appState.ttsEngine = data.tts.engine;
+        if (typeof window.updateTtsEngineSwitcherState === "function") {
+          window.updateTtsEngineSwitcherState(data.tts.engine);
+        }
         const badgeTopRight = document.getElementById("badgeTopRightSource");
         if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData[appState.currentPassageIndex]?.area === "listening"))) {
           badgeTopRight.textContent = (data.tts.engine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
@@ -1218,6 +1221,9 @@ export function init() {
         if (data.success) {
           if (typeof appState !== "undefined" && appState) {
             appState.ttsEngine = selectedTtsEngine;
+            if (typeof window.updateTtsEngineSwitcherState === "function") {
+              window.updateTtsEngineSwitcherState(selectedTtsEngine);
+            }
             const badgeTopRight = document.getElementById("badgeTopRightSource");
             if (badgeTopRight && (appState.currentArea === "listening" || (appState.passagesData?.[appState.currentPassageIndex]?.area === "listening"))) {
               badgeTopRight.textContent = (selectedTtsEngine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
@@ -1256,6 +1262,7 @@ export function init() {
     if (cardEdge) cardEdge.style.display = isXtts ? "none" : "block";
     updateAiModalSelectionSummary();
   };
+  window.toggleTtsEngineCards = toggleTtsEngineCards;
 
   if (radioXtts) radioXtts.addEventListener("change", toggleTtsEngineCards);
   if (radioEdge) radioEdge.addEventListener("change", toggleTtsEngineCards);

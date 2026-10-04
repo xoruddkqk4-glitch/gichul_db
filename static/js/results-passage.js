@@ -58,6 +58,9 @@ import {
   panelTitleTopRight,
   passageDifficultyBadge,
   passageTabBar,
+  ttsEngineSwitcher,
+  btnTtsEngineXtts,
+  btnTtsEngineEdge,
   passageTabCount,
   passageTagsList,
   passageMemoContainer,
@@ -1949,12 +1952,25 @@ function loadPassageDetail(p) {
 
   const isListening = p.area === "listening";
 
-  // 1. 헤더 텍스트 및 배지 동적 전환
+  // 1. 헤더 텍스트 및 배지/엔진 스위처 동적 전환
   if (panelTitleTopLeft) panelTitleTopLeft.textContent = isListening ? "🖼️ 문제 + 📜 대본 캡처 (상하 수직 배열)" : "🖼️ PDF 문항 캡처 이미지";
   if (badgeTopLeftSource) badgeTopLeftSource.textContent = "고화질 원본";
-  if (panelTitleTopRight) panelTitleTopRight.textContent = isListening ? "📝 영문 대본 텍스트 & 🎙️ 음성 듣기" : "📝 TXT 지문 본문 텍스트";
-  const ttsLabel = (appState.ttsEngine === "xtts") ? "수능 성우 복제(XTTS)" : "Edge-TTS (무료)";
-  if (badgeTopRightSource) badgeTopRightSource.textContent = isListening ? ttsLabel : "순수 영문";
+  if (panelTitleTopRight) panelTitleTopRight.textContent = isListening ? "🎧 영문 대본 & 음성" : "📝 TXT 지문 본문 텍스트";
+
+  const copyScriptBtn = document.getElementById("btnCopyScript") || btnCopyScript;
+  if (isListening) {
+    if (badgeTopRightSource) badgeTopRightSource.style.display = "none";
+    if (copyScriptBtn) copyScriptBtn.style.display = "inline-flex";
+    updateTtsEngineSwitcherState(appState.ttsEngine);
+    updateListeningZipRangeBadge(p);
+  } else {
+    if (copyScriptBtn) copyScriptBtn.style.display = "none";
+    if (badgeTopRightSource) {
+      badgeTopRightSource.style.display = "inline-flex";
+      badgeTopRightSource.textContent = "순수 영문";
+      badgeTopRightSource.classList.remove("badge-engine");
+    }
+  }
   if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = isListening ? "🎯 FELS (기능어 약형드랩)" : "📘 HWP 정답 및 해설";
   if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = isListening ? "학생용 빈칸" : "공식 해설지";
 
@@ -2145,6 +2161,8 @@ function loadPassageDetail(p) {
         <div class="listening-script-text-box">${formattedScript}</div>
       </div>
     `;
+    // 합성 중인 문항이면 새로 그린 플레이어에도 잠금·진행률을 다시 적용
+    applyTtsUiState();
   } else {
     let rawPassageText = "";
     if (p.isGroup && p.subItems && p.subItems.length > 1) {
@@ -2495,6 +2513,173 @@ export function renderChoiceRates(p) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 음성 합성 작업 상태 (합성 중 재생 잠금 + 진행률 %)
+// - 서버는 job_id별로 "끝난 단계 / 전체 단계"(단계 = 대사 1개, XTTS는 MP3 인코딩 1단계 추가)를 알려준다.
+// - 단계 사이는 평균 단계 시간으로 부드럽게 채우되, 완료 응답 전에는 99%를 넘기지 않는다.
+// - 합성 중인 문항(일괄 생성이면 같은 시험지 전체)은 재생·MP3 다운로드를 막는다.
+//   파일이 덮어써지는 중이라 이전 음성이나 깨진 파일이 재생될 수 있기 때문이다.
+// ---------------------------------------------------------------------------
+const TTS_POLL_MS = 600;
+let activeTtsJob = null; // { jobId, kind: "single"|"batch", examId, targetIds:Set, percent, info, timer, polling }
+
+function setTtsBtnLabel(btn, text) {
+  if (!btn) return;
+  const label = btn.querySelector(".tts-btn-label");
+  if (label) label.textContent = text;
+  else btn.textContent = text;
+}
+
+function passageMatchesTtsJob(p) {
+  const job = activeTtsJob;
+  if (!job || !p) return false;
+  if (job.kind === "batch") return !!job.examId && p.exam_id === job.examId;
+  const ids = [p.id, ...((p.subItems || []).map((si) => si.id))];
+  return ids.some((id) => job.targetIds.has(id));
+}
+
+function estimateTtsPercent(info) {
+  if (!info || !info.found || !info.total) return 0;
+  if (info.status === "done") return 100;
+  const done = info.done || 0;
+  let frac;
+  if (done > 0) {
+    const avg = (info.steps_elapsed_sec || 0) / done;
+    frac = avg > 0 ? Math.min(0.9, (info.since_step_sec || 0) / avg) : 0;
+  } else {
+    // 첫 단계는 XTTS 모델 로딩이 포함될 수 있어 천천히 채운다
+    frac = Math.min(0.9, (info.since_step_sec || 0) / 20);
+  }
+  return Math.min(99, ((done + frac) / info.total) * 100);
+}
+
+/** 버튼·오디오 바·상태 칩을 현재 합성 작업 상태에 맞춘다 (패널을 다시 그린 뒤에도 호출) */
+function applyTtsUiState() {
+  const job = activeTtsJob;
+  const pct = job ? Math.floor(job.percent) : 0;
+  const pctText = `${pct}%`;
+
+  const genButtons = [
+    [document.getElementById("btnGenerateListeningAudio"), "single", "음성 생성"],
+    [document.getElementById("btnGenerateAllListeningAudio"), "batch", "전체 생성"],
+  ];
+  genButtons.forEach(([btn, kind, idleLabel]) => {
+    if (!btn) return;
+    const busy = !!job && job.kind === kind;
+    btn.disabled = !!job; // 합성은 한 번에 하나만
+    btn.classList.toggle("is-busy", busy);
+    btn.style.setProperty("--tts-progress", busy ? pctText : "0%");
+    btn.setAttribute("aria-busy", busy ? "true" : "false");
+    setTtsBtnLabel(btn, busy ? `합성 중 ${pctText}` : idleLabel);
+  });
+
+  const p = currentDetailPassage;
+  const locked = passageMatchesTtsJob(p);
+  const btnMp3 = document.getElementById("btnDownloadListeningMp3");
+  const btnZip = document.getElementById("btnDownloadListeningZip");
+  if (btnMp3) btnMp3.disabled = locked;
+  if (btnZip) btnZip.disabled = !!job && !!p && p.exam_id === job.examId;
+
+  const bar = document.querySelector(".listening-audio-bar");
+  const player = document.getElementById("listeningAudioPlayer");
+  const chip = document.getElementById("audioStatusChip");
+
+  if (bar) {
+    bar.classList.toggle("is-locked", locked);
+    bar.style.setProperty("--tts-progress", pctText);
+    let overlay = bar.querySelector(".tts-lock-overlay");
+    if (locked && !overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "tts-lock-overlay";
+      overlay.setAttribute("role", "status");
+      overlay.innerHTML = `
+        <div class="tts-lock-text"><span class="tts-lock-msg"></span><span class="tts-lock-percent"></span></div>
+        <div class="tts-lock-track"><div class="tts-lock-fill"></div></div>`;
+      bar.appendChild(overlay);
+    }
+    if (overlay && locked) {
+      const info = job.info;
+      const stepText = info && info.total ? ` · ${Math.min(info.done, info.total)}/${info.total}단계` : "";
+      overlay.querySelector(".tts-lock-msg").textContent =
+        (job.kind === "batch" ? "⏳ 전체 일괄 합성 중" : "⏳ 음성 합성 중") + stepText + " — 완료 후 재생할 수 있습니다";
+      overlay.querySelector(".tts-lock-percent").textContent = pctText;
+    }
+  }
+
+  if (player) {
+    if (locked) {
+      if (!player.paused) player.pause();
+      player.setAttribute("aria-disabled", "true");
+      player.tabIndex = -1;
+    } else {
+      player.removeAttribute("aria-disabled");
+      player.removeAttribute("tabindex");
+    }
+  }
+
+  if (chip) {
+    if (locked) {
+      chip.className = "audio-status-chip busy";
+      chip.textContent = `⏳ 합성 중 ${pctText}`;
+    } else if (chip.classList.contains("busy")) {
+      const hasAudio = !!(p && p.audio_file_path);
+      chip.className = `audio-status-chip ${hasAudio ? "ready" : "empty"}`;
+      chip.textContent = hasAudio ? "🎙️ 음성 준비됨" : "🎙️ 음성 미생성";
+    }
+  }
+}
+
+async function pollTtsProgress(jobId) {
+  const job = activeTtsJob;
+  if (!job || job.jobId !== jobId || job.polling) return;
+  job.polling = true;
+  try {
+    const res = await fetch(`/api/tts/progress/${encodeURIComponent(jobId)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.found) job.info = data;
+    }
+  } catch (e) {
+    // 진행률 조회 실패는 무시 (합성 요청 자체의 결과로 완료를 판단)
+  } finally {
+    job.polling = false;
+  }
+  if (activeTtsJob !== job) return;
+  job.percent = Math.max(job.percent, estimateTtsPercent(job.info));
+  applyTtsUiState();
+}
+
+function startTtsJob(kind, { examId = "", targetIds = [] } = {}) {
+  const jobId = `tts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  activeTtsJob = { jobId, kind, examId, targetIds: new Set(targetIds.filter(Boolean)), percent: 0, info: null, timer: null, polling: false };
+  stopAllListeningAudio();
+  applyTtsUiState();
+  activeTtsJob.timer = setInterval(() => pollTtsProgress(jobId), TTS_POLL_MS);
+  return jobId;
+}
+
+function finishTtsJob(jobId) {
+  if (!activeTtsJob || activeTtsJob.jobId !== jobId) return;
+  clearInterval(activeTtsJob.timer);
+  activeTtsJob = null;
+  applyTtsUiState();
+}
+
+// 키보드 단축키 등 어떤 경로로든 잠긴 플레이어가 재생되면 즉시 멈춘다
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "play",
+    (e) => {
+      const el = e.target;
+      if (el && el.id === "listeningAudioPlayer" && el.closest(".listening-audio-bar.is-locked")) {
+        el.pause();
+        showToast("음성 합성이 끝난 뒤에 재생할 수 있습니다.", "info");
+      }
+    },
+    true
+  );
+}
+
 // 활성 재생 중인 오디오 객체 전역 추적 (캡처 단계에서 즉시 포착)
 let activeListeningAudio = null;
 if (typeof document !== "undefined") {
@@ -2563,7 +2748,13 @@ function reset2x2ContentPanels() {
   if (panelTitleTopLeft) panelTitleTopLeft.textContent = "🖼️ PDF 문항 캡처 이미지";
   if (badgeTopLeftSource) badgeTopLeftSource.textContent = "고화질 원본";
   if (panelTitleTopRight) panelTitleTopRight.textContent = "📝 TXT 지문 본문 텍스트";
-  if (badgeTopRightSource) badgeTopRightSource.textContent = "순수 영문";
+  const copyScriptBtn = document.getElementById("btnCopyScript") || btnCopyScript;
+  if (copyScriptBtn) copyScriptBtn.style.display = "none";
+  if (badgeTopRightSource) {
+    badgeTopRightSource.style.display = "inline-flex";
+    badgeTopRightSource.textContent = "순수 영문";
+    badgeTopRightSource.classList.remove("badge-engine");
+  }
   if (panelTitleBottomLeft) panelTitleBottomLeft.textContent = "📘 HWP 정답 및 해설";
   if (badgeBottomLeftSource) badgeBottomLeftSource.textContent = "공식 해설지";
   if (btnCopyPassage) btnCopyPassage.style.display = "inline-flex";
@@ -2920,8 +3111,11 @@ export function init() {
 
   // 단일 문항 듣기 음성 생성 핸들러 (DOM 활성 탭 및 문항 객체 100% 동기화)
   async function handleGenerateListeningAudioAction(btnEl) {
-    stopAllListeningAudio();
     const targetBtn = btnEl || btnGenerateListeningAudio || document.getElementById("btnGenerateListeningAudio");
+    if (activeTtsJob) {
+      showToast("이미 음성 합성이 진행 중입니다. 끝난 뒤 다시 시도해 주세요.", "warning");
+      return;
+    }
     if (targetBtn && targetBtn.disabled) return;
 
     const p = getCurrentActivePassage();
@@ -2931,16 +3125,16 @@ export function init() {
       return;
     }
 
-    if (targetBtn) {
-      targetBtn.disabled = true;
-      targetBtn.textContent = "⏳ 음성 합성 중...";
-    }
+    const targetId = (p.isGroup && p.subItems && p.subItems.length > 0) ? p.subItems[0].id : p.id;
+    const jobId = startTtsJob("single", {
+      examId: p.exam_id,
+      targetIds: [p.id, targetId, ...((p.subItems || []).map((si) => si.id))],
+    });
     const displayLabel = p.display_id || p.id;
     showToast(`🎙️ ${displayLabel} 문항의 영어 듣기 음성을 생성하고 있습니다...`, "info");
 
     try {
-      const targetId = (p.isGroup && p.subItems && p.subItems.length > 0) ? p.subItems[0].id : p.id;
-      const res = await fetch(`/api/passages/${encodeURIComponent(targetId)}/generate-audio`, { method: "POST" });
+      const res = await fetch(`/api/passages/${encodeURIComponent(targetId)}/generate-audio?job_id=${encodeURIComponent(jobId)}`, { method: "POST" });
       let resData;
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
@@ -2977,17 +3171,17 @@ export function init() {
       console.error("음성 생성 오류:", e);
       showToast(`음성 생성 통신 오류: ${e.message}`, "error");
     } finally {
-      if (targetBtn) {
-        targetBtn.disabled = false;
-        targetBtn.textContent = "🎙️ 음성 생성";
-      }
+      finishTtsJob(jobId);
     }
   }
 
   // 전체 듣기 문항 일괄 생성 핸들러
   async function handleGenerateAllListeningAudioAction(btnEl) {
-    stopAllListeningAudio();
     const targetBtn = btnEl || btnGenerateAllListeningAudio || document.getElementById("btnGenerateAllListeningAudio");
+    if (activeTtsJob) {
+      showToast("이미 음성 합성이 진행 중입니다. 끝난 뒤 다시 시도해 주세요.", "warning");
+      return;
+    }
     if (targetBtn && targetBtn.disabled) return;
 
     const p = getCurrentActivePassage();
@@ -3003,14 +3197,11 @@ export function init() {
       return;
     }
 
-    if (targetBtn) {
-      targetBtn.disabled = true;
-      targetBtn.textContent = "⏳ 일괄 합성 진행 중...";
-    }
+    const jobId = startTtsJob("batch", { examId });
     showToast(`🎙️ [${examId}] 전체 듣기 문항 일괄 생성을 시작합니다...`, "info");
 
     try {
-      const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/generate-listening-audio`, { method: "POST" });
+      const res = await fetch(`/api/exams/${encodeURIComponent(examId)}/generate-listening-audio?job_id=${encodeURIComponent(jobId)}`, { method: "POST" });
       let resData;
       const contentType = res.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
@@ -3021,7 +3212,11 @@ export function init() {
       }
 
       if (res.ok && resData.success) {
-        showToast(`🎙️ 전체 듣기 문항 일괄 생성이 완료되었습니다! (성공: ${resData.generated_count || resData.success_count || 0}개)`, "success");
+        const failCnt = resData.fail_count || 0;
+        showToast(
+          `🎙️ 전체 듣기 문항 일괄 생성이 완료되었습니다! (성공: ${resData.generated_count || resData.success_count || 0}개${failCnt ? `, 실패: ${failCnt}개` : ""})`,
+          failCnt ? "warning" : "success"
+        );
         const curP = getCurrentActivePassage();
         if (curP && curP.id) {
           const freshRes = await fetch(`/api/passages/${encodeURIComponent(curP.id)}`);
@@ -3052,51 +3247,212 @@ export function init() {
       console.error("일괄 음성 생성 오류:", e);
       showToast(`일괄 생성 통신 오류: ${e.message}`, "error");
     } finally {
-      if (targetBtn) {
-        targetBtn.disabled = false;
-        targetBtn.textContent = "🎙️ 전체 일괄 생성";
+      finishTtsJob(jobId);
+    }
+  }
+
+  // 인라인 TTS 엔진 전환 스위처 상태 업데이트
+  function updateTtsEngineSwitcherState(engine) {
+    const curEngine = engine || appState.ttsEngine || "xtts";
+    const btnXtts = document.getElementById("btnTtsEngineXtts");
+    const btnEdge = document.getElementById("btnTtsEngineEdge");
+    if (btnXtts) btnXtts.classList.toggle("active", curEngine === "xtts");
+    if (btnEdge) btnEdge.classList.toggle("active", curEngine === "edge-tts");
+  }
+  window.updateTtsEngineSwitcherState = updateTtsEngineSwitcherState;
+
+  // 인라인 TTS 엔진 즉시 전환 및 서버 저장
+  async function handleSwitchTtsEngine(targetEngine) {
+    if (!targetEngine) return;
+    if (appState.ttsEngine === targetEngine) return;
+    const prevEngine = appState.ttsEngine;
+    appState.ttsEngine = targetEngine;
+    updateTtsEngineSwitcherState(targetEngine);
+
+    const engineName = targetEngine === "xtts" ? "수능 성우 복제 (XTTS)" : "Edge-TTS (무료)";
+    showToast(`🎙️ 음성 엔진을 '${engineName}'(으)로 변경했습니다.`, "info");
+
+    try {
+      const res = await fetch("/api/settings/tts-engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine: targetEngine })
+      });
+      if (!res.ok) {
+        throw new Error(`서버 응답 오류 (${res.status})`);
       }
+      // AI 설정 모달 내부 라디오 버튼과도 양방향 동기화
+      const radioXtts = document.getElementById("radioTtsXtts");
+      const radioEdge = document.getElementById("radioTtsEdge");
+      if (radioXtts && radioEdge) {
+        radioXtts.checked = (targetEngine === "xtts");
+        radioEdge.checked = (targetEngine === "edge-tts");
+        if (typeof window.toggleTtsEngineCards === "function") {
+          window.toggleTtsEngineCards();
+        }
+      }
+    } catch (err) {
+      console.error("TTS 엔진 변경 실패:", err);
+      appState.ttsEngine = prevEngine;
+      updateTtsEngineSwitcherState(prevEngine);
+      showToast("TTS 엔진 설정 저장에 실패했습니다.", "error");
     }
   }
 
   // 전역 클릭 이벤트 위임 (동적 DOM 재렌더링 시에도 버튼 클릭 100% 작동 보장)
   document.addEventListener("click", (e) => {
+    // 1. TTS 엔진 인라인 전환 버튼 클릭
+    const targetEngineBtn = e.target.closest(".tts-engine-btn");
+    if (targetEngineBtn) {
+      e.preventDefault();
+      const eng = targetEngineBtn.dataset.engine;
+      if (eng) handleSwitchTtsEngine(eng);
+      return;
+    }
+
+    // 2. 단일 음성 생성
     const targetSingle = e.target.closest("#btnGenerateListeningAudio");
     if (targetSingle) {
       e.preventDefault();
       handleGenerateListeningAudioAction(targetSingle);
       return;
     }
+
+    // 3. 전체 음성 일괄 생성
     const targetAll = e.target.closest("#btnGenerateAllListeningAudio");
     if (targetAll) {
       e.preventDefault();
       handleGenerateAllListeningAudioAction(targetAll);
       return;
     }
-  });
 
-  if (btnDownloadListeningMp3) {
-    btnDownloadListeningMp3.addEventListener("click", () => {
-      if (!currentDetailPassage || !currentDetailPassage.audio_file_path) {
-        showToast("생성된 음성 파일이 없습니다. [🎙️ 음성 생성]을 먼저 실행해 주세요.", "warning");
+    // 4. 대본 복사 버튼 클릭 위임
+    const targetCopyScript = e.target.closest("#btnCopyScript");
+    if (targetCopyScript) {
+      e.preventDefault();
+      const p = currentDetailPassage || getCurrentActivePassage();
+      const scText = p ? (p.script_text || p.passage_text || "") : "";
+      if (!scText) {
+        showToast("복사할 대본 텍스트가 없습니다.", "warning");
         return;
       }
-      const a = document.createElement("a");
-      a.href = currentDetailPassage.audio_file_path;
-      const safeId = (currentDetailPassage.display_id || currentDetailPassage.id).replace(/[\[\]]/g, '');
-      a.download = `${safeId}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    });
+      copyToClipboard(scText, "영문 대본 텍스트가 클립보드에 복사되었습니다!");
+      return;
+    }
+
+    // 5. 현재 문항 단일 MP3 다운로드 클릭 위임
+    const targetMp3 = e.target.closest("#btnDownloadListeningMp3");
+    if (targetMp3) {
+      e.preventDefault();
+      executeDownloadPassageMp3();
+      return;
+    }
+
+    // 6. 시험지 세트 전체(1~17번) ZIP 일괄 다운로드 클릭 위임
+    const targetZip = e.target.closest("#btnDownloadListeningZip");
+    if (targetZip) {
+      e.preventDefault();
+      executeDownloadExamListeningZip();
+      return;
+    }
+  });
+
+  // 단일 문항 MP3 다운로드 실행 함수
+  function executeDownloadPassageMp3() {
+    const p = currentDetailPassage || getCurrentActivePassage();
+    if (!p || !p.audio_file_path) {
+      showToast("현재 문항의 생성된 MP3 음성 파일이 없습니다. 먼저 [🎙️ 음성 생성]을 실행해 주세요.", "warning");
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = p.audio_file_path;
+    const safeId = (p.display_id || p.id).replace(/[\[\]]/g, '');
+    a.download = `${safeId}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast(`⬇️ [${p.display_id || p.id}] 문항의 단일 MP3 파일을 다운로드합니다.`, "info");
+  }
+
+  // 시험지 전체 듣기 문항 범위(예: 1~17 또는 2013년 1~22) 동적 계산 및 ZIP 배지 반영
+  function updateListeningZipRangeBadge(p) {
+    const zipRangeEl = document.getElementById("ttsListeningZipRange");
+    if (!zipRangeEl) return;
+
+    let startQ = 1;
+    let endQ = (p && typeof p.listening_end_q === "number" && p.listening_end_q > 0)
+      ? p.listening_end_q
+      : null;
+
+    if (p && typeof p.listening_start_q === "number" && p.listening_start_q > 0) {
+      startQ = p.listening_start_q;
+    }
+
+    // 1. 현재 로드된 문항 목록에서 듣기 문항의 최소/최대 번호 산출 (동적 탐색)
+    const list = (appState.currentExamQuestions && appState.currentExamQuestions.length > 0)
+      ? appState.currentExamQuestions
+      : (appState.rawPassagesData && appState.rawPassagesData.length > 0 ? appState.rawPassagesData : appState.passagesData);
+
+    if (list && list.length > 0) {
+      const listeningNums = [];
+      list.forEach((item) => {
+        if (item.area === "listening") {
+          if (typeof item.q_num === "number") listeningNums.push(item.q_num);
+          if (item.subItems && Array.isArray(item.subItems)) {
+            item.subItems.forEach((si) => {
+              if (typeof si.q_num === "number") listeningNums.push(si.q_num);
+            });
+          }
+        }
+      });
+      if (listeningNums.length > 0) {
+        startQ = Math.min(...listeningNums);
+        if (!endQ) {
+          endQ = Math.max(...listeningNums);
+        }
+      }
+    }
+
+    // 2. 시험 연도/시험지 ID 기준 동적 감지 (예: 2013년 듣기 22문항 체제)
+    if (!endQ) {
+      const examStr = `${p?.exam_id || ""} ${p?.year || ""}`;
+      if (examStr.includes("2013")) {
+        endQ = 22;
+      } else {
+        endQ = 17;
+      }
+    }
+
+    zipRangeEl.textContent = `${startQ}~${endQ}`;
+    zipRangeEl.title = `${startQ}번부터 ${endQ}번까지 시험지 전체 듣기 문항 포함`;
+    const zipBtn = document.getElementById("btnDownloadListeningZip");
+    if (zipBtn) {
+      zipBtn.title = `이 시험지 전체(${startQ}~${endQ}번) 듣기 MP3 압축 파일(ZIP) 일괄 다운로드`;
+      zipBtn.setAttribute("aria-label", `세트 전체 ${startQ}~${endQ}번 듣기 MP3 ZIP 다운로드`);
+    }
+  }
+  window.updateListeningZipRangeBadge = updateListeningZipRangeBadge;
+
+  // 시험지 세트 전체 ZIP 압축 일괄 다운로드 실행 함수
+  function executeDownloadExamListeningZip() {
+    const p = currentDetailPassage || getCurrentActivePassage();
+    if (!p || !p.exam_id) {
+      showToast("선택된 시험지 정보가 없습니다.", "warning");
+      return;
+    }
+    const zipRangeEl = document.getElementById("ttsListeningZipRange");
+    const rangeText = zipRangeEl ? zipRangeEl.textContent : "1~17";
+    showToast(`📦 [${p.exam_id}] 세트 전체(${rangeText}번) 듣기 MP3 압축 파일을 다운로드합니다...`, "info");
+    const url = `/api/exams/${encodeURIComponent(p.exam_id)}/download-listening-zip`;
+    window.open(url, "_blank");
+  }
+
+  if (btnDownloadListeningMp3) {
+    btnDownloadListeningMp3.addEventListener("click", executeDownloadPassageMp3);
   }
 
   if (btnDownloadListeningZip) {
-    btnDownloadListeningZip.addEventListener("click", () => {
-      if (!currentDetailPassage) return;
-      const url = `/api/exams/${encodeURIComponent(currentDetailPassage.exam_id)}/download-listening-zip`;
-      window.open(url, "_blank");
-    });
+    btnDownloadListeningZip.addEventListener("click", executeDownloadExamListeningZip);
   }
 
   // 시험지 파일 교체/업로드 완료 시 브레드크럼 파일 툴바 실시간 재동기화

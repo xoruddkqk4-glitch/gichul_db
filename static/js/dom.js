@@ -347,6 +347,9 @@ export const panelTitleTopLeft = document.getElementById("panelTitleTopLeft");
 export const badgeTopLeftSource = document.getElementById("badgeTopLeftSource");
 export const panelTitleTopRight = document.getElementById("panelTitleTopRight");
 export const badgeTopRightSource = document.getElementById("badgeTopRightSource");
+export const ttsEngineSwitcher = document.getElementById("ttsEngineSwitcher");
+export const btnTtsEngineXtts = document.getElementById("btnTtsEngineXtts");
+export const btnTtsEngineEdge = document.getElementById("btnTtsEngineEdge");
 export const panelTitleBottomLeft = document.getElementById("panelTitleBottomLeft");
 export const badgeBottomLeftSource = document.getElementById("badgeBottomLeftSource");
 

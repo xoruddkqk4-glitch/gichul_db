@@ -190,6 +190,10 @@ class AISettingsRequest(BaseModel):
     elevenlabs_model_id: Optional[str] = None
 
 
+class TTSEngineRequest(BaseModel):
+    engine: str
+
+
 class BatchAnalyzeRequest(BaseModel):
     sentence_ids: Optional[List[str]] = None
     starred_only: Optional[bool] = False
@@ -500,14 +504,21 @@ def api_get_passage(passage_id: str):
 
 
 # --- 듣기 영역 오디오 및 동기화 API ---
+@app.get("/api/tts/progress/{job_id}")
+def api_tts_progress(job_id: str):
+    """음성 합성 진행률 조회 (프론트가 생성 요청 시 넘긴 job_id 기준)"""
+    return tts_service.get_tts_progress(job_id)
+
+
 @app.post("/api/passages/{passage_id:path}/generate-audio")
-async def api_generate_passage_audio(passage_id: str):
-    """특정 듣기 문항의 대본을 Edge-TTS 또는 ElevenLabs M/W 듀얼 보이스로 합성하여 MP3 생성"""
+async def api_generate_passage_audio(passage_id: str, job_id: Optional[str] = None):
+    """특정 듣기 문항의 대본을 Edge-TTS 또는 ElevenLabs M/W 듀얼 보이스로 합성하여 MP3 생성
+    (job_id 쿼리를 주면 /api/tts/progress/{job_id}로 진행률을 조회할 수 있다)"""
     try:
         clean_id = passage_id.strip()
         if not clean_id.startswith("["):
             clean_id = f"[{clean_id}]"
-        result = await tts_service.generate_passage_audio(clean_id)
+        result = await tts_service.generate_passage_audio(clean_id, job_id=job_id)
         if not result.get("success"):
             return JSONResponse(status_code=400, content=result)
         return result
@@ -520,13 +531,13 @@ async def api_generate_passage_audio(passage_id: str):
 
 
 @app.post("/api/exams/{exam_id:path}/generate-listening-audio")
-async def api_generate_exam_listening_audio(exam_id: str):
-    """시험지의 1~17번 전체 듣기 문항 오디오를 일괄 생성"""
+async def api_generate_exam_listening_audio(exam_id: str, job_id: Optional[str] = None):
+    """시험지의 1~17번 전체 듣기 문항 오디오를 일괄 생성 (job_id로 진행률 조회 가능)"""
     try:
         clean_id = exam_id.strip()
         if not clean_id.startswith("["):
             clean_id = f"[{clean_id}]"
-        result = await tts_service.generate_exam_listening_audio(clean_id)
+        result = await tts_service.generate_exam_listening_audio(clean_id, job_id=job_id)
         return result
     except Exception as e:
         logger.error(f"시험지 전체 음성 합성 실패 ({exam_id}): {e}")
@@ -914,6 +925,19 @@ def api_save_ai_settings(req: AISettingsRequest):
         "success": True,
         "message": test_msg or "AI 및 TTS 설정이 성공적으로 저장되었습니다."
     }
+
+
+@app.post("/api/settings/tts-engine")
+def api_set_tts_engine(req: TTSEngineRequest):
+    """지문 헤더 툴바 등에서 빠른 TTS 엔진(xtts 또는 edge-tts) 전환"""
+    engine = (req.engine or "").strip().lower()
+    if engine not in ("xtts", "edge-tts"):
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "message": "지원하지 않는 TTS 엔진입니다. (xtts 또는 edge-tts)"}
+        )
+    db.set_setting("tts_engine", engine)
+    return {"success": True, "engine": engine}
 
 
 @app.get("/api/settings/tts/hardware")

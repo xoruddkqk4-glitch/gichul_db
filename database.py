@@ -1430,10 +1430,14 @@ def search_passages(
             p.id, p.exam_id, p.q_num, p.question_type, p.area, p.correct_rate,
             p.pdf_crop_image, p.script_crop_image, p.user_memo, p.user_memo_updated_at,
             (p.passage_text IS NOT NULL AND LENGTH(p.passage_text) > 0) AS has_passage_text,
-            e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q
+            e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q,
+            e.listening_start_q, e.listening_end_q
         """
     else:
-        select_clause = "p.*, e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q"
+        select_clause = """
+            p.*, e.grade, e.year, e.month, e.exam_type, e.subtype, e.reading_start_q, e.reading_end_q,
+            e.listening_start_q, e.listening_end_q
+        """
 
     query = f"""
         SELECT {select_clause}
@@ -1580,10 +1584,20 @@ def get_passage(passage_id: str) -> Optional[Dict[str, Any]]:
         clean_id = f"[{clean_id}]"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM passages WHERE id = ?", (clean_id,))
+        cursor.execute("""
+            SELECT p.*, e.listening_start_q, e.listening_end_q, e.reading_start_q, e.reading_end_q, e.year, e.month, e.grade
+            FROM passages p
+            LEFT JOIN exams e ON p.exam_id = e.id
+            WHERE p.id = ?
+        """, (clean_id,))
         row = cursor.fetchone()
         if not row:
-            cursor.execute("SELECT * FROM passages WHERE id = ?", (clean_id.strip("[]"),))
+            cursor.execute("""
+                SELECT p.*, e.listening_start_q, e.listening_end_q, e.reading_start_q, e.reading_end_q, e.year, e.month, e.grade
+                FROM passages p
+                LEFT JOIN exams e ON p.exam_id = e.id
+                WHERE p.id = ?
+            """, (clean_id.strip("[]"),))
             row = cursor.fetchone()
         if row:
             p_dict = dict(row)
