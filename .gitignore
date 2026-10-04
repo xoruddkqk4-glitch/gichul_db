@@ -11,12 +11,17 @@ build/
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+
+# App logs (logs/app.log, RotatingFileHandler)
+logs/
 
 # Local uploads & DB
 uploads/
 gichul.db*
 *.db
 *.sqlite3
+*.backup-*.db
 scratch/
 
 # Answer-key intermediate transcription passes (final keys in data/answer_keys/*.json are tracked)
@@ -24,4 +29,5 @@ data/answer_keys/_pass*/
 
 # Generated Audio
 static/audio/*.mp3
+static/audio/*.wav
 static/audio/*.zip

@@ -1249,9 +1249,15 @@ def search_passages(
     area: str = "",
     whole_word: bool = False,
     limit: int = 0,
-    meta_only: bool = False
+    meta_only: bool = False,
+    _use_fts: bool = True
 ) -> List[Dict[str, Any]]:
-    """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원, meta_only 초고속 경량 모드 지원)"""
+    """지문 검색 (지문 본문, 발문, 해설, 스크립트, 출처, 태그, 문제유형, 시험구분, 영역 - 온전한 단어 검색 및 복수 연도 지원, meta_only 초고속 경량 모드 지원)
+
+    _use_fts: 내부 전용. FTS 쿼리가 실패하면 False로 자기 자신을 다시 호출해 LIKE 검색으로 대체한다.
+    """
+    # FTS 실패 시 같은 인자로 재호출하기 위해 최초 인자를 보관 (반드시 함수 첫 줄에 둔다)
+    _call_args = {k: v for k, v in locals().items() if k != "_use_fts"}
     if meta_only:
         select_clause = """
             p.id, p.exam_id, p.q_num, p.question_type, p.area, p.correct_rate,
@@ -1279,9 +1285,9 @@ def search_passages(
 
     if keyword:
         k_strip = keyword.strip()
-        fts_q = _build_fts_query(k_strip, whole_word)
-        try:
+        if _use_fts:
             # 1차 시도: FTS5 전문 검색 가속화 (수백 ms -> 2~5ms 단축)
+            fts_q = _build_fts_query(k_strip, whole_word)
             query += """
                 AND (
                     p.id IN (SELECT passage_id FROM passages_fts WHERE passages_fts MATCH ?) OR
@@ -1289,8 +1295,8 @@ def search_passages(
                 )
             """
             params.extend([fts_q, f"%{k_strip}%"])
-        except Exception:
-            # FTS 예외 발생 시 표준 LIKE 백업
+        else:
+            # FTS 쿼리 실패 시 표준 LIKE 백업
             kw = f"%{k_strip}%"
             query += """
                 AND (
@@ -1346,8 +1352,14 @@ def search_passages(
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+        try:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        except sqlite3.OperationalError as e:
+            if keyword and _use_fts:
+                print(f"[search_passages] FTS 검색 실패 → LIKE 검색으로 대체: {e}")
+                return search_passages(**_call_args, _use_fts=False)
+            raise
         if not rows:
             return []
 
@@ -1791,9 +1803,22 @@ def search_sentences(
     grammar_pos: Optional[str] = None,
     area: str = "",
     whole_word: bool = False,
-    limit: int = 0
+    limit: int = 0,
+    exam_id: str = "",
+    sentence_ids: Optional[List[str]] = None,
+    _use_fts: bool = True
 ) -> List[Dict[str, Any]]:
-    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역 지원)"""
+    """문장 검색 (1행 테이블 뷰용 - 온전한 단어 검색 및 복수 연도, 영역 지원)
+
+    exam_id: 해당 시험지의 문장만 조회 (대괄호 없이 넣어도 됨)
+    sentence_ids: 지정한 문장 ID만 조회. 빈 리스트면 즉시 [] 반환 (None이면 조건 없음)
+    _use_fts: 내부 전용. FTS 쿼리가 실패하면 False로 자기 자신을 다시 호출해 LIKE 검색으로 대체한다.
+    """
+    # FTS 실패 시 같은 인자로 재호출하기 위해 최초 인자를 보관 (반드시 함수 첫 줄에 둔다)
+    _call_args = {k: v for k, v in locals().items() if k != "_use_fts"}
+    if sentence_ids is not None and len(sentence_ids) == 0:
+        return []
+
     query = """
         SELECT s.*, p.q_num, p.correct_rate, p.question_type, p.area, e.grade, e.year, e.month, e.exam_type, e.subtype
         FROM sentences s
@@ -1816,14 +1841,27 @@ def search_sentences(
         query += " AND s.passage_id = ?"
         params.append(clean_pid)
 
+    if exam_id:
+        clean_eid = exam_id.strip()
+        if not clean_eid.startswith("["):
+            clean_eid = f"[{clean_eid}]"
+        query += " AND p.exam_id = ?"
+        params.append(clean_eid)
+
+    if sentence_ids:
+        # json_each로 넘기면 SQLite 변수 개수 제한 없이 문장 ID 목록을 한 번에 조건으로 쓸 수 있다
+        query += " AND s.id IN (SELECT value FROM json_each(?))"
+        params.append(json.dumps(list(sentence_ids), ensure_ascii=False))
+
     if keyword:
         k_strip = keyword.strip()
-        fts_q = _build_fts_query(k_strip, whole_word)
-        try:
+        if _use_fts:
             # FTS5 전문 검색 엔진 상시 활용 (7만 문장 풀스캔 350ms -> 3~8ms 초고속화)
+            fts_q = _build_fts_query(k_strip, whole_word)
             query += " AND (s.id IN (SELECT sentence_id FROM sentences_fts WHERE sentences_fts MATCH ?) OR s.id LIKE ?)"
             params.extend([fts_q, f"%{k_strip}%"])
-        except Exception:
+        else:
+            # FTS 쿼리 실패 시 표준 LIKE 백업
             kw = f"%{k_strip}%"
             query += " AND (s.sentence_text LIKE ? OR s.id LIKE ?)"
             params.extend([kw, kw])
@@ -1878,8 +1916,14 @@ def search_sentences(
 
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+        try:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+        except sqlite3.OperationalError as e:
+            if keyword and _use_fts:
+                print(f"[search_sentences] FTS 검색 실패 → LIKE 검색으로 대체: {e}")
+                return search_sentences(**_call_args, _use_fts=False)
+            raise
         if not rows:
             return []
 

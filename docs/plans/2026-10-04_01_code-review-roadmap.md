@@ -12,7 +12,7 @@
 
 | 단계 | 주제 | 상태 |
 |---|---|---|
-| 1단계 | 확정 버그 즉시 수정 (5건) | ⬜ 대기 |
+| 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 미커밋) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ⬜ 대기 |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ⬜ 대기 |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
@@ -101,6 +101,24 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
   1. 지문에 태그를 추가한 뒤 같은 검색어로 다시 검색했을 때 태그가 바로 보이는지
   2. 듣기 문항 화면의 "ZIP 다운로드": 생성된 MP3가 없으면 404 안내, 있으면 ZIP 저장
   3. 문장 일괄 어법 분석 속도가 빨라졌는지
+
+### 1단계 적용 결과 (2026-10-04)
+**계획과 다르게 적용한 점**
+- 1-1: 캐시는 응답 상태 코드와 관계없이 비웁니다. 실패 응답이어도 일부 데이터가 이미 저장됐을 수 있기 때문입니다. `/api/settings/`(AI 키·TTS 미리듣기) 쓰기는 검색 결과와 무관하므로 제외했습니다. 백그라운드 분석은 `finally`에서 검색 캐시와 통계 캐시를 모두 비웁니다.
+- 1-3: `sentence_ids`는 `IN (?,?,...)` 대신 `IN (SELECT value FROM json_each(?))`로 구현했습니다. 문장 수가 많아도 SQLite 변수 개수 제한에 걸리지 않습니다 (SQLite 3.45.1).
+- 1-4: 재호출용 인자는 함수 첫 줄의 `locals()`로 보관합니다. 행을 읽는 도중에 나는 FTS 오류도 잡도록 `fetchall()`까지 `try`에 넣었습니다.
+- 1-5: 예외뿐 아니라 **해설을 하나도 추출하지 못한 경우**에도 `partial`을 반환합니다. `upload.js`의 **일괄 갱신 경로**(등록된 시험지에 HWP 갱신)에서도 `partial`을 실패로 집계하고 사유를 남기도록 했습니다.
+
+**검증**
+- `python -m py_compile app.py database.py` 통과, `node --check static/js/upload.js` 통과, `pytest tests -q` 76개 통과
+- 실제 DB 읽기 전용 확인
+  - `search_sentences(exam_id=...)`: 235건 = 직접 집계한 값과 일치 (15ms)
+  - `sentence_ids` 5개 조회: 2ms (기존 방식인 전체 문장 로드는 904ms)
+  - 빈 리스트·없는 ID는 `[]` 반환
+  - FTS 구문 오류를 일부러 일으키면 지문·문장 검색 모두 LIKE로 대체되어 결과를 반환
+- `TestClient` API 확인 (DB를 바꾸지 않는 요청만 사용)
+  - `/api/` 쓰기 요청 뒤 검색 캐시와 통계 캐시가 비워짐. `/api/settings/` 쓰기와 GET 요청 뒤에는 캐시 유지
+  - 없는 시험지의 ZIP 다운로드: 404와 안내 메시지 (기존에는 dict를 파일 경로로 다뤄 500 오류)
 
 ---
 
@@ -193,18 +211,35 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
 - 효과: 별표 토글, `grammar_analyzed`, 메모, 오디오 경로, 정답률 같은 컬럼을 바꿀 때 FTS 재색인을 하지 않습니다.
 - 외부 콘텐츠 FTS5(`content='sentences'`)로 바꾸는 것은 데이터 재색인이 필요해서 **이번 범위에서 제외**합니다. 필요하면 4단계 이후에 따로 진행합니다.
 
-### 2-5. TTS 음성 결합 수정 + 기본 엔진 변경 (보고서 3-3)
-**[MODIFY] [tts_service.py](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py)**
-- XTTS 경로([L404-L438](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L404-L438)): 대사별 WAV를 `soundfile.read`로 읽어 `numpy.concatenate`로 잇습니다. 대사 사이에는 0.6초 무음을 넣습니다. 결과는 `.wav`로 저장하고 `audio_file_path`도 `.wav`로 기록합니다. ffmpeg는 의존성에 없어서 MP3 변환은 하지 않습니다.
-- Edge-TTS 경로는 MP3 프레임을 잇는 지금 방식을 유지합니다.
-- `create_listening_zip`([L529-L574](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L529-L574)): 오디오를 찾지 못했을 때 `.mp3`와 `.wav`를 모두 찾아보고, 압축 안 파일 이름도 원래 확장자를 유지합니다.
-- 기본 엔진을 `xtts` → `edge-tts`로 바꿉니다: [L124](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L124), [L396](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L396), [L482](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L482)
-  - DB에 이미 `tts_engine`이 저장되어 있으면 그 값을 따르므로 기존 사용자 설정은 바뀌지 않습니다.
+### 2-5. XTTS 음성을 올바른 MP3로 저장 (보고서 3-3)
 
-**[MODIFY] 프론트엔드 기본값**: [state.js:L35](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/state.js#L35), [ai-settings.js:L662](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/ai-settings.js#L662) — `"xtts"` → `"edge-tts"`
+> **결정 (2026-10-04)**: 모든 음성 파일을 **MP3로 통일**합니다 (선택지 ②). 기본 엔진은 **XTTS를 유지**합니다. Edge-TTS로 바꾸지 않습니다.
+
+**현재 문제**: XTTS는 대사마다 WAV(헤더 포함)를 만든 뒤 그 바이트를 그대로 이어 붙여 `.mp3` 이름으로 저장합니다. 내용은 WAV인데 확장자만 MP3이고, 첫 번째 WAV 헤더에 적힌 길이 때문에 **첫 대사만 재생될 수 있습니다**. 2026-10-04 확인 시 `static/audio` 33개 중 `고3-2025년-11월-01번.mp3` 1개가 이 상태였습니다.
+
+**[MODIFY] [requirements.txt](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/requirements.txt)**
+- `lameenc>=1.8` 추가. LAME MP3 인코더를 담은 pip 패키지로, ffmpeg 같은 외부 프로그램이 필요 없습니다.
+  - 확인: `lameenc-1.8.4-cp311-cp311-win_amd64.whl` (153 kB, 의존 패키지 없음)이 제공되어 현재 환경(Python 3.11, Windows 64비트)에 바로 설치됩니다 (`pip install --dry-run`으로 확인).
+  - 기본 엔진이 XTTS이므로 `install.bat`의 XTTS 단계가 아니라 기본 `requirements.txt`에 넣습니다.
+
+**[MODIFY] [tts_service.py](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py)**
+- 새 함수 `_wav_turns_to_mp3(wav_chunks: list[bytes], pause_sec=0.6) -> bytes`
+  1. 표준 라이브러리 `wave`로 각 대사 WAV를 열어 PCM 데이터만 꺼냅니다. 샘플레이트·채널·16비트 여부는 첫 대사 기준이며, 다른 대사가 다르면 오류를 냅니다 (XTTS 출력은 24kHz 모노 16비트로 동일).
+  2. 대사 사이에 0.6초 무음(0으로 채운 PCM)을 넣어 하나의 PCM으로 잇습니다. numpy/soundfile은 쓰지 않습니다.
+  3. `lameenc.Encoder`(비트레이트 128kbps, 원본 샘플레이트·채널 그대로)로 MP3를 만들고 `flush()`까지 포함해 반환합니다.
+  4. `lameenc`가 설치되지 않았으면 "pip install lameenc" 안내가 담긴 `RuntimeError`를 냅니다. 환경을 확인하는 `get_hardware_status()`에도 `lameenc` 설치 여부를 포함합니다.
+- XTTS 경로([L404-L416](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L404-L416)): 대사별 WAV 바이트를 리스트에 모은 뒤 `_wav_turns_to_mp3`로 변환합니다. 저장 파일명·`audio_file_path`는 지금처럼 `.mp3`입니다.
+  - MP3 인코딩은 CPU 작업이므로 `run_in_executor`로 실행해 이벤트 루프를 막지 않게 합니다.
+- Edge-TTS 경로는 MP3 프레임을 잇는 지금 방식을 유지합니다.
+- **기본 엔진(`xtts`)은 바꾸지 않습니다** ([L124](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L124), [L396](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L396), [L482](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/tts_service.py#L482), [state.js:L35](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/state.js#L35), [ai-settings.js:L662](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/ai-settings.js#L662) 유지).
+- `create_listening_zip`은 모든 파일이 `.mp3`이므로 수정하지 않습니다.
+
+**기존에 잘못 저장된 파일**
+- 내용이 WAV인 `.mp3` 파일은 해당 문항의 음성을 다시 생성하면 정상 MP3로 바뀝니다. 자동 변환은 하지 않고, 적용 후 이런 파일 목록만 보고합니다 (파일 앞 4바이트가 `RIFF`인지 검사).
 
 ### 2단계 검증
-- `py_compile`: app.py, database.py, hwp_parser.py, tts_service.py, listening_parser.py · `node --check`: state.js, ai-settings.js · `pytest tests -q`
+- `py_compile`: app.py, database.py, hwp_parser.py, tts_service.py, listening_parser.py · `pytest tests -q`
+- `_wav_turns_to_mp3` 단독 확인: 테스트용 WAV 2개(각 1초)를 만들어 변환 → 결과가 MP3 헤더(`ID3` 또는 `0xFF` 프레임)로 시작하고 길이가 약 2.6초(1+0.6+1)인지
 - DB 트리거 확인 명령:
   ```powershell
   python -c "import sqlite3;c=sqlite3.connect('gichul.db');print([r[0] for r in c.execute(\"select sql from sqlite_master where type='trigger' and name like '%_au'\")])"
@@ -213,7 +248,8 @@ python -m pytest tests -q      # 기존 단위 테스트 (수 초 이내)
   1. 문장 일괄 분석을 돌리는 중에 다른 탭에서 검색이 즉시 되는지 (서버 멈춤이 사라졌는지)
   2. HWP가 포함된 시험지를 업로드했을 때 정상 처리되는지 (COM 전용 스레드 동작 확인)
   3. 같은 시험지를 다시 업로드했을 때 응답의 `sentences_removed` 값과 문장 목록에 중복이 없는지
-  4. Edge-TTS로 듣기 1문항을 생성해 재생되는지
+  4. **XTTS**로 대사가 여러 개인 듣기 1문항을 생성해 **끝까지** 재생되는지 (예: `고3-2025년-11월-01번` 재생성)
+  5. Edge-TTS로도 1문항을 생성해 재생되는지, 듣기 ZIP에 두 파일이 모두 담기는지
 
 ---
 
@@ -351,6 +387,6 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 > [!CAUTION]
 > - **4-D 저장소 이미지 정리**: 추적 해제만 할지, 히스토리까지 지울지(강제 푸시)
 > - **4-B API 키 keyring 저장**: 적용할지 여부
-> - **2-5 XTTS 결과 형식**: `.wav` 저장(권장, 의존성 추가 없음) 또는 ffmpeg를 추가하고 MP3로 변환
+> - ~~**2-5 XTTS 결과 형식**~~ → **결정됨 (2026-10-04)**: `lameenc`로 MP3 통일, 기본 엔진 XTTS 유지
 
 위 사항은 해당 단계를 `/apply`할 때 다시 확인합니다. 그 외에는 계획서대로 진행합니다.

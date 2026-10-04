@@ -104,6 +104,28 @@ async def no_cache_static_js(request, call_next):
     return response
 
 
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+# 검색 결과에 영향을 주지 않는 쓰기 경로 (AI 키 저장/테스트, TTS 미리듣기 등)
+_CACHE_SAFE_WRITE_PREFIXES = ("/api/settings/",)
+
+
+@app.middleware("http")
+async def invalidate_cache_on_write(request, call_next):
+    """데이터를 바꾸는 API 요청이 끝나면 검색 캐시와 시험지 통계 캐시를 비운다.
+
+    실패 응답(4xx/5xx)이어도 일부 데이터가 이미 저장됐을 수 있으므로 상태 코드와 관계없이 비운다.
+    (캐시를 비우는 비용은 다음 검색 1회가 DB를 다시 읽는 것뿐이다.)
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if (request.method in _WRITE_METHODS
+            and path.startswith("/api/")
+            and not path.startswith(_CACHE_SAFE_WRITE_PREFIXES)):
+        search_cache.clear()
+        db.invalidate_exams_cache()
+    return response
+
+
 # --- Pydantic 모델 ---
 class TagRequest(BaseModel):
     tag_name: str
@@ -506,8 +528,13 @@ async def api_download_listening_zip(exam_id: str):
     clean_id = exam_id.strip()
     if not clean_id.startswith("["):
         clean_id = f"[{clean_id}]"
-    zip_path = tts_service.create_listening_zip(clean_id)
-    if not zip_path or not os.path.exists(zip_path):
+    try:
+        result = tts_service.create_listening_zip(clean_id)
+    except ValueError as e:
+        # 듣기 문항이 없거나 생성된 MP3가 하나도 없는 경우
+        raise HTTPException(status_code=404, detail=str(e))
+    zip_path = os.path.join(tts_service.AUDIO_DIR, result["zip_filename"])
+    if not os.path.exists(zip_path):
         raise HTTPException(status_code=404, detail="생성된 듣기 오디오 파일이 없거나 압축 생성에 실패했습니다.")
     safe_name = clean_id.replace("[", "").replace("]", "").replace(" ", "_")
     filename = f"{safe_name}_listening_audio.zip"
@@ -924,11 +951,8 @@ async def api_analyze_sentence_grammar(sentence_id: str):
 
     target = db.get_sentence(clean_id)
     if not target:
-        sentences = db.search_sentences(keyword="", passage_id="", limit=2000)
-        for s in sentences:
-            if s["id"] == clean_id:
-                target = s
-                break
+        found = db.search_sentences(sentence_ids=[clean_id])
+        target = found[0] if found else None
 
     if not target:
         raise HTTPException(status_code=404, detail="문장을 찾을 수 없습니다.")
@@ -1105,9 +1129,8 @@ async def api_batch_analyze_grammar(req: BatchAnalyzeRequest):
         raise HTTPException(status_code=400, detail="활성화된 AI 모델 중 유효한 API Key가 등록된 모델이 없습니다. 상단 [🔑 AI 설정]에서 먼저 등록해 주세요.")
 
     if req.sentence_ids:
-        target_ids = set(req.sentence_ids)
-        all_sentences = db.search_sentences(limit=0)
-        sentences = [s for s in all_sentences if s["id"] in target_ids]
+        # 선택한 문장만 SQL에서 바로 조회 (전체 7만 문장을 읽고 거르던 방식 제거)
+        sentences = db.search_sentences(sentence_ids=req.sentence_ids)
     else:
         limit_val = req.limit or 0
         sentences = db.search_sentences(is_starred=True if req.starred_only else None, limit=limit_val)
@@ -1184,9 +1207,8 @@ def background_auto_analyze_exam_grammar(exam_id: str):
         if not any(c["api_key"] for c in active_configs):
             return
 
-        sentences = db.search_sentences(passage_id="", limit=1000)
-        prefix = exam_id.rstrip("]")
-        target_sentences = [s for s in sentences if s["id"].startswith(prefix)]
+        # 해당 시험지의 문장 전체를 SQL 조건으로 조회 (기존: 최신 1,000문장 중 접두사 필터 → 문장 누락 가능)
+        target_sentences = db.search_sentences(exam_id=exam_id)
         passages_cache = {}
         for s in target_sentences:
             try:
@@ -1222,6 +1244,10 @@ def background_auto_analyze_exam_grammar(exam_id: str):
                 print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
     except Exception as e:
         print(f"[Background Grammar Task Error] {e}")
+    finally:
+        # 응답이 나간 뒤에 실행되므로 캐시 무효화 미들웨어가 잡지 못한다 → 직접 비운다
+        search_cache.clear()
+        db.invalidate_exams_cache()
 
 
 # --- 파일 업로드 및 상호 검증 파이프라인 API ---
@@ -1923,6 +1949,17 @@ async def api_upload_exam_single_file(
             except Exception as cr_err:
                 print(f"[Upload HWP] 크롭 갱신 경고: {cr_err}")
 
+            if not hwp_exps:
+                # 파일은 저장됐지만 해설을 하나도 추출하지 못한 경우 → 성공으로 알리면 사용자가 문제를 놓친다
+                return {
+                    "status": "partial",
+                    "exam_id": clean_id,
+                    "file_type": "hwp",
+                    "updated_count": 0,
+                    "pdf_highlighted": pdf_highlighted,
+                    "message": "⚠ 파일은 저장했지만 HWP에서 문항별 해설을 찾지 못했습니다. 파일 형식이나 내용을 확인해 주세요."
+                }
+
             return {
                 "status": "success",
                 "exam_id": clean_id,
@@ -1932,11 +1969,13 @@ async def api_upload_exam_single_file(
                 "message": f"HWP 해설지가 성공적으로 업로드되었습니다." + (f" ({updated_count}개 문항 해설 갱신)" if updated_count else "")
             }
         except Exception as e:
+            print(f"[Upload HWP] 해설 파싱 실패 ({clean_id}): {e}")
+            # 파일 저장 자체는 성공했으므로 HTTP 200을 유지하되, status로 부분 실패를 알린다
             return {
-                "status": "success",
+                "status": "partial",
                 "exam_id": clean_id,
                 "file_type": "hwp",
-                "message": f"HWP 파일이 성공적으로 업로드되었습니다. (해설 파싱 참고: {str(e)})"
+                "message": f"⚠ 파일은 저장했지만 해설 파싱에 실패했습니다: {str(e)}"
             }
 
     # 7. PDF 문제지 단독 업로드 / 교체 시

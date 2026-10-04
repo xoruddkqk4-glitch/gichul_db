@@ -1256,7 +1256,11 @@ export function init() {
                   body: fdHwp
                 });
                 const dHwp = await rHwp.json();
-                if (rHwp.ok) {
+                if (rHwp.ok && dHwp.status === "partial") {
+                  // 파일은 저장됐지만 해설 파싱에 실패한 경우 → 성공으로 세지 않고 사유를 남긴다
+                  allOk = false;
+                  errSummary.push(`해설지: ${dHwp.message || "해설 파싱 실패"}`);
+                } else if (rHwp.ok) {
                   updateSummary.push(`📝해설지${dHwp.updated_count ? `(${dHwp.updated_count}문항)` : ""}`);
                 } else {
                   allOk = false;
@@ -1541,7 +1545,12 @@ export function init() {
         });
         const data = await res.json();
         if (res.ok) {
-          alert(`🎉 [${activeSingleTargetExamId}] ${data.message || '성공적으로 반영되었습니다.'}`);
+          if (data.status === "partial") {
+            // 파일은 저장됐지만 후속 처리(예: HWP 해설 파싱)가 실패한 경우
+            alert(`⚠️ [${activeSingleTargetExamId}] ${data.message || '파일은 저장했지만 일부 처리에 실패했습니다.'}`);
+          } else {
+            alert(`🎉 [${activeSingleTargetExamId}] ${data.message || '성공적으로 반영되었습니다.'}`);
+          }
           await loadExamsManagerList();
           await loadFilesStatusList();
           if (resultsView && resultsView.style.display !== "none") {
