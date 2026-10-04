@@ -2030,6 +2030,26 @@ CREATE TABLE user_sentence_status (
   - `TestClient` 확인: 쓰기 요청 후 캐시 비움, `/api/settings/` 쓰기·GET 요청은 캐시 유지, 없는 시험지 ZIP 요청 시 404
   - 로드맵 2단계 전 DB 백업 완료 (`gichul.backup-2026-10-04.db`, Git 제외 확인)
 
+### [2026-10-04 18:12] 업데이트 이력 (Commit ID: 559b6365)
+- **수정 내용**:
+  - **코드 리뷰 로드맵 2단계: 안정성 (`app.py`, `database.py`, `hwp_parser.py`, `listening_parser.py`, `tts_service.py`, `requirements.txt`)**:
+    - 2-1 서버 멈춤 해결: `await`가 없는 라우트 44개를 `def`로 바꿔 스레드풀에서 실행. 긴 업로드·어법 분석 중에도 검색 등 다른 요청이 처리됨. PDF 처리 라우트 5개는 `@_ingest_serialized`(INGEST_LOCK)로 한 번에 하나씩 실행. 한글(HWP) COM 호출은 CoInitialize된 전용 스레드(`hwp-com`) 1개에서만 실행.
+    - 2-2 업로드 트랜잭션: 파싱이 끝난 뒤 시험지·지문·문장·정답 상태·정답률을 하나의 트랜잭션으로 저장해 중간 실패 시 전부 롤백. 듣기 동기화는 커밋 뒤 따로 실행하고 실패하면 `warnings`로 응답.
+    - 재업로드 문장 교체: `replace_passage_sentences()` 추가. 새 목록에 없는 옛 문장은 삭제(태그·어법 CASCADE). 같은 문장이면(단어 토큰 비교, 빈칸↔정답 채움 허용) 어법 분석·별표 보존. 내용이 바뀐 문장은 AI 어법만 삭제. 문장 분할 결과가 비면 교체하지 않고 경고. 응답에 `sentences_removed` 등 통계 추가.
+    - 2-3 DB 연결: `with get_connection()` 블록이 끝나면 연결까지 닫히도록 변경(`_ClosingConnection`), 잠금 대기 `timeout=15`, WAL 설정은 `init_db()`에서 1회. `listening_parser`의 닫히지 않던 연결 정리.
+    - 2-4 FTS 트리거: 갱신 트리거를 텍스트 컬럼(`sentence_text`, 지문 텍스트 4개) 변경 시에만 동작하도록 교체. 별표·메모·정답률 변경 시 불필요한 재색인 제거. 서버 시작 시 1회 자동 교체.
+    - 2-5 XTTS MP3: 대사별 WAV를 그대로 이어 붙여 `.mp3`로 저장하던 문제 수정. PCM으로 잇고(대사 사이 0.6초 무음) `lameenc`로 실제 MP3(128kbps) 인코딩. 기본 엔진은 XTTS 유지. `requirements.txt`에 `lameenc>=1.8` 추가.
+    - 함께 고친 버그: 업로드 시 듣기 동기화가 `has_hwp` NameError로 항상 오류 처리되던 문제, 업로드 메시지의 듣기 문항 수에 dict가 표시되던 문제, `/api/exams/.../sync-listening`의 `synced_count`가 dict이던 문제.
+  - **문서**: 로드맵 2단계 완료와 적용 결과(계획과 다른 점 포함) 기록, `docs/README.md` 상태 갱신(다음: 루트 정리 B단계).
+- **검증 결과**:
+  - `python -m py_compile app.py database.py hwp_parser.py tts_service.py listening_parser.py`: 오류 0건
+  - `pytest tests -q`: 76개 전체 통과
+  - 실제 DB 임시 사본 확인: `_au` 트리거 교체·`ai/ad` 유지, 트랜잭션 예외 시 롤백, 문장 교체 통계(추가 1/유지 32/변경 1/삭제 1)와 어법 보존·AI 어법 삭제·CASCADE, 별표 변경 시 FTS 재색인 없음
+  - `_wav_turns_to_mp3`: 1초 WAV 2개 → MP3 헤더 `FF F3`, 약 2.66초
+  - COM 전용 스레드: 서로 다른 스레드 3개에서 호출해도 `hwp-com_0` 1개에서 실행
+  - 1단계 검증 스크립트 재실행 결과 유지
+  - 남은 조치: WAV 내용인 `.mp3` 1개(`고3-2025년-11월-01번.mp3`)는 해당 문항 음성 재생성 시 정상 MP3로 교체됨
+
 
 
 
