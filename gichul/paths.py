@@ -28,3 +28,7 @@ VOICES_DIR = os.path.join(STATIC_DIR, "voices")
 # 데이터 파일
 KEYS_DIR = os.path.join(ROOT_DIR, "data", "answer_keys")
 GRAMMAR_CATEGORIES_JSON = os.path.join(STATIC_DIR, "data", "grammar_categories.json")
+
+# 로그 파일 디렉토리 및 경로
+LOGS_DIR = os.path.join(ROOT_DIR, "logs")
+APP_LOG_PATH = os.path.join(LOGS_DIR, "app.log")

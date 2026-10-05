@@ -23,7 +23,9 @@ from . import answer_keys
 from . import paths
 from .text_utils import normalize_bracket_id, apply_answer_header
 from .exam_profiles import get_exam_profile
+from .logging_config import get_logger
 
+logger = get_logger("gichul.listening_parser")
 BASE_DIR = paths.ROOT_DIR
 CAPTURES_DIR = paths.CAPTURES_DIR
 os.makedirs(CAPTURES_DIR, exist_ok=True)
@@ -528,7 +530,7 @@ def _save_script_crop(
                     min_y = min(min_y, dr.y0 - 4)
                     max_y = max(max_y, dr.y1 + 4)
     except Exception:
-        pass
+        logger.debug("Failed to detect drawings boundary for listening crop", exc_info=True)
 
     # 여유 있는 패딩 적용 (좌우 최소 10pt, 상하 8pt)
     min_x = max(0, min_x - 10)
@@ -592,7 +594,7 @@ def sync_exam_listening(
                     if r["answer_text"]:
                         db_answers[r["q_num"]] = r["answer_text"]
             except Exception:
-                pass
+                logger.debug("Failed to query existing db_answers", exc_info=True)
     if not exam_row:
         raise ValueError(f"시험지를 찾을 수 없습니다: {clean_id}")
 
@@ -651,7 +653,7 @@ def sync_exam_listening(
         try:
             explanations = hwp_parser.parse_hwp_explanations(target_hwp)
         except Exception as e:
-            print(f"[Sync Listening Warning] HWP 해설 파싱 실패: {e}")
+            logger.warning("[Sync Listening Warning] HWP 해설 파싱 실패: %s", e)
 
     # 정답 사전 사전 구축 (verified_key 우선, answers_dict 결합, DB 기존값(위에서 읽음) 및 HWP 해설 보완)
     verified_key = answer_keys.load_answer_key(grade, year, month)
@@ -685,7 +687,7 @@ def sync_exam_listening(
                 subtype=subtype
             )
         except Exception as e:
-            print(f"[Sync Listening Warning] PDF 듣기 크롭 실패: {e}")
+            logger.warning("[Sync Listening Warning] PDF 듣기 크롭 실패: %s", e)
 
     script_crops = {}
     if script_pdf_path and os.path.exists(script_pdf_path):
@@ -701,7 +703,7 @@ def sync_exam_listening(
                 subtype=subtype
             )
         except Exception as e:
-            print(f"[Sync Listening Warning] 대본 크롭 실패: {e}")
+            logger.warning("[Sync Listening Warning] 대본 크롭 실패: %s", e)
 
     saved_count = 0
     for q in range(start_q, end_q + 1):

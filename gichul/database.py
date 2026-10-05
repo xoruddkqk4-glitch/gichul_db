@@ -16,12 +16,14 @@ from collections import defaultdict
 
 from . import paths
 from . import access
+from .logging_config import get_logger
 from .text_utils import (
     normalize_bracket_id, apply_answer_header,
     extract_answer_num, extract_choices, fill_blanks,
     split_choice_parts, _CHOICE_PART_SPLIT_PATTERN, _BLANK_PATTERN,
 )
 
+logger = get_logger("gichul.database")
 DB_PATH = paths.DB_PATH
 
 
@@ -171,13 +173,13 @@ def init_db():
         try:
             cursor.execute("UPDATE passages SET area = 'reading' WHERE area IS NULL OR area = '';")
         except Exception:
-            pass
+            logger.debug("Failed to set default area to reading", exc_info=True)
 
         # 빈 문제 유형을 '기타'로 자동 보정
         try:
             cursor.execute("UPDATE passages SET question_type = '기타' WHERE question_type IS NULL OR question_type = '' OR trim(question_type) = '';")
         except Exception:
-            pass
+            logger.debug("Failed to set default question_type to 기타", exc_info=True)
 
         # 3. 문장 테이블
         cursor.execute("""
@@ -227,7 +229,7 @@ def init_db():
                     WHERE id IN (SELECT DISTINCT sentence_id FROM sentence_grammar_annotations)
                 """)
             except Exception:
-                pass
+                logger.debug("Failed to set grammar_analyzed flag in migration", exc_info=True)
 
             try:
                 cursor.execute("SELECT id, passage_id, sentence_text FROM sentences WHERE sentence_text LIKE '%\\_\\_%' ESCAPE '\\'")
@@ -256,7 +258,7 @@ def init_db():
                                 (prep_text.strip(), len(words), ur["id"])
                             )
             except Exception as mig_err:
-                print(f"[Init DB Blank Sentence Migration Error] {mig_err}")
+                logger.error("[Init DB Blank Sentence Migration Error] %s", mig_err, exc_info=True)
 
             try:
                 cursor.execute("SELECT id, answer_text, explanation_text FROM passages WHERE answer_text IS NOT NULL AND TRIM(answer_text) != '' AND explanation_text IS NOT NULL")
@@ -276,7 +278,7 @@ def init_db():
                         new_exp = apply_answer_header(exp.strip(), ans)
                         cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (new_exp, pr["id"]))
             except Exception as sync_err:
-                print(f"[Init DB Answer Sync Error] {sync_err}")
+                logger.error("[Init DB Answer Sync Error] %s", sync_err, exc_info=True)
 
             cursor.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('db_migration_version', '1')")
 
@@ -336,7 +338,7 @@ def init_db():
         try:
             cursor.execute("UPDATE sentence_grammar_annotations SET source_type = 'USER' WHERE explanation LIKE '수동 등록%' AND (source_type IS NULL OR source_type = 'AI');")
         except Exception:
-            pass
+            logger.debug("Failed to set source_type to USER for manual annotations", exc_info=True)
 
         # 6-1. 사용자 커스텀 어법 체계 및 매핑 설정 테이블
         cursor.execute("""
@@ -426,9 +428,9 @@ def init_db():
                 if row is None or "UPDATE OF" not in (row["sql"] or ""):
                     cursor.execute(f"DROP TRIGGER IF EXISTS {trg_name}")
                     cursor.execute(trg_sql)
-                    print(f"[Init DB] FTS 갱신 트리거 교체: {trg_name} (텍스트 컬럼 변경 시에만 재색인)")
+                    logger.info("[Init DB] FTS 갱신 트리거 교체: %s (텍스트 컬럼 변경 시에만 재색인)", trg_name)
         except Exception as fts_err:
-            print(f"[Init DB FTS5 Warning] {fts_err}")
+            logger.warning("[Init DB FTS5 Warning] %s", fts_err, exc_info=True)
 
         conn.commit()
 
@@ -493,7 +495,7 @@ def get_all_exams_with_stats(force_refresh: bool = False) -> List[Dict[str, Any]
                     try:
                         uploads_by_key[k].append((entry.name, entry.stat().st_size))
                     except Exception:
-                        pass
+                        logger.debug("Failed to stat upload file %s", entry.name, exc_info=True)
 
     captures_by_key = {}
     if os.path.exists(captures_dir):
@@ -906,7 +908,7 @@ def selective_delete_exam(
                 try:
                     os.remove(f)
                 except Exception:
-                    pass
+                    logger.debug("Failed to remove csv %s", f, exc_info=True)
 
             conn.commit()
             del_res["rate_data_deleted"] = True
@@ -930,7 +932,7 @@ def selective_delete_exam(
                     os.remove(f)
                     del_res["deleted_captures_count"] += 1
                 except Exception:
-                    pass
+                    logger.debug("Failed to remove capture %s", f, exc_info=True)
 
         # 5. 원본 파일(uploads/) 삭제
         if delete_raw:
@@ -942,7 +944,7 @@ def selective_delete_exam(
                     del_res["deleted_raw_count"] += 1
                     del_res["freed_raw_bytes"] += size
                 except Exception:
-                    pass
+                    logger.debug("Failed to remove raw file %s", f, exc_info=True)
             del_res["raw_files_deleted"] = True
 
         # 메시지 조합
@@ -1680,7 +1682,7 @@ def search_passages(
             rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
             if keyword and _use_fts:
-                print(f"[search_passages] FTS 검색 실패 → LIKE 검색으로 대체: {e}")
+                logger.warning("[search_passages] FTS 검색 실패 → LIKE 검색으로 대체: %s", e)
                 return search_passages(**_call_args, _use_fts=False)
             raise
         if not rows:
@@ -1712,6 +1714,7 @@ def search_passages(
                 try:
                     p_dict["choice_rates_obj"] = json.loads(p_dict["choice_rates"])
                 except Exception:
+                    logger.debug("Failed to parse choice_rates json: %s", p_dict.get("choice_rates"), exc_info=True)
                     p_dict["choice_rates_obj"] = None
             results.append(p_dict)
         return access.filter_passages(results, user_role)
@@ -1761,6 +1764,7 @@ def get_passage(passage_id: str, user_role: str = access.DEFAULT_ROLE) -> Option
                 try:
                     p_dict["choice_rates_obj"] = json.loads(p_dict["choice_rates"])
                 except Exception:
+                    logger.debug("Failed to parse choice_rates json: %s", p_dict.get("choice_rates"), exc_info=True)
                     p_dict["choice_rates_obj"] = None
             return access.filter_passage(p_dict, user_role)
         return None
@@ -1844,7 +1848,7 @@ def save_grammar_annotations(
                     ai_model or anno.get("ai_model")
                 ))
             except Exception:
-                pass
+                logger.debug("Failed to insert sentence_grammar_annotation: %s", anno, exc_info=True)
         cursor.execute("UPDATE sentences SET grammar_analyzed = 1 WHERE id = ?", (clean_id,))
         conn.commit()
 
@@ -1986,7 +1990,7 @@ def set_sentence_grammar_annotations(
                     anno.get("ai_model")
                 ))
             except Exception:
-                pass
+                logger.debug("Failed to insert sentence_grammar_annotation: %s", anno, exc_info=True)
         cursor.execute("UPDATE sentences SET grammar_analyzed = 1 WHERE id = ?", (clean_id,))
         conn.commit()
 
@@ -2058,7 +2062,7 @@ def get_effective_grammar_categories(user_id: str = "default_user") -> Dict[str,
                 try:
                     custom_mapping = json.loads(settings["custom_mapping_json"])
                 except Exception:
-                    pass
+                    logger.debug("Failed to parse custom_mapping_json", exc_info=True)
             return {
                 "is_custom": True,
                 "use_custom_tree": True,
@@ -2067,7 +2071,7 @@ def get_effective_grammar_categories(user_id: str = "default_user") -> Dict[str,
                 "user_id": user_id
             }
         except Exception as e:
-            print(f"[Custom Grammar Tree Parse Error] {e}")
+            logger.error("[Custom Grammar Tree Parse Error] %s", e, exc_info=True)
 
     # 기본 243개 표준 JSON 로드
     std_path = paths.GRAMMAR_CATEGORIES_JSON
@@ -2083,7 +2087,7 @@ def get_effective_grammar_categories(user_id: str = "default_user") -> Dict[str,
                 "user_id": user_id
             }
         except Exception as e:
-            print(f"[Standard Grammar Categories Load Error] {e}")
+            logger.error("[Standard Grammar Categories Load Error] %s", e, exc_info=True)
 
     return {"is_custom": False, "use_custom_tree": False, "data": {"list": [], "tree": []}, "mapping": {}, "user_id": user_id}
 
@@ -2252,7 +2256,7 @@ def search_sentences(
             rows = cursor.fetchall()
         except sqlite3.OperationalError as e:
             if keyword and _use_fts:
-                print(f"[search_sentences] FTS 검색 실패 → LIKE 검색으로 대체: {e}")
+                logger.warning("[search_sentences] FTS 검색 실패 → LIKE 검색으로 대체: %s", e)
                 return search_sentences(**_call_args, _use_fts=False)
             raise
         if not rows:
@@ -2321,7 +2325,7 @@ def search_sentences(
                     if prep and prep != s_dict["sentence_text"]:
                         s_dict["sentence_text"] = prep
                 except Exception:
-                    pass
+                    logger.debug("Failed to fill_blanks for sentence %s", s_dict.get("id"), exc_info=True)
 
             results.append(s_dict)
         return access.filter_sentences(results, user_role)
@@ -2348,6 +2352,7 @@ def get_listening_passages_by_exam(exam_id: str) -> List[Dict[str, Any]]:
                 try:
                     d["choice_rates_obj"] = json.loads(d["choice_rates"])
                 except Exception:
+                    logger.debug("Failed to parse choice_rates json: %s", d.get("choice_rates"), exc_info=True)
                     d["choice_rates_obj"] = None
             result.append(d)
         return result

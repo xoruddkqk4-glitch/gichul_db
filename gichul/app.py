@@ -16,14 +16,17 @@ import zipfile
 from urllib.parse import quote
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, BackgroundTasks, Response, Body, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import logging
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
+from .logging_config import setup_logging, get_logger
 
-logger = logging.getLogger("gichul_db")
+logger = get_logger("gichul.app")
 os.environ["COQUI_TOS_AGREED"] = "1"
 
 try:
@@ -63,12 +66,33 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """서버 기동 시 1회: DB 테이블/마이그레이션 초기화 (예전에는 database.py import 시점에 자동 실행)"""
+    """서버 기동 시 1회: 로깅 초기화 및 DB 테이블/마이그레이션 초기화"""
+    setup_logging()
     db.init_db()
     yield
 
 
 app = FastAPI(title="05-gichul_db (기출문제 DB 웹앱)", lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """공통 예외 핸들러: 스택 트레이스를 기록하고 클라이언트에게 일관된 JSON 형식 반환"""
+    if isinstance(exc, (HTTPException, StarletteHTTPException)):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"success": False, "detail": exc.detail}
+        )
+    if isinstance(exc, RequestValidationError):
+        return JSONResponse(
+            status_code=422,
+            content={"success": False, "detail": exc.errors()}
+        )
+    logger.error(f"서버 내부 오류 발생: {request.method} {request.url.path} - {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "detail": f"서버 내부 오류: {str(exc)}"}
+    )
 
 
 def get_current_role() -> str:
@@ -297,9 +321,9 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
                     hwp_pat = os.path.splitext(target_pdf)[0] + ".hwpx"
                 if os.path.exists(hwp_pat):
                     if convert_hwp_to_pdf(hwp_pat, target_pdf):
-                        print(f"[Crops] 스캔본 PDF를 HWP 원본({hwp_pat})으로부터 디지털 PDF로 자동 재변환 완료")
+                        logger.info(f"[Crops] 스캔본 PDF를 HWP 원본({hwp_pat})으로부터 디지털 PDF로 자동 재변환 완료")
         except Exception as scan_err:
-            print(f"[Crops] 스캔본 PDF 자동 치환 검사 중 경고: {scan_err}")
+            logger.warning(f"[Crops] 스캔본 PDF 자동 치환 검사 중 경고: {scan_err}", exc_info=True)
 
         # 정답 사전 보완 (verified_key 및 DB 저장값 결합)
         full_answers = dict(answer_keys.load_answer_key(grade, year, month) or {})
@@ -313,7 +337,7 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
                     if r["answer_text"] and r["q_num"] not in full_answers:
                         full_answers[r["q_num"]] = r["answer_text"]
         except Exception:
-            pass
+            logger.debug(f"[Crops] {exam_id} 기존 정답 조회 예외 (무시)", exc_info=True)
 
         # 1. 독해 문항 크롭 생성 (정답 형광펜 포함)
         crop_results = extract_pdf_columns_and_questions(
@@ -331,13 +355,13 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
             )
             crop_results.update(listening_crops)
         except Exception as l_crop_err:
-            print(f"[Crops] {exam_id} 듣기 문항 형광펜 크롭 생성 중 경고: {l_crop_err}")
+            logger.warning(f"[Crops] {exam_id} 듣기 문항 형광펜 크롭 생성 중 경고: {l_crop_err}", exc_info=True)
 
         # [특수 예외 폴백] 고3 2013년 9월 등 벡터 폰트 외곽선 변환 문서 전용 크롭 연동
         if not crop_results and profile.special_crop:
             sub = subtype or ("A형" if "-A" in exam_id else "B형")
             if run_special_crop(profile.special_crop, exam_id, sub):
-                print(f"[Crops] {exam_id} 전용 고정밀 기하 크롭 생성 완료")
+                logger.info(f"[Crops] {exam_id} 전용 고정밀 기하 크롭 생성 완료")
                 return True
 
         with db.get_connection() as conn:
@@ -350,12 +374,10 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
                         (crop_url, exam_id, q_n)
                     )
             conn.commit()
-        print(f"[Crops] {exam_id} 정답 형광펜 크롭 {len(crop_results)}개(듣기+독해) 재생성 완료")
+        logger.info(f"[Crops] {exam_id} 정답 형광펜 크롭 {len(crop_results)}개(듣기+독해) 재생성 완료")
         return True
     except Exception as crop_err:
-        import traceback
-        traceback.print_exc()
-        print(f"[Crops] {exam_id} PDF 하이라이트 갱신 중 경고: {crop_err}")
+        logger.warning(f"[Crops] {exam_id} PDF 하이라이트 갱신 중 경고: {crop_err}", exc_info=True)
         return False
 
 
@@ -1209,9 +1231,9 @@ def background_auto_analyze_exam_grammar(exam_id: str):
                     continue
                 grammar_service.analyze_and_save_sentence(s, passages_cache)
             except Exception as ex:
-                print(f"[Background Grammar Analysis Error] {s['id']}: {ex}")
+                logger.error(f"[Background Grammar Analysis Error] {s['id']}: {ex}", exc_info=True)
     except Exception as e:
-        print(f"[Background Grammar Task Error] {e}")
+        logger.error(f"[Background Grammar Task Error] {e}", exc_info=True)
     finally:
         # 응답이 나간 뒤에 실행되므로 캐시 무효화 미들웨어가 잡지 못한다 → 직접 비운다
         search_cache.clear()
@@ -1309,12 +1331,12 @@ def api_upload_exam(
                     sample_text = "".join(p.get_text() for p in tdoc)
                     tdoc.close()
                 except Exception:
-                    pass
+                    logger.debug("[Upload] PDF 텍스트 추출 실패 (무시)", exc_info=True)
             if not sample_text and hwp_save_path and os.path.exists(hwp_save_path):
                 try:
                     sample_text = get_hwp_text(hwp_save_path)
                 except Exception:
-                    pass
+                    logger.debug("[Upload] HWP 텍스트 추출 실패 (무시)", exc_info=True)
 
             detected_start, detected_end = detect_listening_range(
                 sample_text, year=year, grade=grade, month=month, subtype=subtype
@@ -1350,11 +1372,11 @@ def api_upload_exam(
                     uploaded_json_answers = answer_keys.parse_answer_json_file(ans_save_path)
                     if uploaded_json_answers:
                         answer_keys.save_uploaded_answer_key(grade, year, month, uploaded_json_answers, ans_file.filename if ans_file else "")
-                        print(f"[Upload] 정답 JSON 파일 파싱 및 키 저장 완료 ({len(uploaded_json_answers)}문항)")
+                        logger.info(f"[Upload] 정답 JSON 파일 파싱 및 키 저장 완료 ({len(uploaded_json_answers)}문항)")
                     else:
-                        print(f"[Upload] 정답 JSON 파싱 결과 비어있음: {ans_save_path}")
+                        logger.warning(f"[Upload] 정답 JSON 파싱 결과 비어있음: {ans_save_path}")
                 except Exception as e:
-                    print(f"[Upload] 정답 JSON 파싱 실패: {e}")
+                    logger.error(f"[Upload] 정답 JSON 파싱 실패: {e}", exc_info=True)
             else:
                 image_report = read_answer_image(ans_save_path)
 
@@ -1378,7 +1400,7 @@ def api_upload_exam(
             try:
                 rates_dict = parse_correct_rate_csv(csv_save_path)
             except Exception as e:
-                print(f"[Upload] 정답률 CSV 파싱 실패: {e}")
+                logger.error(f"[Upload] 정답률 CSV 파싱 실패: {e}", exc_info=True)
 
         # (4) 문항별 정답 확정: 업로드 JSON > 정답률 CSV > 검증 키 파일 > 이미지 모델 합의 > 이미지 단일 모델 > HWP 해설
         #     검증되지 않은 소스로 결정된 문항은 answer_verified=0 으로 기록되고 응답에 경고로 명시된다 (무언 폴백 금지)
@@ -1392,7 +1414,7 @@ def api_upload_exam(
         )
         answers_dict = resolution["answers"]
         for w in resolution["report"]["warnings"]:
-            print(f"[Upload][정답 검증 경고] {exam_id} {w}")
+            logger.warning(f"[Upload][정답 검증 경고] {exam_id} {w}")
 
         # (5) 최종 확정된 정답을 explanations 해설 텍스트 헤더 및 answer 필드에 동기화
         for q_num, final_ans in answers_dict.items():
@@ -1468,7 +1490,7 @@ def api_upload_exam(
                 try:
                     db.save_exam_correct_rates(exam_id, rates_dict, conn=conn)
                 except Exception as e:
-                    print(f"[Upload] 정답률 DB 갱신 실패: {e}")
+                    logger.error(f"[Upload] 정답률 DB 갱신 실패: {e}", exc_info=True)
                     warnings.append(f"정답률 반영 실패: {e}")
 
         # 8. 듣기 영역(1~17번) 자동 크롭 및 스크립트/FELS 추출 동기화 (독해 저장 커밋 후 별도 수행)
@@ -1485,9 +1507,9 @@ def api_upload_exam(
                 listening_count = listening_result.get("saved_count", 0) or 0
             else:
                 listening_count = int(listening_result or 0)
-            print(f"[Upload] {exam_id} 듣기 문항 {listening_count}개 동기화 완료")
+            logger.info(f"[Upload] {exam_id} 듣기 문항 {listening_count}개 동기화 완료")
         except Exception as l_err:
-            print(f"[Upload] 듣기 문항 동기화 중 경고: {l_err}")
+            logger.warning(f"[Upload] 듣기 문항 동기화 중 경고: {l_err}", exc_info=True)
             warnings.append(f"듣기 문항 동기화 실패: {l_err}")
 
         # AI API 키가 설정되어 있는 경우 백그라운드 어법 자동 분석 스케줄링
@@ -1935,7 +1957,7 @@ def api_upload_exam_single_file(
                     answers_dict = {int(r["q_num"]): r["answer_text"] for r in rows if r["answer_text"]}
                 pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict, subtype=subtype)
             except Exception as cr_err:
-                print(f"[Upload HWP] 크롭 갱신 경고: {cr_err}")
+                logger.warning(f"[Upload HWP] 크롭 갱신 경고: {cr_err}", exc_info=True)
 
             if not hwp_exps:
                 # 파일은 저장됐지만 해설을 하나도 추출하지 못한 경우 → 성공으로 알리면 사용자가 문제를 놓친다
@@ -1957,7 +1979,7 @@ def api_upload_exam_single_file(
                 "message": f"HWP 해설지가 성공적으로 업로드되었습니다." + (f" ({updated_count}개 문항 해설 갱신)" if updated_count else "")
             }
         except Exception as e:
-            print(f"[Upload HWP] 해설 파싱 실패 ({clean_id}): {e}")
+            logger.warning(f"[Upload HWP] 해설 파싱 실패 ({clean_id}): {e}", exc_info=True)
             # 파일 저장 자체는 성공했으므로 HTTP 200을 유지하되, status로 부분 실패를 알린다
             return {
                 "status": "partial",
@@ -1977,7 +1999,7 @@ def api_upload_exam_single_file(
                 answers_dict = {int(r["q_num"]): r["answer_text"] for r in rows if r["answer_text"]}
             pdf_highlighted = _regenerate_exam_crops(clean_id, grade, year, month, reading_start, reading_end, answers_dict, subtype=subtype)
         except Exception as cr_err:
-            print(f"[Upload PDF] 크롭 갱신 경고: {cr_err}")
+            logger.warning(f"[Upload PDF] 크롭 갱신 경고: {cr_err}", exc_info=True)
 
         return {
             "status": "success",

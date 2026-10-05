@@ -15,6 +15,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from .text_utils import apply_answer_header
 from .exam_profiles import get_exam_profile
+from .logging_config import get_logger
+
+logger = get_logger("gichul.hwp_parser")
 
 
 def sanitize_text(text: str) -> str:
@@ -45,7 +48,7 @@ def extract_hwpx_text(file_path: str) -> str:
                     elif elem.tag.endswith("p"):
                         full_text.append("\n")
     except Exception as e:
-        print(f"[HWPX 직접 파싱 경고] {e}")
+        logger.warning("[HWPX 직접 파싱 경고] %s", e)
         return ""
 
     return sanitize_text("".join(full_text))
@@ -84,6 +87,7 @@ def extract_hwp_text_ole(file_path: str) -> Optional[str]:
                 try:
                     data = zlib.decompress(stream_data, -15)
                 except Exception:
+                    logger.debug("zlib wbits=-15 failed, fallback to default", exc_info=True)
                     data = zlib.decompress(stream_data)
             else:
                 data = stream_data
@@ -132,7 +136,7 @@ def extract_hwp_text_ole(file_path: str) -> Optional[str]:
         result = sanitize_text("\n".join(full_text))
         return result if result else None
     except Exception as e:
-        print(f"[HWP OLE 직접 파싱 경고] {e}")
+        logger.warning("[HWP OLE 직접 파싱 경고] %s", e)
         return None
 
 
@@ -171,10 +175,10 @@ def ensure_hwp_security_module() -> bool:
                     winreg.SetValueEx(k, "FilePathCheckerModule", 0, winreg.REG_SZ, os.path.abspath(dll_path))
                     winreg.CloseKey(k)
                 except Exception:
-                    pass
+                    logger.debug("Failed to set registry key for HWP security module", exc_info=True)
         return True
     except Exception as e:
-        print(f"[HWP 보안모듈 레지스트리 등록 경고] {e}")
+        logger.warning("[HWP 보안모듈 레지스트리 등록 경고] %s", e)
         return False
 
 
@@ -233,7 +237,7 @@ def restore_foreground_window(target_hwnd: int):
             if attached_fg:
                 user32.AttachThreadInput(cur_thread, fg_thread, False)
     except Exception:
-        pass
+        logger.debug("Failed to restore foreground window", exc_info=True)
 
 
 import threading
@@ -257,7 +261,7 @@ def _com_thread_init():
         import pythoncom
         pythoncom.CoInitialize()
     except Exception as e:
-        print(f"[HWP COM 스레드 초기화 경고] {e}")
+        logger.warning("[HWP COM 스레드 초기화 경고] %s", e)
 
 
 _COM_EXECUTOR = ThreadPoolExecutor(
@@ -298,16 +302,16 @@ def get_shared_hwp():
             try:
                 inst.RegisterModule("FilePathCheckDLL", "FilePathCheckerModule")
             except Exception:
-                pass
+                logger.debug("Failed to RegisterModule FilePathCheckerModule", exc_info=True)
             try:
                 inst.SetMessageBoxMode(0x00070000)
             except Exception:
-                pass
+                logger.debug("Failed to SetMessageBoxMode", exc_info=True)
 
             _shared_hwp = inst
             return _shared_hwp
         except Exception as e:
-            print(f"[get_shared_hwp 초기화 경고] {e}")
+            logger.warning("[get_shared_hwp 초기화 경고] %s", e)
             return None
         finally:
             restore_foreground_window(fg_hwnd)
@@ -320,7 +324,7 @@ def _cleanup_shared_hwp_impl():
             try:
                 _shared_hwp.Quit()
             except Exception:
-                pass
+                logger.debug("Failed to Quit _shared_hwp", exc_info=True)
             _shared_hwp = None
 
 
@@ -341,7 +345,7 @@ def cleanup_shared_hwp():
 try:
     threading._register_atexit(cleanup_shared_hwp)  # type: ignore[attr-defined]
 except Exception:
-    pass
+    logger.debug("Failed to register _register_atexit", exc_info=True)
 atexit.register(cleanup_shared_hwp)
 
 
@@ -354,7 +358,7 @@ def _extract_hwp_text_pyhwpx_impl(file_path: str) -> str:
 
         opened = hwp.Open(os.path.abspath(file_path))
         if not opened:
-            print(f"[pyhwpx] 파일 열기 실패: {file_path}")
+            logger.warning("[pyhwpx] 파일 열기 실패: %s", file_path)
             return ""
 
         text = hwp.GetTextFile("TEXT", "")
@@ -364,11 +368,11 @@ def _extract_hwp_text_pyhwpx_impl(file_path: str) -> str:
         try:
             hwp.Clear(1)  # 문서만 닫고 Hwp 프로세스는 유지
         except Exception:
-            pass
+            logger.debug("Failed to hwp.Clear(1)", exc_info=True)
 
         return sanitize_text(text or "")
     except Exception as e:
-        print(f"[pyhwpx 추출 경고] {e}")
+        logger.warning("[pyhwpx 추출 경고] %s", e)
         return ""
     finally:
         restore_foreground_window(fg_hwnd)
@@ -394,10 +398,10 @@ def _convert_hwp_to_pdf_impl(hwp_path: str, pdf_path: str) -> bool:
         try:
             hwp.Clear(1)
         except Exception:
-            pass
+            logger.debug("Failed to hwp.Clear(1)", exc_info=True)
         return os.path.exists(pdf_path) and os.path.getsize(pdf_path) > 0
     except Exception as e:
-        print(f"[convert_hwp_to_pdf 오류] {e}")
+        logger.error("[convert_hwp_to_pdf 오류] %s", e, exc_info=True)
         return False
     finally:
         restore_foreground_window(fg_hwnd)
@@ -472,7 +476,7 @@ def classify_question_type(title: str, q_num: int = 0, is_50_questions: bool = F
             from .listening_parser import classify_listening_question_type
             return classify_listening_question_type(title, q_num)
         except Exception:
-            pass
+            logger.debug("Failed to classify_listening_question_type", exc_info=True)
 
     # 복합 장문 우선 판별
     if is_50_questions:
@@ -786,7 +790,7 @@ def parse_hwp_explanations(hwp_path: str) -> Dict[int, Dict[str, str]]:
                     t_sym = tm.group(2)
                     table_answers[t_q] = CIRCLED_MAP.get(t_sym, t_sym)
             except Exception:
-                pass
+                logger.debug("Failed to extract table answer match", exc_info=True)
 
     _, exp_text = split_questions_and_explanations(full_text)
     # 해설 마커가 명확히 분리되었으면 exp_text 사용, 아니면 full_text 전체에서 해설 패턴 탐색
@@ -986,6 +990,7 @@ def read_answer_image(image_path: str) -> Dict[str, Any]:
             if page.rect.width < 1200:
                 img_bytes = page.get_pixmap(matrix=pymupdf.Matrix(2, 2)).tobytes("png")
         except Exception:
+            logger.debug("pymupdf upscale failed, fallback to reading raw image", exc_info=True)
             img_bytes = None
         if img_bytes is None:
             with open(image_path, "rb") as f:
@@ -1038,5 +1043,5 @@ def read_answer_image(image_path: str) -> Dict[str, Any]:
         else:
             result["disputed"][q] = values
     result["status"] = "ok" if not result["disputed"] else "partial"
-    print(f"[read_answer_image] {n_readers}개 모델 판독, 합의 {len(result['consensus'])}문항 (소수의견 {len(result['dissent'])}), 불일치 {len(result['disputed'])}문항")
+    logger.info("[read_answer_image] %d개 모델 판독, 합의 %d문항 (소수의견 %d), 불일치 %d문항", n_readers, len(result['consensus']), len(result['dissent']), len(result['disputed']))
     return result

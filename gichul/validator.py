@@ -10,6 +10,9 @@ import difflib
 from typing import Dict, List, Tuple, Optional
 from .sentence_tokenizer import create_sentence_records
 from .text_utils import fill_blanks
+from .logging_config import get_logger
+
+logger = get_logger("gichul.validator")
 
 
 def normalize_for_comparison(text: str) -> str:
@@ -115,7 +118,7 @@ def cross_validate_and_merge(
                     words = re.findall(r"\b[\w'-]+\b", completed)
                     sr["word_count"] = len(words)
         except Exception as e:
-            print(f"[Sentence Prep Error in validator] {passage_id}: {e}")
+            logger.error("[Sentence Prep Error in validator] %s: %s", passage_id, e, exc_info=True)
 
         merged_results.append({
             "passage_data": {

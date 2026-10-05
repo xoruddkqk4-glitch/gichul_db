@@ -14,6 +14,9 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from . import database
 from . import paths
+from .logging_config import get_logger
+
+logger = get_logger("gichul.grammar_analyzer")
 
 # 범주표 로드 및 캐싱
 DATA_PATH = paths.GRAMMAR_CATEGORIES_JSON
@@ -156,7 +159,7 @@ def get_openrouter_ensemble_models() -> List[str]:
             if isinstance(arr, list) and len(arr) == 3:
                 return arr
         except Exception:
-            pass
+            logger.debug("Failed to parse openrouter_ensemble_models json", exc_info=True)
     return list(DEFAULT_OPENROUTER_ENSEMBLE_MODELS)
 
 
@@ -189,7 +192,7 @@ def get_available_gemini_models(api_key: str) -> List[str]:
                         supported.append(clean_name)
             return supported
     except Exception as e:
-        print(f"[Gemini ListModels Warning] {e}")
+        logger.warning("[Gemini ListModels Warning] %s", e)
         return []
 
 
@@ -255,7 +258,7 @@ def get_provider_config(provider: str) -> Tuple[str, str]:
             try:
                 database.set_setting(f"ai_key_{p}", legacy_key)
             except Exception:
-                pass
+                logger.debug("Failed to set legacy api key into ai_key_%s", p, exc_info=True)
 
     if not model:
         legacy_p = database.get_setting("ai_provider", "gemini").lower()
@@ -289,7 +292,7 @@ def get_active_providers() -> List[str]:
                 if valid:
                     return valid
         except Exception:
-            pass
+            logger.debug("Failed to parse ai_active_providers json", exc_info=True)
 
     # 레거시 폴백: ai_provider에 설정된 단일 값
     legacy_p = database.get_setting("ai_provider", "gemini").lower()
@@ -344,7 +347,7 @@ def get_available_lmstudio_models(base_url: str = "") -> List[str]:
                     models.append(m_id)
             return models
     except Exception as e:
-        print(f"[LM Studio ListModels Error] {e}")
+        logger.warning("[LM Studio ListModels Error] %s", e)
         return []
 
 
@@ -514,7 +517,7 @@ def _call_gemini_with_resilience(user_content: str, api_key: str, requested_mode
 
                     # 만약 요청 모델과 다른 모델로 폴백 성공했다면 DB 설정 및 로깅
                     if cand_model != req_m:
-                        print(f"[Gemini Auto-Failover] Switched from {req_m} to responsive {cand_model} successfully.")
+                        logger.info("[Gemini Auto-Failover] Switched from %s to responsive %s successfully.", req_m, cand_model)
                         database.set_setting("ai_model_gemini", cand_model)
 
                     return raw_text, cand_model
@@ -526,6 +529,7 @@ def _call_gemini_with_resilience(user_content: str, api_key: str, requested_mode
                     err_json = json.loads(err_body)
                     err_detail = err_json.get("error", {}).get("message") or err_json.get("message") or err_body
                 except Exception:
+                    logger.debug("Failed to parse Gemini error json", exc_info=True)
                     err_detail = err_body
                 last_error_detail = err_detail
 
@@ -536,16 +540,16 @@ def _call_gemini_with_resilience(user_content: str, api_key: str, requested_mode
                 # 503 (High demand / Unavailable): 일시적 트래픽 스파이크
                 if he.code == 503:
                     if attempt < max_attempts:
-                        print(f"[Gemini 503 Spikes] {cand_model} demand spike on attempt {attempt}. Retrying in 1.5s...")
+                        logger.warning("[Gemini 503 Spikes] %s demand spike on attempt %d. Retrying in 1.5s...", cand_model, attempt)
                         time.sleep(1.5)
                         continue
                     else:
-                        print(f"[Gemini 503 Failover] {cand_model} still 503 after {max_attempts} attempts. Trying next model...")
+                        logger.warning("[Gemini 503 Failover] %s still 503 after %d attempts. Trying next model...", cand_model, max_attempts)
                         break
 
                 # 404 (Not Found / Model deprecated) or 429 (Rate limit): 다음 후보 모델로 즉시 전환
                 if he.code in (404, 429):
-                    print(f"[Gemini {he.code} Fallback] {cand_model} failed with HTTP {he.code}. Trying next model...")
+                    logger.warning("[Gemini %d Fallback] %s failed with HTTP %d. Trying next model...", he.code, cand_model, he.code)
                     break
 
                 # 기타 HTTP 오류: 다음 모델로 전환
@@ -639,7 +643,7 @@ def prepare_sentence_for_analysis(
                     if row:
                         passage_id = row["passage_id"]
             except Exception:
-                pass
+                logger.debug("Failed to query passage_id for sentence", exc_info=True)
 
         if passage_id:
             try:
@@ -649,7 +653,7 @@ def prepare_sentence_for_analysis(
                     answer_text = answer_text or p_data.get("answer_text", "")
                     explanation_text = explanation_text or p_data.get("explanation_text", "")
             except Exception:
-                pass
+                logger.debug("Failed to fetch passage for passage_id %s", passage_id, exc_info=True)
 
     return fill_blanks(sentence_text, passage_text, answer_text, explanation_text)
 
@@ -805,6 +809,7 @@ def _call_llm(
             err_json = json.loads(err_body)
             err_detail = err_json.get("error", {}).get("message") or err_json.get("message") or err_body
         except Exception:
+            logger.debug("Failed to parse HTTP error body as JSON", exc_info=True)
             err_detail = err_body
         raise ValueError(f"{provider.upper()} API 호출 오류 ({he.code}): {err_detail}")
 
@@ -821,6 +826,7 @@ def _call_llm(
     try:
         parsed = json.loads(cleaned_str)
     except Exception:
+        logger.debug("Initial JSON parse failed, trying substring extraction", exc_info=True)
         start_brace = cleaned_str.find("{")
         end_brace = cleaned_str.rfind("}")
         if start_brace != -1 and end_brace != -1 and end_brace > start_brace:
@@ -1135,7 +1141,7 @@ def get_openrouter_top_models(force_refresh: bool = False) -> List[Dict[str, Any
         }
         return updated_models
     except Exception as e:
-        print(f"[OpenRouter Models API 경고] 실시간 정보 로드 실패, 기본 캐시 사용: {e}")
+        logger.warning("[OpenRouter Models API 경고] 실시간 정보 로드 실패, 기본 캐시 사용: %s", e)
         return DEFAULT_OPENROUTER_TOP_MODELS
 
 
@@ -1170,10 +1176,12 @@ def get_all_openrouter_models(force_refresh: bool = False) -> List[Dict[str, Any
             try:
                 prompt_p = float(pricing.get("prompt", 0) or 0) * 1_000_000
             except Exception:
+                logger.debug("Failed to parse prompt price", exc_info=True)
                 prompt_p = 0.0
             try:
                 comp_p = float(pricing.get("completion", 0) or 0) * 1_000_000
             except Exception:
+                logger.debug("Failed to parse completion price", exc_info=True)
                 comp_p = 0.0
 
             ctx = (m.get("context_length", 0) or 0) // 1024
@@ -1207,7 +1215,7 @@ def get_all_openrouter_models(force_refresh: bool = False) -> List[Dict[str, Any
         }
         return clean_models
     except Exception as e:
-        print(f"[OpenRouter All Models API 오류] {e}")
+        logger.error("[OpenRouter All Models API 오류] %s", e, exc_info=True)
         if _ALL_OPENROUTER_CACHE.get("models"):
             return _ALL_OPENROUTER_CACHE["models"]
         return [

@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
-| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 다음: 3-D) |
+| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05 · 다음: 3-E) |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
 
 ### 모든 단계 공통 검증 (Rule 2)
@@ -438,6 +438,36 @@ def get_exam_profile(grade, year, month, subtype=None) -> ExamProfile: ...
 - `print(...)` → `logger.info/warning/error` (총 54곳)
 - 오류를 그냥 버리는 `except Exception: pass`(43곳) → `logger.debug("...", exc_info=True)`. 단, 마이그레이션의 `except sqlite3.OperationalError: pass`처럼 예상된 실패는 그대로 둡니다.
 - `@app.exception_handler(Exception)` 공통 핸들러를 추가합니다. 스택 트레이스를 로그로 남기고 `{"success": False, "detail": ...}`를 반환합니다. 프론트엔드가 `data.detail`을 쓰므로 이 키는 유지합니다.
+
+#### 3-D 적용 결과 (2026-10-05)
+- [NEW] `gichul/paths.py`: `LOGS_DIR` 및 `APP_LOG_PATH` (`logs/app.log`) 상수 추가. `.gitignore`에 `logs/`, `*.log` 등록 유지
+- [NEW] `gichul/logging_config.py`:
+  - `setup_logging(level)`: 콘솔(`stdout`) + `RotatingFileHandler` (5MB × 3개, UTF-8 인코딩) 구성
+  - `get_logger(name)`: `gichul.<module_name>` 계층형 표준 로거 생성 함수
+  - 일관된 로그 포맷: `[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s`
+- [MODIFY] `gichul/app.py`:
+  - `lifespan` 기동 시 `setup_logging()` 자동 호출
+  - `@app.exception_handler(Exception)` 글로벌 핸들러 등록: 처리되지 않은 예외 발생 시 스택 트레이스를 `logger.critical`로 기록하고 클라이언트에 일관된 `{"success": False, "detail": str(exc)}` (HTTP 500) JSON 반환 (`HTTPException` 및 `RequestValidationError`는 기본 동작 유지)
+  - 17개 `print` 호출을 `logger.info`, `logger.warning`, `logger.error`로 교체
+  - 원인 은닉형 `except Exception: pass`에 `logger.debug(..., exc_info=True)` 적용
+- [MODIFY] 백엔드 코어 6개 모듈:
+  - `gichul/database.py`: 8개 `print` → `logger`, 12개 `except Exception: pass` → `logger.debug(..., exc_info=True)` (마이그레이션 `sqlite3.OperationalError: pass` 정상 유지)
+  - `gichul/grammar_analyzer.py`: 8개 `print` → `logger`, 8개 `except Exception: pass` → `logger.debug`
+  - `gichul/hwp_parser.py`: 9개 `print` → `logger`, 10개 `except Exception: pass` → `logger.debug`
+  - `gichul/pdf_parser.py`: 6개 `print` → `logger`, 9개 `except Exception: pass` → `logger.debug`
+  - `gichul/listening_parser.py`: 3개 `print` → `logger`, 2개 `except Exception: pass` → `logger.debug`
+  - `gichul/validator.py`: 1개 `print` → `logger.error`, 1개 `except Exception as e: pass` 제거
+- [NEW] `tests/test_logging_config.py`:
+  - 로거 파일 기록 및 회전 핸들러 검증
+  - 계층형 로거 네이밍 검증
+  - FastAPI 글로벌 예외 핸들러 500 JSON 반환(`{"success": False, "detail": ...}`) 검증
+- **검증**
+  - `python -c "import compileall; ..."`: `gichul` 및 `tests` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `python -m pytest tests -q`: **161개** 단위 테스트 전체 통과 (기존 158개 + 신규 3개)
+  - `logs/app.log` 자동 생성 및 실시간 회전 로깅 정상 확인
+- **사용자 수동 확인**: 서버 구동 후 `logs/app.log` 파일에 애플리케이션 시작 로그 및 API 호출 이벤트가 기록되는지 확인
+
+
 
 ### 3-E. 라우터 분리 (보고서 3-11)
 **[NEW] 패키지 구조**

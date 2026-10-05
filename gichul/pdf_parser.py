@@ -15,6 +15,9 @@ from PIL import Image
 
 from .paths import CAPTURES_DIR
 from .exam_profiles import get_exam_profile
+from .logging_config import get_logger
+
+logger = get_logger("gichul.pdf_parser")
 
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
@@ -315,7 +318,7 @@ def find_notice_box_top(page: fitz.Page, min_x: float = 0.0, min_y: float = 0.0)
         if candidate_lines:
             box_top_y = min(candidate_lines) - 4
     except Exception:
-        pass
+        logger.debug("Failed to detect notice box top y", exc_info=True)
 
     return box_top_y
 
@@ -392,7 +395,7 @@ def extract_pdf_columns_and_questions(
             if mid_candidates:
                 divider_x = sum(mid_candidates) / len(mid_candidates)
         except Exception:
-            pass
+            logger.debug("Failed to detect column divider line from vector drawings", exc_info=True)
 
         if divider_x is None:
             divider_x = width / 2.0
@@ -654,7 +657,7 @@ def save_extracted_question(
                             max_x = max(max_x, img_r.x1 + 6)
                             max_y = max(max_y, img_r.y1 + 6)
             except Exception:
-                pass
+                logger.debug("Failed to scan page images for crop", exc_info=True)
 
             # 2. 벡터 드로잉 탐색 (선, 다이어그램, 일러스트 패스)
             try:
@@ -671,7 +674,7 @@ def save_extracted_question(
                             max_x = max(max_x, dr.x1 + 6)
                             max_y = max(max_y, dr.y1 + 6)
             except Exception:
-                pass
+                logger.debug("Failed to scan page drawings for crop", exc_info=True)
 
             # 3. 그림 문항(듣기 4번 또는 '그림에서...' 발문) 안전 폴백: 다음 문항 직전까지 영역 확장
             is_picture_q = ("그림" in question_title or "그림" in full_q_text or q_num == 4)
@@ -697,7 +700,7 @@ def save_extracted_question(
                 try:
                     added_annots = highlight_answer_choice(page, crop_rect, answer_symbol)
                 except Exception as e:
-                    print(f"[{q_num}번 정답 선지 하이라이트 경고] {e}")
+                    logger.warning("[%d번 정답 선지 하이라이트 경고] %s", q_num, e)
 
             # 200 DPI로 고화질 크롭 이미지 생성
             pix = page.get_pixmap(clip=crop_rect, dpi=200)
@@ -708,7 +711,7 @@ def save_extracted_question(
                 try:
                     page.delete_annot(annot)
                 except Exception:
-                    pass
+                    logger.debug("Failed to delete temporary annot", exc_info=True)
     else:
         web_img_url = ""
 
@@ -770,7 +773,7 @@ def crop_and_merge_41_42(
         if mid_cands:
             divider_x = sum(mid_cands) / len(mid_cands)
     except Exception:
-        pass
+        logger.debug("Failed to detect divider line for 41-42", exc_info=True)
     if divider_x is None:
         divider_x = width / 2.0
 
@@ -850,14 +853,14 @@ def crop_and_merge_41_42(
             try:
                 annots.extend(highlight_answer_choice(page, clip_41, ans_41))
             except Exception as e:
-                print(f"[41번 정답 하이라이트 경고] {e}")
+                logger.warning("[41번 정답 하이라이트 경고] %s", e)
 
         ans_42 = answers_dict.get(42, "")
         if ans_42:
             try:
                 annots.extend(highlight_answer_choice(page, clip_42, ans_42))
             except Exception as e:
-                print(f"[42번 정답 하이라이트 경고] {e}")
+                logger.warning("[42번 정답 하이라이트 경고] %s", e)
 
         crop_rect = fitz.Rect(max(0, x0), max(0, y0), min(width, x1), min(height, y1))
         pix = page.get_pixmap(clip=crop_rect, dpi=200)
@@ -882,7 +885,7 @@ def crop_and_merge_41_42(
             try:
                 annots.extend(highlight_answer_choice(page, clip_41, ans_41))
             except Exception as e:
-                print(f"[41번 정답 하이라이트 경고] {e}")
+                logger.warning("[41번 정답 하이라이트 경고] %s", e)
 
         # Part 2: 42번 문항 (다른 쪽 칼럼)
         x0_p2 = 35 if side_42 == "L" else divider_x + 3
@@ -906,7 +909,7 @@ def crop_and_merge_41_42(
             try:
                 annots.extend(highlight_answer_choice(page, clip_42, ans_42))
             except Exception as e:
-                print(f"[42번 정답 하이라이트 경고] {e}")
+                logger.warning("[42번 정답 하이라이트 경고] %s", e)
 
         pix1 = page.get_pixmap(clip=fitz.Rect(max(0, x0_p1), max(0, y0_p1), min(width, x1_p1), min(height, y1_p1)), dpi=200)
         pix2 = page.get_pixmap(clip=fitz.Rect(max(0, x0_p2), max(0, y0_p2), min(width, x1_p2), min(height, y1_p2)), dpi=200)
@@ -937,7 +940,7 @@ def crop_and_merge_41_42(
         try:
             page.delete_annot(a)
         except Exception:
-            pass
+            logger.debug("Failed to delete annot for 41-42", exc_info=True)
 
     return f"/static/captures/{img_filename}"
 
@@ -989,7 +992,7 @@ def crop_and_merge_43_45(
         if mid_cands:
             divider_x = sum(mid_cands) / len(mid_cands)
     except Exception:
-        pass
+        logger.debug("Failed to detect divider line for 43-45", exc_info=True)
     if divider_x is None:
         divider_x = width / 2.0
 
@@ -1093,7 +1096,7 @@ def crop_and_merge_43_45(
                 try:
                     annots.extend(highlight_answer_choice(page, q_clips[q_idx], ans_val))
                 except Exception as e:
-                    print(f"[{q_idx}번 정답 하이라이트 경고] {e}")
+                    logger.warning("[%d번 정답 하이라이트 경고] %s", q_idx, e)
 
     # 고화질(200 DPI) 렌더링
     parts = []
@@ -1138,7 +1141,7 @@ def crop_and_merge_43_45(
         try:
             page.delete_annot(a)
         except Exception:
-            pass
+            logger.debug("Failed to delete annot for 43-45", exc_info=True)
 
     return f"/static/captures/{img_filename}"
 
