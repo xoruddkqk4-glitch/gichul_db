@@ -2394,3 +2394,34 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/*.js`: 프론트엔드 자바스크립트 전체 문법 검사 오류 0건 통과
   - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (9.89s)
 
+### [2026-10-05 20:04] 업데이트 이력 (Commit ID: 3f2c1c06)
+- **수정 내용**:
+  - **코드 리뷰 로드맵 4-E-2: HTML 인라인 스타일 CSS 클래스 이전 및 정리 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **헤더 & 검색 영역 클래스화 (`static/css/search.css`, `static/css/base.css`)**:
+      - `#btnResetHomeFilters`, `#btnResetResultsFilters`: 초기 `visibility: hidden; opacity: 0; pointer-events: none;` 인라인 속성을 CSS 클래스 기본값으로 이전
+      - `.empty-actions`: 검색 결과 없음 안내 카드 하단 액션 버튼 flex 정렬 클래스화
+      - `.guidance-sample-tags`, `.guidance-sample-label`: 추천 키워드 칩 래퍼 및 라벨 스타일 클래스화
+    - **뷰어 영역 클래스화 (`static/css/viewer.css`)**:
+      - 2x2 지문 그리드 패널: `.panel-top-left`, `.panel-top-right`, `.panel-bottom-left`, `.panel-bottom-right` 클래스로 `grid-column`/`grid-row` 이전
+      - 패널 액션 및 듣기 바: `.panel-header-actions`, `.panel-bottom-left-actions`, `.listening-bottom-left-actions`, `.btn-fels-action` 클래스화
+      - 메타 정보 & 문장 뷰어: `#validationBadge`, `.meta-val-primary`, `.meta-val-type`, `.meta-val-answer`, `.rates-empty-hint`, `.meta-item-spacing`, `.sentence-match-label`, `#sentenceMatchCount`, `.sentence-match-sub`, `.sentence-header-actions`, `#btnSentenceBackToPassage` 스타일 이전
+    - **모달 영역 클래스화 (`static/css/upload.css`, `static/css/grammar.css`, `static/css/modal.css`)**:
+      - 공통 모달 유틸리티: `.modal-header-info`, `.modal-header-actions`, `.modal-footer-between`, `.modal-footer-actions`, `.flex-row-center`, `.flex-between`, `.mb-0`, `.cursor-pointer`, `.nowrap`, `.text-center`, `.w-100` 신설
+      - 업로드 모달 테이블: `.batch-sets-table`, `.files-status-table`, `.manage-exams-table` 공통 규격, 헤더 정렬(`.col-center`, `.col-chk`), 래퍼 스크롤 클래스화
+      - 업로드 보조 컴포넌트: `.batch-progress-box`, `.batch-progress-header`, `.progress-bar-bg`, `.progress-bar-fill`, `.batch-progress-subtext`, `.files-summary-bar`, `.files-summary-badges`, `.badge-files-stat`, `.dropdown-filter-container`, `.btn-filter-trigger`, `.dropdown-filter-menu`, `.missing-filter-header`, `.missing-filter-title`, `.missing-filter-actions`, `.btn-missing-text`, `.missing-filter-body`, `.missing-chk-label`, `.upload-help-box`, `.manage-exams-toolbar`, `.manage-exams-count`, `.form-text-muted`, `.btn-icon-gap`
+      - 선택 삭제 모달: `.sel-del-modal-content`, `.sel-del-header`, `.sel-del-title`, `.sel-del-subtitle`, `.sel-del-target-box`, `.sel-del-target-label`, `.sel-del-target-text`, `.sel-del-preset-label`, `.sel-del-presets-row`, `.sel-del-options-list`, `.sel-del-option-card`, `.sel-del-card-header`, `.sel-del-card-title`, `.sel-del-card-desc`, `.sel-del-warning-msg`
+      - AI 설정 및 어법 모달: `.lmstudio-card`, `.tts-radio-label`, `.edge-label`, `.btn-tts-action`, `.grammar-popover-title-group`, `.grammar-popover-source`, `.grammar-popover-footer`
+    - **자바스크립트 런타임 호환성 보존**:
+      - JS 상태 검사 로직(`element.style.display !== "none"`, `=== "block"`) 및 동적 너비 제어(`width: 0%;`)에 필수적인 초기 인라인 속성은 안전하게 보존하여 오동작 원천 차단
+    - **인라인 스타일 감축 결과**:
+      - `templates/index.html` 전체 인라인 `style=""`: 기존 **371개 → 164개** (**207개 대폭 감축, 55.8% 제거**)
+      - 순수 레이아웃 및 비주얼 인라인 스타일: **321개 → 109개** (**66% 클래스화 이전 완료**)
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 4-E-2 완료 반영 및 결과 기록
+      - `docs/README.md`: 계획서 목록 상태 갱신 (4-E-2 ✅ · 다음: 4-E-3)
+- **검증 결과**:
+  - `python -m compileall gichul tests -q`: 바이트코드 컴파일 오류 0건 통과
+  - `node -c static/js/*.js`: 프론트엔드 자바스크립트 전체 문법 검사 오류 0건 통과
+  - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (16.79s)
+
+
