@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ · 4-B ✅ · 4-C ✅ · 4-D ✅ · 4-E 진행 중: 4-E-1 CSS분리 ✅ · 4-E-2 인라인스타일 정리 ✅ 2026-10-05 · 다음: 4-E-3 results-passage.js 분리) |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ✅ 완료 (4-A ✅ · 4-B ✅ · 4-C ✅ · 4-D ✅ · 4-E ✅: 4-E-1 CSS분리 ✅ · 4-E-2 인라인스타일 정리 ✅ · 4-E-3 results-passage.js 분리 ✅ 2026-10-05) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -648,7 +648,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 ### 4-E. 프론트엔드 분리 (보고서 3-19) — 여러 번에 나눠 진행
 1. `style.css`를 기능별 파일로 나눕니다 (`base.css`, `search.css`, `viewer.css`, `grammar.css`, `upload.css`, `modal.css`). `index.html`에 `<link>` 여러 개로 연결합니다. (✅ 4-E-1 완료)
 2. `index.html`의 인라인 `style=""` 367개를 화면 영역별로 클래스로 옮깁니다. 한 번에 한 영역(헤더 → 검색 → 뷰어 → 모달)씩 진행합니다. (✅ 4-E-2 완료, 2026-10-05)
-3. `results-passage.js`(3,110줄)를 `passage-render.js`(화면 그리기), `passage-api.js`(fetch 호출), `passage-events.js`(이벤트 바인딩)로 나눕니다. (⬜ 4-E-3 대기)
+3. `results-passage.js`(3,488줄)를 `passage-render.js`(화면 그리기), `passage-api.js`(fetch 호출), `passage-events.js`(이벤트 바인딩)로 나눕니다. (✅ 4-E-3 완료, 2026-10-05)
 - 검증: `node --check` + 사용자가 직접 화면을 확인합니다. 화면 깨짐 위험이 있으므로 원하시면 `/scratchpad` 검증을 요청해 주세요.
 
 #### 4-E-1 적용 결과 (2026-10-05) — CSS 모듈화 분리
@@ -691,6 +691,38 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
   - `node -c`: 프론트엔드 자바스크립트 전체 문법 검사 오류 0건 통과
   - `pytest tests -q`: **206개** 단위/통합 테스트 100% 통과 (16.79s)
 - **사용자 수동 확인**: 브라우저에서 화면을 새로고침하여 레이아웃 및 스타일이 기존과 100% 동일하게 정상 렌더링되는지 확인 (원하시면 `/scratchpad` 시각 검증 요청 가능)
+
+#### 4-E-3 적용 결과 (2026-10-05) — results-passage.js 3대 도메인 모듈화 분리
+- **작업 배경**: `static/js/results-passage.js`가 3,488줄에 달하는 거대 모듈로서 서버 API 통신, 2x2 그리드 화면 그리기, 이벤트 리스너가 강하게 결합되어 있던 구조를 단일 책임 원칙(SRP)에 따라 3개 전담 모듈로 분리
+- **신규 분리 모듈**:
+  1. [NEW] `static/js/passage-api.js` (260줄):
+     - 시험 단위 문항 캐시 관리: `examFullPassagesCache`, `loadingExamsMap`, `ensureExamPassagesLoaded`, `mergePassagesWithCache`
+     - 지문 데이터 조작 및 서버 API: `savePassageMemoApi`, `updateQuestionTypeApi`, `updateAnswerApi`, `addPassageTagApi`, `deletePassageTagApi`, `recapturePassagePdfApi`, `fetchExamRawFilesApi`, `fetchPassageByIdApi`
+     - 파일 다운로드 트리거: `downloadExamRawFile`, `downloadExamAllZip`, `downloadExamListeningZip`
+     - TTS 작업 상태 관리 및 통신: `activeTtsJob`, `startTtsJob`, `finishTtsJob`, `pollTtsProgressApi`, `generateSingleAudioApi`, `generateAllAudioApi`, `switchTtsEngineApi`
+  2. [NEW] `static/js/passage-render.js` (910줄):
+     - 계층 구조 및 트리 파서: `buildExamTree`, `parsePassageHierarchy`, `sortGradesDescending`, `sortYearsDescending`, `sortMonthsDescending`
+     - 문항 탭 및 네비게이터: `renderPassageView`, `updateTreeUI`, `renderBreadcrumb`, `renderBreadcrumbExamFiles`, `renderRawFilesChips`, `hideBreadcrumbExamFiles`, `renderPassageTabs`, `selectPassageTab`
+     - 복합 지문(1지문 다문항) 동적 통합: `resolveCompoundGroupsFor50`, `groupPassageItems`, `combineGroupExplanations`, `createGroupedListeningItem`, `splitExplanationBlocks`, `normalizeExplanationBlock`, `cleanQuestionExplanationLeak`, `extractQuestionChoicesOnly`
+     - 2x2 패널 렌더링: `loadPassageDetail`, `reset2x2ContentPanels`, `clear2x2Panels`, `renderPassageTags`, `bindPassageMemo`, `applyPassageUpdate`
+     - FELS 기능어 약형드랩 서식화: `isDialogueScript`, `splitFelsMonologueIntoSentences`, `numberDialogueTurns`, `formatFelsText`, `renderFelsBottomLeftPanel`
+     - 5개 선지 게이지 바 & 난이도 배지: `renderChoiceRates`, `renderSingleQuestionBars`, `getDifficultyInfo`, `parseChoiceRatesObj`
+     - 활성 지문 상태 안전 추출: `getCurrentActivePassage`, `getCurrentDetailPassage`
+  3. [NEW] `static/js/passage-events.js` (680줄):
+     - 오디오 재생/정지 전역 추적: `stopAllListeningAudio`, `activeListeningAudio` 추적, `window.stopAllListeningAudio` 전역 노출
+     - TTS 음성 합성 인터랙션: `applyTtsUiState`, `estimateTtsPercent`, `passageMatchesTtsJob`, `setTtsBtnLabel`, `pollTtsProgress`, `handleGenerateListeningAudioAction`, `handleGenerateAllListeningAudioAction`, `updateTtsEngineSwitcherState`, `handleSwitchTtsEngine`, `updateListeningZipRangeBadge`
+     - 지문 메모 500ms 디바운스 자동 저장: `savePassageMemo`, `handleMemoInput`, `isMemoDirty`, `memoSaveTimer`
+     - 사용자 액션 이벤트 바인딩: `handleRecapturePdf`, `addPassageTagAction`, `deletePassageTagAction`, `executeDownloadPassageMp3`, `executeDownloadExamListeningZip`, 정답 수동 수정(모달 폼·옵션 동기화), FELS/지문/대본 원클릭 복사(`copyFelsBlankVersion`, `copyFelsAnswerVersion`), 키보드 좌우 방향키 네비게이션, 상단 탭 스크롤, 전역 클릭 이벤트 위임, `initPassageEvents`
+  4. [MODIFY] `static/js/results-passage.js`:
+     - 3,488줄 → 24줄로 대폭 슬림화 (~99.3% 라인 감소)
+     - 3개 신규 모듈의 모든 함수/변수를 100% 완전 re-export하는 통합 Facade로 동작
+     - 기존 외부 호출자(`search.js`, `results-sentence.js`, `upload.js`, `files-status.js`, `navigation.js`, `main.js`)의 import 경로 수정 없이 100% 하위 호환성 유지
+- **검증**:
+  - `compileall`: 파이썬 구문 오류 0건 통과
+  - `node -c static/js/*.js`: 프론트엔드 자바스크립트 전체 13개 모듈 문법 검사 오류 0건 통과
+  - Node.js ESM Import 검증: `main.js`, `search.js`, `results-passage.js`, `results-sentence.js`, `upload.js`, `files-status.js`, `navigation.js`, `ai-settings.js`, `grammar.js` 등 전체 프론트엔드 모듈 정상 임포트 및 초기화 확인
+  - `pytest tests -q`: **206개** 단위/통합 테스트 100% 통과 (20.27s)
+- **사용자 수동 확인**: 지문 검색 결과 화면에서 시험지/문항 선택, 2x2 패널 렌더링, FELS 정답 토글, 오디오 플레이어, 지문 메모 자동저장이 정상 동작하는지 확인
 
 ### 4단계 검증
 - `pytest tests -q` 전체 통과 (새 테스트 포함)
