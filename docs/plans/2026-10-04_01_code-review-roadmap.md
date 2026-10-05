@@ -560,7 +560,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - `DELETE /api/exams/{exam_id}`에도 `normalize_bracket_id`를 적용합니다.
 - (선택) API 키를 Windows `keyring`에 저장. 의존성이 추가되고 기존 키를 옮겨야 해서, 적용할지는 그때 결정합니다. (로컬 단일 사용자 환경 기준 현행 유지 결정)
 
-#### 4-B 적용 결과 (2026-10-05)
+#### 4-B 적용 결과 (2026-10-05, 커밋 `5f572518`)
 - [NEW] `gichul/text_utils.py`:
   - `sanitize_upload_filename(filename, default_name="upload")`: 업로드 파일명 화이트리스트 필터링 및 경로 순회(`../`, `..\`) 방지 함수 구현 (한글, 영숫자, 하이픈, 밑줄, 공백, 괄호 외 문자 `_` 치환, 위험 실행 확장자 `.bin` 치환, 양 끝 점/공백 트림)
 - [MODIFY] `gichul/routers/exams.py`:

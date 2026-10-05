@@ -2290,6 +2290,33 @@ CREATE TABLE user_sentence_status (
   - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
   - `python -m pytest tests -q`: **179개 단위/통합 테스트 100% 통과** (기존 165개 + 신규 14개, 18.93s)
 
+### [2026-10-05 18:35] 업데이트 이력 (Commit ID: 5f572518)
+- **수정 내용**:
+  - **로드맵 4-B: 보안과 안전성 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **업로드 파일명 화이트리스트 정제 및 경로 순회 방지 (`gichul/text_utils.py`, `gichul/routers/exams.py`)**:
+      - `sanitize_upload_filename(filename, default_name="upload")` 순수 함수 구현: `../`, `..\` 등 상위 디렉토리 순회 문자열 원천 제거, 한글/영문/숫자/하이픈/밑줄/괄호 외 특수문자 `_` 치환, 위험 실행 확장자(`.exe`, `.bat`, `.cmd`, `.sh`, `.py`, `.ps1` 등) 차단(`.bin` 치환)
+      - `api_upload_exam` (다중 파일 업로드) 및 `api_upload_exam_single_file` (단일 파일 교체): 6종 파일(`pdf`, `hwp`, `script`, `exp`, `ans`, `csv`) 전체 저장 시 파일명 정제 적용. `{grade}_{year}_{month:02d}_` 접두사 보존으로 크롭 재생성 glob 호환성 유지
+    - **시험지 삭제 API 식별자 정규화 (`gichul/routers/exams.py`)**:
+      - `DELETE /api/exams/{exam_id}`: `clean_id = normalize_bracket_id(exam_id)` 적용으로 대괄호 유무(`고3-2024년-06월` vs `[고3-2024년-06월]`)와 상관없이 일관되고 안전하게 시험지 데이터 연쇄 삭제
+    - **시드 샘플 API 및 미사용 프론트엔드 코드 정리 (`gichul/routers/exams.py`, `static/js/dom.js`, `static/js/upload.js`)**:
+      - 실데이터 덮어쓰기 위험이 있던 `POST /api/seed-sample-data` 엔드포인트 및 미사용 `create_sentence_records` import 제거
+      - 프론트엔드 `btnSeedSample` DOM 참조 및 클릭 이벤트 리스너 제거
+    - **토스트 알림창 XSS 취약점 원천 차단 (`static/js/utils.js`)**:
+      - `showToast` 내부의 `toast.innerHTML = <span>${message}</span>;`를 `const span = document.createElement("span"); span.textContent = message; toast.appendChild(span);`로 교체하여 파일명 등 서버 메시지 출력 시 XSS 취약점 원천 차단
+    - **테스트 스위트 강화 및 픽스처 파일시스템 격리 (`tests/conftest.py`, `tests/test_text_utils.py`, `tests/test_api_smoke.py`, `tests/test_routers.py`)**:
+      - `tmp_db` 픽스처에서 `paths.CAPTURES_DIR` 및 `paths.UPLOADS_DIR`을 `tmp_path` 임시 디렉토리로 격리 주입하여, 시험지 삭제/업로드 테스트 실행 시 실제 운영 중인 `static/captures/` 파일이 영향을 받지 않도록 보호
+      - `sanitize_upload_filename` 대상 13개 파라미터화 단위 테스트 추가
+      - `DELETE /api/exams/{exam_id}` 정규화 삭제 동작 및 시드 API(`/api/seed-sample-data`) 404 제거 검증 테스트 추가
+      - `expected_endpoints`에서 `/api/seed-sample-data` 제거 동기화
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 4-B 적용 결과 기록 및 진행 현황(4-A ✅ · 4-B ✅ · 다음: 4-C) 갱신
+      - `docs/README.md`: 계획서 목록 진행 현황 동기화
+- **검증 결과**:
+  - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `node -c static/js/utils.js static/js/dom.js static/js/upload.js`: 프론트엔드 자바스크립트 문법 검사 오류 0건 통과
+  - `python -m pytest tests -q`: **195개 단위/통합 테스트 100% 통과** (기존 179개 + 신규 16개, 15.12s)
+
+
 
 
 
