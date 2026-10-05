@@ -2239,5 +2239,35 @@ CREATE TABLE user_sentence_status (
   - `python -m pytest tests -q`: **161개 단위 테스트 100% 통과** (기존 158개 + 신규 3개)
   - `logs/app.log` 자동 생성 및 실시간 회전 로깅 정상 확인
 
+### [2026-10-05 17:40] 업데이트 이력 (Commit ID: bc29c222)
+- **수정 내용**:
+  - **로드맵 3-E: 라우터 분리 및 app.py 모듈화 경량화 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **코어 상태 및 직렬화 락 분리 (`gichul/core/state.py` 신규)**:
+      - `FastSearchCache`, `search_cache`: 인메모리 검색 결과 LRU 캐시 중앙화
+      - `INGEST_LOCK`, `_ingest_serialized`: PyMuPDF 및 HWP 파일 파싱 스레드 안전 데코레이터 분리
+      - `fast_json_dumps`, `get_current_role` 추출 및 `gichul/app.py` 하위 호환 re-export 유지
+    - **업로드 후처리 및 백그라운드 분석 서비스 분리 (`gichul/services/ingest.py` 신규)**:
+      - `regenerate_exam_crops` (`_regenerate_exam_crops`): PDF 정답 형광펜 크롭 이미지 일괄 재생성 및 DB 동기화 로직 분리
+      - `background_auto_analyze_exam_grammar`: 업로드 직후 비동기 어법 자동 분석 및 캐시 무효화 서비스 분리
+    - **6대 도메인별 라우터 분리 (`gichul/routers/` 신규)**:
+      - `search.py` (5개 라우트): `/api/stats`, `/api/search/passages`, `/api/exams/{exam_id:path}/passages`, `/api/search/sentences`, `/api/passages/{passage_id}`
+      - `listening.py` (5개 라우트): `/api/tts/progress/{job_id}`, `/api/passages/{passage_id:path}/generate-audio`, `/api/exams/{exam_id:path}/generate-listening-audio`, `/api/exams/{exam_id}/download-listening-zip`, `/api/exams/{exam_id}/sync-listening`
+      - `passages.py` (9개 라우트): `/api/passages/{passage_id}/question-type`, `/api/passages/{passage_id}/memo` [PATCH/PUT], `/api/passages/{passage_id}/answer`, `/api/passages/{passage_id:path}/recapture`, `/api/passages/{passage_id}/tags` [POST/DELETE], `/api/sentences/{sentence_id}/tags` [POST/DELETE]
+      - `settings.py` (10개 라우트): `/api/settings/ai` [GET/POST], `/api/openrouter/top-models`, `/api/openrouter/models`, `/api/lmstudio/models`, `/api/settings/ai/test`, `/api/settings/tts-engine`, `/api/settings/tts/hardware`, `/api/settings/tts/preview`, `/api/settings/edge-tts/preview`
+      - `grammar.py` (11개 라우트): `/api/sentences/{sentence_id}/star`, `/api/sentences/{sentence_id}/analyze-grammar`, `/api/grammar/categories`, `/api/grammar/settings` [GET/POST], `/api/grammar/settings/reset`, `/api/sentences/{sentence_id}/grammar-annotations` [POST/DELETE], `/api/sentences/{sentence_id}/grammar` [DELETE], `/api/sentences/{sentence_id}/grammar-annotations/batch`, `/api/sentences/batch-analyze-grammar`
+      - `exams.py` (10개 라우트): `/api/upload`, `/api/exams` [GET/DELETE], `/api/exams/{exam_id}/raw-files`, `/api/exams/{exam_id}/download-file`, `/api/exams/{exam_id}/download-zip`, `/api/exams/{exam_id}/upload-file`, `/api/exams/selective-delete`, `/api/exams/batch-delete`, `/api/seed-sample-data`
+    - **`gichul/app.py` 143줄 슬림화 (~93.6% 라인 수 감소)**:
+      - 2,229줄 모놀리스에서 애플리케이션 초기화, 미들웨어(`GZipMiddleware`, `no_cache_static_js`, `invalidate_cache_on_write`), 정적 파일 마운트, lifespan, 6대 라우터 순차 include, 하위 호환 re-export만 담당하는 초경량 엔트리포인트로 재구성
+    - **단위 테스트 추가 (`tests/test_routers.py`)**:
+      - 하위 호환 re-export 심볼, 6대 라우터 모듈 인스턴스, 56개 전체 엔드포인트 누락 검증, 핵심 GET 엔드포인트 통합 동작 테스트 4개 구축
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 3단계 전체 완료 (3-A ~ 3-E) 상태 및 결과(커밋 `bc29c222`) 갱신
+      - `docs/README.md`: 3단계 전체 완료 및 다음 단계(4단계) 상태 반영
+- **검증 결과**:
+  - **라우트 스냅샷 비교 검증**: 분리 전 덤프 스냅샷(`scratch/routes_before.json`)과 분리 후 `app.routes` 56개 라우트(경로, HTTP 메소드, 등록 순서) **100% 완전 일치 (차이 0건)**
+  - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `pytest tests -q`: **165개 단위 테스트 100% 통과** (기존 161개 + 신규 4개)
+
+
 
 
