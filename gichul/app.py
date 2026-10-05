@@ -50,6 +50,7 @@ from . import fels_engine
 from . import paths
 from .text_utils import normalize_bracket_id, apply_answer_header
 from .services import grammar_service
+from .exam_profiles import get_exam_profile, run_special_crop
 
 
 BASE_DIR = paths.ROOT_DIR
@@ -278,10 +279,11 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
     if not pdf_candidates:
         return False
     try:
-        if (reading_end is None or reading_end == 45) and (2006 <= year <= 2011):
-            reading_end = 50
-        if (reading_start is None or reading_start == 18) and year == 2013:
-            reading_start = 23
+        profile = get_exam_profile(grade, year, month, subtype)
+        if (reading_end is None or reading_end == 45) and profile.is_50_questions:
+            reading_end = profile.reading_end
+        if (reading_start is None or reading_start == 18) and profile.is_ab_period:
+            reading_start = profile.reading_start
 
         # 스캔본 PDF(텍스트 0자) 감지 시 동명 HWP 원본으로부터 고화질 디지털 PDF 자동 생성
         target_pdf = pdf_candidates[0]
@@ -320,8 +322,8 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
             subtype=subtype
         )
 
-        # 2. 듣기 문항(1~17번) 크롭도 정답 형광펜 주석을 포함하여 함께 재생성
-        listening_end = (reading_start - 1) if (reading_start and reading_start > 1) else 17
+        # 2. 듣기 문항 크롭도 정답 형광펜 주석을 포함하여 함께 재생성
+        listening_end = (reading_start - 1) if (reading_start and reading_start > 1) else profile.listening_end
         try:
             listening_crops = extract_pdf_columns_and_questions(
                 pdf_path=target_pdf, grade=grade, year=year, month=month,
@@ -332,10 +334,9 @@ def _regenerate_exam_crops(exam_id, grade, year, month, reading_start, reading_e
             print(f"[Crops] {exam_id} 듣기 문항 형광펜 크롭 생성 중 경고: {l_crop_err}")
 
         # [특수 예외 폴백] 고3 2013년 9월 등 벡터 폰트 외곽선 변환 문서 전용 크롭 연동
-        if not crop_results and grade == "고3" and year == 2013 and month == 9:
-            from .special_crops.crop_2013_09 import generate_crops_for_exam
+        if not crop_results and profile.special_crop:
             sub = subtype or ("A형" if "-A" in exam_id else "B형")
-            if generate_crops_for_exam(exam_id, sub):
+            if run_special_crop(profile.special_crop, exam_id, sub):
                 print(f"[Crops] {exam_id} 전용 고정밀 기하 크롭 생성 완료")
                 return True
 
@@ -1294,12 +1295,12 @@ def api_upload_exam(
             exam_type = "교육청"
 
         # 독해 시작 및 종료 문항 번호 자동 감지 (발문 기반 분기: 18~45, 23~45, 18~50)
-        is_ab_period = (year == 2013 or (year == 2012 and month >= 6) or (subtype and "형" in subtype))
-        if is_ab_period and reading_start is None:
-            effective_reading_start = 23
-            effective_reading_end = reading_end if reading_end is not None else 45
+        profile = get_exam_profile(grade, year, month, subtype)
+        if profile.is_ab_period and reading_start is None:
+            effective_reading_start = profile.reading_start
+            effective_reading_end = reading_end if reading_end is not None else profile.reading_end
             listening_start = 1
-            listening_end = 22
+            listening_end = profile.listening_end
         else:
             sample_text = ""
             if pdf_save_path and os.path.exists(pdf_save_path):
@@ -1315,11 +1316,13 @@ def api_upload_exam(
                 except Exception:
                     pass
 
-            detected_start, detected_end = detect_listening_range(sample_text, year=year)
+            detected_start, detected_end = detect_listening_range(
+                sample_text, year=year, grade=grade, month=month, subtype=subtype
+            )
             effective_reading_start = reading_start if reading_start is not None else detected_start
             effective_reading_end = reading_end if reading_end is not None else detected_end
             listening_start = 1
-            listening_end = (effective_reading_start - 1) if effective_reading_start > 1 else 17
+            listening_end = (effective_reading_start - 1) if effective_reading_start > 1 else profile.listening_end
 
         # 시험지 정보는 파싱이 끝난 뒤 지문·문장과 함께 한 트랜잭션으로 저장한다 (중간 실패 시 반쯤 저장 방지)
         exam_record = {
@@ -1670,8 +1673,9 @@ def api_upload_exam_single_file(
     year = exam["year"]
     month = exam["month"]
     subtype = exam["subtype"]
-    reading_start = exam["reading_start_q"] or (23 if year == 2013 else 18)
-    reading_end = exam["reading_end_q"] or (50 if 2006 <= year <= 2011 else 45)
+    profile = get_exam_profile(grade, year, month, subtype)
+    reading_start = exam["reading_start_q"] or profile.reading_start
+    reading_end = exam["reading_end_q"] or profile.reading_end
 
     # 2. 파일 저장
     if file_type == "ans":

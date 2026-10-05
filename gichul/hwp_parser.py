@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional, Tuple
 
 from .text_utils import apply_answer_header
+from .exam_profiles import get_exam_profile
 
 
 def sanitize_text(text: str) -> str:
@@ -591,7 +592,11 @@ def parse_hwp_questions(
         return {}
 
     from .pdf_parser import detect_listening_range
-    detected_start, detected_end = detect_listening_range(full_text, year=year)
+    subtype = kwargs.get("subtype")
+    profile = get_exam_profile(grade=grade, year=year, month=month, subtype=subtype)
+    detected_start, detected_end = detect_listening_range(
+        full_text, year=year, grade=grade, month=month, subtype=subtype
+    )
 
     if reading_start is not None:
         start_q = reading_start
@@ -611,9 +616,9 @@ def parse_hwp_questions(
     if year and year >= 2014:
         is_50 = False
     else:
-        is_50 = (end_q >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011) or bool(re.search(r"(?:^|\n)\s*50\s*\.\s*(?!\d)", full_text)) or bool(re.search(r"\[\s*49\s*[~～\-∼]\s*50\s*\]", full_text))
+        is_50 = (end_q >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or profile.is_50_questions or bool(re.search(r"(?:^|\n)\s*50\s*\.\s*(?!\d)", full_text)) or bool(re.search(r"\[\s*49\s*[~～\-∼]\s*50\s*\]", full_text))
     if is_50 and reading_end is None and end_q == 45:
-        end_q = 50
+        end_q = profile.reading_end
 
     # 문제지와 해설지 영역 분리
     question_text, _ = split_questions_and_explanations(full_text)

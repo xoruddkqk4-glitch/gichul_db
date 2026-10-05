@@ -14,6 +14,7 @@ import pymupdf as fitz
 from PIL import Image
 
 from .paths import CAPTURES_DIR
+from .exam_profiles import get_exam_profile
 
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
@@ -194,20 +195,28 @@ def highlight_answer_choice(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str)
 
 
 
-def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[int, int]:
+def detect_listening_range(
+    full_text: str,
+    year: Optional[int] = None,
+    grade: Optional[str] = None,
+    month: Optional[int] = None,
+    subtype: Optional[str] = None,
+) -> Tuple[int, int]:
     """
     시험지 텍스트에서 듣기/독해 영역 문항 번호 범위 감지
     - 발문 1: '1번부터 N번까지는 듣고 답하는 문제입니다...' (듣기 시작 안내 박스)
     - 발문 2: '이제 듣기·말하기 문제가 끝났습니다. M번부터는 문제지의 지시에 따라...' (독해 시작 안내 박스)
     - 2013년도(2014학년도 수준별 수능) 체제: 듣기 1~22번, 독해 23~45번 자동 감지
     - 구 50문항 체제(2006~2011년): 독해 끝 50번 자동 감지
+    - 시험 프로파일(exam_profiles)을 통한 기본값 산출
     기본값: 독해 시작 18, 끝 45
     """
+    profile = get_exam_profile(grade=grade, year=year, month=month, subtype=subtype)
     if year and year >= 2014:
         is_50 = False
     else:
         is_50 = bool(
-            (year and 2006 <= year <= 2011)
+            profile.is_50_questions
             or re.search(r"(?:^|\n)\s*50\s*\.\s*(?!\d)", full_text)
             or re.search(r"\[\s*49\s*[~～\-∼]\s*50\s*\]", full_text)
         )
@@ -238,10 +247,10 @@ def detect_listening_range(full_text: str, year: Optional[int] = None) -> Tuple[
         return int(m_loose.group(1)) + 1, default_end
 
     # 4. 연도 기본값 (2013년 전체 및 2012년 A/B형 수준별 시험은 듣기 22문항 -> 독해 23번 시작)
-    if year == 2013 or (year == 2012 and full_text and ("A형" in full_text or "B형" in full_text or "22번까지" in full_text or "22." in full_text)):
-        return 23, default_end
+    if profile.is_ab_period or (year == 2012 and full_text and ("A형" in full_text or "B형" in full_text or "22번까지" in full_text or "22." in full_text)):
+        return profile.reading_start, default_end
 
-    return 18, default_end
+    return profile.reading_start, default_end
 
 
 
@@ -334,13 +343,16 @@ def extract_pdf_columns_and_questions(
     for page in doc:
         all_page_text += page.get_text() + "\n"
 
-    detected_start, detected_end = detect_listening_range(all_page_text, year=year)
+    profile = get_exam_profile(grade=grade, year=year, month=month, subtype=subtype)
+    detected_start, detected_end = detect_listening_range(
+        all_page_text, year=year, grade=grade, month=month, subtype=subtype
+    )
     if year and year >= 2014:
         is_50 = False
     else:
-        is_50 = (detected_end == 50) or (end_q is not None and end_q >= 48) or (reading_end is not None and reading_end >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or (2006 <= year <= 2011)
+        is_50 = (detected_end == 50) or (end_q is not None and end_q >= 48) or (reading_end is not None and reading_end >= 48) or (answers_dict and max(answers_dict.keys()) >= 48) or profile.is_50_questions
     if is_50 and (end_q is None or end_q == 45) and (reading_end is None or reading_end == 45):
-        detected_end = 50
+        detected_end = profile.reading_end
 
     if reading_start is not None:
         actual_start = reading_start

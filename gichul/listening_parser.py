@@ -22,6 +22,7 @@ from . import hwp_parser
 from . import answer_keys
 from . import paths
 from .text_utils import normalize_bracket_id, apply_answer_header
+from .exam_profiles import get_exam_profile
 
 BASE_DIR = paths.ROOT_DIR
 CAPTURES_DIR = paths.CAPTURES_DIR
@@ -244,15 +245,18 @@ def extract_listening_question_crops(
     year: int = 2024,
     month: int = 6,
     listening_start_q: int = 1,
-    listening_end_q: int = 17,
+    listening_end_q: Optional[int] = None,
     answers_dict: Optional[Dict[int, str]] = None,
     subtype: Optional[str] = None
 ) -> Dict[int, Dict[str, Any]]:
     """
-    문제지 PDF의 1~2페이지에서 듣기 문항(1~17번) 크롭 이미지 및 메타데이터 추출
+    문제지 PDF의 1~2페이지에서 듣기 문항 크롭 이미지 및 메타데이터 추출
     """
     if not os.path.exists(pdf_path):
         return {}
+
+    if listening_end_q is None:
+        listening_end_q = get_exam_profile(grade, year, month, subtype).listening_end
 
     questions = pdf_parser.extract_pdf_columns_and_questions(
         pdf_path=pdf_path,
@@ -283,7 +287,7 @@ def extract_listening_script_crops(
     month: int = 6,
     is_explanation_pdf: bool = False,
     listening_start_q: int = 1,
-    listening_end_q: int = 17,
+    listening_end_q: Optional[int] = None,
     subtype: Optional[str] = None
 ) -> Dict[int, str]:
     """
@@ -294,6 +298,9 @@ def extract_listening_script_crops(
     """
     if not os.path.exists(script_or_exp_pdf_path):
         return {}
+
+    if listening_end_q is None:
+        listening_end_q = get_exam_profile(grade, year, month, subtype).listening_end
 
     doc = fitz.open(script_or_exp_pdf_path)
     result_crops = {}
@@ -597,8 +604,14 @@ def sync_exam_listening(
         m_sub = re.search(r"-([AB]형)", clean_id)
         if m_sub:
             subtype = m_sub.group(1)
+    profile = get_exam_profile(grade, year, month, subtype)
     start_q = exam_row["listening_start_q"] if "listening_start_q" in exam_row.keys() and exam_row["listening_start_q"] else 1
-    end_q = exam_row["listening_end_q"] if "listening_end_q" in exam_row.keys() and exam_row["listening_end_q"] else 17
+    if "listening_end_q" in exam_row.keys() and exam_row["listening_end_q"]:
+        end_q = exam_row["listening_end_q"]
+    elif "reading_start_q" in exam_row.keys() and exam_row["reading_start_q"] and exam_row["reading_start_q"] > 1:
+        end_q = exam_row["reading_start_q"] - 1
+    else:
+        end_q = profile.listening_end
 
     uploads_dir = os.path.join(BASE_DIR, "uploads")
     def _is_prob_pdf(p: str) -> bool:

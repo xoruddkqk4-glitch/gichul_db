@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
-| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 미커밋 · 다음: 3-C) |
+| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 미커밋 · 3-C ✅ 2026-10-05, 미커밋 · 다음: 3-D) |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
 
 ### 모든 단계 공통 검증 (Rule 2)
@@ -402,6 +402,32 @@ def get_exam_profile(grade, year, month, subtype=None) -> ExamProfile: ...
   - hwp_parser.py: [L556-L560](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/hwp_parser.py#L556-L560)
   - listening_parser.py: 연도/문항 번호 분기 (적용할 때 grep으로 모든 위치를 확정)
 - **회귀 방지**: 바꾸기 전에 `scratch/profile_snapshot.py`로 DB에 있는 모든 시험의 (grade, year, month, subtype)에 대해 기존 로직의 결과값을 JSON으로 저장합니다. 바꾼 뒤 새 프로파일 결과와 비교해서 **차이가 0건**이어야 합니다.
+
+#### 3-C 적용 결과 (2026-10-05, 미커밋)
+- [NEW] `gichul/exam_profiles.py`
+  - `ExamProfile(reading_start, reading_end, listening_end, is_50_questions, is_ab_period, special_crop)` 불변(frozen) 데이터 모델 구축
+  - `get_exam_profile(grade, year, month, subtype)`: 2006~2011(50문항), 2012-06~2013(수준별 A/B형 23~45번/듣기 22문항), 2014~(표준 18~45번/듣기 17문항), 고3 2013년 9월(특수 기하 크롭)을 데이터 규칙으로 반환
+  - `run_special_crop(crop_name, exam_id, subtype)`: 특수 크롭 모듈 동적 디스패치 격리
+- [MODIFY] `gichul/app.py`
+  - `_regenerate_exam_crops`: 하드코딩된 `2006 <= year <= 2011`, `year == 2013` 분기 및 `special_crops.crop_2013_09` 직접 import를 `profile`과 `run_special_crop`으로 교체
+  - `api_upload_exam`: `is_ab_period` 연도/월 분기를 `profile.is_ab_period`, `profile.reading_start`, `profile.listening_end`로 통일
+  - `api_upload_exam_single_file`: 단독 파일 업로드 시의 `23 if year == 2013 else 18` 및 `50 if 2006 <= year <= 2011 else 45`를 `profile.reading_start` / `profile.reading_end`로 교체
+- [MODIFY] `gichul/pdf_parser.py`
+  - `detect_listening_range`: 발문 텍스트 분석 이전에 `profile`을 통해 기본값(`reading_start`, `default_end`)을 산출하고, 50문항 판별 조건 간소화
+  - `extract_pdf_columns_and_questions`: `profile.is_50_questions` 및 `profile.reading_end` 적용
+- [MODIFY] `gichul/hwp_parser.py`
+  - `parse_hwp_questions`: 50문항 판별 시 `profile.is_50_questions` 및 `end_q = profile.reading_end` 적용
+- [MODIFY] `gichul/listening_parser.py`
+  - `sync_exam_listening`: `listening_end_q` 미등록 시 `profile.listening_end` 및 `reading_start_q - 1` 자동 판별 적용
+  - `extract_listening_question_crops`, `extract_listening_script_crops`: `listening_end_q` 기본값을 `profile.listening_end`로 동적 결정
+- [NEW] `tests/test_exam_profiles.py` (9개 테스트 전체 통과)
+  - 2008년(50문항 체제), 2012년 6월(수준별 개시), 2012년 3월(기존/A형 명시), 2013년(전체 A/B형), 2013년 9월(고3 특수크롭 vs 고2 표준), 2020년(현행 표준), frozen dataclass 불변성, 특수크롭 디스패치
+- **검증**
+  - `scratch/profile_snapshot.py`: DB 내 321개 전체 시험에 대해 기존 하드코딩 로직과 `get_exam_profile` 결과값을 1:1 비교하여 **차이 0건 (완전 일치)** 확인
+  - `python -m py_compile`: 수정/신규 7개 모듈 오류 0건
+  - `python -m pytest tests -q`: **158개** 전체 통과 (기존 149개 + 신규 9개)
+- **사용자 수동 확인**: 시험지 업로드 화면 또는 시험지 정보 상세에서 2008년(50문항), 2013년(A/B형 수준별), 2020년(현행 45문항) 문항 범위가 정상 표시되는지 확인
+
 
 ### 3-D. 로깅과 오류 처리 통일 (보고서 3-14)
 **[NEW] `logging_config.py`**
