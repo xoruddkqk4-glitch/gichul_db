@@ -2179,4 +2179,27 @@ CREATE TABLE user_sentence_status (
   - 신규 등급별 필터링 단위 테스트 `tests/test_access.py` 8개 통과 (관리자/회원/비회원별 필드 마스킹, 검색 조건 차단, 일괄 빈칸 채우기, lifespan 구동)
   - `python -m pytest tests -q`: 전체 149개 테스트 100% 통과 (16.44s)
 
+### [2026-10-05 16:30] 업데이트 이력 (Commit ID: 877017a2)
+- **수정 내용**:
+  - **로드맵 3-C: 시험 프로파일을 데이터로 관리 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **시험 프로파일 데이터 모델 구축 (`gichul/exam_profiles.py`)**:
+      - `ExamProfile` 불변(`frozen=True`) 데이터클래스 정의: `reading_start`, `reading_end`, `listening_end`, `is_50_questions`, `is_ab_period`, `special_crop`
+      - `get_exam_profile(grade, year, month, subtype)`:
+        - 2006~2011년: 구 50문항 체제 (`reading_end=50`, `is_50_questions=True`)
+        - 2012-06~2013년 및 A/B형: 수준별 체제 (`reading_start=23`, `listening_end=22`, `is_ab_period=True`)
+        - 2014년 이후: 현행 표준 45문항 체제 (`reading_start=18`, `reading_end=45`, `listening_end=17`)
+        - 고3 2013년 9월: 벡터 곡선(Drawings) 전용 기하 레이아웃 크롭 모듈 식별자(`special_crop="crop_2013_09"`) 반환
+      - `run_special_crop(crop_name, exam_id, subtype)`: 특수 크롭 모듈을 동적으로 호출하여 개별 모듈 직접 import 의존성 격리
+    - **하드코딩된 연도/문항 번호 분기 대체**:
+      - `gichul/app.py`: `_regenerate_exam_crops`, `api_upload_exam`, `api_upload_exam_single_file`에서 하드코딩된 `2006 <= year <= 2011`, `year == 2013`, `special_crops` 직접 import를 `get_exam_profile`과 `run_special_crop`으로 교체
+      - `gichul/pdf_parser.py`: `detect_listening_range`, `extract_pdf_columns_and_questions`에서 연도 분기를 `profile` 기본값 및 `profile.is_50_questions`로 교체
+      - `gichul/hwp_parser.py`: `parse_hwp_questions`에서 50문항 체제 판별 및 독해 종료 번호 결정을 `profile.is_50_questions`, `profile.reading_end`로 단순화
+      - `gichul/listening_parser.py`: `sync_exam_listening`, `extract_listening_question_crops`, `extract_listening_script_crops`에서 듣기 종료 번호를 `profile.listening_end` 기반 동적 판별로 통일
+    - **단위 테스트 추가 (`tests/test_exam_profiles.py`)**:
+      - 2008년(50문항), 2012년 6월(수준별 개시), 2012년 3월(기존/A형 명시), 2013년(수준별 전체), 2013년 9월(고3 특수크롭 vs 고2 표준), 2020년(현행 표준), frozen dataclass 불변성, 특수크롭 디스패치 등 9개 테스트 구축
+- **검증 결과**:
+  - `scratch/profile_snapshot.py`: DB 내 321개 전체 시험에 대해 기존 하드코딩 로직과 `get_exam_profile` 결과값을 1:1 비교하여 **차이 0건 (완전 일치)** 확인
+  - `python -m py_compile` 백엔드 전체 모듈 구문 검증 오류 0건 통과
+  - `python -m pytest tests -q`: **158개 테스트 100% 통과** (기존 149개 + 신규 9개)
+
 
