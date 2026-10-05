@@ -14,7 +14,7 @@
 |---|---|---|
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
-| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | 🔄 진행 중 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05 · 다음: 3-E) |
+| 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05) |
 | 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
 
 ### 모든 단계 공통 검증 (Rule 2)
@@ -484,6 +484,32 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - `app.py`에는 앱 생성, 미들웨어, static 마운트, lifespan, `include_router`만 남깁니다. 목표는 약 100줄입니다.
 - ⚠ **라우트 등록 순서를 지금과 같게 유지**합니다. `{exam_id:path}`, `{passage_id:path}`처럼 경로 전체를 받는 파라미터가 있어서, 순서가 바뀌면 다른 라우트가 먼저 매칭될 수 있습니다.
 - 검증: 분리 전후의 `app.routes` (메서드, 경로) 목록을 덤프해서 비교합니다. 차이가 0건이어야 합니다.
+
+#### 3-E 적용 결과 (2026-10-05)
+- [NEW] `gichul/core/state.py`:
+  - `FastSearchCache`, `search_cache`, `INGEST_LOCK`, `_ingest_serialized`, `fast_json_dumps`, `get_current_role` 상태 관리 객체 및 데코레이터 중앙화
+- [NEW] `gichul/services/ingest.py`:
+  - `regenerate_exam_crops` (`_regenerate_exam_crops`), `background_auto_analyze_exam_grammar` 후처리 서비스 분리
+- [NEW] `gichul/routers/` 6대 도메인별 라우터 분리:
+  - `gichul/routers/search.py` (5개 라우트): `/api/stats`, `/api/search/passages`, `/api/exams/{exam_id:path}/passages`, `/api/search/sentences`, `/api/passages/{passage_id}`
+  - `gichul/routers/listening.py` (5개 라우트): `/api/tts/progress/{job_id}`, `/api/passages/{passage_id:path}/generate-audio`, `/api/exams/{exam_id:path}/generate-listening-audio`, `/api/exams/{exam_id}/download-listening-zip`, `/api/exams/{exam_id}/sync-listening`
+  - `gichul/routers/passages.py` (9개 라우트): `/api/passages/{passage_id}/question-type`, `/api/passages/{passage_id}/memo` [PATCH/PUT], `/api/passages/{passage_id}/answer`, `/api/passages/{passage_id:path}/recapture`, `/api/passages/{passage_id}/tags` [POST/DELETE], `/api/sentences/{sentence_id}/tags` [POST/DELETE]
+  - `gichul/routers/settings.py` (10개 라우트): `/api/settings/ai` [GET/POST], `/api/openrouter/top-models`, `/api/openrouter/models`, `/api/lmstudio/models`, `/api/settings/ai/test`, `/api/settings/tts-engine`, `/api/settings/tts/hardware`, `/api/settings/tts/preview`, `/api/settings/edge-tts/preview`
+  - `gichul/routers/grammar.py` (11개 라우트): `/api/sentences/{sentence_id}/star`, `/api/sentences/{sentence_id}/analyze-grammar`, `/api/grammar/categories`, `/api/grammar/settings` [GET/POST], `/api/grammar/settings/reset`, `/api/sentences/{sentence_id}/grammar-annotations` [POST/DELETE], `/api/sentences/{sentence_id}/grammar` [DELETE], `/api/sentences/{sentence_id}/grammar-annotations/batch`, `/api/sentences/batch-analyze-grammar`
+  - `gichul/routers/exams.py` (10개 라우트): `/api/upload`, `/api/exams` [GET/DELETE], `/api/exams/{exam_id}/raw-files`, `/api/exams/{exam_id}/download-file`, `/api/exams/{exam_id}/download-zip`, `/api/exams/{exam_id}/upload-file`, `/api/exams/selective-delete`, `/api/exams/batch-delete`, `/api/seed-sample-data`
+- [MODIFY] `gichul/app.py`:
+  - 2,229줄에서 143줄로 슬림화 (~93.6% 라인 수 대폭 감소)
+  - 애플리케이션 초기화, 미들웨어(`GZipMiddleware`, `no_cache_static_js`, `invalidate_cache_on_write`), 정적 파일 마운트, lifespan, 6개 라우터 순차 include, 하위 호환 re-export 심볼 유지
+- [NEW] `tests/test_routers.py` (4개 테스트 전체 통과):
+  - 하위 호환 re-export 심볼 검증
+  - 6대 라우터 모듈 인스턴스 검증
+  - 56개 전체 엔드포인트 등록 누락 없음 검증
+  - 주요 GET 엔드포인트(`GET /`, `/api/stats`, `/api/search/passages`, `/api/grammar/categories`, `/api/settings/ai`, `/api/exams`) 통합 동작 검증
+- **검증**
+  - **라우트 스냅샷 비교**: 분리 전 덤프 스냅샷(`scratch/routes_before.json`)과 분리 후 `app.routes` 56개 라우트(경로, HTTP 메소드, 등록 순서) **100% 완전 일치 (차이 0건)**
+  - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `pytest tests -q`: **165개** 단위/통합 테스트 전체 통과 (기존 161개 + 신규 4개)
+- **사용자 수동 확인**: 서버 구동 후 메인 화면 접속, 지문/문장 검색, 어법 분석 설정 모달 열기, 시험지 목록 조회가 정상 동작하는지 확인
 
 ### 3단계 검증
 - 새로 만들거나 수정한 모든 .py에 `py_compile` · `pytest tests -q`
