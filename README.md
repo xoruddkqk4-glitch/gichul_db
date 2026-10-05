@@ -2357,3 +2357,40 @@ CREATE TABLE user_sentence_status (
 - **검증 결과**:
   - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
   - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (8.23s)
+
+### [2026-10-05 19:44] 업데이트 이력 (Commit ID: 60e2ea93)
+- **수정 내용**:
+  - **결과창 [문장] 탭 클릭 시 빈 검색어 안내 화면(Empty State) 분리 및 UX 개선 (대안 B 채택)**:
+    - **문제 원인 해결**: `navigation.js`에서 결과창 `[문장]` 탭 클릭 시 `showSentencesForPassage(currentPassageId)`를 무조건 호출하고, `currentPassageId` 미존재 시 `passagesData[0]`(`[고2-2026년-09월-18번]`) 9개 문장으로 강제 폴백하여 첫 화면 빈 검색 후 [문장] 탭 진입 시 의도치 않은 특정 모의고사 문장이 노출되던 결함 수정
+    - **결과창 `[문장]` 탭 동작 분리 (`static/js/navigation.js`)**:
+      - `resultsSearchInput`에 검색어가 있는 경우: `setMode("sentence")` 후 문장 검색(`executeSearch("results")`) 즉시 실행
+      - `resultsSearchInput`이 비어 있는 경우: 임의의 지문 문장으로 직행하지 않고 `showSentenceEmptyGuidance()` 안내 화면 호출 및 검색창 포커스
+    - **0번 지문 강제 폴백 제거 및 안내 렌더러 신설 (`static/js/results-sentence.js`, `static/js/dom.js`)**:
+      - `showSentencesForPassage()`의 `passagesData[0]` 강제 폴백 로직 제거 (지문 뷰어 헤더 슬롯 `[📝 해당 지문의 전체 문장]` 전용 버튼으로만 명확히 작동하도록 분리)
+      - `showSentenceEmptyGuidance()` 신설: 컨테이너 가시성 제어 및 검색창 자동 포커스
+      - 추천 키워드 칩(`climate`, `technology`, `however`, `#어법`) 클릭 시 해당 검색어로 즉시 검색 트리거
+    - **검색 흐름 연동 및 동기화 (`static/js/search.js`, `static/js/results-passage.js`)**:
+      - `executeSearch()` 및 `executeSearchWithinResults()` 실행 시 이전 안내창 숨김 처리
+      - 검색어 및 활성 필터가 없는 문장 검색 시 안내 화면(`showSentenceEmptyGuidance()`)으로 안전하게 라우팅
+    - **템플릿 마크업 및 스타일링 (`templates/index.html`, `static/css/search.css`)**:
+      - `#sentenceEmptyGuidanceBox` 템플릿 신설
+      - 파스텔 카드 스타일 및 추천 칩 호버 효과 적용
+  - **코드 리뷰 로드맵 4-E-1: CSS 모듈화 분리 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - 기존 7,540줄 단일 `style.css`를 6개 도메인별 모듈 CSS로 기능별 분리:
+      - `static/css/base.css`: 전역 타이포그래피, 디자인 시스템 토큰, 리셋, 헤더, 토스트
+      - `static/css/search.css`: 구글 스타일 홈 검색창, 필터 바, 영역 토글, 연도 멀티셀렉트, 문장 빈 검색 안내 화면
+      - `static/css/viewer.css`: 2x2 지문 그리드 패널, 문항 탭 바, 트리 네비게이터, 문장 테이블
+      - `static/css/modal.css`: 공통 모달 백드롭/컨테이너/헤더/바디/푸터, 공통 로딩 스피너
+      - `static/css/grammar.css`: 어법 분석기, 어법 배지, 커스텀 어법 체계 모달, AI 설정 모달
+      - `static/css/upload.css`: 시험지 업로드 모달, 시험지 관리 테이블, 5종 파일 필터
+    - `templates/index.html`: 6개 모듈 CSS 병렬 로드 적용
+    - `static/css/style.css`: 하위 호환성을 위해 6개 모듈을 `@import`하는 마스터 번들로 리팩토링
+  - **문서 동기화**:
+    - `docs/plans/2026-10-05_01_sentence-tab-empty-state-ux.md`: 계획 수립 및 1~4단계 전 과정 `✅ 완료`
+    - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 4-E-1 CSS 분리 완료 및 다음 4-E-2 상태 동기화
+    - `docs/README.md`: 계획서 목록 상태 최신화
+- **검증 결과**:
+  - `python -m compileall gichul tests -q`: 바이트코드 컴파일 오류 0건 통과
+  - `node -c static/js/*.js`: 프론트엔드 자바스크립트 전체 문법 검사 오류 0건 통과
+  - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (9.89s)
+
