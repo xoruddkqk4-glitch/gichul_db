@@ -39,6 +39,7 @@ import {
   choiceRatesEmpty,
   choiceRatesStatsSub,
   emptyResultsBox,
+  sentenceEmptyGuidanceBox,
   inputPassageTag,
   listeningBottomLeftActions,
   listeningTopRightActions,
@@ -902,6 +903,7 @@ export function renderPassageView(items, targetPassageId = null) {
   }
 
   emptyResultsBox.style.display = "none";
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   passageViewContainer.style.display = "flex";
 
   const tree = buildExamTree(items);

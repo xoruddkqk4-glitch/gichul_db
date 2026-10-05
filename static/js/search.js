@@ -38,6 +38,7 @@ import {
   resultsSearchInput,
   resultsTotalCount,
   resultsView,
+  sentenceEmptyGuidanceBox,
   sentenceViewContainer,
   statPassages,
   statsBadge,
@@ -45,7 +46,7 @@ import {
 } from "./dom.js";
 import { setHeaderSlotState, setMode, showResultsScreen, updateGrammarFiltersVisibility } from "./navigation.js";
 import { groupPassageItems, renderPassageView, getCurrentDetailPassage, stopAllListeningAudio } from "./results-passage.js";
-import { renderSentenceView } from "./results-sentence.js";
+import { renderSentenceView, showSentenceEmptyGuidance } from "./results-sentence.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { resetAllGrammarFilters, updateGrammarBreadcrumbFilterUI } from "./grammar.js";
 import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter, setYearSelection } from "./year-filter.js";
@@ -291,6 +292,7 @@ export async function executeSearch(source = "home", targetPassageId = null) {
   showResultsScreen();
   loadingIndicator.style.display = "flex";
   emptyResultsBox.style.display = "none";
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   passageViewContainer.style.display = "none";
   sentenceViewContainer.style.display = "none";
 
@@ -370,6 +372,14 @@ export async function executeSearch(source = "home", targetPassageId = null) {
       renderPassageView(appState.passagesData, targetPassageId);
       updateGrammarFiltersVisibility();
     } else {
+      if (isNoKeywordSearch && !hasActiveSearchFilters()) {
+        loadingIndicator.style.display = "none";
+        appState.sentencesData = [];
+        appState.rawSentencesData = [];
+        resultsTotalCount.textContent = "0";
+        showSentenceEmptyGuidance();
+        return;
+      }
       const res = await fetch(`/api/search/sentences?${params.toString()}`);
       const data = await res.json();
 
@@ -407,6 +417,7 @@ export async function executeSearch(source = "home", targetPassageId = null) {
 
 /** 현재 로드된 결과 목록 내에서 키워드 또는 #태그로 즉시 필터링(결과 내 검색) */
 export function executeSearchWithinResults() {
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   const rawVal = resultsSearchInput ? resultsSearchInput.value.trim() : "";
 
   if (!rawVal) {

@@ -126,6 +126,7 @@ export const sentenceViewContainer = document.getElementById("sentenceViewContai
 export const sentenceMatchCount = document.getElementById("sentenceMatchCount");
 export const sentenceTableBody = document.getElementById("sentenceTableBody");
 export const btnSentenceBackToPassage = document.getElementById("btnSentenceBackToPassage");
+export const sentenceEmptyGuidanceBox = document.getElementById("sentenceEmptyGuidanceBox");
 
 // 어법 범주 필터 및 별표 필터
 export const homeGrammarFiltersGroup = document.getElementById("homeGrammarFiltersGroup");

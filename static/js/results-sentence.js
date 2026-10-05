@@ -25,6 +25,7 @@ import {
   resultsTabModePassage,
   resultsTabModeSentence,
   resultsTotalCount,
+  sentenceEmptyGuidanceBox,
   sentenceMatchCount,
   sentenceTableBody,
   sentenceViewContainer,
@@ -49,15 +50,14 @@ export async function showSentencesForPassage(passageId) {
       passageId = appState.currentPassageId;
     } else if (appState.currentExamQuestions && appState.currentExamQuestions.length > 0) {
       passageId = appState.currentExamQuestions[appState.currentPassageIndex]?.id;
-    } else if (appState.passagesData && appState.passagesData.length > 0) {
-      passageId = appState.passagesData[0].id;
     }
   }
   if (!passageId) {
-    setMode("sentence", true);
+    showSentenceEmptyGuidance();
     return;
   }
 
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   appState.currentPassageId = passageId;
   appState.currentMode = "sentence";
   if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
@@ -98,6 +98,7 @@ export async function showSentencesForPassage(passageId) {
 /** 전체 문장 결과창에서 이전 지문 상세 화면으로 복귀 */
 export function backToPassageView() {
   stopAllListeningAudio();
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   appState.currentMode = "passage";
   if (resultsTabModePassage) resultsTabModePassage.classList.add("active");
   if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
@@ -792,8 +793,34 @@ function ensureSentenceScrollListener() {
   }
 }
 
+/** 문장 검색 안내 빈 화면 (검색어 없이 [문장] 탭 진입 시 표출) */
+export function showSentenceEmptyGuidance() {
+  stopAllListeningAudio();
+  if (passageViewContainer) passageViewContainer.style.display = "none";
+  if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
+  if (emptyResultsBox) emptyResultsBox.style.display = "none";
+  if (loadingIndicator) loadingIndicator.style.display = "none";
+
+  if (sentenceEmptyGuidanceBox) {
+    sentenceEmptyGuidanceBox.style.display = "block";
+  }
+
+  appState.currentMode = "sentence";
+  if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
+  if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
+  if (tabModeSentence) tabModeSentence.classList.add("active");
+  if (tabModePassage) tabModePassage.classList.remove("active");
+  updateGrammarFiltersVisibility();
+
+  setHeaderSlotState("sentence");
+  if (resultsSearchInput) {
+    resultsSearchInput.focus();
+  }
+}
+
 export function renderSentenceView(items) {
   stopAllListeningAudio();
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   if (!items || items.length === 0) {
     emptyResultsBox.style.display = "flex";
     sentenceViewContainer.style.display = "none";
@@ -839,6 +866,17 @@ export function init() {
   if (btnCloseGrammarPopover) {
     btnCloseGrammarPopover.addEventListener("click", closeGrammarPopover);
   }
+
+  // 추천 검색어 칩 클릭 시 즉시 검색
+  document.addEventListener("click", (e) => {
+    const btnSample = e.target.closest(".btn-sample-keyword");
+    if (btnSample && btnSample.dataset.keyword) {
+      const kw = btnSample.dataset.keyword;
+      if (resultsSearchInput) resultsSearchInput.value = kw;
+      if (mainSearchInput) mainSearchInput.value = kw;
+      executeSearch("results");
+    }
+  });
 
   // 전역 이벤트 위임: 어법 배지 클릭 시 상세 해설 팝오버 표시 및 바깥 클릭 시 닫기
   document.addEventListener("click", (e) => {

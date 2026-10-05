@@ -4,7 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gichul DB — 수능·모의고사 영어 기출 데이터베이스</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=20260928_2255">
+  <link rel="stylesheet" href="/static/css/base.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/search.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/viewer.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/modal.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/grammar.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/upload.css?v=20261005_1910">
 </head>
 <body>
 
@@ -391,6 +396,23 @@
         <div class="empty-actions" style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem;">
           <button type="button" class="btn btn-secondary btn-sm" id="btnEmptyResetFilters">↺ 검색 조건 초기화</button>
           <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBackToSearch">← 검색 화면으로 돌아가기</button>
+        </div>
+      </div>
+
+      <!-- 문장 검색 안내 빈 화면 (검색어 없이 [문장] 탭 진입 시 표출) -->
+      <div class="empty-results-box sentence-guidance-box" id="sentenceEmptyGuidanceBox" style="display: none;">
+        <div class="empty-icon">💬</div>
+        <h3 class="empty-title">찾으시는 영어 문장이나 키워드를 검색해 보세요</h3>
+        <p class="empty-desc">
+          상단 검색창에 영어 단어, 구문, 출처(예: <code>[고3-2024년...]</code>)를 입력하거나,<br>
+          어법 필터(어법 대분류, 세부 어법)를 선택하여 원하는 기출 문장들을 모아볼 수 있습니다.
+        </p>
+        <div class="guidance-sample-tags" style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 1rem;">
+          <span style="font-size: 0.8rem; color: var(--text-muted); align-self: center;">추천 검색어:</span>
+          <button type="button" class="btn-sample-keyword" data-keyword="climate">climate</button>
+          <button type="button" class="btn-sample-keyword" data-keyword="technology">technology</button>
+          <button type="button" class="btn-sample-keyword" data-keyword="however">however</button>
+          <button type="button" class="btn-sample-keyword" data-keyword="#어법">#어법</button>
         </div>
       </div>
 

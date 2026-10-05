@@ -32,6 +32,7 @@ import {
   resultsTabModePassage,
   resultsTabModeSentence,
   resultsView,
+  sentenceEmptyGuidanceBox,
   sentenceViewContainer,
   statsBadge,
   tabModePassage,
@@ -44,7 +45,7 @@ import {
   updateClearButtons,
   updateFilterResetButtonsUI,
 } from "./search.js";
-import { backToPassageView, showSentencesForPassage } from "./results-sentence.js";
+import { backToPassageView, showSentencesForPassage, showSentenceEmptyGuidance } from "./results-sentence.js";
 import { stopAllListeningAudio } from "./results-passage.js";
 
 // =========================================================================
@@ -108,6 +109,7 @@ export function showHomeScreen() {
   if (emptyResultsBox) emptyResultsBox.style.display = "none";
   if (passageViewContainer) passageViewContainer.style.display = "none";
   if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
+  if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   if (btnBackToSearch) btnBackToSearch.style.display = "none";
   
   // 헤더 상태를 통계 배지 모드로 복원
@@ -221,7 +223,14 @@ export function init() {
   if (resultsTabModeSentence) {
     resultsTabModeSentence.addEventListener("click", () => {
       if (appState.currentMode === "sentence") return;
-      showSentencesForPassage(appState.currentPassageId);
+      const kw = (resultsSearchInput && resultsSearchInput.value) ? resultsSearchInput.value.trim() : "";
+      if (kw) {
+        setMode("sentence");
+        executeSearch("results");
+      } else {
+        setMode("sentence");
+        showSentenceEmptyGuidance();
+      }
     });
   }
 }
