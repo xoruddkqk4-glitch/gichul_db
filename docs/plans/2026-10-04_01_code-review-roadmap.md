@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 4-C ✅ 2026-10-05 · 4-D ✅ 2026-10-05 · 다음: 4-E) |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 4-C ✅ 2026-10-05 · 4-D ✅ 2026-10-05, 커밋 `2d44dda8` · 다음: 4-E) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -618,7 +618,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 > [!NOTE]
 > **`dist/`는 삭제하지 않습니다.** 처음에는 정리 대상으로 넣었지만, [install.bat](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/install.bat)의 `[4/4]` 단계가 `pip install --find-links=dist coqui-tts torchcodec`로 XTTS 오프라인 설치에 쓰고 있음을 확인했습니다. 폴더 이름을 용도에 맞게 바꾸고 싶다면 [루트 정리 C-3](2026-10-04_02_root-folder-cleanup.md#5-c단계--선택-항목-적용할-때-하나씩-결정) (`dist/` → `wheels/` + `install.bat` 수정)을 적용합니다.
 
-#### 4-D 적용 결과 (2026-10-05)
+#### 4-D 적용 결과 (2026-10-05, 커밋 `2d44dda8`)
 - [NEW] [requirements-xtts.txt](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/requirements-xtts.txt):
   - 대용량 성우 음성 복제(XTTS-v2, PyTorch CUDA 12.4, `coqui-tts`, `torchcodec`, `soundfile`) 의존성을 일반 `requirements.txt`와 분리
   - 오프라인 휠(`dist/`) 및 온라인 PyTorch 인덱스 설치 상세 가이드 주석 명시

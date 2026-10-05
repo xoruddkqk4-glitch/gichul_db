@@ -2336,11 +2336,24 @@ CREATE TABLE user_sentence_status (
 - **검증 결과**:
   - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
   - `node -c static/js/results-passage.js`: 프론트엔드 자바스크립트 문법 검사 오류 0건 통과
-  - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (기존 195개 + 신규 11개, 18.72s)
-
-
-
-
-
-
-
+### [2026-10-05 19:03] 업데이트 이력 (Commit ID: 2d44dda8)
+- **수정 내용**:
+  - **로드맵 4-D: 저장소와 작업 폴더 정리 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **XTTS 전용 고중량 의존성 분리 (`requirements-xtts.txt`)**:
+      - 성우 음성 복제(XTTS-v2, PyTorch CUDA 12.4, `coqui-tts`, `torchcodec`, `soundfile`) 의존성을 일반 `requirements.txt`와 분리
+      - `dist/` 오프라인 휠 기반 고속 설치 및 PyTorch CUDA 인덱스 설치 가이드 명시
+    - **로컬 미추적 대용량 임시 폴더 삭제 (`scratch/jsmod/node_modules`)**:
+      - Git 미추적 임시 폴더 22.3 MB 삭제 완료 (로컬 디스크 용량 회수)
+    - **`static/captures/` 관리 방안 확정 (사용자 선택 반영)**:
+      - 사용자 결정에 따라 **현행 유지(Git 추적 및 GitHub 자동 클라우드 백업 유지)** 확정
+      - 18,137개 크롭 이미지(2.35 GB) 유실 위험 원천 배제, 별도 외장 백업 및 강제 푸시(`git filter-repo`) 리스크 없음
+    - **`dist/` 오프라인 휠 보존**:
+      - `install.bat` 4단계 오프라인 설치 지원 유지를 위해 보존
+    - **Git 저장소 오브젝트 현황 측정 (`git count-objects -vH`)**:
+      - 팩 내부 오브젝트 24,151개, 팩 용량 2.56 GiB, 가비지 0 bytes 확인
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 4-D 적용 결과 기록 및 진행 현황(4-A ✅ · 4-B ✅ · 4-C ✅ · 4-D ✅ · 다음: 4-E) 갱신
+      - `docs/README.md`: 계획서 목록 진행 현황 동기화
+- **검증 결과**:
+  - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (8.23s)
