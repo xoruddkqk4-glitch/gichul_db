@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | ⬜ 대기 |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 다음: 4-B) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -532,6 +532,26 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
   | `tests/test_text_utils.py` | `fill_blanks`, `apply_answer_header`, `normalize_bracket_id` |
   | `tests/test_exam_profiles.py` | 2008/2012-06/2013/2013-09/2020 프로파일 기대값 |
 - `scratch/`의 116개 스크립트 중 회귀 가치가 있는 것(`test_smart_resolver`, `test_dedup_algorithm` 등)은 검토해서 옮길지 정하고, 목록만 보고합니다.
+
+#### 4-A 적용 결과 (2026-10-05)
+- [MODIFY] `gichul/database.py`:
+  - `DB_PATH = os.environ.get("GICHUL_DB_PATH") or paths.DB_PATH` 및 `get_db_path()` 구현: 테스트 시 격리된 임시 DB 경로로 동적 전환 지원
+  - `init_db()` 내 `passages_fts` 테이블의 `AFTER INSERT` (`trg_passages_ai`) 및 `AFTER DELETE` (`trg_passages_ad`) 동기화 트리거 보강 (신규 지문 FTS 즉각 동기화)
+- [MODIFY] `requirements.txt`:
+  - `# 개발/테스트` 섹션에 `httpx>=0.28.1` 명시
+- [MODIFY] `tests/conftest.py`:
+  - `tmp_db` 픽스처: `tmp_path` 기반 독립 SQLite DB 생성, `init_db()` 자동 초기화, 캐시 클리어
+  - `isolated_client` 픽스처: 격리된 임시 DB 연동 FastAPI TestClient 제공
+- [NEW] 테스트 파일 추가:
+  - `tests/test_db_search.py` (5개 테스트 통과): `exam_id` 및 `sentence_ids` 필터링, FTS5 특수문자 입력 시 문법 에러 없이 LIKE 검색 안전 대체, `whole_word` 온전한 단어 정밀 매칭 검증
+  - `tests/test_db_sentences.py` (4개 테스트 통과): `replace_passage_sentences` 빈 목록 보존, 삽입/삭제 FK 연쇄 처리, 문장 텍스트 변경 시 AI 어법 삭제 및 사용자(USER) 수동 어법 보존, 동일 텍스트 재업로드 시 AI 어법 보존 검증
+  - `tests/test_api_smoke.py` (5개 테스트 통과): 태그 변경 시 캐시 무효화 및 검색 결과 즉각 반영, 미등록 시험지 듣기 ZIP 404, AI 키 미등록 배치 분석 400, 미등록 문장 분석 404, 정적 JS 파일 `Cache-Control: no-cache` 헤더 검증
+- `scratch/` 스크립트 검토:
+  - 총 165개 스크립트 중 20개의 검증용 스크립트 분석 완료. 40번 빈칸 검증 로직(`test_40_fix_logic.py`, `test_enhanced_fill.py`)은 이미 `test_refill_blanks.py` 및 `test_text_utils.py`로 공식 단위 테스트화 완료 확인
+- **검증**
+  - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `pytest tests -q`: **179개** 단위/통합 테스트 전체 통과 (기존 165개 + 신규 14개, 18.93s)
+- **사용자 수동 확인**: 없음 (테스트 확충 작업으로 운영 소스 코드의 동작 로직 변경 없음)
 
 ### 4-B. 보안과 안전성 (보고서 3-15)
 - 업로드 파일명: `safe_name = os.path.basename(f.filename)`에 허용 문자 화이트리스트를 적용합니다 ([app.py:L1249-L1279](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1249-L1279), [L1665-L1667](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L1665-L1667)). `{grade}_{year}_{month}_` 접두사는 크롭 재생성 glob이 이 이름에 의존하므로 유지합니다.

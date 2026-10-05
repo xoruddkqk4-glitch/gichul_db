@@ -24,7 +24,12 @@ from .text_utils import (
 )
 
 logger = get_logger("gichul.database")
-DB_PATH = paths.DB_PATH
+DB_PATH = os.environ.get("GICHUL_DB_PATH") or paths.DB_PATH
+
+
+def get_db_path() -> str:
+    """런타임 DB 경로 반환 (테스트 시 GICHUL_DB_PATH 환경변수로 동적 교체 지원)"""
+    return os.environ.get("GICHUL_DB_PATH") or DB_PATH
 
 
 def _regexp_func(expr: Optional[str], item: Optional[str]) -> bool:
@@ -57,7 +62,7 @@ def get_connection() -> sqlite3.Connection:
     - timeout=15: 라우트가 스레드풀에서 동시에 실행되므로, 다른 쓰기가 끝날 때까지 최대 15초 기다린다
     - journal_mode=WAL은 DB 파일에 영구 저장되는 설정이라 init_db()에서 한 번만 설정한다
     """
-    conn = sqlite3.connect(DB_PATH, timeout=15, factory=_ClosingConnection)
+    conn = sqlite3.connect(get_db_path(), timeout=15, factory=_ClosingConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA synchronous = NORMAL;")
@@ -402,6 +407,17 @@ def init_db():
             cursor.execute("""
                 CREATE TRIGGER IF NOT EXISTS trg_sentences_ad AFTER DELETE ON sentences BEGIN
                     DELETE FROM sentences_fts WHERE sentence_id = old.id;
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_passages_ai AFTER INSERT ON passages BEGIN
+                    INSERT INTO passages_fts(passage_id, passage_text, question_title, explanation_text, script_text)
+                    VALUES (new.id, new.passage_text, new.question_title, new.explanation_text, new.script_text);
+                END;
+            """)
+            cursor.execute("""
+                CREATE TRIGGER IF NOT EXISTS trg_passages_ad AFTER DELETE ON passages BEGIN
+                    DELETE FROM passages_fts WHERE passage_id = old.id;
                 END;
             """)
             # 갱신 트리거는 텍스트 컬럼이 바뀔 때만 동작하도록 교체한다 (구버전은 별표·메모·정답률 등 어떤 컬럼을 바꿔도 FTS 재색인)
