@@ -13,9 +13,9 @@ import pytest
 def seeded_passage(tmp_db):
     """API 테스트용 기본 시험지, 지문, 문장 생성"""
     exam = {
-        "id": "[고3-2024년-06월]",
+        "id": "[고3-2099년-06월]",
         "grade": "고3",
-        "year": 2024,
+        "year": 2099,
         "month": 6,
         "exam_type": "평가원",
         "reading_start_q": 18,
@@ -23,7 +23,7 @@ def seeded_passage(tmp_db):
     }
     tmp_db.save_exam(exam)
 
-    pid = "[고3-2024년-06월-18번]"
+    pid = "[고3-2099년-06월-18번]"
     passage = {
         "id": pid,
         "exam_id": exam["id"],
@@ -131,3 +131,29 @@ def test_static_js_no_cache_header(isolated_client):
     # 파일이 존재하면 200 및 no-cache 헤더 검증
     if res.status_code == 200:
         assert res.headers.get("Cache-Control") == "no-cache"
+
+
+def test_delete_exam_normalizes_bracket_id(isolated_client, seeded_passage):
+    """DELETE /api/exams/{exam_id} 호출 시 대괄호 없는 ID도 normalize_bracket_id 정규화 후 정상 삭제"""
+    client = isolated_client
+    exam_id = seeded_passage["exam_id"]  # "[고3-2024년-06월]"
+    raw_id_without_brackets = exam_id.strip("[]")  # "고3-2024년-06월"
+
+    # 대괄호 없는 식별자로 삭제 요청
+    res = client.delete(f"/api/exams/{raw_id_without_brackets}")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+    assert data["exam_id"] == exam_id
+
+    # 이미 삭제되었으므로 다시 삭제 시 404 반환
+    res_again = client.delete(f"/api/exams/{raw_id_without_brackets}")
+    assert res_again.status_code == 404
+
+
+def test_seed_sample_data_endpoint_removed(isolated_client):
+    """실데이터 덮어쓰기 위험이 있던 /api/seed-sample-data 엔드포인트가 제거되어 404 반환 검증"""
+    client = isolated_client
+    res = client.post("/api/seed-sample-data")
+    assert res.status_code in (404, 405)
+

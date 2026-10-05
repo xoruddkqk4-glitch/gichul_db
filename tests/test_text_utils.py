@@ -267,3 +267,27 @@ def test_service_propagates_analysis_error(fake_backend, monkeypatch):
     with pytest.raises(RuntimeError):
         gs.analyze_and_save_sentence({"id": "[S4]", "sentence_text": "Plain.", "passage_id": "P1"}, {})
     assert fake_backend["save"] == []
+
+
+# ---------- sanitize_upload_filename (로드맵 4-B) ----------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("고3_2024_06_문제지.pdf", "고3_2024_06_문제지.pdf"),
+    ("[고3-2024년-06월] (A형).png", "[고3-2024년-06월] (A형).png"),
+    ("../../etc/passwd.pdf", "passwd.pdf"),
+    ("some/nested/path/sample.pdf", "sample.pdf"),
+    ("..\\..\\windows\\system32\\calc.exe", "calc.bin"),
+    ("malicious.bat", "malicious.bin"),
+    ("test<script>alert(1).hwp", "test_script_alert(1).hwp"),
+    ("file:with*invalid?chars.csv", "file_with_invalid_chars.csv"),
+    ("   spaces   and...dots...hwp", "spaces and_dots.hwp"),
+    ("", "upload"),
+    ("...", "upload"),
+    ("   ", "upload"),
+    ("///", "upload"),
+    ("a   b___c.pdf", "a b_c.pdf"),
+])
+def test_sanitize_upload_filename(raw, expected):
+    assert tu.sanitize_upload_filename(raw) == expected
+
+

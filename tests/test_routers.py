@@ -108,7 +108,6 @@ def test_all_routes_registered():
         "/api/exams/{exam_id}/upload-file",
         "/api/exams/selective-delete",
         "/api/exams/batch-delete",
-        "/api/seed-sample-data",
     }
     for ep in expected_endpoints:
         assert ep in registered_paths, f"Missing endpoint: {ep}"

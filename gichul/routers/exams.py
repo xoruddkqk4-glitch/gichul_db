@@ -27,9 +27,8 @@ from ..hwp_parser import get_hwp_text, parse_hwp_explanations, parse_hwp_questio
 from ..logging_config import get_logger
 from ..pdf_parser import detect_listening_range, extract_pdf_columns_and_questions
 from ..rate_parser import parse_correct_rate_csv
-from ..sentence_tokenizer import create_sentence_records
 from ..services.ingest import _regenerate_exam_crops, background_auto_analyze_exam_grammar
-from ..text_utils import apply_answer_header, normalize_bracket_id
+from ..text_utils import apply_answer_header, normalize_bracket_id, sanitize_upload_filename
 from ..validator import cross_validate_and_merge
 
 logger = get_logger("gichul.routers.exams")
@@ -72,9 +71,11 @@ def api_upload_exam(
     """
     동일 시험지의 PDF, HWP(문제지), 선택적 해설지(HWP), 선택적 정답표 이미지(PNG/JPG), 선택적 정답률 CSV 파일, 선택적 듣기 대본 파일 업로드 및 상호 검증 파이프라인
     """
-    # 1. 업로드 파일 임시 저장
-    pdf_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{pdf_file.filename}")
-    hwp_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{hwp_file.filename}")
+    # 1. 업로드 파일 임시 저장 (파일명 화이트리스트 및 경로 순회 방지 적용)
+    safe_pdf_name = sanitize_upload_filename(pdf_file.filename)
+    safe_hwp_name = sanitize_upload_filename(hwp_file.filename)
+    pdf_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{safe_pdf_name}")
+    hwp_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{safe_hwp_name}")
 
     with open(pdf_save_path, "wb") as buffer:
         shutil.copyfileobj(pdf_file.file, buffer)
@@ -83,25 +84,29 @@ def api_upload_exam(
 
     script_save_path = None
     if script_file and script_file.filename:
-        script_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_script_{script_file.filename}")
+        safe_script_name = sanitize_upload_filename(script_file.filename)
+        script_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_script_{safe_script_name}")
         with open(script_save_path, "wb") as buffer:
             shutil.copyfileobj(script_file.file, buffer)
 
     exp_save_path = None
     if exp_file and exp_file.filename:
-        exp_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_exp_{exp_file.filename}")
+        safe_exp_name = sanitize_upload_filename(exp_file.filename)
+        exp_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_exp_{safe_exp_name}")
         with open(exp_save_path, "wb") as buffer:
             shutil.copyfileobj(exp_file.file, buffer)
 
     ans_save_path = None
     if ans_file and ans_file.filename:
-        ans_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{ans_file.filename}")
+        safe_ans_name = sanitize_upload_filename(ans_file.filename)
+        ans_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{safe_ans_name}")
         with open(ans_save_path, "wb") as buffer:
             shutil.copyfileobj(ans_file.file, buffer)
 
     csv_save_path = None
     if csv_file and csv_file.filename:
-        csv_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{csv_file.filename}")
+        safe_csv_name = sanitize_upload_filename(csv_file.filename)
+        csv_save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{safe_csv_name}")
         with open(csv_save_path, "wb") as buffer:
             shutil.copyfileobj(csv_file.file, buffer)
 
@@ -178,7 +183,7 @@ def api_upload_exam(
                 try:
                     uploaded_json_answers = answer_keys.parse_answer_json_file(ans_save_path)
                     if uploaded_json_answers:
-                        answer_keys.save_uploaded_answer_key(grade, year, month, uploaded_json_answers, ans_file.filename if ans_file else "")
+                        answer_keys.save_uploaded_answer_key(grade, year, month, uploaded_json_answers, safe_ans_name if ans_file else "")
                         logger.info(f"[Upload] 정답 JSON 파일 파싱 및 키 저장 완료 ({len(uploaded_json_answers)}문항)")
                     else:
                         logger.warning(f"[Upload] 정답 JSON 파싱 결과 비어있음: {ans_save_path}")
@@ -361,8 +366,9 @@ def api_get_exams():
 @router.delete("/api/exams/{exam_id}")
 def api_delete_exam(exam_id: str):
     """지정된 시험지 및 관련 모든 데이터(지문, 문장, 어법, 태그, 캡처 이미지) 연쇄 삭제"""
+    clean_id = normalize_bracket_id(exam_id)
     try:
-        res = db.delete_exam(exam_id)
+        res = db.delete_exam(clean_id)
         if not res.get("success"):
             raise HTTPException(status_code=404, detail=res.get("message", "시험지를 찾을 수 없습니다."))
         return res
@@ -501,11 +507,12 @@ def api_upload_exam_single_file(
     reading_start = exam["reading_start_q"] or profile.reading_start
     reading_end = exam["reading_end_q"] or profile.reading_end
 
-    # 2. 파일 저장
+    # 2. 파일 저장 (파일명 화이트리스트 및 경로 순회 방지 적용)
+    safe_file_name = sanitize_upload_filename(file.filename)
     if file_type == "ans":
-        save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{file.filename}")
+        save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_ans_{safe_file_name}")
     else:
-        save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{file.filename}")
+        save_path = os.path.join(UPLOADS_DIR, f"{grade}_{year}_{month:02d}_{safe_file_name}")
 
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -518,7 +525,7 @@ def api_upload_exam_single_file(
                 json_answers = answer_keys.parse_answer_json_file(save_path)
                 if not json_answers:
                     raise ValueError("정답 JSON 파일에서 유효한 문항 정답을 추출하지 못했습니다.")
-                answer_keys.save_uploaded_answer_key(grade, year, month, json_answers, file.filename)
+                answer_keys.save_uploaded_answer_key(grade, year, month, json_answers, safe_file_name)
 
                 answers_dict = {}
                 with db.get_connection() as conn:
@@ -869,143 +876,3 @@ def api_batch_delete_exams(req: BatchDeleteRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"시험지 일괄 삭제 중 오류 발생: {str(e)}")
-
-
-# --- 데모/샘플 데이터 즉시 시드 API ---
-@router.post("/api/seed-sample-data")
-def api_seed_sample_data():
-    """실제 수능/모의고사 대표 기출 지문 3개와 문장 20여 개를 즉시 DB에 주입"""
-    # 샘플 시험지 1: 2024년 6월 모평 고3
-    exam1 = {
-        "id": "[고3-2024년-06월]",
-        "grade": "고3",
-        "year": 2024,
-        "month": 6,
-        "exam_type": "평가원",
-        "reading_start_q": 18,
-        "reading_end_q": 45
-    }
-    db.save_exam(exam1)
-
-    # 지문 1: 21번 함축의미
-    p21_id = "[고3-2024년-06월-21번]"
-    p21_text = (
-        "In modern science, the concept of objectivity has undergone a profound transformation. "
-        "Scientists have long realized that observation is not a passive reception of external facts, "
-        "but an active engagement with the world. Dr. James Smith notes that our theoretical frameworks "
-        "invariably shape what we perceive. For example, e.g., the way quantum physicists measure "
-        "subatomic particles influences their observed states. Consequently, true objectivity does not "
-        "mean viewing reality from nowhere, but acknowledging our situated perspectives."
-    )
-    p21_data = {
-        "id": p21_id,
-        "exam_id": exam1["id"],
-        "q_num": 21,
-        "question_title": "21. 밑줄 친 viewing reality from nowhere가 다음 글에서 의미하는 바로 가장 적절한 것은? [3점]",
-        "question_type": "어휘함축",
-        "passage_text": p21_text,
-        "answer_text": "③",
-        "explanation_text": (
-            "[정답] ③\n"
-            "[해설] 현대 과학에서 관찰자가 가진 이론적 틀이 관찰 결과에 영향을 미치므로, "
-            "완전한 무위치(viewing reality from nowhere)에서 객관성을 찾는 것은 불가능하며 "
-            "자신의 위치된 관점을 인정해야 한다는 요지의 글이다.\n"
-            "[어휘] objectivity: 객관성 / profound: 심오한 / situated: 위치한, 특정한 상황에 놓인"
-        ),
-        "pdf_crop_image": "",
-        "validation_ratio": 1.0,
-        "remarks": "HWP-PDF 일치율 100%"
-    }
-    db.save_passage(p21_data)
-    s21 = create_sentence_records(p21_id, p21_text)
-    db.save_sentences(s21)
-    db.add_passage_tag(p21_id, "함축의미")
-    db.add_passage_tag(p21_id, "과학철학")
-    if s21:
-        db.add_sentence_tag(s21[0]["id"], "핵심주제문")
-        db.add_sentence_tag(s21[1]["id"], "not A but B 구문")
-
-    # 지문 2: 31번 빈칸추론
-    p31_id = "[고3-2024년-06월-31번]"
-    p31_text = (
-        "Human memory is fundamentally constructive rather than reproductive. "
-        "When we recall past events, our brains do not replay a recorded video tape. "
-        "Instead, we piece together fragments of information stored across various neural networks. "
-        "In this process, our current emotions, beliefs, and expectations heavily influence the outcome. "
-        "This inherent plasticity allows us to adapt to future scenarios, yet it also makes our recollections "
-        "remarkably vulnerable to distortion. Therefore, memory serves adaptability rather than absolute accuracy."
-    )
-    p31_data = {
-        "id": p31_id,
-        "exam_id": exam1["id"],
-        "q_num": 31,
-        "question_title": "31. 다음 빈칸에 들어갈 말로 가장 적절한 것을 고르시오. [3점]",
-        "question_type": "빈칸",
-        "passage_text": p31_text,
-        "answer_text": "②",
-        "explanation_text": (
-            "[정답] ②\n"
-            "[해설] 인간의 기억은 과거를 그대로 재생하는 것이 아니라 현재의 정서와 신념에 따라 재구성되는 구성적 특성을 지닌다는 내용이다.\n"
-            "[어휘] constructive: 구성적인 / plasticity: 가소성 / distortion: 왜곡 / adaptability: 적응성"
-        ),
-        "pdf_crop_image": "",
-        "validation_ratio": 0.998,
-        "remarks": "HWP-PDF 일치율 99.8%"
-    }
-    db.save_passage(p31_data)
-    s31 = create_sentence_records(p31_id, p31_text)
-    db.save_sentences(s31)
-    db.add_passage_tag(p31_id, "빈칸추론")
-    db.add_passage_tag(p31_id, "인지심리학")
-    if s31:
-        db.add_sentence_tag(s31[0]["id"], "핵심정의문")
-
-    # 지문 3: 고2 2023년 3월 34번
-    exam2 = {
-        "id": "[고2-2023년-03월]",
-        "grade": "고2",
-        "year": 2023,
-        "month": 3,
-        "exam_type": "교육청",
-        "reading_start_q": 18,
-        "reading_end_q": 45
-    }
-    db.save_exam(exam2)
-
-    p34_id = "[고2-2023년-03월-34번]"
-    p34_text = (
-        "Language does not merely reflect our thoughts; it actively structures how we experience time. "
-        "For instance, speakers of English usually describe time using spatial metaphors of horizontal lines, "
-        "moving forward from left to right. In contrast, Mandarin speakers frequently employ vertical metaphors. "
-        "Psycholinguistic experiments demonstrate that these linguistic differences directly alter cognitive processing speeds. "
-        "Thus, the vocabulary and grammar we acquire shape the mental architecture of our reality."
-    )
-    p34_data = {
-        "id": p34_id,
-        "exam_id": exam2["id"],
-        "q_num": 34,
-        "question_title": "34. 다음 빈칸에 들어갈 말로 가장 적절한 것을 고르시오.",
-        "question_type": "빈칸",
-        "passage_text": p34_text,
-        "answer_text": "①",
-        "explanation_text": (
-            "[정답] ①\n"
-            "[해설] 언어가 단순히 생각을 표현하는 수단이 아니라 인간의 시간 인지 구조 자체를 형성한다는 사피어-워프 가설 관련 지문이다.\n"
-            "[어휘] metaphor: 은유 / psycholinguistic: 심리언어학의 / alter: 바꾸다"
-        ),
-        "pdf_crop_image": "",
-        "validation_ratio": 1.0,
-        "remarks": "HWP-PDF 일치율 100%"
-    }
-    db.save_passage(p34_data)
-    s34 = create_sentence_records(p34_id, p34_text)
-    db.save_sentences(s34)
-    db.add_passage_tag(p34_id, "언어학")
-    db.add_passage_tag(p34_id, "빈칸추론")
-
-    stats = db.get_db_stats()
-    return {
-        "status": "success",
-        "message": "고3/고2 평가원·교육청 대표 기출 샘플 데이터(3개 지문, 18개 문장)가 성공적으로 주입되었습니다.",
-        "stats": stats
-    }

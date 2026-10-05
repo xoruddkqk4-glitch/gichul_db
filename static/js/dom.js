@@ -11,7 +11,6 @@
 export const btnGoHome = document.getElementById("btnGoHome");
 export const statPassages = document.getElementById("statPassages");
 export const statSentences = document.getElementById("statSentences");
-export const btnSeedSample = document.getElementById("btnSeedSample");
 export const btnOpenUploadModal = document.getElementById("btnOpenUploadModal");
 
 // 헤더 동적 액션 슬롯 (통계 배지 <-> 전체 문장 버튼 <-> 지문 복귀 버튼)

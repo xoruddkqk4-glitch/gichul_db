@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 다음: 4-B) |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 다음: 4-C) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -558,7 +558,29 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - 시드 API 제거: [api_seed_sample_data](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/app.py#L2041-L2179), `dom.js`의 `btnSeedSample`, [upload.js:L1599-L1620](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/upload.js#L1599-L1620) 핸들러. HTML에는 해당 버튼이 없습니다.
 - 토스트: [utils.js:L44](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/static/js/utils.js#L44)에서 `innerHTML` → `span.textContent`로 바꿉니다. HTML을 넘기는 `showToast` 호출이 0건인 것을 확인했습니다.
 - `DELETE /api/exams/{exam_id}`에도 `normalize_bracket_id`를 적용합니다.
-- (선택) API 키를 Windows `keyring`에 저장. 의존성이 추가되고 기존 키를 옮겨야 해서, 적용할지는 그때 결정합니다.
+- (선택) API 키를 Windows `keyring`에 저장. 의존성이 추가되고 기존 키를 옮겨야 해서, 적용할지는 그때 결정합니다. (로컬 단일 사용자 환경 기준 현행 유지 결정)
+
+#### 4-B 적용 결과 (2026-10-05)
+- [NEW] `gichul/text_utils.py`:
+  - `sanitize_upload_filename(filename, default_name="upload")`: 업로드 파일명 화이트리스트 필터링 및 경로 순회(`../`, `..\`) 방지 함수 구현 (한글, 영숫자, 하이픈, 밑줄, 공백, 괄호 외 문자 `_` 치환, 위험 실행 확장자 `.bin` 치환, 양 끝 점/공백 트림)
+- [MODIFY] `gichul/routers/exams.py`:
+  - `api_upload_exam` 및 `api_upload_exam_single_file`: 6종 업로드 파일명(`pdf`, `hwp`, `script`, `exp`, `ans`, `csv`) 전체에 `sanitize_upload_filename` 적용. `{grade}_{year}_{month:02d}_` 접두사 보존으로 크롭 재생성 glob 호환성 유지
+  - `DELETE /api/exams/{exam_id}`: `clean_id = normalize_bracket_id(exam_id)` 적용으로 대괄호 유무와 무관하게 안전하고 일관된 시험지 연쇄 삭제 지원
+  - 시드 API 제거: 실데이터 덮어쓰기 위험이 있던 `POST /api/seed-sample-data` 엔드포인트 및 미사용 `create_sentence_records` import 제거
+- [MODIFY] 프론트엔드 XSS 방지 및 미사용 UI 정리:
+  - `static/js/utils.js`: `showToast` 내부의 `toast.innerHTML = <span>${message}</span>;`를 `const span = document.createElement("span"); span.textContent = message; toast.appendChild(span);`로 교체하여 파일명 등 서버 메시지 출력 시 XSS 취약점 원천 차단
+  - `static/js/dom.js` & `static/js/upload.js`: 시드 API와 연결되었던 미사용 `btnSeedSample` DOM 참조 및 클릭 이벤트 리스너 제거
+- [MODIFY] 테스트 스위트 및 픽스처 강화:
+  - `tests/conftest.py`: `tmp_db` 픽스처에서 `paths.CAPTURES_DIR` 및 `paths.UPLOADS_DIR`을 `tmp_path` 임시 디렉토리로 격리 주입하여, 시험지 삭제/업로드 테스트 시 실제 운영 `static/captures/` 파일이 삭제되지 않도록 파일시스템 격리 보장
+  - `tests/test_text_utils.py`: `sanitize_upload_filename` 대상 경로 순회, 위험 확장자, 특수문자, 한글, 빈 파일명 등 13개 파라미터화 단위 테스트 추가 (전원 통과)
+  - `tests/test_api_smoke.py`: `DELETE /api/exams/{exam_id}` 대괄호 정규화 삭제 동작 및 시드 API(`/api/seed-sample-data`) 404 제거 검증 테스트 추가 (전원 통과)
+  - `tests/test_routers.py`: `expected_endpoints`에서 `/api/seed-sample-data` 제거
+- **검증**
+  - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `node -c`: `static/js/utils.js`, `dom.js`, `upload.js` 문법 검사 오류 0건 통과
+  - `pytest tests -q`: **195개** 단위/통합 테스트 전체 통과 (기존 179개 + 신규 16개, 15.12s)
+- **사용자 수동 확인**: 파일 업로드 모달창 정상 열림, 토스트 알림 정상 출력 확인
+
 
 ### 4-C. 교차검증 수치 바로잡기 (보고서 3-16)
 - [validator.py:L80](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/validator.py#L80): 한쪽 본문이 없으면 `ratio=None`, `remarks="비교 불가 (HWP/PDF 중 한쪽 없음)"`으로 기록합니다.

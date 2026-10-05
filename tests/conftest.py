@@ -19,11 +19,22 @@ if ROOT not in sys.path:
 def tmp_db(tmp_path, monkeypatch):
     """테스트마다 격리된 임시 SQLite DB를 생성하고 init_db()를 호출하는 픽스처"""
     from gichul import database as db
+    from gichul import paths
     from gichul.core.state import search_cache
 
     test_db_file = str(tmp_path / "test_gichul.db")
+    fake_captures = tmp_path / "captures"
+    fake_captures.mkdir(exist_ok=True)
+    fake_uploads = tmp_path / "uploads"
+    fake_uploads.mkdir(exist_ok=True)
+
     monkeypatch.setenv("GICHUL_DB_PATH", test_db_file)
     monkeypatch.setattr(db, "DB_PATH", test_db_file)
+    monkeypatch.setattr(paths, "CAPTURES_DIR", str(fake_captures))
+    monkeypatch.setattr(paths, "UPLOADS_DIR", str(fake_uploads))
+
+    from gichul.routers import exams as router_exams
+    monkeypatch.setattr(router_exams, "UPLOADS_DIR", str(fake_uploads))
 
     # 임시 DB 테이블 및 FTS5 초기화
     db.init_db()

@@ -4,8 +4,52 @@
 - ID 정규화, 해설 [정답] 헤더 갱신, 선지/정답 번호 추출, 빈칸 정답 채우기
 """
 
+import os
 import re
 from typing import Dict, Optional
+
+# 파일명 화이트리스트 정제용 패턴 (한글, 영숫자, 하이픈, 밑줄, 공백, 괄호 외 제거)
+_SAFE_FILENAME_CHARS_RE = re.compile(r'[^가-힣ㄱ-ㅎㅏ-ㅣa-zA-Z0-9\s\-_()[\]]')
+_DANGEROUS_EXTS = {".exe", ".bat", ".cmd", ".sh", ".py", ".vbs", ".ps1", ".msi", ".dll", ".so", ".dylib"}
+
+
+def sanitize_upload_filename(filename: str, default_name: str = "upload") -> str:
+    """
+    업로드된 파일명에서 디렉토리 순회(../ 등) 및 허용되지 않는 특수문자를 제거하여 안전한 파일명으로 정제한다.
+    - Windows/POSIX 경로 구분자(\\, /)를 모두 제거하여 basename만 추출
+    - 한글, 영숫자, 하이픈, 밑줄, 괄호 외 문자는 '_'로 치환
+    - 위험한 실행 확장자 차단 (.bin 치환)
+    - 파일명이 비어있거나 화이트리스트 정제 후 빈 문자열이 되면 default_name으로 대체
+    """
+    if not filename:
+        return default_name
+
+    # 1. 경로 구분자(\\, /) 제거 및 basename 추출 (경로 탐색 방지)
+    raw_name = filename.replace("\\", "/").rstrip("/").split("/")[-1]
+    raw_name = os.path.basename(raw_name).strip()
+
+    # 2. 파일명과 확장자 분리
+    base, ext = os.path.splitext(raw_name)
+
+    # 3. 확장자 정제
+    clean_ext = ext.lower().strip()
+    if clean_ext in _DANGEROUS_EXTS:
+        clean_ext = ".bin"
+    # 확장자 내 점과 영숫자만 허용
+    clean_ext = re.sub(r'[^a-z0-9.]', '', clean_ext)
+
+    # 4. 베이스 파일명 화이트리스트 필터링
+    clean_base = _SAFE_FILENAME_CHARS_RE.sub('_', base)
+    # 연속된 밑줄 및 공백 정리, 양 끝 점/공백/밑줄 트림
+    clean_base = re.sub(r'[_]{2,}', '_', clean_base)
+    clean_base = re.sub(r'\s{2,}', ' ', clean_base)
+    clean_base = clean_base.strip('. _')
+
+    if not clean_base:
+        clean_base = default_name
+
+    return f"{clean_base}{clean_ext}"
+
 
 # 해설 맨 앞 [정답] 헤더 감지 / 교체 패턴
 _ANSWER_HEADER_DETECT = re.compile(r"^\s*\[\s*정답\s*\]")
