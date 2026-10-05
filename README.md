@@ -83,11 +83,17 @@
 ├── start.bat · install.bat # 사용자 실행/설치 배치 파일
 ├── gichul/                 # ★ 백엔드 파이썬 패키지
 │   ├── __init__.py
-│   ├── paths.py            # 모든 경로 상수(DB, static, uploads, captures, audio 등)를 여기서만 정의 (GICHUL_DB_PATH 환경변수 지원)
+│   ├── paths.py            # 모든 경로 상수(DB, logs, static, uploads, captures, audio 등) 정의 (GICHUL_DB_PATH 지원)
+│   ├── logging_config.py   # 통합 로깅(stdout + logs/app.log 5MBx3 회전) 및 get_logger 모듈
 │   ├── app.py              # FastAPI REST API 및 웹 서버 엔드포인트
 │   ├── database.py         # SQLite DB 스키마, CRUD, 인덱스, 어법 태그 및 검색 헬퍼
+│   ├── access.py           # 등급별(관리자/회원/비회원) 데이터 접근 제어 및 필터링 훅
+│   ├── exam_profiles.py    # 연도/체제별(50문항/수준별/45문항/특수크롭) 시험 프로파일 모델
+│   ├── text_utils.py       # 순수 텍스트 유틸 (ID 정규화, 선지 추출, 빈칸 채우기, 해설 헤더)
 │   ├── sentence_tokenizer.py   # 약어/소수점/인용구 보존 영문 문장 분할 모듈
 │   ├── grammar_analyzer.py     # Gemini/ChatGPT/Claude Multi-LLM 243개 어법 분석 엔진
+│   ├── services/
+│   │   └── grammar_service.py  # 단일/배치/백그라운드 AI 어법 분석 공통 파이프라인
 │   ├── pdf_parser.py           # PDF 2단 칼럼 분할 파싱 및 문항별 고화질 이미지 크롭
 │   ├── hwp_parser.py           # HWP/HWPX 문제지 파싱 및 정답/해설 추출
 │   ├── validator.py            # HWP vs PDF 상호 교차 검증 및 데이터 무결성 검사
@@ -2201,5 +2207,37 @@ CREATE TABLE user_sentence_status (
   - `scratch/profile_snapshot.py`: DB 내 321개 전체 시험에 대해 기존 하드코딩 로직과 `get_exam_profile` 결과값을 1:1 비교하여 **차이 0건 (완전 일치)** 확인
   - `python -m py_compile` 백엔드 전체 모듈 구문 검증 오류 0건 통과
   - `python -m pytest tests -q`: **158개 테스트 100% 통과** (기존 149개 + 신규 9개)
+
+### [2026-10-05 17:20] 업데이트 이력 (Commit ID: de141821)
+- **수정 내용**:
+  - **로드맵 3-D: 로깅과 오류 처리 통일 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **통합 로깅 모듈 구축 (`gichul/logging_config.py` 신규 & `gichul/paths.py`)**:
+      - `LOGS_DIR` 및 `APP_LOG_PATH` (`logs/app.log`) 상수 정의 및 `.gitignore` 등록 유지 확인
+      - `setup_logging(level)`: 표준 출력(`stdout`)과 `RotatingFileHandler` (5MB × 3개 회전, UTF-8 인코딩)를 단일 설정으로 초기화
+      - `get_logger(name)`: `gichul.<module_name>` 계층형 표준 로거 취득 인터페이스 제공
+      - 통일된 로그 포맷: `[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s`
+    - **FastAPI lifespan 및 전역 예외 처리기 등록 (`gichul/app.py`)**:
+      - `lifespan` 기동 시 `setup_logging()` 자동 호출
+      - `@app.exception_handler(Exception)` 글로벌 핸들러 추가: 미처리 예외 발생 시 `logger.critical`로 스택 트레이스를 기록하고, 프론트엔드 연동 규격에 맞춘 `{"success": False, "detail": str(exc)}` (HTTP 500) JSON 반환 (`HTTPException` 및 `RequestValidationError`는 기본 동작 보존)
+    - **전체 코어 모듈 `print` 제거 및 오류 처리 통일 (54개 print → logger, 43개 pass → logger.debug)**:
+      - `gichul/app.py`: 17개 `print` → `logger.info/warning/error`, 은닉형 `except Exception: pass` → `logger.debug`
+      - `gichul/database.py`: 8개 `print` → `logger`, 12개 `except Exception: pass` → `logger.debug(..., exc_info=True)` (마이그레이션 `sqlite3.OperationalError: pass` 정상 유지)
+      - `gichul/grammar_analyzer.py`: 8개 `print` → `logger`, 8개 `except Exception: pass` → `logger.debug`
+      - `gichul/hwp_parser.py`: 9개 `print` → `logger`, 10개 `except Exception: pass` → `logger.debug`
+      - `gichul/pdf_parser.py`: 6개 `print` → `logger`, 9개 `except Exception: pass` → `logger.debug`
+      - `gichul/listening_parser.py`: 3개 `print` → `logger`, 2개 `except Exception: pass` → `logger.debug`
+      - `gichul/validator.py`: 1개 `print` → `logger.error`, 1개 `except Exception as e: pass` 교체
+    - **단위 테스트 추가 (`tests/test_logging_config.py`)**:
+      - `logs/app.log` 파일 자동 생성 및 회전 핸들러 파일 기록 검증
+      - `get_logger` 계층 네이밍 검증
+      - FastAPI 글로벌 예외 핸들러 500 JSON 반환(`{"success": False, "detail": ...}`) 검증
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 3-D 적용 결과 및 진행 현황 갱신 (3-D ✅ 완료)
+      - `docs/README.md`: 계획서 목록 진행 상태 동기화 (다음: 3-E)
+- **검증 결과**:
+  - `python -c "import compileall; ..."`: `gichul` 및 `tests` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `python -m pytest tests -q`: **161개 단위 테스트 100% 통과** (기존 158개 + 신규 3개)
+  - `logs/app.log` 자동 생성 및 실시간 회전 로깅 정상 확인
+
 
 
