@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 다음: 4-C) |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 4-C ✅ 2026-10-05 · 다음: 4-D) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -586,6 +586,25 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - [validator.py:L80](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/gichul/validator.py#L80): 한쪽 본문이 없으면 `ratio=None`, `remarks="비교 불가 (HWP/PDF 중 한쪽 없음)"`으로 기록합니다.
 - `ratio < 0.9`이면 `remarks`에 `⚠ 검토 필요`를 붙입니다.
 - 프론트엔드 일치율 표시 부분이 `None`(null)을 받아도 깨지지 않도록 처리합니다 (적용할 때 grep으로 위치 확정).
+
+#### 4-C 적용 결과 (2026-10-05)
+- [MODIFY] `gichul/validator.py`:
+  - `cross_validate_and_merge`: HWP/PDF 본문 중 한쪽이라도 누락 시 `ratio = None`, `remarks = "비교 불가 (HWP/PDF 중 한쪽 없음)"` 부여 (과거 본문 부재 시 1.0(100%)으로 오기록되던 수치 왜곡 원천 차단)
+  - 상호 유사도 90% 미만(`ratio < 0.9`)인 경우 `remarks`에 `⚠ 검토 필요` 플래그 자동 부착 (`f"일치율: {ratio * 100:.1f}% ⚠ 검토 필요"`)
+- [MODIFY] `static/js/results-passage.js`:
+  - 지문 뷰어 `validationBadge` 렌더링 로직 강화: `p.validation_ratio == null` 또는 누락 시 `toFixed(1)` 호출 에러(TypeError)를 원천 방어하고 `"비교 불가"` 표기
+  - 시각적 상태 배지 스타일 분기: 정상(90% 이상)은 에메랄드 그린(`--success`), 90% 미만 및 `검토 필요`는 로즈 레드(`--danger`), `비교 불가`는 차분한 뮤트 그레이(`--text-muted`) 컬러 동적 적용
+- [NEW] `tests/test_validator.py`:
+  - `normalize_for_comparison` 특수 대시/따옴표/공백 정규화 검증
+  - `calculate_similarity` 완전 일치, 포맷팅 차이 허용, 빈 텍스트 처리 등 검증
+  - `cross_validate_and_merge` 5대 분기(90% 이상 정상, 90% 미만 경고 부착, HWP 누락, PDF 누락, 양쪽 누락) 검증
+  - `save_passage` / `get_passage` SQLite `validation_ratio = None` (NULL) 저장/복원 무결성 검증 (총 11개 단위 테스트 통과)
+- **검증**
+  - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `node -c static/js/results-passage.js`: 프론트엔드 구문 검사 오류 0건 통과
+  - `pytest tests -q`: **206개** 단위/통합 테스트 전체 통과 (기존 195개 + 신규 11개, 18.72s)
+- **사용자 수동 확인**: 지문 결과 화면 우측 상단 '🏷️ 추가 정보' 패널의 일치율 배지가 정상 표시되는지 확인
+
 
 ### 4-D. 저장소와 작업 폴더 정리 (보고서 3-17, 3-18) — ⚠ 사용자 결정 필요
 | 작업 | 위험 | 비고 |

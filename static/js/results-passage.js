@@ -2219,7 +2219,27 @@ function loadPassageDetail(p) {
   if (btnEditAnswer) btnEditAnswer.style.display = "inline-flex";
   if (answerEditForm) answerEditForm.style.display = "none";
   if (metaQuestionTitle) metaQuestionTitle.textContent = p.question_title || "-";
-  validationBadge.textContent = p.remarks || `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
+  if (validationBadge) {
+    if (p.remarks) {
+      validationBadge.textContent = p.remarks;
+    } else if (p.validation_ratio != null) {
+      validationBadge.textContent = `일치율 ${(p.validation_ratio * 100).toFixed(1)}%`;
+    } else {
+      validationBadge.textContent = "비교 불가";
+    }
+
+    const isWarning = (p.validation_ratio != null && p.validation_ratio < 0.9) ||
+                      (p.remarks && p.remarks.includes("검토 필요"));
+    const isNone = (p.validation_ratio == null && (!p.remarks || p.remarks.includes("비교 불가")));
+
+    if (isWarning) {
+      validationBadge.style.color = "var(--danger, #ef4444)";
+    } else if (isNone) {
+      validationBadge.style.color = "var(--text-muted, #64748b)";
+    } else {
+      validationBadge.style.color = "var(--success, #10b981)";
+    }
+  }
 
   // 20대 문제 유형 선택기 반영
   if (selectQuestionType) {

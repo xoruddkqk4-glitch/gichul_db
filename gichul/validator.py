@@ -81,7 +81,14 @@ def cross_validate_and_merge(
         pdf_text = pdf_item.get("passage_text", "") or pdf_body
 
         # 상호 유사도 계산 (순수 본문 기준)
-        ratio = calculate_similarity(hwp_body, pdf_body) if hwp_body and pdf_body else 1.0
+        if hwp_body and pdf_body:
+            ratio: Optional[float] = calculate_similarity(hwp_body, pdf_body)
+            remarks = f"일치율: {ratio * 100:.1f}%"
+            if ratio < 0.9:
+                remarks += " ⚠ 검토 필요"
+        else:
+            ratio = None
+            remarks = "비교 불가 (HWP/PDF 중 한쪽 없음)"
 
         # 지문 본문 결정 (HWP 서식/단락 우선, 없으면 PDF)
         chosen_text = hwp_text if hwp_text else pdf_text
@@ -132,7 +139,7 @@ def cross_validate_and_merge(
                 "explanation_text": exp_text,
                 "pdf_crop_image": crop_img,
                 "validation_ratio": ratio,
-                "remarks": f"일치율: {ratio*100:.1f}%"
+                "remarks": remarks
             },
             "sentences": sentence_records
         })
