@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 4-C ✅ 2026-10-05 · 다음: 4-D) |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 4-C ✅ 2026-10-05 · 4-D ✅ 2026-10-05 · 다음: 4-E) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -618,6 +618,33 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 > [!NOTE]
 > **`dist/`는 삭제하지 않습니다.** 처음에는 정리 대상으로 넣었지만, [install.bat](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/install.bat)의 `[4/4]` 단계가 `pip install --find-links=dist coqui-tts torchcodec`로 XTTS 오프라인 설치에 쓰고 있음을 확인했습니다. 폴더 이름을 용도에 맞게 바꾸고 싶다면 [루트 정리 C-3](2026-10-04_02_root-folder-cleanup.md#5-c단계--선택-항목-적용할-때-하나씩-결정) (`dist/` → `wheels/` + `install.bat` 수정)을 적용합니다.
 
+#### 4-D 적용 결과 (2026-10-05)
+- [NEW] [requirements-xtts.txt](file:///c:/Users/user/Desktop/web%20app/05-gichul_db/requirements-xtts.txt):
+  - 대용량 성우 음성 복제(XTTS-v2, PyTorch CUDA 12.4, `coqui-tts`, `torchcodec`, `soundfile`) 의존성을 일반 `requirements.txt`와 분리
+  - 오프라인 휠(`dist/`) 및 온라인 PyTorch 인덱스 설치 상세 가이드 주석 명시
+- [CLEAN] `scratch/jsmod/node_modules`:
+  - Git 미추적 임시 폴더 22.3 MB 삭제 완료 (디스크 용량 회수)
+- [DECISION] `static/captures/` (18,137개 이미지, 2.35 GB) 관리 방안:
+  - 사용자 결정에 따라 **현행 유지(Git 추적 및 GitHub 자동 클라우드 백업 유지)** 확정
+  - 크롭 이미지 유실 위험 원천 배제, 별도 외장 백업 및 강제 푸시(`git filter-repo`) 리스크 없음
+- [RETAIN] `dist/` 오프라인 휠 보존:
+  - `install.bat`의 4단계 오프라인 설치 지원 유지를 위해 보존
+- [METRIC] Git 저장소 오브젝트 현황 측정 (`git count-objects -vH`):
+  ```text
+  count: 320
+  size: 3.48 MiB
+  in-pack: 24151
+  packs: 2
+  size-pack: 2.56 GiB
+  prune-packable: 0
+  garbage: 0
+  size-garbage: 0 bytes
+  ```
+- **검증**
+  - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `pytest tests -q`: **206개** 단위/통합 테스트 전체 통과 (8.23s)
+- **사용자 수동 확인**: 없음 (저장소 패키지 분리 및 로컬 임시 파일 정리)
+
 ### 4-E. 프론트엔드 분리 (보고서 3-19) — 여러 번에 나눠 진행
 1. `style.css`를 기능별 파일로 나눕니다 (`base.css`, `search.css`, `viewer.css`, `grammar.css`, `upload.css`, `modal.css`). `index.html`에 `<link>` 여러 개로 연결합니다.
 2. `index.html`의 인라인 `style=""` 367개를 화면 영역별로 클래스로 옮깁니다. 한 번에 한 영역(헤더 → 검색 → 뷰어 → 모달)씩 진행합니다.
@@ -634,8 +661,9 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 ## 결정 필요 사항 요약
 
 > [!CAUTION]
-> - **4-D 저장소 이미지 정리**: 추적 해제만 할지, 히스토리까지 지울지(강제 푸시)
+> - ~~**4-D 저장소 이미지 정리**~~ → **결정됨 (2026-10-05)**: Git 추적 및 GitHub 자동 백업 현행 유지 (이미지 유실 위험 방지)
 > - **4-B API 키 keyring 저장**: 적용할지 여부
 > - ~~**2-5 XTTS 결과 형식**~~ → **결정됨 (2026-10-04)**: `lameenc`로 MP3 통일, 기본 엔진 XTTS 유지
 
 위 사항은 해당 단계를 `/apply`할 때 다시 확인합니다. 그 외에는 계획서대로 진행합니다.
+

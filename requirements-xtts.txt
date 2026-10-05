@@ -1,0 +1,24 @@
+# -*- coding: utf-8 -*-
+# 05-gichul_db 수능 성우 음성 복제(XTTS-v2) 선택적 고성능 의존성
+# NVIDIA GPU (CUDA 12.4) 권장
+#
+# 설치 방법:
+#   1. PyTorch (CUDA 12.4 가속 버전):
+#      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+#
+#   2. XTTS 및 휠 패키지:
+#      (A) dist/ 폴더가 있는 경우 (오프라인 초고속 설치, C++ 컴파일 불필요):
+#          pip install --find-links=dist coqui-tts torchcodec
+#      (B) 일반 온라인 설치:
+#          pip install coqui-tts torchcodec
+#
+# 참고:
+#   - 기본 무료 고품질 음성 합성(edge-tts) 및 lameenc(MP3 인코딩)는 requirements.txt에 포함되어 있어 즉시 동작합니다.
+#   - XTTS-v2는 로컬 성우 음성 복제(클로닝) 시에만 선택적으로 사용됩니다.
+
+torch>=2.4.0
+torchvision>=0.19.0
+torchaudio>=2.4.0
+coqui-tts>=0.24.0
+torchcodec>=0.1.0; sys_platform == "win32"
+soundfile>=0.12.1
