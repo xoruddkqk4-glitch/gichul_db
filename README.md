@@ -2316,6 +2316,29 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/utils.js static/js/dom.js static/js/upload.js`: 프론트엔드 자바스크립트 문법 검사 오류 0건 통과
   - `python -m pytest tests -q`: **195개 단위/통합 테스트 100% 통과** (기존 179개 + 신규 16개, 15.12s)
 
+### [2026-10-05 18:50] 업데이트 이력 (Commit ID: 6a3c1949)
+- **수정 내용**:
+  - **로드맵 4-C: 교차검증 수치 바로잡기 (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **본문 부재 시 일치율 1.0(100%) 왜곡 방지 및 90% 미만 경고 플래그 (`gichul/validator.py`)**:
+      - `cross_validate_and_merge`: HWP/PDF 본문 중 한쪽이라도 누락 시 `ratio = None`, `remarks = "비교 불가 (HWP/PDF 중 한쪽 없음)"` 부여 (과거 본문 부재 시 1.0(100%)으로 오기록되던 수치 왜곡 원천 차단)
+      - 상호 유사도 90% 미만(`ratio < 0.9`)인 경우 `remarks`에 `⚠ 검토 필요` 플래그 자동 부착 (`f"일치율: {ratio * 100:.1f}% ⚠ 검토 필요"`)
+    - **프론트엔드 지문 뷰어 일치율 배지 방어 코드 및 시각 피드백 강화 (`static/js/results-passage.js`)**:
+      - 지문 뷰어 `validationBadge` 렌더링 로직 강화: `p.validation_ratio == null` 또는 누락 시 `toFixed(1)` 호출 에러(TypeError)를 원천 방어하고 `"비교 불가"` 표기
+      - 시각적 상태 배지 스타일 분기: 정상(90% 이상)은 에메랄드 그린(`--success`), 90% 미만 및 `검토 필요`는 로즈 레드(`--danger`), `비교 불가`는 차분한 뮤트 그레이(`--text-muted`) 컬러 동적 적용
+    - **교차 검증 전용 단위 테스트 스위트 구축 (`tests/test_validator.py`)**:
+      - `normalize_for_comparison` 특수 대시/따옴표/공백 정규화 검증
+      - `calculate_similarity` 완전 일치, 포맷팅 차이 허용, 빈 텍스트 처리 등 검증
+      - `cross_validate_and_merge` 5대 분기(90% 이상 정상, 90% 미만 경고 부착, HWP 누락, PDF 누락, 양쪽 누락) 검증
+      - `save_passage` / `get_passage` SQLite `validation_ratio = None` (NULL) 저장/복원 무결성 검증 (총 11개 단위 테스트 추가)
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 4-C 적용 결과 기록 및 진행 현황(4-A ✅ · 4-B ✅ · 4-C ✅ · 다음: 4-D) 갱신
+      - `docs/README.md`: 계획서 목록 진행 현황 동기화
+- **검증 결과**:
+  - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `node -c static/js/results-passage.js`: 프론트엔드 자바스크립트 문법 검사 오류 0건 통과
+  - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (기존 195개 + 신규 11개, 18.72s)
+
+
 
 
 

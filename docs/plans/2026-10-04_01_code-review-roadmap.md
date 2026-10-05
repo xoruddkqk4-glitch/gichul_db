@@ -587,7 +587,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - `ratio < 0.9`이면 `remarks`에 `⚠ 검토 필요`를 붙입니다.
 - 프론트엔드 일치율 표시 부분이 `None`(null)을 받아도 깨지지 않도록 처리합니다 (적용할 때 grep으로 위치 확정).
 
-#### 4-C 적용 결과 (2026-10-05)
+#### 4-C 적용 결과 (2026-10-05, 커밋 `6a3c1949`)
 - [MODIFY] `gichul/validator.py`:
   - `cross_validate_and_merge`: HWP/PDF 본문 중 한쪽이라도 누락 시 `ratio = None`, `remarks = "비교 불가 (HWP/PDF 중 한쪽 없음)"` 부여 (과거 본문 부재 시 1.0(100%)으로 오기록되던 수치 왜곡 원천 차단)
   - 상호 유사도 90% 미만(`ratio < 0.9`)인 경우 `remarks`에 `⚠ 검토 필요` 플래그 자동 부착 (`f"일치율: {ratio * 100:.1f}% ⚠ 검토 필요"`)
