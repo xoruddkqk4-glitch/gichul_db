@@ -2268,6 +2268,29 @@ CREATE TABLE user_sentence_status (
   - `compileall`: `gichul/` 및 `tests/` 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
   - `pytest tests -q`: **165개 단위 테스트 100% 통과** (기존 161개 + 신규 4개)
 
+### [2026-10-05 18:15] 업데이트 이력 (Commit ID: 4d4553a8)
+- **수정 내용**:
+  - **로드맵 4-A: 테스트 확충 (단위/스모크 테스트 14개 추가 및 DB 격리) (`docs/plans/2026-10-04_01_code-review-roadmap.md`)**:
+    - **런타임 DB 동적 경로 지원 및 FTS 트리거 결함 보강 (`gichul/database.py`)**:
+      - `DB_PATH = os.environ.get("GICHUL_DB_PATH") or paths.DB_PATH` 및 `get_db_path()` 구현으로 테스트 시 임시 SQLite DB(`tmp_path`) 동적 주입 및 운영 DB(`gichul.db`) 격리 보장
+      - `init_db()`에 `passages_fts` 테이블의 `AFTER INSERT` (`trg_passages_ai`) 및 `AFTER DELETE` (`trg_passages_ad`) 동기화 트리거 추가 (지문 등록 즉시 FTS5 전문 검색 인덱스 반영)
+    - **테스트 의존성 및 픽스처 구축 (`requirements.txt`, `tests/conftest.py`)**:
+      - `requirements.txt` `# 개발/테스트` 섹션에 `httpx>=0.28.1` 추가
+      - `tests/conftest.py`에 `tmp_db` (격리된 임시 SQLite DB 생성 및 스키마 초기화) 및 `isolated_client` (격리 DB 기반 FastAPI `TestClient`) 픽스처 신설
+    - **핵심 단위/스모크 테스트 3종 추가 (총 14개 신규 테스트 전원 통과)**:
+      - `tests/test_db_search.py` (5개): `exam_id`/`sentence_ids` 필터링 검증, FTS5 특수문자 에러 시 LIKE 폴백 검증, `whole_word` 온전한 단어 일치 검증, 빈 쿼리 처리
+      - `tests/test_db_sentences.py` (4개): `replace_passage_sentences` 빈 목록 보존, 삽입/삭제 FK 연쇄 처리, 문장 텍스트 변경 시 AI 어법 삭제 및 사용자 수동 어법 보존, 동일 텍스트 재업로드 시 AI 어법 유지 검증
+      - `tests/test_api_smoke.py` (5개): 태그 변경 시 캐시 무효화 및 검색 결과 즉각 반영, 미등록 시험지 듣기 ZIP 404, AI 키 미등록 배치 분석 400, 미등록 문장 분석 404, 정적 JS `no-cache` 헤더 검증
+    - **`scratch/` 폴더 165개 스크립트 회귀 가치 검토**:
+      - 20개 검증 스크립트 정밀 분석 완료. 40번 요약문 빈칸 채우기 검증 로직은 이미 `tests/test_refill_blanks.py` 및 `tests/test_text_utils.py`에 정식 테스트로 이관/보존되어 있음을 확인
+    - **문서 동기화**:
+      - `docs/plans/2026-10-04_01_code-review-roadmap.md`: 4단계 착수 및 4-A 적용 결과 기록
+      - `docs/README.md`: 계획서 목록 진행 현황 동기화 (4단계 🔄 4-A ✅ · 다음: 4-B)
+- **검증 결과**:
+  - `python -m compileall gichul tests`: 전체 파이썬 파일 바이트코드 컴파일 오류 0건 통과
+  - `python -m pytest tests -q`: **179개 단위/통합 테스트 100% 통과** (기존 165개 + 신규 14개, 18.93s)
+
+
 
 
 

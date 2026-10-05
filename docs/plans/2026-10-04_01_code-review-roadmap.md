@@ -533,7 +533,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
   | `tests/test_exam_profiles.py` | 2008/2012-06/2013/2013-09/2020 프로파일 기대값 |
 - `scratch/`의 116개 스크립트 중 회귀 가치가 있는 것(`test_smart_resolver`, `test_dedup_algorithm` 등)은 검토해서 옮길지 정하고, 목록만 보고합니다.
 
-#### 4-A 적용 결과 (2026-10-05)
+#### 4-A 적용 결과 (2026-10-05, 커밋 `4d4553a8`)
 - [MODIFY] `gichul/database.py`:
   - `DB_PATH = os.environ.get("GICHUL_DB_PATH") or paths.DB_PATH` 및 `get_db_path()` 구현: 테스트 시 격리된 임시 DB 경로로 동적 전환 지원
   - `init_db()` 내 `passages_fts` 테이블의 `AFTER INSERT` (`trg_passages_ai`) 및 `AFTER DELETE` (`trg_passages_ad`) 동기화 트리거 보강 (신규 지문 FTS 즉각 동기화)
