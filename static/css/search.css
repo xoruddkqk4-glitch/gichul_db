@@ -205,10 +205,14 @@
   box-sizing: border-box;
 }
 
-.filter-bar .btn-breadcrumb-reset {
+.filter-bar .btn-breadcrumb-reset,
+.results-filters-group .btn-breadcrumb-reset {
   display: inline-flex;
   transition: opacity 0.2s ease, visibility 0.2s ease;
   white-space: nowrap;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* 결과창 필터 버튼 고정 너비 */
@@ -1012,5 +1016,27 @@
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
+
+.empty-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.guidance-sample-tags {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.guidance-sample-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  align-self: center;
+}
+
 
 

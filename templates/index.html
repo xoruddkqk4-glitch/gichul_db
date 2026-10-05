@@ -170,7 +170,7 @@
           </select>
 
           <!-- 홈 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 예약) -->
-          <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeFilters" style="visibility: hidden; opacity: 0; pointer-events: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
+          <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeFilters" title="모든 검색 조건(필터 및 검색어) 초기화">
             ↺ 검색 조건 초기화
           </button>
 
@@ -336,7 +336,7 @@
             </select>
 
             <!-- 결과창 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 예약) -->
-            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters" style="visibility: hidden; opacity: 0; pointer-events: none;" title="모든 검색 조건(필터 및 검색어) 초기화">
+            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters" title="모든 검색 조건(필터 및 검색어) 초기화">
               ↺ 검색 조건 초기화
             </button>
 
@@ -393,7 +393,7 @@
         <div class="empty-icon">🔍</div>
         <h3 class="empty-title">일치하는 검색 결과가 없습니다</h3>
         <p class="empty-desc">검색어나 필터 조건(학년, 연도, 월, 시험구분, 문제유형)을 변경하여 다시 시도해 보세요.</p>
-        <div class="empty-actions" style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 1rem;">
+        <div class="empty-actions">
           <button type="button" class="btn btn-secondary btn-sm" id="btnEmptyResetFilters">↺ 검색 조건 초기화</button>
           <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBackToSearch">← 검색 화면으로 돌아가기</button>
         </div>
@@ -407,8 +407,8 @@
           상단 검색창에 영어 단어, 구문, 출처(예: <code>[고3-2024년...]</code>)를 입력하거나,<br>
           어법 필터(어법 대분류, 세부 어법)를 선택하여 원하는 기출 문장들을 모아볼 수 있습니다.
         </p>
-        <div class="guidance-sample-tags" style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 1rem;">
-          <span style="font-size: 0.8rem; color: var(--text-muted); align-self: center;">추천 검색어:</span>
+        <div class="guidance-sample-tags">
+          <span class="guidance-sample-label">추천 검색어:</span>
           <button type="button" class="btn-sample-keyword" data-keyword="climate">climate</button>
           <button type="button" class="btn-sample-keyword" data-keyword="technology">technology</button>
           <button type="button" class="btn-sample-keyword" data-keyword="however">however</button>
@@ -461,13 +461,13 @@
         <main class="grid-2x2" id="grid2x2">
           
           <!-- [좌측 상단]: PDF 문항 영역 자동 크롭 고화질 인쇄 이미지 (듣기 시 문제+대본 상하 수직 배열) -->
-          <section class="panel-card" style="grid-column: 1; grid-row: 1;">
+          <section class="panel-card panel-top-left">
             <div class="panel-header">
               <div class="panel-header-left">
                 <span class="panel-title" id="panelTitleTopLeft">🖼️ PDF 문항 캡처 이미지</span>
                 <span class="badge-source" id="badgeTopLeftSource">고화질 원본</span>
               </div>
-              <div class="panel-header-actions" id="panelActionsTopLeft" style="display: flex; gap: 0.5rem; align-items: center;">
+              <div class="panel-header-actions" id="panelActionsTopLeft">
                 <button type="button" class="btn btn-secondary btn-sm" id="btnRecapturePdf" title="원본 PDF 파일에서 이 문항 영역을 다시 캡처하고 형광펜을 재생성합니다">
                   🔄 다시 캡처
                 </button>
@@ -484,7 +484,7 @@
           </section>
 
           <!-- [우측 상단]: TXT 형식 변환 영문 지문 본문 / 듣기 스크립트 & ElevenLabs TTS -->
-          <section class="panel-card" style="grid-column: 2; grid-row: 1;">
+          <section class="panel-card panel-top-right">
             <div class="panel-header">
               <div class="panel-header-left">
                 <span class="panel-title" id="panelTitleTopRight">📝 TXT 지문 본문 텍스트</span>
@@ -495,7 +495,7 @@
                   <span class="tts-btn-label">대본 복사</span>
                 </button>
               </div>
-              <div id="panelActionsTopRight" style="display: flex; gap: 0.5rem; align-items: center;">
+              <div class="panel-header-actions" id="panelActionsTopRight">
                 <button class="btn btn-primary btn-sm" id="btnCopyPassage">📋 지문 전체 복사</button>
                 <div class="listening-action-group tts-toolbar" id="listeningTopRightActions" style="display: none;">
                   <!-- 1. 수능 성우(XTTS) vs Edge-TTS 인라인 1행 세그먼트 스위처 -->
@@ -543,22 +543,22 @@
           </section>
 
           <!-- [좌측 하단]: HWP 파일 정답 번호 및 해설 / 듣기 FELS 교사용 텍스트 -->
-          <section class="panel-card" style="grid-column: 1; grid-row: 2;">
+          <section class="panel-card panel-bottom-left">
             <div class="panel-header">
               <div class="panel-header-left">
                 <span class="panel-title" id="panelTitleBottomLeft">📘 HWP 정답 및 해설</span>
                 <span class="badge-source" id="badgeBottomLeftSource">공식 해설지</span>
               </div>
-              <div id="panelActionsBottomLeft" style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: nowrap;">
+              <div class="panel-bottom-left-actions" id="panelActionsBottomLeft">
                 <button class="btn btn-secondary btn-sm" id="btnCopyExplanation">📋 해설 복사</button>
-                <div class="listening-action-group" id="listeningBottomLeftActions" style="display: none; gap: 0.4rem; align-items: center; flex-wrap: nowrap;">
-                  <button type="button" class="btn btn-outline-success btn-sm" id="btnToggleFelsAnswer" title="학생용 빈칸 [  ] ↔ 교사용 정답 [단어] 화면 보기 전환" style="white-space: nowrap;">
+                <div class="listening-action-group listening-bottom-left-actions" id="listeningBottomLeftActions" style="display: none;">
+                  <button type="button" class="btn btn-outline-success btn-sm btn-fels-action" id="btnToggleFelsAnswer" title="학생용 빈칸 [  ] ↔ 교사용 정답 [단어] 화면 보기 전환">
                     👁️ 정답 보기
                   </button>
-                  <button type="button" class="btn btn-primary btn-sm" id="btnCopyFelsBlank" title="[ ] 안의 단어를 빈칸으로 만든 학생용 학습지 텍스트 복사 (최장 단어 글자수 공백 일괄 적용)" style="white-space: nowrap;">
+                  <button type="button" class="btn btn-primary btn-sm btn-fels-action" id="btnCopyFelsBlank" title="[ ] 안의 단어를 빈칸으로 만든 학생용 학습지 텍스트 복사 (최장 단어 글자수 공백 일괄 적용)">
                     📝 FELS 빈칸 복사
                   </button>
-                  <button type="button" class="btn btn-outline-primary btn-sm" id="btnCopyFelsAnswer" title="[단어]가 표시된 교사용 정답 텍스트 복사" style="white-space: nowrap;">
+                  <button type="button" class="btn btn-outline-primary btn-sm btn-fels-action" id="btnCopyFelsAnswer" title="[단어]가 표시된 교사용 정답 텍스트 복사">
                     🔑 FELS 정답 복사
                   </button>
                 </div>
@@ -570,18 +570,18 @@
           </section>
 
           <!-- [우측 하단]: 지문 메타 정보 + 실시간 태그 관리 -->
-          <section class="panel-card" style="grid-column: 2; grid-row: 2;">
+          <section class="panel-card panel-bottom-right">
             <div class="panel-header">
               <div class="panel-header-left">
                 <span class="panel-title">🏷️ 추가 정보</span>
               </div>
-              <span id="validationBadge" style="font-size: 0.8rem; font-weight: 700; color: var(--success);">일치율 100%</span>
+              <span id="validationBadge">일치율 100%</span>
             </div>
             <div class="panel-content tag-manager-box">
               <div class="meta-info-row">
                 <div class="meta-item">
                   <span class="meta-label">지문 식별자</span>
-                  <span class="meta-val" id="metaPassageId" style="color: var(--primary);">-</span>
+                  <span class="meta-val meta-val-primary" id="metaPassageId">-</span>
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">문항 번호</span>
@@ -589,13 +589,13 @@
                 </div>
                 <div class="meta-item">
                   <span class="meta-label">문제 유형</span>
-                  <span class="meta-val" id="metaQuestionType" style="color: #4338ca; font-weight: 700;">-</span>
+                  <span class="meta-val meta-val-type" id="metaQuestionType">-</span>
                 </div>
                 <div class="meta-item meta-item-answer">
                   <span class="meta-label">정답</span>
                   <div class="meta-answer-container">
                     <div class="meta-answer-main-row">
-                      <span class="meta-val" id="metaAnswer" style="color: #dc2626; font-weight: 700;">-</span>
+                      <span class="meta-val meta-val-answer" id="metaAnswer">-</span>
                       <span class="answer-status-badge" id="metaAnswerStatus" style="display: none;" title="정답 출처 및 검증 상태"></span>
                     </div>
                     <div class="meta-answer-action-row">
@@ -639,7 +639,7 @@
 
                 <!-- 미등록 시 업로드 안내 박스 -->
                 <div class="choice-rates-empty" id="choiceRatesEmpty" style="display: none;">
-                  <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                  <div class="rates-empty-hint">
                     <span>📊 정답률 및 선지 선택률 미등록</span>
                   </div>
                   <button type="button" class="btn-file-chip chip-rate-needed" id="btnUploadRateFromViewer">
@@ -649,7 +649,7 @@
               </div>
 
               <!-- 등록된 태그 목록 (삭제 가능 배지) -->
-              <div class="meta-item" style="margin-top: 0.85rem;">
+              <div class="meta-item meta-item-spacing">
                 <span class="meta-label">등록된 태그</span>
                 <div class="tags-list-container" id="passageTagsList">
                   <!-- 태그 배지 동적 렌더링 -->
@@ -705,21 +705,21 @@
       <div class="sentence-view-container" id="sentenceViewContainer" style="display: none;">
         <div class="sentence-header-bar">
           <div>
-            <span style="font-weight: 700; color: var(--secondary);">
-              검색 결과: <strong id="sentenceMatchCount" style="color: var(--primary);">0</strong>개의 문장
+            <span class="sentence-match-label">
+              검색 결과: <strong id="sentenceMatchCount">0</strong>개의 문장
             </span>
-            <span style="font-size: 0.82rem; color: var(--text-muted); margin-left: 0.75rem;">
+            <span class="sentence-match-sub">
               ※ [복사] 버튼 클릭 시 출처 식별자와 함께 복사되어 워드/한글/엑셀로 즉시 붙여넣기(Ctrl+V) 가능합니다.
             </span>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="sentence-header-actions">
             <button type="button" class="btn btn-warning btn-sm" id="btnBatchAnalyzeStarred" title="별표(⭐) 표시된 중요 문장들을 일괄로 AI 어법 분석합니다">
               ⭐ 중요 문장 일괄 어법 분석
             </button>
             <button type="button" class="btn btn-primary btn-sm btn-batch-all" id="btnBatchAnalyzeAll" title="현재 검색/표시된 모든 문장들을 일괄로 AI 어법 분석합니다">
               🤖 모든 문장 일괄 어법 분석
             </button>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnSentenceBackToPassage" style="display: inline-flex; align-items: center; gap: 4px; font-weight: 700;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSentenceBackToPassage">
               🔙 지문 결과창으로 돌아가기
             </button>
           </div>
@@ -758,15 +758,15 @@
   <div class="modal-backdrop" id="uploadModal">
     <div class="modal-content upload-modal-content">
       <div class="modal-header">
-        <div style="flex: 1;">
-          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
             <span>📚 시험지 업로드 및 데이터베이스 관리</span>
           </h3>
-          <p class="modal-subtitle" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0;">
+          <p class="modal-subtitle">
             모의고사 세트를 일괄 업로드하거나, 기존 저장된 시험지 데이터를 선택하여 삭제·관리합니다.
           </p>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="modal-header-actions">
           <button type="button" class="btn-modal-fullscreen" id="btnToggleUploadFullscreen" title="전체 화면으로 확대" aria-label="전체 화면 토글">⛶</button>
           <button class="modal-close" id="btnCloseUploadModal" title="닫기">&times;</button>
         </div>
@@ -790,7 +790,7 @@
 
       <!-- 탭 1: 스마트 일괄 업로드 (복수 세트) -->
       <div class="upload-tab-pane active" id="paneBatchUpload">
-        <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+        <div class="modal-body">
           <div class="batch-upload-dropzone" id="batchDropzone">
             <div class="dropzone-icon">📁</div>
             <div class="dropzone-title">복수 모의고사 파일들을 이곳에 드래그&드롭하세요</div>
@@ -803,7 +803,7 @@
                 • <strong>출제기관</strong>: 파일명에서 학년·연도·월 자동 추출 (3학년 6·9·11월은 평가원, 그 외는 교육청)
               </div>
             </div>
-            <label class="btn btn-secondary btn-sm dropzone-btn" style="cursor: pointer; margin-top: 0.75rem;">
+            <label class="btn btn-secondary btn-sm dropzone-btn cursor-pointer">
               📂 파일 선택하기 (PDF & HWP & 대본PDF & 정답표 & 정답률CSV 다중 선택)
               <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg,.csv,.json" multiple style="display: none;">
             </label>
@@ -811,20 +811,20 @@
 
           <!-- 감지된 세트 프리뷰 테이블 -->
           <div class="batch-preview-container" id="batchPreviewContainer" style="display: none; margin-top: 1rem;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-              <strong style="font-size: 0.88rem; color: #1e293b;">
-                📋 감지된 시험지 세트 (<span id="batchSetsCount" style="color: var(--primary);">0</span>세트)
+            <div class="flex-between" style="margin-bottom: 0.5rem;">
+              <strong>
+                📋 감지된 시험지 세트 (<span id="batchSetsCount" class="text-primary">0</span>세트)
               </strong>
-              <button type="button" class="btn btn-secondary btn-sm" id="btnClearBatchFiles" style="padding: 2px 8px; font-size: 0.78rem;">
+              <button type="button" class="btn btn-secondary btn-xs" id="btnClearBatchFiles">
                 ✕ 목록 비우기
               </button>
             </div>
-            <div class="batch-sets-table-wrapper" style="overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
-              <table class="batch-sets-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
+            <div class="batch-sets-table-wrapper">
+              <table class="batch-sets-table">
                 <thead>
-                  <tr style="background: #f8fafc; border-bottom: 1px solid var(--border);">
-                    <th style="padding: 8px 12px; white-space: nowrap;">시험지 식별자</th>
-                    <th class="sortable-th" data-table="batch" data-sort="grade" style="width: 76px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <tr>
+                    <th>시험지 식별자</th>
+                    <th class="sortable-th" data-table="batch" data-sort="grade">
                       <div class="th-sort-label" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></div>
                       <select class="th-filter-select" id="filterBatchGrade" title="학년 필터">
                         <option value="all">전체</option>
@@ -833,25 +833,25 @@
                         <option value="고1">고1</option>
                       </select>
                     </th>
-                    <th class="sortable-th" data-table="batch" data-sort="year" style="width: 84px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                    <th class="sortable-th" data-table="batch" data-sort="year">
                       <div class="th-sort-label" title="클릭하여 년도별 정렬">년도 <span class="sort-icon">⇅</span></div>
                       <select class="th-filter-select" id="filterBatchYear" title="년도 필터">
                         <option value="all">전체</option>
                       </select>
                     </th>
-                    <th class="sortable-th" data-table="batch" data-sort="month" style="width: 72px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                    <th class="sortable-th" data-table="batch" data-sort="month">
                       <div class="th-sort-label" title="클릭하여 월별 정렬">월 <span class="sort-icon">⇅</span></div>
                       <select class="th-filter-select" id="filterBatchMonth" title="월 필터">
                         <option value="all">전체</option>
                       </select>
                     </th>
-                    <th style="padding: 8px 10px; white-space: nowrap;">출제기관</th>
-                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📄 문제지 (PDF)</th>
-                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📝 해설지 (HWP)</th>
-                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📜 대본/해설 (PDF)</th>
-                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">🖼️ 정답표 (JSON / 이미지)</th>
-                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">📊 정답률 (CSV)</th>
-                    <th style="padding: 8px 10px; text-align: center; white-space: nowrap;">상태</th>
+                    <th>출제기관</th>
+                    <th class="col-center">📄 문제지 (PDF)</th>
+                    <th class="col-center">📝 해설지 (HWP)</th>
+                    <th class="col-center">📜 대본/해설 (PDF)</th>
+                    <th class="col-center">🖼️ 정답표 (JSON / 이미지)</th>
+                    <th class="col-center">📊 정답률 (CSV)</th>
+                    <th class="col-center">상태</th>
                   </tr>
                 </thead>
                 <tbody id="batchSetsTableBody">
@@ -862,21 +862,21 @@
           </div>
 
           <!-- 일괄 업로드 진행 상태 박스 -->
-          <div class="batch-progress-box" id="batchProgressBox" style="display: none; margin-top: 1rem; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 6px;">
-              <span id="batchProgressTitle" style="font-weight: 600; color: #1e293b;">일괄 처리 중...</span>
-              <span id="batchProgressCount" style="font-weight: 700; color: var(--primary);">0 / 0</span>
+          <div class="batch-progress-box" id="batchProgressBox" style="display: none;">
+            <div class="batch-progress-header">
+              <span id="batchProgressTitle">일괄 처리 중...</span>
+              <span id="batchProgressCount" class="text-primary">0 / 0</span>
             </div>
-            <div class="progress-bar-bg" style="height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;">
-              <div class="progress-bar-fill" id="batchProgressBarFill" style="height: 100%; width: 0%; background: var(--primary); transition: width 0.3s ease;"></div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="batchProgressBarFill" style="width: 0%;"></div>
             </div>
-            <div id="batchProgressSubtext" style="font-size: 0.76rem; color: var(--text-muted); margin-top: 6px;">
+            <div class="batch-progress-subtext" id="batchProgressSubtext">
               대기 중...
             </div>
           </div>
         </div>
 
-        <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
+        <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="btnCancelBatchModal">취소</button>
           <button type="button" class="btn btn-primary" id="btnStartBatchUpload" disabled>
             🚀 일괄 업로드 및 상호 검증 시작
@@ -886,11 +886,11 @@
 
       <!-- 탭 2: 원본 파일 현황 및 개별 업로드 (신규 전용 탭) -->
       <div class="upload-tab-pane" id="paneFilesStatus" style="display: none;">
-        <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+        <div class="modal-body">
           <!-- 상단 통계 카드 & 필터 바 -->
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 10px;">
-            <div class="files-summary-badges" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-              <span class="badge-files-stat" id="statBadgeTotalExams" style="background: #f1f5f9; color: #334155; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 0.8rem; border: 1px solid #cbd5e1;">
+          <div class="files-summary-bar">
+            <div class="files-summary-badges">
+              <span class="badge-files-stat" id="statBadgeTotalExams">
                 📚 등록 모의고사: <strong id="filesTotalExamsCount">0</strong>세트
               </span>
               <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgePdf" title="클릭하여 문제지(PDF) 미등록 시험지만 모아보기">
@@ -916,40 +916,40 @@
             <div style="display: flex; gap: 8px; align-items: center; position: relative;">
               <!-- 미등록 파일 다중 선택 드롭다운 필터 컨테이너 -->
               <div class="dropdown-filter-container" id="missingFilterContainer" style="position: relative;">
-                <button type="button" class="btn-filter-trigger" id="btnTriggerMissingFilter" style="font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; gap: 6px; cursor: pointer; background: #fff1f2; color: #be123c; padding: 4px 10px; border-radius: 6px; border: 1px solid #fecdd3; user-select: none;">
+                <button type="button" class="btn-filter-trigger" id="btnTriggerMissingFilter">
                   <span>⚠️ 미등록 파일 필터</span>
                   <span class="active-filter-badge" id="badgeMissingFilterCount" style="display: none; background: #be123c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 10px; font-weight: 700;">0</span>
                   <span class="arrow-icon" style="font-size: 0.7rem;">▾</span>
                 </button>
-                <div class="dropdown-filter-menu" id="menuMissingFilter" style="display: none; position: absolute; right: 0; top: calc(100% + 4px); background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1); width: 230px; z-index: 100; overflow: hidden;">
-                  <div style="padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.78rem; font-weight: 700; color: #334155;">누락 파일 다중 선택</span>
-                    <div style="display: flex; gap: 6px;">
-                      <button type="button" id="btnSelectAllMissing" style="background: none; border: none; font-size: 0.72rem; color: #2563eb; cursor: pointer; padding: 0;">전체</button>
-                      <span style="color: #cbd5e1; font-size: 0.72rem;">|</span>
-                      <button type="button" id="btnClearAllMissing" style="background: none; border: none; font-size: 0.72rem; color: #dc2626; cursor: pointer; padding: 0;">초기화</button>
+                <div class="dropdown-filter-menu" id="menuMissingFilter" style="display: none;">
+                  <div class="missing-filter-header">
+                    <span class="missing-filter-title">누락 파일 다중 선택</span>
+                    <div class="missing-filter-actions">
+                      <button type="button" id="btnSelectAllMissing" class="btn-missing-text text-blue">전체</button>
+                      <span class="text-muted">|</span>
+                      <button type="button" id="btnClearAllMissing" class="btn-missing-text text-danger">초기화</button>
                     </div>
                   </div>
-                  <div style="padding: 6px 10px; display: flex; flex-direction: column; gap: 4px;">
-                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
-                      <input type="checkbox" class="chk-missing-type" value="pdf" style="cursor: pointer;"> 📄 문제지 (PDF)
+                  <div class="missing-filter-body">
+                    <label class="missing-chk-label">
+                      <input type="checkbox" class="chk-missing-type" value="pdf"> 📄 문제지 (PDF)
                     </label>
-                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
-                      <input type="checkbox" class="chk-missing-type" value="hwp" style="cursor: pointer;"> 📝 해설지 (HWP)
+                    <label class="missing-chk-label">
+                      <input type="checkbox" class="chk-missing-type" value="hwp"> 📝 해설지 (HWP)
                     </label>
-                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
-                      <input type="checkbox" class="chk-missing-type" value="script" style="cursor: pointer;"> 📜 대본/해설 (PDF)
+                    <label class="missing-chk-label">
+                      <input type="checkbox" class="chk-missing-type" value="script"> 📜 대본/해설 (PDF)
                     </label>
-                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
-                      <input type="checkbox" class="chk-missing-type" value="ans" style="cursor: pointer;"> 🖼️ 정답표 (JSON/이미지)
+                    <label class="missing-chk-label">
+                      <input type="checkbox" class="chk-missing-type" value="ans"> 🖼️ 정답표 (JSON/이미지)
                     </label>
-                    <label class="missing-chk-label" style="display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 0.8rem; color: #334155; cursor: pointer; border-radius: 4px;">
-                      <input type="checkbox" class="chk-missing-type" value="csv" style="cursor: pointer;"> 📊 정답률 (CSV)
+                    <label class="missing-chk-label">
+                      <input type="checkbox" class="chk-missing-type" value="csv"> 📊 정답률 (CSV)
                     </label>
                   </div>
-                  <div style="padding: 6px 10px; background: #f8fafc; border-top: 1px solid #e2e8f0; font-size: 0.73rem; color: #64748b;">
-                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                      <input type="checkbox" id="chkMissingMatchAll" style="cursor: pointer;">
+                  <div class="missing-filter-footer">
+                    <label class="missing-chk-label">
+                      <input type="checkbox" id="chkMissingMatchAll">
                       선택 파일 동시 결측만 (AND)
                     </label>
                   </div>
@@ -966,13 +966,13 @@
           </div>
 
           <!-- 파일 현황 테이블 -->
-          <div class="files-status-table-wrapper" style="overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
-            <table class="files-status-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
+          <div class="files-status-table-wrapper">
+            <table class="files-status-table">
               <thead>
-                <tr style="background: #f8fafc; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2;">
-                  <th style="width: 42px; padding: 10px 8px; text-align: center; white-space: nowrap;">No.</th>
+                <tr>
+                  <th class="col-center" style="width: 42px;">No.</th>
                   <th class="sortable-th" data-table="files" data-sort="id" style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span class="sort-icon">⇅</span></th>
-                  <th class="sortable-th" data-table="files" data-sort="grade" style="width: 76px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <th class="sortable-th" data-table="files" data-sort="grade">
                     <div class="th-sort-label" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterFilesGrade" title="학년 필터">
                       <option value="all">전체</option>
@@ -981,26 +981,26 @@
                       <option value="고1">고1</option>
                     </select>
                   </th>
-                  <th class="sortable-th" data-table="files" data-sort="year" style="width: 84px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <th class="sortable-th" data-table="files" data-sort="year">
                     <div class="th-sort-label" title="클릭하여 년도별 정렬">년도 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterFilesYear" title="년도 필터">
                       <option value="all">전체</option>
                     </select>
                   </th>
-                  <th class="sortable-th" data-table="files" data-sort="month" style="width: 72px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <th class="sortable-th" data-table="files" data-sort="month">
                     <div class="th-sort-label" title="클릭하여 월별 정렬">월 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterFilesMonth" title="월 필터">
                       <option value="all">전체</option>
                     </select>
                   </th>
-                  <th style="padding: 10px 10px; white-space: nowrap;">출제기관</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📜 대본/해설 (PDF)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (JSON / 이미지)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📊 정답률 (CSV)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap;">📊 코어 본문 / 메타데이터</th>
-                  <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">종합 상태</th>
+                  <th>출제기관</th>
+                  <th class="col-center">📄 문제지 (PDF)</th>
+                  <th class="col-center">📝 해설지 (HWP)</th>
+                  <th class="col-center">📜 대본/해설 (PDF)</th>
+                  <th class="col-center">🖼️ 정답표 (JSON / 이미지)</th>
+                  <th class="col-center">📊 정답률 (CSV)</th>
+                  <th>📊 코어 본문 / 메타데이터</th>
+                  <th class="col-center">종합 상태</th>
                 </tr>
               </thead>
               <tbody id="filesStatusTableBody">
@@ -1009,12 +1009,12 @@
             </table>
           </div>
 
-          <div style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div class="upload-help-box">
             💡 <strong>원클릭 파일 업로드 안내</strong>: 각 모의고사 행에서 등록되지 않은 파일의 <strong>[➕ 업로드]</strong> 버튼을 누르면 해당 파일만 단독으로 즉시 업로드됩니다. <strong>[➕ 정답표 등록]</strong>은 정답 JSON(.json, 1순위 최우선) 또는 정답표 이미지(Vision AI 자동 추출)를 등록하며, <strong>[➕ 정답률 등록]</strong>은 1~45번 정답률(%) 및 1~5번 선지 선택률 데이터를 2x2 지문 뷰어에 즉시 시각화합니다.
           </div>
         </div>
 
-        <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+        <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="btnCloseFilesStatusModal">닫기</button>
         </div>
       </div>
@@ -1022,7 +1022,7 @@
       <!-- 탭 3: 단일 세트 수동 업로드 (기존 폼) -->
       <div class="upload-tab-pane" id="paneSingleUpload" style="display: none;">
         <form id="uploadForm">
-          <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
+          <div class="modal-body">
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label">학년</label>
@@ -1073,7 +1073,7 @@
             <div class="form-group">
               <label class="form-label">2. HWP/HWPX 시험지 파일 (문제 + 정답 및 해설 통합본 1개, 필수)</label>
               <input type="file" class="form-control" name="hwp_file" id="modalHwpFile" accept=".hwp,.hwpx" required>
-              <small style="color: var(--text-muted); font-size: 0.78rem;">
+              <small class="form-text-muted">
                 ※ 1개의 HWP 파일 안에 문제와 정답 및 해설이 모두 포함되어 있으면 자동으로 각각 감지하여 분리 저장합니다.
               </small>
             </div>
@@ -1081,7 +1081,7 @@
             <div class="form-group">
               <label class="form-label">3. 정답표 파일 (권장, JSON 데이터 또는 정답 이미지)</label>
               <input type="file" class="form-control" name="ans_file" id="modalAnsFile" accept=".json,.png,.jpg,.jpeg">
-              <small style="color: var(--text-muted); font-size: 0.78rem;">
+              <small class="form-text-muted">
                 ※ 1~45번 정답 JSON 파일(.json, 1순위 최우선) 또는 정답표 이미지(.png/.jpg)를 첨부합니다. 정답 파일 등록 시 정답 확정 및 PDF 문제지 형광펜 하이라이트가 자동 생성됩니다.
               </small>
             </div>
@@ -1089,7 +1089,7 @@
             <div class="form-group">
               <label class="form-label">4. 정답률 데이터 파일 (선택, CSV)</label>
               <input type="file" class="form-control" name="csv_file" id="modalCsvFile" accept=".csv">
-              <small style="color: var(--text-muted); font-size: 0.78rem;">
+              <small class="form-text-muted">
                 ※ OMR 또는 채점 통계 프로그램에서 추출된 번호, 정답, 정답률, 1~5번 선지 응시자 수 CSV 파일을 첨부하면 2x2 뷰어에 선지별 선택률이 시각화됩니다.
               </small>
             </div>
@@ -1097,12 +1097,12 @@
             <div class="form-group">
               <label class="form-label">5. 듣기 대본 파일 (선택, PDF 또는 HWP/대본)</label>
               <input type="file" class="form-control" name="script_file" id="modalScriptFile" accept=".pdf,.hwp,.hwpx">
-              <small style="color: var(--text-muted); font-size: 0.78rem;">
+              <small class="form-text-muted">
                 ※ 듣기 대본 PDF 파일 첨부 시 1~17번 문항의 대본 크롭 이미지와 텍스트를 정밀 추출합니다. (미첨부 시 HWP 해설 대본 자동 사용)
               </small>
             </div>
           </div>
-          <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
+          <div class="modal-footer">
             <button type="button" class="btn btn-secondary" id="btnCancelUpload">취소</button>
             <button type="submit" class="btn btn-primary" id="btnSubmitUpload">🚀 단일 세트 상호 검증 및 DB 저장</button>
           </div>
@@ -1111,28 +1111,28 @@
 
       <!-- 탭 3: 등록된 시험지 관리 및 삭제 -->
       <div class="upload-tab-pane" id="paneManageExams" style="display: none;">
-        <div class="modal-body" style="padding: 1.25rem 1.5rem 0.5rem 1.5rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 8px;">
+        <div class="modal-body">
+          <div class="manage-exams-toolbar">
             <div style="display: flex; gap: 8px; align-items: center;">
               <button type="button" class="btn btn-secondary btn-sm" id="btnSelectAllExams">전체 선택</button>
               <button type="button" class="btn btn-danger btn-sm" id="btnDeleteSelectedExams" disabled style="display: inline-flex; align-items: center; gap: 4px;">
                 🗑️ 선택 삭제 (<span id="selectedExamsCount">0</span>)
               </button>
             </div>
-            <div style="font-size: 0.82rem; color: var(--text-muted);">
-              총 등록 시험지: <strong id="manageExamsTotalCount" style="color: var(--primary);">0</strong>개
+            <div class="manage-exams-count">
+                총 등록 시험지: <strong id="manageExamsTotalCount" class="text-primary">0</strong>개
             </div>
           </div>
 
-          <div class="manage-exams-table-wrapper" style="overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
-            <table class="manage-exams-table" style="width: 100%; font-size: 0.82rem; text-align: left; border-collapse: collapse;">
+          <div class="manage-exams-table-wrapper">
+            <table class="manage-exams-table">
               <thead>
-                <tr style="background: #f8fafc; border-bottom: 1px solid var(--border);">
-                  <th style="width: 36px; padding: 10px 10px; text-align: center; white-space: nowrap;">
-                    <input type="checkbox" id="chkAllExams" style="cursor: pointer;">
+                <tr>
+                  <th class="col-center col-chk">
+                    <input type="checkbox" id="chkAllExams" class="cursor-pointer">
                   </th>
                   <th class="sortable-th" data-table="manage" data-sort="id" style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span class="sort-icon">⇅</span></th>
-                  <th class="sortable-th" data-table="manage" data-sort="grade" style="width: 76px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <th class="sortable-th" data-table="manage" data-sort="grade">
                     <div class="th-sort-label" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterManageGrade" title="학년 필터">
                       <option value="all">전체</option>
@@ -1141,26 +1141,26 @@
                       <option value="고1">고1</option>
                     </select>
                   </th>
-                  <th class="sortable-th" data-table="manage" data-sort="year" style="width: 84px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <th class="sortable-th" data-table="manage" data-sort="year">
                     <div class="th-sort-label" title="클릭하여 년도별 정렬">년도 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterManageYear" title="년도 필터">
                       <option value="all">전체</option>
                     </select>
                   </th>
-                  <th class="sortable-th" data-table="manage" data-sort="month" style="width: 72px; padding: 6px 4px; text-align: center; white-space: nowrap;">
+                  <th class="sortable-th" data-table="manage" data-sort="month">
                     <div class="th-sort-label" title="클릭하여 월별 정렬">월 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterManageMonth" title="월 필터">
                       <option value="all">전체</option>
                     </select>
                   </th>
-                  <th style="padding: 10px 10px; white-space: nowrap;">출제기관</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📄 문제지 (PDF)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📝 해설지 (HWP)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📜 대본/해설 (PDF)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">🖼️ 정답표 (JSON / 이미지)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap; text-align: center;">📊 정답률 (CSV)</th>
-                  <th style="padding: 10px 10px; white-space: nowrap;">📊 코어 본문 / 메타데이터</th>
-                  <th style="padding: 10px 12px; text-align: center; white-space: nowrap;">관리</th>
+                  <th>출제기관</th>
+                  <th class="col-center">📄 문제지 (PDF)</th>
+                  <th class="col-center">📝 해설지 (HWP)</th>
+                  <th class="col-center">📜 대본/해설 (PDF)</th>
+                  <th class="col-center">🖼️ 정답표 (JSON / 이미지)</th>
+                  <th class="col-center">📊 정답률 (CSV)</th>
+                  <th>📊 코어 본문 / 메타데이터</th>
+                  <th class="col-center">관리</th>
                 </tr>
               </thead>
               <tbody id="manageExamsTableBody">
@@ -1172,12 +1172,12 @@
           <!-- 단독 파일 업로드용 숨김 인풋 -->
           <input type="file" id="examSingleFileInput" style="display: none;">
 
-          <div style="margin-top: 12px; font-size: 0.78rem; color: #475569; line-height: 1.5; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+          <div class="upload-help-box">
             💡 <strong>4종 원본 파일 및 정답률 직접 업로드 안내</strong>: 각 시험지의 <strong>[📄 문제지]</strong>, <strong>[📝 해설지]</strong>, <strong>[🖼️ 정답표]</strong>, <strong>[📊 정답률 CSV]</strong> 버튼을 클릭하면 해당 파일만 단독으로 즉시 등록하거나 교체할 수 있습니다. 특히 <strong>정답표(JSON / 이미지)</strong>를 등록하시면 JSON(최우선 Ground Truth) 또는 Vision AI로 1~45번 정답을 확정하고, <strong>정답률 CSV</strong>를 등록하시면 2x2 지문 뷰어에 문항별 정답률 및 선지 선택률이 즉시 시각화됩니다.
           </div>
         </div>
 
-        <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end;">
+        <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="btnCloseManageModal">닫기</button>
         </div>
       </div>
@@ -1189,34 +1189,34 @@
        선택적 데이터 삭제 옵션 모달창 (3대 영역 분리 삭제)
        ==================================================================== -->
   <div class="modal-backdrop" id="selectiveDeleteModal">
-    <div class="modal-content" style="max-width: 600px; width: 95%;">
-      <div class="modal-header" style="background: #fff1f2; border-bottom: 1px solid #fecdd3;">
+    <div class="modal-content sel-del-modal-content">
+      <div class="modal-header sel-del-header">
         <div>
-          <h3 class="modal-title" style="color: #9f1239; display: flex; align-items: center; gap: 8px;">
+          <h3 class="modal-title sel-del-title">
             <span>🗑️ 선택적 데이터 삭제 옵션</span>
           </h3>
-          <p class="modal-subtitle" style="color: #be123c; margin-top: 4px; font-size: 0.8rem; margin-bottom: 0;">
+          <p class="modal-subtitle sel-del-subtitle">
             삭제할 데이터 영역(원본 파일 / 코어 본문 / 부가 메타데이터)을 선택해 주세요.
           </p>
         </div>
         <button class="modal-close" id="btnCloseSelectiveDeleteModal">&times;</button>
       </div>
 
-      <div class="modal-body" style="padding: 1.25rem 1.5rem;">
+      <div class="modal-body">
         <!-- 삭제 대상 정보 알림 상자 -->
-        <div id="selDelTargetBox" style="background: #f8fafc; border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 1rem;">
-          <div style="font-size: 0.8rem; color: var(--text-muted);">삭제 대상 시험지:</div>
-          <div id="selDelTargetText" style="font-size: 0.95rem; font-weight: 700; color: #1e293b; margin-top: 2px;">
+        <div id="selDelTargetBox" class="sel-del-target-box">
+          <div class="sel-del-target-label">삭제 대상 시험지:</div>
+          <div id="selDelTargetText" class="sel-del-target-text">
             [고3-2026년-07월]
           </div>
         </div>
 
         <!-- 단축 프리셋 버튼 바 -->
         <div style="margin-bottom: 1rem;">
-          <div style="font-size: 0.76rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase;">
+          <div class="sel-del-preset-label">
             ⚡ 빠른 선택 프리셋
           </div>
-          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <div class="sel-del-presets-row">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetFullWipe" style="font-size: 0.78rem;">
               💥 전체 완전 삭제 (기본값)
             </button>
@@ -1233,78 +1233,78 @@
         </div>
 
         <!-- 4대 영역 체크박스 카드 목록 -->
-        <div class="sel-del-options-list" style="display: flex; flex-direction: column; gap: 10px;">
+        <div class="sel-del-options-list">
           <!-- 1. 원본 파일 삭제 -->
-          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-            <input type="checkbox" id="chkDelRawFiles" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+          <label class="sel-del-option-card">
+            <input type="checkbox" id="chkDelRawFiles" checked>
             <div style="flex: 1;">
-              <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
                   📁 1. 원본 파일 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #059669;">(서버 용량 절약)</span>
                 </span>
                 <span class="badge-raw-size-preview" id="selDelRawSizeBadge" style="font-size: 0.74rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
-              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+              <p class="sel-del-card-desc">
                 <code>uploads/</code> 폴더에 저장된 원본 PDF 및 HWP 파일을 영구 삭제합니다. (이미 DB에 텍스트가 추출되어 있으므로 <strong>웹 검색·뷰어 기능은 100% 정상 작동</strong>합니다)
               </p>
             </div>
           </label>
 
           <!-- 2. 코어 본문 데이터 삭제 -->
-          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-            <input type="checkbox" id="chkDelCoreCorpus" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+          <label class="sel-del-option-card">
+            <input type="checkbox" id="chkDelCoreCorpus" checked>
             <div style="flex: 1;">
-              <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
                   📄 2. 코어 본문 데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #dc2626;">(DB 지문·문장 삭제)</span>
                 </span>
                 <span id="selDelCoreBadge" style="font-size: 0.74rem; background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
-              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+              <p class="sel-del-card-desc">
                 DB의 시험지 마스터, 지문 텍스트, 분할 문장, 그리고 PDF 크롭 캡처 이미지를 영구 삭제합니다. (본문이 삭제되면 <strong>종속된 어법 메타데이터와 정답률도 함께 삭제</strong>됩니다)
               </p>
             </div>
           </label>
 
           <!-- 3. 부가 메타데이터 삭제 -->
-          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-            <input type="checkbox" id="chkDelMetadata" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+          <label class="sel-del-option-card">
+            <input type="checkbox" id="chkDelMetadata" checked>
             <div style="flex: 1;">
-              <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
                   🏷️ 3. 부가 메타데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #6366f1;">(어법 분석/태그 초기화)</span>
                 </span>
                 <span id="selDelMetaBadge" style="font-size: 0.74rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
-              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+              <p class="sel-del-card-desc">
                 지문 및 문장 본문은 그대로 보존하고, <strong>AI 어법 분석 결과와 사용자 태그만 초기화</strong>합니다. (새로운 AI 모델로 다시 분석하고 싶을 때 유용합니다)
               </p>
             </div>
           </label>
 
           <!-- 4. 정답률 데이터 삭제 -->
-          <label class="sel-del-option-card" style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: all 0.2s;">
-            <input type="checkbox" id="chkDelRateData" checked style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px;">
+          <label class="sel-del-option-card">
+            <input type="checkbox" id="chkDelRateData" checked>
             <div style="flex: 1;">
-              <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
                   📊 4. 정답률 데이터 초기화 <span style="font-weight: normal; font-size: 0.76rem; color: #0284c7;">(정답률·선지 선택률 초기화)</span>
                 </span>
                 <span id="selDelRateBadge" style="font-size: 0.74rem; background: #f0f9ff; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
-              <p style="font-size: 0.77rem; color: var(--text-muted); margin: 4px 0 0 0; line-height: 1.4;">
+              <p class="sel-del-card-desc">
                 지문 및 문장 본문, 어법 분석은 그대로 보존하고, <strong>정답률(%)과 선지별 선택률 및 CSV 원본 파일만 초기화</strong>합니다. (정답률 데이터를 재업로드하거나 정정할 때 유용합니다)
               </p>
             </div>
           </label>
         </div>
 
-        <div id="selDelWarningMsg" style="display: none; margin-top: 12px; font-size: 0.76rem; color: #dc2626; background: #fef2f2; padding: 8px 12px; border-radius: 6px; border: 1px solid #fecaca;">
+        <div id="selDelWarningMsg" class="sel-del-warning-msg">
           ⚠️ 최소 1개 이상의 데이터 영역을 선택해야 삭제를 진행할 수 있습니다.
         </div>
       </div>
 
-      <div class="modal-footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <div class="modal-footer modal-footer-between">
         <button type="button" class="btn btn-secondary" id="btnCancelSelectiveDelete">취소</button>
         <button type="button" class="btn btn-danger" id="btnExecuteSelectiveDelete" style="display: inline-flex; align-items: center; gap: 6px;">
           🗑️ 선택한 데이터 영역 삭제 실행
@@ -1317,10 +1317,10 @@
        AI 설정 모달창 (Multi-LLM: Gemini / ChatGPT / Claude / OpenRouter)
        ==================================================================== -->
   <div class="modal-backdrop" id="aiSettingsModal">
-    <div class="modal-content ai-settings-modal-content" style="max-width: 1260px; width: 95vw;">
+    <div class="modal-content ai-settings-modal-content">
       <div class="modal-header">
-        <div style="flex: 1;">
-          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
             <span>🤖 AI 어법 분석기 및 영어 듣기 TTS 설정</span>
             <span class="ai-ensemble-badge" id="aiEnsembleModeBadge">🗳️ 다수결 합의 모드</span>
           </h3>
@@ -1335,11 +1335,11 @@
         <!-- 교차 검증 설명 안내 배너 -->
         <div class="ai-consensus-guide-box">
           <div class="consensus-guide-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="flex-row-center">
               <span class="guide-icon">🗳️</span>
               <strong style="color: #1e293b;">복수 모델 교차 검증 (다수결 합의 / Majority Vote Consensus)</strong>
             </div>
-            <div style="display: flex; align-items: center; gap: 6px;">
+            <div class="flex-row-center">
               <label for="selectConsensusMode" style="font-size: 0.78rem; font-weight: 700; color: #334155; margin: 0;">합의 기준:</label>
               <select id="selectConsensusMode" class="consensus-mode-select">
                 <option value="majority" selected>🗳️ 다수결 합의 (과반수 찬성: 2/3, 3/4) [기본/권장]</option>
@@ -1379,7 +1379,7 @@
               </div>
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                  <label class="provider-field-label" style="margin-bottom: 0;">API Key</label>
+                  <label class="provider-field-label mb-0">API Key</label>
                   <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="provider-key-link">무료 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
@@ -1421,7 +1421,7 @@
               </div>
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                  <label class="provider-field-label" style="margin-bottom: 0;">API Key</label>
+                  <label class="provider-field-label mb-0">API Key</label>
                   <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="provider-key-link">OpenAI 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
@@ -1464,7 +1464,7 @@
               </div>
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                  <label class="provider-field-label" style="margin-bottom: 0;">API Key</label>
+                  <label class="provider-field-label mb-0">API Key</label>
                   <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="provider-key-link">Anthropic 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
@@ -1513,7 +1513,7 @@
                   <div class="ensemble-models-selector-box">
                     <div class="ensemble-selector-header">
                       <span class="ensemble-selector-title">🎯 앙상블 3개 모델 선택</span>
-                      <div style="display: flex; align-items: center; gap: 6px;">
+                      <div class="flex-row-center">
                         <span class="ensemble-models-count-badge" id="ensembleModelsCountBadge">실시간 모델 로딩 중...</span>
                         <button type="button" class="btn-refresh-ensemble-models" id="btnRefreshOpenRouterAllModels" title="OpenRouter 전체 모델 목록 실시간 새로고침">🔄 모델 갱신</button>
                       </div>
@@ -1572,7 +1572,7 @@
 
                 <div class="form-group" style="margin-bottom: 8px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <label class="provider-field-label" style="margin-bottom: 0;">🏆 Top 5 모델 선택</label>
+                    <label class="provider-field-label mb-0">🏆 Top 5 모델 선택</label>
                     <button type="button" class="btn-refresh-models" id="btnRefreshOpenRouterModels" title="최신 모델 정보 새로고침">🔄 갱신</button>
                   </div>
                   <select class="form-control" id="openrouterModelSelect" style="font-size: 0.8rem;">
@@ -1602,7 +1602,7 @@
 
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                  <label class="provider-field-label" style="margin-bottom: 0;">API Key</label>
+                  <label class="provider-field-label mb-0">API Key</label>
                   <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="provider-key-link">OpenRouter 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
@@ -1624,11 +1624,11 @@
           </div>
 
           <!-- 5. LM Studio (Local LLM) 카드 -->
-          <div class="ai-provider-card" id="cardProviderLmstudio" data-provider="lmstudio" style="grid-column: 1 / -1; border: 1.5px solid #cbd5e1; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);">
+          <div class="ai-provider-card lmstudio-card" id="cardProviderLmstudio" data-provider="lmstudio">
             <div class="provider-card-header">
               <label class="provider-toggle-label">
                 <input type="checkbox" class="provider-checkbox" id="cbProviderLmstudio" data-provider="lmstudio">
-                <span class="provider-name" style="display: flex; align-items: center; gap: 6px;">
+                <span class="provider-name flex-row-center">
                   🖥️ LM Studio (Local LLM)
                   <span style="font-size: 0.7rem; font-weight: 700; background: #e0e7ff; color: #4338ca; padding: 2px 7px; border-radius: 9999px;">비용 0원 무제한</span>
                 </span>
@@ -1639,15 +1639,15 @@
               <p class="provider-card-desc">내 PC 그래픽카드(RTX 5060 16GB)를 활용하여 외부 API 요금 없이 초고속 일괄 분석을 수행합니다.</p>
               
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group mb-0">
                   <label class="provider-field-label">로컬 서버 주소 (Base URL)</label>
                   <input type="text" class="form-control" id="urlInputLmstudio" value="http://localhost:1234/v1" placeholder="http://localhost:1234/v1" style="font-size: 0.82rem;">
-                  <span style="font-size: 0.71rem; color: #64748b; margin-top: 3px; display: block;">LM Studio의 [Local Server] 탭에서 Start Server 실행 시 주소</span>
+                  <span class="text-hint">LM Studio의 [Local Server] 탭에서 Start Server 실행 시 주소</span>
                 </div>
 
-                <div class="form-group" style="margin-bottom: 0;">
+                <div class="form-group mb-0">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <label class="provider-field-label" style="margin-bottom: 0;">API Key (선택 사항)</label>
+                    <label class="provider-field-label mb-0">API Key (선택 사항)</label>
                     <span style="font-size: 0.71rem; color: #10b981; font-weight: 700;">로컬 기본: 인증 불필요</span>
                   </div>
                   <div class="provider-key-input-wrapper">
@@ -1660,7 +1660,7 @@
 
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                  <label class="provider-field-label" style="margin-bottom: 0;">로컬 모델 선택</label>
+                  <label class="provider-field-label mb-0">로컬 모델 선택</label>
                   <button type="button" class="btn-refresh-models" id="btnRefreshLmstudioModels" title="LM Studio에 다운로드된 모델 목록 실시간 불러오기">🔄 로컬 모델 불러오기</button>
                 </div>
                 <select class="form-control" id="lmstudioModelSelect" style="font-size: 0.8rem; margin-bottom: 6px;">
@@ -1696,8 +1696,8 @@
              섹션 2: 영어 듣기 음성 합성 엔진 (XTTS-v2 수능 성우 복제 / Edge-TTS)
              ==================================================================== -->
         <div class="tts-section-container">
-          <div class="tts-section-header" style="flex-wrap: wrap; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="tts-section-header">
+            <div class="flex-row-center">
               <span class="tts-badge-icon">TTS</span>
               <h4 style="font-size: 0.94rem; font-weight: 800; color: #1e1b4b; margin: 0;">
                 🗣️ 영어 듣기 음성 합성 엔진 (Dual-Voice TTS)
@@ -1706,12 +1706,12 @@
             </div>
             
             <!-- TTS 엔진 선택 라디오 바 -->
-            <div class="tts-engine-selector-bar" style="display: flex; gap: 10px; align-items: center; background: #e0e7ff; padding: 4px 10px; border-radius: 6px;">
-              <label style="margin: 0; font-size: 0.82rem; font-weight: 700; color: #3730a3; cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none;">
+            <div class="tts-engine-selector-bar">
+              <label class="tts-radio-label" style="color: #3730a3;">
                 <input type="radio" name="ttsEngineRadio" id="radioTtsXtts" value="xtts" checked style="cursor: pointer;">
                 🎙️ 수능 평가원 성우 복제 (XTTS-v2, 강력 추천 ⭐)
               </label>
-              <label style="margin: 0; font-size: 0.82rem; font-weight: 600; color: #4b5563; cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none;">
+              <label class="tts-radio-label" style="color: #4b5563;">
                 <input type="radio" name="ttsEngineRadio" id="radioTtsEdge" value="edge-tts" style="cursor: pointer;">
                 🟢 Edge-TTS (빠른 기본 / 보조)
               </label>
@@ -1719,16 +1719,16 @@
           </div>
 
           <!-- 1. XTTS-v2 수능 성우 로컬 복제 카드 (기본 활성, 100% 로컬 / 오프라인) -->
-          <div class="tts-dedicated-card" id="cardXtts" style="display: block; background: linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%); border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 8px;">
+          <div class="tts-dedicated-card" id="cardXtts">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
+              <div class="flex-row-center">
                 <span style="font-size: 0.86rem; font-weight: 800; color: #0f172a;">
                   🎙️ 수능 기출 방송 실제 성우 목소리 1:1 로컬 복제 (Zero-shot Voice Cloning)
                 </span>
                 <span style="background: #e0e7ff; color: #4338ca; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">비용 0원 무제한</span>
                 <span style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">완전 오프라인</span>
               </div>
-              <div style="display: flex; align-items: center; gap: 6px;">
+              <div class="flex-row-center">
                 <span id="badgeTtsHardware" style="font-size: 0.76rem; font-weight: 700; background: #0284c7; color: #ffffff; padding: 2px 9px; border-radius: 9999px;">
                   🖥️ 하드웨어 감지 중...
                 </span>
@@ -1739,9 +1739,9 @@
               실제 평가원 수능 영어 듣기 평가에 출제되는 <strong>남성 성우</strong>와 <strong>여성 성우</strong>의 실제 발화 음원을 기반으로 음색, 억양, 호흡을 1:1로 정밀 복제하여 듣기 지문을 합성합니다. (GPU 감지 시 초고속 연산, CPU 시 자동 전환)
             </p>
 
-            <div class="tts-card-grid" style="display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 12px;">
+            <div class="tts-card-grid">
               <!-- 1열: 수능 남자 성우 레퍼런스 -->
-              <div class="tts-col" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <div class="tts-col">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">👨 수능 남자 성우 (M)</span>
                   <span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">● 음원 준비됨</span>
@@ -1755,7 +1755,7 @@
               </div>
 
               <!-- 2열: 수능 여자 성우 레퍼런스 -->
-              <div class="tts-col" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;">
+              <div class="tts-col">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">👩 수능 여자 성우 (W)</span>
                   <span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">● 음원 준비됨</span>
@@ -1769,7 +1769,7 @@
               </div>
 
               <!-- 3열: 구동 환경 및 상태 안내 -->
-              <div class="tts-col" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; justify-content: space-between;">
+              <div class="tts-col">
                 <div>
                   <div style="font-size: 0.82rem; font-weight: 700; color: #1e293b; margin-bottom: 4px;">
                     ⚙️ 구동 아키텍처 및 상태
@@ -1784,9 +1784,9 @@
           </div>
 
           <!-- 2. Edge-TTS 설정 카드 (보조 엔진, 100% 무료) -->
-          <div class="tts-dedicated-card" id="cardEdgeTts" style="display: none; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 8px;">
+          <div class="tts-dedicated-card" id="cardEdgeTts" style="display: none;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
-              <div style="display: flex; align-items: center; gap: 6px;">
+              <div class="flex-row-center">
                 <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">
                   ✨ Microsoft Edge Neural 음성 (인터넷 연결 시 완전 무료 / API Key 불필요)
                 </span>
@@ -1797,12 +1797,12 @@
               </span>
             </div>
 
-            <div class="tts-card-grid" style="display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 12px;">
+            <div class="tts-card-grid">
               <!-- 1열: 남성 화자(M) 음성 선택 -->
               <div class="tts-col">
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="provider-field-label" style="color: #166534; font-weight: 700;">남성 화자(M) 목소리</label>
-                  <select class="form-control" id="selectEdgeTtsVoiceMale" style="font-size: 0.84rem; background: #fff;">
+                <div class="form-group mb-0">
+                  <label class="provider-field-label edge-label">남성 화자(M) 목소리</label>
+                  <select class="form-control" id="selectEdgeTtsVoiceMale">
                     <option value="en-US-GuyNeural" selected>Guy (표준 미국 남성, 추천 ⭐)</option>
                     <option value="en-US-ChristopherNeural">Christopher (차분하고 또렷함)</option>
                     <option value="en-US-EricNeural">Eric (신뢰감 있는 중저음)</option>
@@ -1814,9 +1814,9 @@
 
               <!-- 2열: 여성 화자(W) 음성 선택 -->
               <div class="tts-col">
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="provider-field-label" style="color: #166534; font-weight: 700;">여성 화자(W) 목소리</label>
-                  <select class="form-control" id="selectEdgeTtsVoiceFemale" style="font-size: 0.84rem; background: #fff;">
+                <div class="form-group mb-0">
+                  <label class="provider-field-label edge-label">여성 화자(W) 목소리</label>
+                  <select class="form-control" id="selectEdgeTtsVoiceFemale">
                     <option value="en-US-JennyNeural" selected>Jenny (표준 미국 여성, 추천 ⭐)</option>
                     <option value="en-US-AriaNeural">Aria (세련되고 정확한 발음)</option>
                     <option value="en-US-EmmaNeural">Emma (친근하고 부드러운 음색)</option>
@@ -1830,8 +1830,8 @@
               <div class="tts-col">
                 <div style="display: flex; gap: 8px; align-items: flex-end;">
                   <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                    <label class="provider-field-label" style="color: #166534; font-weight: 700;">발화 속도(Rate)</label>
-                    <select class="form-control" id="selectEdgeTtsRate" style="font-size: 0.84rem; background: #fff;">
+                    <label class="provider-field-label edge-label">발화 속도(Rate)</label>
+                    <select class="form-control" id="selectEdgeTtsRate">
                       <option value="-4%">약간 느리게 (-4%, 실전 연습용)</option>
                       <option value="+0%" selected>표준 속도 (+0%, 수능 실전 기본 ⭐)</option>
                       <option value="+4%">약간 빠르게 (+4%, 고난도 훈련용)</option>
@@ -1855,11 +1855,11 @@
         <div id="aiSettingsStatus" style="display: none; padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; font-weight: 600;"></div>
       </div>
 
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
-        <div class="ai-modal-summary" id="aiModalSelectionSummary" style="font-size: 0.84rem; color: #1e293b; font-weight: 600;">
+      <div class="modal-footer modal-footer-between">
+        <div class="ai-modal-summary" id="aiModalSelectionSummary">
           선택된 모델: Google Gemini (단독 실행)
         </div>
-        <div style="display: flex; gap: 8px;">
+        <div class="modal-footer-actions">
           <button type="button" class="btn btn-secondary" id="btnCancelAiSettings">닫기</button>
           <button type="button" class="btn btn-primary" id="btnSaveAiSettings">✔ 전체 설정 저장</button>
         </div>
@@ -1873,10 +1873,10 @@
   <div class="modal-backdrop" id="grammarCategoryModal" style="display: none;">
     <div class="modal-content modal-grammar-content">
       <div class="modal-header">
-        <div style="flex: 1; padding-right: 1rem;">
-          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
             <span>📚 어법 범주 전체 개요 및 다중 선택</span>
-            <span class="grammar-tree-badge" id="grammarTreeStatusBadge" style="font-size: 0.75rem; padding: 2px 8px; border-radius: 9999px; background: rgba(59, 130, 246, 0.15); color: var(--primary); font-weight: 600;">🏛️ 표준 243개 체계</span>
+            <span class="grammar-tree-badge" id="grammarTreeStatusBadge">🏛️ 표준 243개 체계</span>
             <button type="button" class="btn btn-secondary btn-xs" id="btnManageGrammarTree" style="padding: 2px 8px; font-size: 0.75rem;">⚙️ 커스텀 체계 관리</button>
           </h3>
           <p class="modal-subtitle" id="grammarModalSentenceInfo" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; word-break: break-all;">
@@ -1901,7 +1901,7 @@
             <button type="button" class="btn-clear-search" id="btnClearGrammarSearch" style="display: none;">&times;</button>
           </div>
           <div class="grammar-quick-stats">
-            선택된 어법: <strong id="grammarSelectedCount" style="color: var(--primary); font-size: 1rem;">0</strong>개
+            선택된 어법: <strong id="grammarSelectedCount" class="text-primary">0</strong>개
           </div>
         </div>
 
@@ -1940,9 +1940,9 @@
         </div>
       </div>
 
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+      <div class="modal-footer modal-footer-between">
         <button type="button" class="btn btn-secondary btn-sm" id="btnResetGrammarSelection">선택 전체 해제</button>
-        <div style="display: flex; gap: 0.5rem;">
+        <div class="modal-footer-actions">
           <button type="button" class="btn btn-secondary" id="btnCancelGrammarModal">취소</button>
           <button type="button" class="btn btn-primary" id="btnApplyGrammarSelection">✔ 선택 완료 및 적용</button>
         </div>
@@ -1956,15 +1956,15 @@
   <div class="modal-backdrop" id="customGrammarTreeModal" style="display: none;">
     <div class="modal-content modal-custom-tree-content">
       <div class="modal-header">
-        <div style="flex: 1; padding-right: 1rem;">
-          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
             <span>⚙️ 나만의 어법 체계 관리 및 스마트 매핑</span>
           </h3>
           <p class="modal-subtitle" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
             기본 243개 표준 어법 체계를 나만의 커스텀 명칭으로 수정하고 불필요한 어법을 숨깁니다. AI 사전 분석 결과는 표준 ID(1~243)와 1:1 스마트 매핑되어 토큰 비용(0원) 없이 실시간 연동됩니다.
           </p>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="modal-header-actions">
           <button type="button" class="btn-modal-fullscreen" id="btnToggleCustomTreeFullscreen" title="전체 화면으로 확대" aria-label="전체 화면 토글">⛶</button>
           <button type="button" class="modal-close" id="btnCloseCustomTreeModal">&times;</button>
         </div>
@@ -2077,9 +2077,9 @@
         </div>
       </div>
 
-      <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+      <div class="modal-footer modal-footer-between">
         <span id="customTreeSaveStatus" style="font-size: 0.82rem; color: var(--text-muted);"></span>
-        <div style="display: flex; gap: 0.5rem;">
+        <div class="modal-footer-actions">
           <button type="button" class="btn btn-secondary" id="btnCancelCustomTreeModal">닫기</button>
           <button type="button" class="btn btn-primary" id="btnSaveCustomTreeModal">💾 커스텀 어법 체계 저장</button>
         </div>
@@ -2154,9 +2154,9 @@
        ==================================================================== -->
   <div class="grammar-popover" id="grammarExplanationPopover" style="display: none;">
     <div class="grammar-popover-header">
-      <div class="grammar-popover-title-group" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+      <div class="grammar-popover-title-group">
         <span class="grammar-popover-badge" id="popoverBadge">🏷️ 어법 범주</span>
-        <span class="grammar-popover-source" id="popoverSource" style="font-size: 0.72rem; padding: 2px 6px; border-radius: 4px; background: rgba(139, 92, 246, 0.15); color: #8b5cf6; font-weight: 600;">🤖 AI 분석</span>
+        <span class="grammar-popover-source" id="popoverSource">🤖 AI 분석</span>
         <span class="grammar-popover-path" id="popoverPath">계층 경로</span>
       </div>
       <button type="button" class="grammar-popover-close" id="btnCloseGrammarPopover" title="닫기 (ESC)">&times;</button>
@@ -2170,7 +2170,7 @@
         <span class="popover-section-label">💡 어법 해설</span>
         <div class="popover-explanation-text" id="popoverExplanationText"></div>
       </div>
-      <div class="grammar-popover-footer" id="popoverFooter" style="display: none; padding-top: 8px; border-top: 1px dashed var(--border); margin-top: 8px; justify-content: flex-end;">
+      <div class="grammar-popover-footer" id="popoverFooter" style="display: none;">
         <button type="button" class="btn btn-primary btn-xs" id="btnAdoptAiToUser">👤 내 분석으로 채택(등록)</button>
       </div>
     </div>

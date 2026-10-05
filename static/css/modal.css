@@ -243,3 +243,60 @@
   }
 }
 
+/* ==========================================================================
+   모달 공통 레이아웃 및 범용 유틸리티 클래스
+   ========================================================================== */
+.modal-header-info {
+  flex: 1;
+}
+
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-footer-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-footer-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.flex-row-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mb-0 {
+  margin-bottom: 0 !important;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.w-100 {
+  width: 100%;
+}
+
+

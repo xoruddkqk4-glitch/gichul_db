@@ -2143,3 +2143,97 @@ mark.passage-highlight {
   color: #cbd5e1;
 }
 
+/* 2x2 그리드 패널 위치 배치 */
+.panel-card.panel-top-left { grid-column: 1; grid-row: 1; }
+.panel-card.panel-top-right { grid-column: 2; grid-row: 1; }
+.panel-card.panel-bottom-left { grid-column: 1; grid-row: 2; }
+.panel-card.panel-bottom-right { grid-column: 2; grid-row: 2; }
+
+/* 패널 헤더 액션 및 듣기 액션 그룹 */
+.panel-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.panel-bottom-left-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.listening-bottom-left-actions {
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.btn-fels-action {
+  white-space: nowrap;
+}
+
+/* 지문 메타 상세 값 스타일 */
+#validationBadge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.meta-val-primary {
+  color: var(--primary);
+}
+
+.meta-val-type {
+  color: #4338ca;
+  font-weight: 700;
+}
+
+.meta-val-answer {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.rates-empty-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meta-item-spacing {
+  margin-top: 0.85rem;
+}
+
+/* 문장 뷰어 헤더 바 스타일 */
+.sentence-match-label {
+  font-weight: 700;
+  color: var(--secondary);
+}
+
+#sentenceMatchCount {
+  color: var(--primary);
+}
+
+.sentence-match-sub {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-left: 0.75rem;
+}
+
+.sentence-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#btnSentenceBackToPassage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+}
+
+

@@ -908,5 +908,369 @@
   background: #f1f5f9;
 }
 
+/* ==========================================================================
+   업로드 모달 테이블 공통 및 세부 스타일
+   ========================================================================== */
+.batch-sets-table,
+.files-status-table,
+.manage-exams-table {
+  width: 100%;
+  font-size: 0.82rem;
+  text-align: left;
+  border-collapse: collapse;
+}
+
+.batch-sets-table-wrapper,
+.files-status-table-wrapper,
+.manage-exams-table-wrapper {
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.batch-sets-table thead tr,
+.files-status-table thead tr,
+.manage-exams-table thead tr {
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border);
+}
+
+.batch-sets-table th,
+.files-status-table th,
+.manage-exams-table th {
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.batch-sets-table th.col-center,
+.files-status-table th.col-center,
+.manage-exams-table th.col-center,
+.batch-sets-table td.col-center,
+.files-status-table td.col-center,
+.manage-exams-table td.col-center {
+  text-align: center;
+}
+
+/* ==========================================================================
+   선택적 시험지 삭제 모달 (Selective Delete Modal)
+   ========================================================================== */
+.modal-content.sel-del-modal-content {
+  max-width: 600px;
+  width: 95%;
+}
+
+.modal-header.sel-del-header {
+  background: #fff1f2;
+  border-bottom: 1px solid #fecdd3;
+}
+
+.modal-title.sel-del-title {
+  color: #9f1239;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-subtitle.sel-del-subtitle {
+  color: #be123c;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  margin-bottom: 0;
+}
+
+.sel-del-target-box {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 1rem;
+}
+
+.sel-del-target-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.sel-del-target-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 2px;
+}
+
+.sel-del-preset-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.sel-del-presets-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.sel-del-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sel-del-option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sel-del-option-card input[type="checkbox"] {
+  margin-top: 3px;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.sel-del-option-card .sel-del-card-body {
+  flex: 1;
+}
+
+.sel-del-option-card .sel-del-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sel-del-option-card .sel-del-card-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #1e293b;
+}
+
+.sel-del-option-card .sel-del-card-desc {
+  font-size: 0.77rem;
+  color: var(--text-muted);
+  margin: 4px 0 0 0;
+  line-height: 1.4;
+}
+
+.sel-del-warning-msg {
+  display: none;
+  margin-top: 12px;
+  font-size: 0.76rem;
+  color: #dc2626;
+  background: #fef2f2;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+
+/* ==========================================================================
+   업로드 진행 상태 및 원본 파일 현황 드롭다운 필터
+   ========================================================================== */
+.batch-progress-box {
+  margin-top: 1rem;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.batch-progress-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.progress-bar-bg {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+
+.batch-progress-subtext {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.files-summary-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.files-summary-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.badge-files-stat {
+  background: #f1f5f9;
+  color: #334155;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: 1px solid #cbd5e1;
+}
+
+.dropdown-filter-container {
+  position: relative;
+}
+
+.btn-filter-trigger {
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #fecdd3;
+  user-select: none;
+}
+
+.dropdown-filter-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  width: 230px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.missing-filter-header {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.missing-filter-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.missing-filter-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.btn-missing-text {
+  background: none;
+  border: none;
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.btn-missing-text.text-blue {
+  color: #2563eb;
+}
+
+.btn-missing-text.text-danger {
+  color: #dc2626;
+}
+
+.missing-filter-body {
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.missing-chk-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.missing-chk-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.upload-help-box {
+  margin-top: 12px;
+  font-size: 0.78rem;
+  color: #475569;
+  line-height: 1.5;
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.manage-exams-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.manage-exams-count {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.form-text-muted {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  display: block;
+}
+
+.col-chk {
+  width: 36px;
+}
+
+.btn-icon-gap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+
+
+
+
+
 
 

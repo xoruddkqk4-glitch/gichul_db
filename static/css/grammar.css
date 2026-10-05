@@ -2998,3 +2998,57 @@
   transform: translateY(-1px);
 }
 
+.lmstudio-card {
+  grid-column: 1 / -1;
+  border: 1.5px solid #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.tts-radio-label {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+}
+
+.edge-label {
+  color: #166534 !important;
+  font-weight: 700 !important;
+}
+
+.btn-tts-action {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.grammar-popover-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.grammar-popover-source {
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+  font-weight: 600;
+}
+
+.grammar-popover-footer {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+

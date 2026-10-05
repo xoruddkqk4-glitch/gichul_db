@@ -15,7 +15,7 @@
 | 1단계 | 확정 버그 즉시 수정 (5건) | ✅ 완료 (2026-10-04, 커밋 `ab3a4ee7`) |
 | 2단계 | 안정성: 서버 멈춤, 트랜잭션, DB 연결, FTS, TTS | ✅ 완료 (2026-10-04, 커밋 `559b6365`) |
 | 3단계 | 구조 개선: 공통 함수, import 부작용, 시험 프로파일, 로깅, 라우터 분리 | ✅ 완료 (3-A ✅ 2026-10-04, 커밋 `9bda6567` · 3-B ✅ 2026-10-04, 커밋 `f3258671` · 3-C ✅ 2026-10-05, 커밋 `877017a2` · 3-D ✅ 2026-10-05, 커밋 `bb4f9c85` · 3-E ✅ 2026-10-05, 커밋 `bc29c222`) |
-| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ 2026-10-05 · 4-B ✅ 2026-10-05 · 4-C ✅ 2026-10-05 · 4-D ✅ 2026-10-05 · 4-E 진행 중: 4-E-1 CSS분리 ✅ 2026-10-05 · 다음: 4-E-2 인라인스타일 정리) |
+| 4단계 | 품질 기반: 테스트, 보안, 저장소 정리, 프론트 분리 | 🔄 진행 중 (4-A ✅ · 4-B ✅ · 4-C ✅ · 4-D ✅ · 4-E 진행 중: 4-E-1 CSS분리 ✅ · 4-E-2 인라인스타일 정리 ✅ 2026-10-05 · 다음: 4-E-3 results-passage.js 분리) |
 
 ### 모든 단계 공통 검증 (Rule 2)
 ```powershell
@@ -647,7 +647,7 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 
 ### 4-E. 프론트엔드 분리 (보고서 3-19) — 여러 번에 나눠 진행
 1. `style.css`를 기능별 파일로 나눕니다 (`base.css`, `search.css`, `viewer.css`, `grammar.css`, `upload.css`, `modal.css`). `index.html`에 `<link>` 여러 개로 연결합니다. (✅ 4-E-1 완료)
-2. `index.html`의 인라인 `style=""` 367개를 화면 영역별로 클래스로 옮깁니다. 한 번에 한 영역(헤더 → 검색 → 뷰어 → 모달)씩 진행합니다. (⬜ 4-E-2 대기)
+2. `index.html`의 인라인 `style=""` 367개를 화면 영역별로 클래스로 옮깁니다. 한 번에 한 영역(헤더 → 검색 → 뷰어 → 모달)씩 진행합니다. (✅ 4-E-2 완료, 2026-10-05)
 3. `results-passage.js`(3,110줄)를 `passage-render.js`(화면 그리기), `passage-api.js`(fetch 호출), `passage-events.js`(이벤트 바인딩)로 나눕니다. (⬜ 4-E-3 대기)
 - 검증: `node --check` + 사용자가 직접 화면을 확인합니다. 화면 깨짐 위험이 있으므로 원하시면 `/scratchpad` 검증을 요청해 주세요.
 
@@ -663,6 +663,33 @@ services/ingest.py      # _regenerate_exam_crops, 업로드 파이프라인 본�
 - **검증**
   - FastAPI TestClient: 6개 모듈 CSS 및 `style.css` 전체 200 OK 응답 검증 완료
   - `pytest tests -q`: **206개** 단위/통합 테스트 100% 통과 (17.68s)
+- **사용자 수동 확인**: 브라우저에서 화면을 새로고침하여 레이아웃 및 스타일이 기존과 100% 동일하게 정상 렌더링되는지 확인 (원하시면 `/scratchpad` 시각 검증 요청 가능)
+
+#### 4-E-2 적용 결과 (2026-10-05) — 인라인 스타일 클래스 이전 및 정리
+- **작업 범위**: `templates/index.html` 내 비동적 인라인 `style=""` 속성을 도메인별 CSS 모듈 클래스로 체계적 이전
+  1. **헤더 & 검색 영역 (`search.css`, `base.css`)**:
+     - `#btnResetHomeFilters`, `#btnResetResultsFilters`: 초기 `visibility: hidden; opacity: 0; pointer-events: none;` 클래스 이전
+     - `.empty-actions`: 검색 결과 없음 카드 하단 액션 버튼 그룹 flex 정렬 클래스화
+     - `.guidance-sample-tags`, `.guidance-sample-label`: 추천 키워드 칩 래퍼 및 라벨 스타일 클래스화
+  2. **뷰어 영역 (`viewer.css`)**:
+     - 2x2 지문 그리드 패널: `.panel-top-left`, `.panel-top-right`, `.panel-bottom-left`, `.panel-bottom-right` 클래스로 `grid-column`/`grid-row` 이전
+     - 패널 액션 및 듣기 바: `.panel-header-actions`, `.panel-bottom-left-actions`, `.listening-bottom-left-actions`, `.btn-fels-action` 클래스화
+     - 메타 정보 & 문장 뷰어: `#validationBadge`, `.meta-val-primary`, `.meta-val-type`, `.meta-val-answer`, `.rates-empty-hint`, `.meta-item-spacing`, `.sentence-match-label`, `#sentenceMatchCount`, `.sentence-match-sub`, `.sentence-header-actions`, `#btnSentenceBackToPassage` 스타일 이전
+  3. **모달 영역 (`upload.css`, `grammar.css`, `modal.css`)**:
+     - 공통 모달 유틸리티: `.modal-header-info`, `.modal-header-actions`, `.modal-footer-between`, `.modal-footer-actions`, `.flex-row-center`, `.flex-between`, `.mb-0`, `.cursor-pointer`, `.nowrap`, `.text-center`, `.w-100` 신설
+     - 업로드 모달 테이블: `.batch-sets-table`, `.files-status-table`, `.manage-exams-table` 공통 규격, 헤더 정렬(`.col-center`, `.col-chk`), 래퍼 스크롤 클래스화
+     - 업로드 보조 컴포넌트: `.batch-progress-box`, `.batch-progress-header`, `.progress-bar-bg`, `.progress-bar-fill`, `.batch-progress-subtext`, `.files-summary-bar`, `.files-summary-badges`, `.badge-files-stat`, `.dropdown-filter-container`, `.btn-filter-trigger`, `.dropdown-filter-menu`, `.missing-filter-header`, `.missing-filter-title`, `.missing-filter-actions`, `.btn-missing-text`, `.missing-filter-body`, `.missing-chk-label`, `.upload-help-box`, `.manage-exams-toolbar`, `.manage-exams-count`, `.form-text-muted`, `.btn-icon-gap`
+     - 선택 삭제 모달: `.sel-del-modal-content`, `.sel-del-header`, `.sel-del-title`, `.sel-del-subtitle`, `.sel-del-target-box`, `.sel-del-target-label`, `.sel-del-target-text`, `.sel-del-preset-label`, `.sel-del-presets-row`, `.sel-del-options-list`, `.sel-del-option-card`, `.sel-del-card-header`, `.sel-del-card-title`, `.sel-del-card-desc`, `.sel-del-warning-msg`
+     - AI 설정 및 어법 모달: `.lmstudio-card`, `.tts-radio-label`, `.edge-label`, `.btn-tts-action`, `.grammar-popover-title-group`, `.grammar-popover-source`, `.grammar-popover-footer`
+  4. **보존 처리**:
+     - JS 상태 제어용 초기 속성(`display: none;`, `width: 0%;`)은 자바스크립트의 `element.style.display` 검사 로직(`!== "none"`, `=== "block"`) 및 애니메이션 호환성을 위해 안전하게 보존
+- **수치 변화**:
+  - `templates/index.html` 전체 인라인 `style=""`: 기존 **371개 → 164개** (207개 대폭 감축, 55.8% 제거)
+  - 순수 레이아웃/비주얼 인라인 스타일: **321개 → 109개** (66% 클래스화 이전 완료)
+- **검증**:
+  - `compileall`: 파이썬 구문 오류 0건 통과
+  - `node -c`: 프론트엔드 자바스크립트 전체 문법 검사 오류 0건 통과
+  - `pytest tests -q`: **206개** 단위/통합 테스트 100% 통과 (16.79s)
 - **사용자 수동 확인**: 브라우저에서 화면을 새로고침하여 레이아웃 및 스타일이 기존과 100% 동일하게 정상 렌더링되는지 확인 (원하시면 `/scratchpad` 시각 검증 요청 가능)
 
 ### 4단계 검증
