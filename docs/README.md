@@ -42,4 +42,5 @@ docs/
 
 | 날짜 | 문서 | 관련 계획서 |
 |---|---|---|
+| 2026-10-06 | [교사용 B4 지문 유인물 HWPX 양식 파일 구조 및 기능 적합성 분석 보고서](reviews/2026-10-06_handout-template-structure-analysis.md) | [교사용 지문 유인물 자동 제작 시스템](plans/2026-10-06_02_handout-generation-system.md) |
 | 2026-10-04 | [프로젝트 코드 리뷰 보고서 (장단점 및 대안)](reviews/2026-10-04_code-review-report.md) | [코드 리뷰 개선 로드맵](plans/2026-10-04_01_code-review-roadmap.md) |

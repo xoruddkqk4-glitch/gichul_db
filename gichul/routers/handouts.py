@@ -171,10 +171,11 @@ def api_generate_handout(req: HandoutGenerateRequest):
         else:
             raise HTTPException(status_code=400, detail=f"지원하지 않는 유인물 유형입니다: {req.handout_type}")
 
-        # RFC 5987 한글 파일명 인코딩
+        # RFC 5987 한글 파일명 인코딩 및 RFC 2616 호환 fallback
         encoded_filename = urllib.parse.quote(default_filename)
+        fallback_ascii = f"handout_{len(items)}.hwpx" if default_filename.endswith(".hwpx") else f"handout_{len(items)}.zip"
         headers = {
-            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Content-Disposition": f'attachment; filename="{fallback_ascii}"; filename*=UTF-8\'\'{encoded_filename}',
             "Access-Control-Expose-Headers": "Content-Disposition",
         }
 

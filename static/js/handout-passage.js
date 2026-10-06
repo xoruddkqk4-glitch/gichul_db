@@ -344,6 +344,11 @@ async function downloadHandout(handoutType) {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
 
+    // 다운로드 완료 알림 (C드라이브의 '다운로드' 폴더 저장 완료 안내)
+    setTimeout(() => {
+      alert(`✅ '${filename}' 파일이 C드라이브 '다운로드' 폴더로 다운로드되었습니다.`);
+    }, 150);
+
   } catch (err) {
     console.error("Handout download failed", err);
     alert(`유인물 생성 실패: ${err.message}`);
@@ -396,12 +401,18 @@ export function initHandoutPassageView() {
     });
   }
 
-  // 뒤로 가기 버튼
+  // 뒤로 가기 버튼 (검색 화면으로 복귀)
   const btnBack = document.getElementById("btnHandoutBackToResults");
   if (btnBack) {
     btnBack.addEventListener("click", () => {
       import("./navigation.js").then((m) => {
-        if (m.switchView) m.switchView("results");
+        if (typeof m.backFromHandoutView === "function") {
+          m.backFromHandoutView();
+        } else if (typeof m.showResultsScreen === "function") {
+          m.showResultsScreen();
+        } else if (typeof m.showHomeScreen === "function") {
+          m.showHomeScreen();
+        }
       });
     });
   }
@@ -415,7 +426,7 @@ export function initHandoutPassageView() {
       const file = e.target.files?.[0];
       if (!file) return;
 
-      if (!file.name.toLowerCase().endswith(".hwpx")) {
+      if (!file.name.toLowerCase().endsWith(".hwpx")) {
         alert("HWPX 양식 파일(.hwpx)만 업로드할 수 있습니다.");
         fileInput.value = "";
         return;

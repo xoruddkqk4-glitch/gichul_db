@@ -63,6 +63,12 @@ def get_template_path(template_name: Optional[str] = None, is_explanation: bool 
     if os.path.exists(default_path):
         return default_path
 
+    # 대체 파일명 지원 (하이픈 <-> 언더스코어 상호 호환 지원)
+    alt_name = default_name.replace("_", "-") if "_" in default_name else default_name.replace("-", "_")
+    alt_path = os.path.join(HANDOUT_TEMPLATES_DIR, alt_name)
+    if os.path.exists(alt_path):
+        return alt_path
+
     fallback_path = os.path.join(HANDOUT_TEMPLATES_DIR, "default_b4_template.hwpx")
     if os.path.exists(fallback_path):
         return fallback_path
@@ -84,8 +90,8 @@ def list_templates() -> List[Dict[str, Any]]:
                 stat = os.stat(fpath)
                 templates.append({
                     "filename": fname,
-                    "name": "기본 B4 문제지 양식" if fname == DEFAULT_QUESTION_TEMPLATE else (
-                        "기본 B4 해설지 양식" if fname == DEFAULT_EXPLANATION_TEMPLATE else fname
+                    "name": "기본 B4 문제지 양식" if fname in (DEFAULT_QUESTION_TEMPLATE, "default_b4-question.hwpx") else (
+                        "기본 B4 해설지 양식" if fname in (DEFAULT_EXPLANATION_TEMPLATE, "default_b4-explanation.hwpx") else fname
                     ),
                     "is_default": True,
                     "size_kb": round(stat.st_size / 1024, 1),

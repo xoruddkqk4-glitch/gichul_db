@@ -187,6 +187,21 @@ export function switchToHandoutView() {
     if (m.renderHandoutView) m.renderHandoutView();
   });
 }
+
+/** 교사용 지문 유인물 제작소 화면에서 검색 화면으로 복귀 */
+export function backFromHandoutView() {
+  stopAllListeningAudio();
+  const handoutView = document.getElementById("handoutViewContainer");
+  if (handoutView) handoutView.style.display = "none";
+
+  const hasResults = (appState.lastPassageSearchResults && appState.lastPassageSearchResults.length > 0) ||
+                     (resultsView && resultsView.style.display !== "none");
+  if (hasResults) {
+    showResultsScreen();
+  } else {
+    showHomeScreen();
+  }
+}
 // =========================================================================
 // 3. 모드 전환 (지문 검색 vs 문장 검색)
 // =========================================================================
@@ -238,7 +253,7 @@ export function init() {
   btnBackToSearch.addEventListener("click", () => {
     const handoutView = document.getElementById("handoutViewContainer");
     if (handoutView && handoutView.style.display !== "none") {
-      showResultsScreen();
+      backFromHandoutView();
     } else {
       showHomeScreen();
     }
