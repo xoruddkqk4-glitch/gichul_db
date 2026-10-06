@@ -444,13 +444,6 @@
             </div>
 
             <div class="breadcrumb-right" id="breadcrumbRight">
-              <label class="handout-checkbox-label" id="labelHandoutSelectCurrent" title="현재 문항을 유인물 보관함에 담거나 제외합니다">
-                <input type="checkbox" id="chkHandoutSelectCurrent" class="handout-q-select-checkbox">
-                <span>📄 유인물 담기</span>
-              </label>
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnHandoutToggleAllExam" title="현재 시험지의 전체 문항을 유인물에 담거나 제외합니다">
-                📑 시험 전체 담기
-              </button>
               <button type="button" class="btn-tree-reset-exam" id="btnTreeResetExam" style="display: none;" title="검색 조건 및 시험 선택 초기화">
                 ↺ 검색 조건 초기화
               </button>
@@ -481,8 +474,17 @@
           <section class="panel-card panel-top-left">
             <div class="panel-header">
               <div class="panel-header-left">
-                <span class="panel-title" id="panelTitleTopLeft">🖼️ PDF 문항 캡처 이미지</span>
-                <span class="badge-source" id="badgeTopLeftSource">고화질 원본</span>
+                <label class="handout-checkbox-label" id="labelHandoutSelectCurrent" title="현재 문항을 유인물 프로젝트에 담거나 제외합니다">
+                  <input type="checkbox" id="chkHandoutSelectCurrent" class="handout-q-select-checkbox">
+                  <span id="txtHandoutSelectLabel">📄 유인물 담기</span>
+                </label>
+                <div class="handout-project-quick-select" id="wrapQuickProjectSelect" title="현재 작업 중인 유인물 프로젝트">
+                  <span class="quick-proj-icon">📁</span>
+                  <select id="selectQuickHandoutProject" class="handout-project-dropdown" title="문항을 담을 유인물 프로젝트를 선택하세요">
+                    <!-- JS 동적 렌더링 -->
+                  </select>
+                  <button type="button" id="btnQuickCreateProject" class="btn-project-tool" title="새 유인물 프로젝트 생성">➕</button>
+                </div>
               </div>
               <div class="panel-header-actions" id="panelActionsTopLeft">
                 <button type="button" class="btn btn-secondary btn-sm" id="btnRecapturePdf" title="원본 PDF 파일에서 이 문항 영역을 다시 캡처하고 형광펜을 재생성합니다">
@@ -794,8 +796,30 @@
         </div>
         <div>
           <button type="button" class="btn-handout-back" id="btnHandoutBackToResults">
-            🔙 검색 화면으로 복귀
+            🔙 지문 결과 화면으로 복귀
           </button>
+        </div>
+      </div>
+
+      <!-- 프로젝트 선택 및 관리 바 -->
+      <div class="handout-project-bar" id="handoutProjectBar">
+        <div class="handout-project-bar-left">
+          <span class="project-bar-label">📁 현재 프로젝트:</span>
+          <select id="selectHandoutProject" class="handout-project-main-select" title="작업할 유인물 프로젝트를 선택하세요">
+            <!-- JS 동적 렌더링 -->
+          </select>
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreateNewProject" title="새로운 유인물 프로젝트를 생성합니다">
+            ➕ 새 프로젝트
+          </button>
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenameCurrentProject" title="현재 프로젝트의 이름을 변경합니다">
+            ✏️ 이름 변경
+          </button>
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeleteCurrentProject" style="color: #ef4444;" title="현재 프로젝트를 삭제합니다">
+            🗑️ 프로젝트 삭제
+          </button>
+        </div>
+        <div class="handout-project-bar-right">
+          <span class="project-meta-info" id="txtProjectMetaInfo">프로젝트 생성일: -</span>
         </div>
       </div>
 
@@ -835,14 +859,19 @@
           <div class="handout-panel-card">
             <h3 class="panel-card-title">📝 머리말 &amp; 꼬리말 설정</h3>
             <div class="form-group">
-              <label class="form-label" for="handoutHeaderTitle">머리말 제목</label>
-              <input type="text" class="form-input" id="handoutHeaderTitle" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출" maxlength="60">
-              <span class="form-help">유인물 상단에 인쇄될 메인 제목입니다.</span>
+              <label class="form-label" for="handoutHeaderLeft">왼쪽 상단</label>
+              <input type="text" class="form-input" id="handoutHeaderLeft" placeholder="예: OO고등학교 영어과" maxlength="60">
+              <span class="form-help">유인물 상단 표의 왼쪽 칸에 인쇄될 문구입니다.</span>
             </div>
             <div class="form-group">
-              <label class="form-label" for="handoutHeaderSub">머리말 소제목 / 인적사항</label>
-              <input type="text" class="form-input" id="handoutHeaderSub" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
-              <span class="form-help">제목 아래 또는 우측에 표기할 인적사항/부서입니다.</span>
+              <label class="form-label" for="handoutHeaderCenter">가운데 상단</label>
+              <input type="text" class="form-input" id="handoutHeaderCenter" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출" maxlength="60">
+              <span class="form-help">유인물 상단 표의 가운데 칸에 인쇄될 메인 제목입니다.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="handoutHeaderRight">오른쪽 상단</label>
+              <input type="text" class="form-input" id="handoutHeaderRight" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
+              <span class="form-help">유인물 상단 표의 오른쪽 칸에 인쇄될 인적사항/소속입니다.</span>
             </div>
             <div class="form-group">
               <label class="form-label" for="handoutFooterText">꼬리말 텍스트</label>

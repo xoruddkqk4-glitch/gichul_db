@@ -2549,3 +2549,35 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과 (3.01s)
   - `pytest tests/test_api_smoke.py tests/test_routers.py`: 11개 API 스모크 테스트 100% 통과 (6.10s)
 
+### [2026-10-06 19:00] 업데이트 이력 (Commit ID: f56243ff)
+- **수정 내용**:
+  - **1) 유인물 프로젝트 형식 관리 시스템 전면 구축 (`static/js/handout-cart.js`, `templates/index.html`, `static/css/handouts.css`, `static/js/handout-passage.js`)**:
+    - **다중 프로젝트 독립 관리 체계**: 단일 장바구니에서 프로젝트(예: "2026 1학기 기말고사 대비", "고2 빈칸추론 특강") 단위로 유인물을 생성/보관/전환할 수 있도록 전면 개편.
+    - **데이터 마이그레이션**: 기존에 담겨있던 문항들은 유실 없이 '기본 프로젝트'로 자동 승계.
+    - **프로젝트별 독립 데이터 보존**: 각 프로젝트마다 출제 문항 목록(`items`), 사용자 지정 인쇄 번호(`custom_q_num`), 머리말/꼬리말/템플릿 서식 설정(`settings`)이 독립적으로 저장/복원.
+    - **유인물 제작소 프로젝트 관리 바**: 상단에 `[📁 현재 프로젝트 선택]` 드롭다운, `[➕ 새 프로젝트]`, `[✏️ 이름 변경]`, `[🗑️ 프로젝트 삭제]`, 생성일 메타 정보 바 구축.
+    - **플로팅 카트 바 실시간 동기화**: `📁 [프로젝트명] N문항` 형식으로 현재 활성 프로젝트와 문항 수를 실시간 표출.
+  - **2) 지문 결과 화면 '유인물 담기' 버튼 위치 최적화 및 불필요 버튼 정리 (`templates/index.html`)**:
+    - 상단 브레드크럼 우측의 `📑 시험 전체 담기` 버튼 삭제.
+    - 좌측 상단 패널 헤더의 기존 텍스트(`🖼️ PDF 문항 캡처 이미지`, `고화질 원본`)를 삭제하고, 해당 위치(`panel-header-left`)에 **`[📄 유인물 담기]` 체크박스**를 이전 배치하여 지문 열람 시 바로 담을 수 있도록 가시성 극대화.
+    - 유인물 담기 버튼 바로 옆에 **`[📁 프로젝트 선택 드롭다운]` 및 `[➕ 새 프로젝트]` 빠른 생성 버튼**을 함께 배치하여 열람 중인 문항을 즉시 원하는 프로젝트에 담을 수 있도록 최적화.
+  - **3) '검색 화면으로 복귀' 클릭 시 지문 결과 화면 복귀 보장 (`static/js/navigation.js`, `static/js/handout-passage.js`, `templates/index.html`)**:
+    - `backFromHandoutView()`에서 홈 검색 화면(`homeSearchView`)으로 분기되던 조건을 제거하고, 항상 이전에 보던 **지문 결과 화면(`showResultsScreen()`)**으로 즉시 복귀하도록 단일화.
+    - 버튼 명칭을 `🔙 지문 결과 화면으로 복귀`로 명확화.
+  - **4) 머리말 3열 설정 개편 ('왼쪽 상단', '가운데 상단', '오른쪽 상단') 및 HWPX 상단 표 주입 (`templates/index.html`, `gichul/routers/handouts.py`, `gichul/services/hwpx_generator.py`)**:
+    - 유인물 제작소 서식 폼을 B4 양식의 상단 표에 맞춰 `handoutHeaderLeft` ('왼쪽 상단'), `handoutHeaderCenter` ('가운데 상단'), `handoutHeaderRight` ('오른쪽 상단')으로 개편.
+    - HWPX 템플릿의 상단 1행 3열 표(`tbl`)를 유지하고 각 열(0, 1, 2열)에 텍스트 주입 및 검은색 폰트로 정규화.
+  - **5) HWPX 템플릿 보존형 본문 주입 및 해설지 1행 4열 출처 표 복원 (`gichul/services/hwpx_generator.py`)**:
+    - **해설지 출처 박스 표 복원**: 템플릿의 1행 4열 표(`rowCnt="1"`, `colCnt="4"`)를 추출 및 복제하여 지문 메타데이터(연도, 학년, 월, 번호)를 각 셀에 주입하고 폰트 색상 정규화.
+    - **템플릿 고유 단락 스타일 승계**: 문제지 발문(`paraPrIDRef="26"`), 본문 및 선지(`paraPrIDRef="35"` 양쪽정렬), 해설지 출처 표(`paraPrIDRef="24"`), 정답(`paraPrIDRef="25"`), 해설 본문(`paraPrIDRef="27"` 양쪽정렬) 적용.
+    - **다페이지 연속 레이아웃**: 홀수 문항 후 `columnBreak="1"`, 짝수 문항 후 `pageBreak="1"`을 자동 배치하여 4문항, 6문항 등 2문항을 초과하더라도 B4 2단 레이아웃이 완벽하게 유지되도록 구조화.
+  - **6) 계획서 작성 및 문서 동기화**:
+    - `docs/plans/2026-10-06_03_handout-template-content-injection.md`: 계획서 작성 및 `✅ 완료` 반영.
+    - `docs/README.md`: 계획서 목록 상태 `✅ 완료` 동기화.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py gichul/routers/handouts.py`: 파이썬 컴파일 오류 0건 통과
+  - `node -c static/js/handout-cart.js static/js/handout-passage.js static/js/navigation.js`: 자바스크립트 문법 검사 통과
+  - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과 (4.38s)
+  - 다페이지(4문항) 생성 파이프라인 검증: `columnBreak="1"` 2개, `pageBreak="1"` 1개 정확 분할 확인 완료
+
+

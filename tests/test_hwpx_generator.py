@@ -100,10 +100,12 @@ def test_generate_explanation_handout():
     import io
     with zipfile.ZipFile(io.BytesIO(hwpx_bytes), "r") as zf:
         sec0 = zf.read("Contents/section0.xml").decode("utf-8")
-        # 원출처 및 정답률 확인
-        assert "원출처: 고2-2026년-09월-18번" in sec0
-        assert "정답률 85.5%" in sec0
-        # 좌측하단패널 해설 텍스트 포함 확인
+        # 1행 4열 출처 표 각 셀 주입 확인 (년도, 학년, 월, 번호)
+        assert "2026년" in sec0
+        assert "고2" in sec0
+        assert "18번" in sec0
+        assert "19번" in sec0
+        # 좌측하단패널 해설 텍스트 및 정답 포함 확인
         assert "[정답] ②" in sec0
         assert "소책자" in sec0
 

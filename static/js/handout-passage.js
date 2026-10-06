@@ -14,11 +14,16 @@ import {
   renumberCart,
   clearCart,
   updateFloatingCartUI,
+  syncAllProjectDropdowns,
+  getCurrentProject,
+  getProjectSettings,
+  saveProjectSettings,
 } from "./handout-cart.js";
 
 // 로컬스토리지 키
-const KEY_HEADER_TITLE = "gichul_handout_header_title";
-const KEY_HEADER_SUB = "gichul_handout_header_sub";
+const KEY_HEADER_LEFT = "gichul_handout_header_left";
+const KEY_HEADER_CENTER = "gichul_handout_header_center";
+const KEY_HEADER_RIGHT = "gichul_handout_header_right";
 const KEY_FOOTER_TEXT = "gichul_handout_footer_text";
 const KEY_HIGHLIGHT_ANSWER = "gichul_handout_highlight_answer";
 const KEY_SELECTED_TEMPLATE = "gichul_handout_template";
@@ -39,6 +44,8 @@ export async function renderHandoutView() {
   const container = document.getElementById("handoutViewContainer");
   if (!container) return;
 
+  syncAllProjectDropdowns();
+  const curProj = getCurrentProject();
   const items = getCartItems();
   updateToolbarStats(items);
 
@@ -112,7 +119,11 @@ function renderEmptyState() {
   if (btnGoBack) {
     btnGoBack.addEventListener("click", () => {
       import("./navigation.js").then((m) => {
-        if (m.switchView) m.switchView("results");
+        if (typeof m.backFromHandoutView === "function") {
+          m.backFromHandoutView();
+        } else if (typeof m.showResultsScreen === "function") {
+          m.showResultsScreen();
+        }
       });
     });
   }
@@ -233,35 +244,69 @@ async function loadTemplateList() {
   }
 }
 
-/** 양식 설정값 localStorage 복원 */
+/** 양식 설정값 localStorage 및 프로젝트 설정 복원 */
 function restoreFormSettings() {
-  const inpTitle = document.getElementById("handoutHeaderTitle");
-  const inpSub = document.getElementById("handoutHeaderSub");
+  const inpLeft = document.getElementById("handoutHeaderLeft");
+  const inpCenter = document.getElementById("handoutHeaderCenter");
+  const inpRight = document.getElementById("handoutHeaderRight");
   const inpFooter = document.getElementById("handoutFooterText");
   const chkHighlight = document.getElementById("handoutHighlightAnswer");
 
-  if (inpTitle) inpTitle.value = localStorage.getItem(KEY_HEADER_TITLE) || "";
-  if (inpSub) inpSub.value = localStorage.getItem(KEY_HEADER_SUB) || "";
-  if (inpFooter) inpFooter.value = localStorage.getItem(KEY_FOOTER_TEXT) || "";
+  const projSettings = getProjectSettings();
+
+  if (inpLeft) {
+    inpLeft.value = projSettings.header_left !== undefined ? projSettings.header_left : (localStorage.getItem(KEY_HEADER_LEFT) || "");
+  }
+  if (inpCenter) {
+    inpCenter.value = projSettings.header_center !== undefined ? projSettings.header_center : (localStorage.getItem(KEY_HEADER_CENTER) || localStorage.getItem("gichul_handout_header_title") || "");
+  }
+  if (inpRight) {
+    inpRight.value = projSettings.header_right !== undefined ? projSettings.header_right : (localStorage.getItem(KEY_HEADER_RIGHT) || localStorage.getItem("gichul_handout_header_sub") || "");
+  }
+  if (inpFooter) {
+    inpFooter.value = projSettings.footer_text !== undefined ? projSettings.footer_text : (localStorage.getItem(KEY_FOOTER_TEXT) || "");
+  }
   if (chkHighlight) {
-    const savedH = localStorage.getItem(KEY_HIGHLIGHT_ANSWER);
-    chkHighlight.checked = savedH !== null ? savedH === "true" : true;
+    if (projSettings.highlight_answer !== undefined) {
+      chkHighlight.checked = !!projSettings.highlight_answer;
+    } else {
+      const savedH = localStorage.getItem(KEY_HIGHLIGHT_ANSWER);
+      chkHighlight.checked = savedH !== null ? savedH === "true" : true;
+    }
   }
 }
 
-/** 양식 설정값 저장 */
+/** 양식 설정값 저장 (프로젝트 및 localStorage) */
 function saveFormSettings() {
-  const inpTitle = document.getElementById("handoutHeaderTitle");
-  const inpSub = document.getElementById("handoutHeaderSub");
+  const inpLeft = document.getElementById("handoutHeaderLeft");
+  const inpCenter = document.getElementById("handoutHeaderCenter");
+  const inpRight = document.getElementById("handoutHeaderRight");
   const inpFooter = document.getElementById("handoutFooterText");
   const chkHighlight = document.getElementById("handoutHighlightAnswer");
   const selTemplate = document.getElementById("handoutTemplateSelect");
 
-  if (inpTitle) localStorage.setItem(KEY_HEADER_TITLE, inpTitle.value.trim());
-  if (inpSub) localStorage.setItem(KEY_HEADER_SUB, inpSub.value.trim());
-  if (inpFooter) localStorage.setItem(KEY_FOOTER_TEXT, inpFooter.value.trim());
-  if (chkHighlight) localStorage.setItem(KEY_HIGHLIGHT_ANSWER, String(chkHighlight.checked));
-  if (selTemplate) localStorage.setItem(KEY_SELECTED_TEMPLATE, selTemplate.value);
+  const hLeft = inpLeft ? inpLeft.value.trim() : "";
+  const hCenter = inpCenter ? inpCenter.value.trim() : "";
+  const hRight = inpRight ? inpRight.value.trim() : "";
+  const fText = inpFooter ? inpFooter.value.trim() : "";
+  const hlAns = chkHighlight ? chkHighlight.checked : true;
+  const tplName = selTemplate ? selTemplate.value : "";
+
+  if (inpLeft) localStorage.setItem(KEY_HEADER_LEFT, hLeft);
+  if (inpCenter) localStorage.setItem(KEY_HEADER_CENTER, hCenter);
+  if (inpRight) localStorage.setItem(KEY_HEADER_RIGHT, hRight);
+  if (inpFooter) localStorage.setItem(KEY_FOOTER_TEXT, fText);
+  if (chkHighlight) localStorage.setItem(KEY_HIGHLIGHT_ANSWER, String(hlAns));
+  if (selTemplate) localStorage.setItem(KEY_SELECTED_TEMPLATE, tplName);
+
+  saveProjectSettings(null, {
+    header_left: hLeft,
+    header_center: hCenter,
+    header_right: hRight,
+    footer_text: fText,
+    highlight_answer: hlAns,
+    template_name: tplName,
+  });
 }
 
 /** 유인물 다운로드 실행 함수 */
@@ -280,12 +325,19 @@ async function downloadHandout(handoutType) {
     }
   });
 
+  const headerLeft = (document.getElementById("handoutHeaderLeft")?.value || "").trim();
+  const headerCenter = (document.getElementById("handoutHeaderCenter")?.value || "").trim();
+  const headerRight = (document.getElementById("handoutHeaderRight")?.value || "").trim();
+
   const payload = {
     handout_type: handoutType,
     passage_ids: items.map((i) => i.id),
     custom_q_nums: customQNums,
-    header_title: (document.getElementById("handoutHeaderTitle")?.value || "").trim(),
-    header_sub: (document.getElementById("handoutHeaderSub")?.value || "").trim(),
+    header_left: headerLeft,
+    header_center: headerCenter,
+    header_right: headerRight,
+    header_title: headerCenter,
+    header_sub: headerRight,
     footer_text: (document.getElementById("handoutFooterText")?.value || "").trim(),
     highlight_answer: !!document.getElementById("handoutHighlightAnswer")?.checked,
     template_name: document.getElementById("handoutTemplateSelect")?.value || null,
@@ -460,7 +512,7 @@ export function initHandoutPassageView() {
   }
 
   // 설정 폼 변경 시 자동 저장
-  ["handoutHeaderTitle", "handoutHeaderSub", "handoutFooterText", "handoutHighlightAnswer", "handoutTemplateSelect"].forEach((id) => {
+  ["handoutHeaderLeft", "handoutHeaderCenter", "handoutHeaderRight", "handoutFooterText", "handoutHighlightAnswer", "handoutTemplateSelect"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener("change", saveFormSettings);
@@ -477,8 +529,15 @@ export function initHandoutPassageView() {
   if (btnE) btnE.addEventListener("click", () => downloadHandout("explanation"));
   if (btnZ) btnZ.addEventListener("click", () => downloadHandout("both_zip"));
 
-  // 카트 변경 시 화면 갱신 리스너
+  // 카트 및 프로젝트 변경 시 화면 갱신 리스너
   window.addEventListener("handout-cart-changed", () => {
+    const container = document.getElementById("handoutViewContainer");
+    if (container && container.style.display !== "none") {
+      renderHandoutView();
+    }
+  });
+
+  window.addEventListener("handout-project-changed", () => {
     const container = document.getElementById("handoutViewContainer");
     if (container && container.style.display !== "none") {
       renderHandoutView();

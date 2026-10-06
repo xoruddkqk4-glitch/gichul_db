@@ -32,8 +32,11 @@ class HandoutGenerateRequest(BaseModel):
     handout_type: str = Field(default="question", description="question | explanation | both_zip")
     passage_ids: List[str] = Field(default_factory=list, description="선택된 지문 ID 목록 (정렬 순서 유지)")
     custom_q_nums: Dict[str, str] = Field(default_factory=dict, description="지문 ID별 사용자 지정 문항 번호 맵")
-    header_title: Optional[str] = Field(default="", description="머리말 제목")
-    header_sub: Optional[str] = Field(default="", description="머리말 소제목/인적사항")
+    header_left: Optional[str] = Field(default="", description="왼쪽 상단 텍스트")
+    header_center: Optional[str] = Field(default="", description="가운데 상단 텍스트 (메인 제목)")
+    header_right: Optional[str] = Field(default="", description="오른쪽 상단 텍스트 (인적사항/소속)")
+    header_title: Optional[str] = Field(default="", description="머리말 제목 (하위 호환)")
+    header_sub: Optional[str] = Field(default="", description="머리말 소제목/인적사항 (하위 호환)")
     footer_text: Optional[str] = Field(default="", description="꼬리말 텍스트")
     highlight_answer: bool = Field(default=True, description="정답 형광펜 표시 여부 (문제지용)")
     template_name: Optional[str] = Field(default=None, description="선택된 템플릿 파일명")
@@ -147,8 +150,11 @@ def api_generate_handout(req: HandoutGenerateRequest):
         raise HTTPException(status_code=404, detail="선택된 문항의 데이터를 DB에서 찾을 수 없습니다.")
 
     options = {
-        "header_title": req.header_title or "",
-        "header_sub": req.header_sub or "",
+        "header_left": (req.header_left or "").strip(),
+        "header_center": (req.header_center or req.header_title or "").strip(),
+        "header_right": (req.header_right or req.header_sub or "").strip(),
+        "header_title": (req.header_center or req.header_title or "").strip(),
+        "header_sub": (req.header_right or req.header_sub or "").strip(),
         "footer_text": req.footer_text or "",
         "highlight_answer": req.highlight_answer,
         "template_name": req.template_name,

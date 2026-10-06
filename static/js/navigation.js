@@ -188,19 +188,13 @@ export function switchToHandoutView() {
   });
 }
 
-/** 교사용 지문 유인물 제작소 화면에서 검색 화면으로 복귀 */
+/** 교사용 지문 유인물 제작소 화면에서 지문 결과 화면으로 복귀 */
 export function backFromHandoutView() {
   stopAllListeningAudio();
   const handoutView = document.getElementById("handoutViewContainer");
   if (handoutView) handoutView.style.display = "none";
 
-  const hasResults = (appState.lastPassageSearchResults && appState.lastPassageSearchResults.length > 0) ||
-                     (resultsView && resultsView.style.display !== "none");
-  if (hasResults) {
-    showResultsScreen();
-  } else {
-    showHomeScreen();
-  }
+  showResultsScreen();
 }
 // =========================================================================
 // 3. 모드 전환 (지문 검색 vs 문장 검색)
