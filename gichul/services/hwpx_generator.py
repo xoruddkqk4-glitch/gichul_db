@@ -334,11 +334,15 @@ def _extract_and_populate_header_table(
     if first_p is not None:
         for r in first_p.findall(f"{{{NS_HP}}}run"):
             if r.find(f"{{{NS_HP}}}secPr") is not None:
-                sec_run = r
-            if r.find(f".//{{{NS_HP}}}tbl") is not None and tbl_run is None:
-                tbl_run = r
+                sec_run = copy.deepcopy(r)
+            if (r.find(f".//{{{NS_HP}}}header") is not None or r.find(f".//{{{NS_HP}}}tbl") is not None) and tbl_run is None:
+                tbl_run = copy.deepcopy(r)
 
     if tbl_run is not None:
+        # 해설지 템플릿의 P0에 header run 직하위 본문 1x4 표가 붙어있는 경우 중복/중첩 방지를 위해 제거
+        for direct_tbl in tbl_run.findall(f"{{{NS_HP}}}tbl"):
+            tbl_run.remove(direct_tbl)
+
         tbl = tbl_run.find(f".//{{{NS_HP}}}tbl")
         if tbl is not None:
             for tc in tbl.findall(f".//{{{NS_HP}}}tc"):
@@ -363,6 +367,8 @@ def _extract_and_populate_header_table(
                         r.set("charPrIDRef", normal_char_id)
 
     return sec_run, tbl_run
+
+
 def _parse_passage_source_parts(item: Dict[str, Any]) -> Tuple[str, str, str, str]:
     """지문 데이터에서 기출 메타데이터 (년도, 학년, 월, 번호) 문자열 추출"""
     raw_id = item.get("id", "").strip("[]")
@@ -402,8 +408,9 @@ def _create_source_table_paragraph(
     normal_char_id: str
 ) -> ET.Element:
     """1행 4열 출처 표를 담은 <hp:p paraPrIDRef='24'> 문단 생성"""
+    p_id = str(abs(hash(f"src_tbl_{year}_{grade}_{month}_{qnum}_{os.urandom(4)}")) % 2000000000)
     p = ET.Element(f"{{{NS_HP}}}p", {
-        "id": str(abs(hash(f"src_tbl_{year}_{grade}_{month}_{qnum}_{os.urandom(4)}")) % 2000000000),
+        "id": p_id,
         "paraPrIDRef": "24",
         "styleIDRef": "0",
         "pageBreak": "0",
@@ -413,18 +420,34 @@ def _create_source_table_paragraph(
 
     if template_tbl is not None:
         tbl = copy.deepcopy(template_tbl)
+        # 1) 표 자체에 고유 ID 부여
+        tbl.set("id", str(abs(hash(f"tbl_{p_id}_{os.urandom(4)}")) % 2000000000))
+
         values = {"0": year, "1": grade, "2": month, "3": qnum}
-        for tc in tbl.findall(f".//{{{NS_HP}}}tc"):
+        for tc_idx, tc in enumerate(tbl.findall(f".//{{{NS_HP}}}tc")):
             addr = tc.find(f".//{{{NS_HP}}}cellAddr")
-            if addr is None:
-                continue
-            col = addr.get("colAddr")
+            col = addr.get("colAddr") if addr is not None else str(tc_idx)
             val = values.get(col, "")
-            t_elems = tc.findall(f".//{{{NS_HP}}}t")
-            for i, t in enumerate(t_elems):
-                t.text = val if i == 0 else ""
-            for r in tc.findall(f".//{{{NS_HP}}}run"):
-                r.set("charPrIDRef", normal_char_id)
+
+            # 2) 셀 내부를 OWPML 표준의 깨끗한 단일 문단 구조로 재구성
+            # (템플릿의 누름틀 CLICK_HERE fieldBegin/fieldEnd 및 불일치 linesegarray가 한글 보안 경고를 유발하므로 정규화)
+            subList = tc.find(f"{{{NS_HP}}}subList")
+            if subList is not None:
+                orig_p = subList.find(f"{{{NS_HP}}}p")
+                cell_para_pr_id = orig_p.get("paraPrIDRef", "22") if orig_p is not None else "22"
+
+                subList.clear()
+                cell_p = ET.SubElement(subList, f"{{{NS_HP}}}p", {
+                    "id": str(abs(hash(f"cell_p_{p_id}_{tc_idx}_{os.urandom(4)}")) % 2000000000),
+                    "paraPrIDRef": cell_para_pr_id,
+                    "styleIDRef": "0",
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0"
+                })
+                cell_run = ET.SubElement(cell_p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
+                t_elem = ET.SubElement(cell_run, f"{{{NS_HP}}}t")
+                t_elem.text = val
 
         run = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
         run.append(tbl)

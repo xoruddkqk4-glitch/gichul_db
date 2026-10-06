@@ -40,6 +40,57 @@
   font-weight: 600;
 }
 
+.handout-floating-select {
+  background: rgba(30, 41, 59, 0.95);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 170px;
+  text-overflow: ellipsis;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.handout-floating-select:hover,
+.handout-floating-select:focus {
+  border-color: #60a5fa;
+  background: rgba(51, 65, 85, 0.98);
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+}
+
+.handout-floating-select option {
+  background: #1e293b;
+  color: #ffffff;
+  padding: 6px 10px;
+}
+
+.btn-floating-new-project {
+  background: rgba(37, 99, 235, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(147, 197, 253, 0.4);
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+}
+
+.btn-floating-new-project:hover {
+  background: #2563eb;
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.5);
+}
+
 .cart-count-badge {
   background: #3b82f6;
   color: #ffffff;
@@ -87,39 +138,58 @@
   color: #f87171;
 }
 
-/* 지문 결과 화면 내 유인물 담기 체크박스 */
+/* 지문 결과 화면 내 유인물 담기 체크박스 버튼 (고가시성 모던 UI) */
 .handout-checkbox-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #334155;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1.5px solid #3b82f6;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1d4ed8;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.15);
 }
 
 .handout-checkbox-label:hover {
-  background: #e2e8f0;
-  border-color: #94a3b8;
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1e40af;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.2);
 }
 
+/* 유인물에 담긴 상태: 비비드 블루 그라데이션 및 확실한 시각 피드백 */
 .handout-checkbox-label.checked {
-  background: #eff6ff;
-  border-color: #3b82f6;
-  color: #1d4ed8;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  border-color: #1e40af;
+  color: #ffffff;
+  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.4);
+}
+
+.handout-checkbox-label.checked:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+  transform: translateY(-1px);
 }
 
 .handout-checkbox-label input[type="checkbox"] {
   cursor: pointer;
   accent-color: #2563eb;
-  width: 15px;
-  height: 15px;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  border-radius: 4px;
+  transition: transform 0.15s ease;
+}
+
+.handout-checkbox-label:active input[type="checkbox"] {
+  transform: scale(0.9);
 }
 
 /* =========================================================================
@@ -586,54 +656,11 @@
    유인물 프로젝트 관리 스타일 (handout-project)
    ========================================================================= */
 
-/* 지문 결과 화면 좌측 상단 헤더 내 빠른 프로젝트 선택기 */
+/* 지문 결과 화면 좌측 상단 헤더 컨테이너 */
 .panel-header-left {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-}
-
-.handout-project-quick-select {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 2px 6px 2px 8px;
-  font-size: 0.8rem;
-}
-
-.quick-proj-icon {
-  font-size: 0.85rem;
-}
-
-.handout-project-dropdown {
-  background: transparent;
-  border: none;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #1e293b;
-  outline: none;
-  cursor: pointer;
-  max-width: 150px;
-}
-
-.btn-project-tool {
-  background: #e2e8f0;
-  border: none;
-  color: #334155;
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.btn-project-tool:hover {
-  background: #cbd5e1;
-  color: #0f172a;
 }
 
 /* 유인물 제작소 화면 내 상단 프로젝트 관리 바 */

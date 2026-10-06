@@ -2622,4 +2622,33 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/`: 211개 전체 회귀 테스트 100% 통과 (22.02s)
   - OWPML 스키마 무결성 검증: 비표준 태그 0건, 잘못된 속성/참조 0건 완전 무결 확인
 
+### [2026-10-06 21:25] 업데이트 이력 (Commit ID: 996b1bd1)
+- **수정 내용**:
+  - **1) 해설지 유인물 HWPX 열기 오류 및 한/글 보안 경고 완벽 해결 (`gichul/services/hwpx_generator.py`)**:
+    - **원인 분석**:
+      1. 해설지 템플릿(`default_b4_explanation.hwpx`)의 첫 문단(P#0)에 상단 1x3 머리말 표(`<hp:header>`) 외에 직하위 본문 1x4 기출 출처 표가 포함되어 있어, 머리말 복제 시 직하위 1x4 표가 함께 복제되어 첫 문단에 미치환 플레이스홀더 표가 중복/중첩 삽입되는 문제 발견.
+      2. 템플릿의 1행 4열 출처 표 셀 내부에 한/글 양식용 누름틀인 `<hp:fieldBegin type="CLICK_HERE">` 및 `<hp:fieldEnd>`, 그리고 오래된 레이아웃 캐시 `<hp:linesegarray>`가 포함되어 있어, 문항별로 복제 시 누름틀 필드 ID 중복 및 레이아웃 캐시 불일치로 인해 한컴오피스 한/글 보안 검사 엔진이 이를 "문서가 손상되었거나 변조되었을 가능성이 있습니다" 경고로 차단했던 현상 규명.
+      3. 복제된 표(`<hp:tbl>`) 및 셀 내부 문단(`<hp:p>`)의 고유 ID가 문서 전체에서 중복되어 OWPML 표준 식별자 규칙 위반.
+    - **해결 조치**:
+      - `_extract_and_populate_header_table`: P#0의 `tbl_run` 직하위에 붙은 본문 레벨 1x4 표를 제거하여, 상단 1x3 머리말 컨트롤(`<hp:header>`)만 온전히 보존하도록 정리.
+      - `_create_source_table_paragraph`: 복제된 1x4 출처 표(`<hp:tbl>`)와 내부 각 셀 문단(`<hp:p>`)에 고유 난수 ID를 부여.
+      - 셀 내부를 정규화하여 보안 경고의 직접적 원인이 된 누름틀(`<hp:fieldBegin>`, `<hp:fieldEnd>`)과 불일치 레이아웃 캐시(`<hp:linesegarray>`)를 완전 제거하고, 셀 테두리/정렬 서식(paraPr 22)을 그대로 유지한 채 순수 표준 OWPML 텍스트 문단(`<hp:run><hp:t>`) 구조로 재구성.
+  - **2) 지문 화면 '유인물 담기' 버튼 고가시성 모던 캡슐 디자인 개편 (`static/css/handouts.css`, `templates/index.html`, `static/js/handout-cart.js`)**:
+    - 기존의 밋밋한 텍스트/체크박스 형태에서 시각적 가시성을 극대화한 **모던 캡슐 버튼(`.btn-handout-cart-toggle`)** 디자인으로 전면 개편.
+    - **담기 전 상태**: 선명한 로열 블루 테두리 및 텍스트, 호버 시 입체감 있는 소프트 블루 배경 및 리프트 애니메이션 제공.
+    - **담긴 후 상태**: 비비드 로열 블루 그라데이션(`linear-gradient(135deg, #2563eb, #1d4ed8)`) 배경, 순백색 볼드 텍스트, 은은한 블루 발광 그림자 및 `✔ 유인물 담김` 동적 텍스트로 즉각적인 상태 피드백 제공.
+  - **3) 지문 화면 좌측 상단 중복 프로젝트 선택기 정리 (`templates/index.html`)**:
+    - 우측 하단 플로팅 보관함 바에 동일한 프로젝트 전환/생성 기능이 탑재되어 있으므로, 지문 화면 좌측 상단 패널 헤더의 중복 프로젝트 드롭다운을 깔끔하게 제거하여 상단 UI를 간결화.
+  - **4) 하단 플로팅 보관함 바 프로젝트 간 이동 및 실시간 전환 연동 (`templates/index.html`, `static/js/handout-cart.js`, `static/css/handouts.css`)**:
+    - 하단 플로팅 보관함 바(`handoutFloatingCart`) 내에 프로젝트 선택 드롭다운(`<select id="floatingProjectSelect">`) 및 빠른 `[➕ 새 프로젝트]` 생성 버튼을 구축.
+    - 지문 검색/열람 중에도 언제든지 하단 바에서 원하는 프로젝트로 즉시 전환하고 문항을 담거나 확인할 수 있도록 양방향 동기화 완성.
+- **검증 결과**:
+  - **실제 한/글 2022 프로세스(`Hwp.exe`) 연동 실증 검증 완료**:
+    - 생성된 문제지, 해설지, 및 통합 ZIP 패키지 내부 해설지 HWPX 파일을 한/글 2022에서 직접 열어 윈도우 타이틀 및 모달 대화상자 상태를 정밀 검사한 결과, **보안 경고 팝업 없이 100% 정상 열림** 확인 (`popup_error=False, success_opened=True`).
+  - `python -m py_compile gichul/services/hwpx_generator.py`: 파이썬 구문 오류 0건 통과.
+  - `node -c static/js/handout-cart.js`: 자바스크립트 문법 검사 통과.
+  - `pytest tests/test_hwpx_generator.py`: 5개 전체 HWPX 엔진 테스트 100% 통과.
+  - `pytest tests/`: 211개 전체 회귀 테스트 100% 통과.
+
+
 

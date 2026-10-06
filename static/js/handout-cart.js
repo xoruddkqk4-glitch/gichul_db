@@ -280,8 +280,8 @@ export function syncAllProjectDropdowns() {
   const curId = getCurrentProjectId();
 
   const dropdowns = [
-    document.getElementById("selectQuickHandoutProject"),
     document.getElementById("selectHandoutProject"),
+    document.getElementById("selectFloatingHandoutProject"),
   ];
 
   dropdowns.forEach((select) => {
@@ -324,20 +324,21 @@ function escapeHtml(str) {
 export function updateFloatingCartUI() {
   const floatingBar = document.getElementById("handoutFloatingCart");
   const countBadge = document.getElementById("cartCountBadge");
+  const projects = getProjects();
   const curProj = getCurrentProject();
   const items = getCartItems();
 
   if (countBadge) {
-    const projName = curProj?.name ? `[${curProj.name}] ` : "";
-    countBadge.textContent = `${projName}${items.length}문항`;
+    countBadge.textContent = `${items.length}문항`;
   }
 
-  // 유인물 제작소 화면이 열려있지 않고 문항이 1개 이상 담겨있을 때만 플로팅 바 표시
+  // 유인물 제작소 화면이 열려있지 않고, 프로젝트 목록에 1개 이상의 문항이 담겨있거나 현재 프로젝트에 문항이 있을 때 플로팅 바 표시
   const handoutView = document.getElementById("handoutViewContainer");
   const isHandoutViewActive = handoutView && handoutView.style.display !== "none";
+  const hasAnyItems = projects.some((p) => Array.isArray(p.items) && p.items.length > 0);
 
   if (floatingBar) {
-    if (items.length > 0 && !isHandoutViewActive) {
+    if ((items.length > 0 || hasAnyItems) && !isHandoutViewActive) {
       floatingBar.style.display = "flex";
     } else {
       floatingBar.style.display = "none";
@@ -353,6 +354,7 @@ export function updateFloatingCartUI() {
 export function syncCurrentPassageCheckbox() {
   const chkCurrent = document.getElementById("chkHandoutSelectCurrent");
   const lblCurrent = document.getElementById("labelHandoutSelectCurrent");
+  const txtLabel = document.getElementById("txtHandoutSelectLabel");
   const curPid = appState.currentPassageId;
 
   if (chkCurrent) {
@@ -360,7 +362,10 @@ export function syncCurrentPassageCheckbox() {
     chkCurrent.checked = inCart;
     if (lblCurrent) {
       lblCurrent.classList.toggle("checked", inCart);
-      lblCurrent.title = inCart ? "현재 프로젝트에서 제외합니다" : "현재 프로젝트에 담습니다";
+      lblCurrent.title = inCart ? "현재 프로젝트에서 제외합니다 (클릭 시 제외)" : "현재 프로젝트에 담습니다 (클릭 시 담기)";
+    }
+    if (txtLabel) {
+      txtLabel.textContent = inCart ? "✔ 유인물 담김" : "📄 유인물 담기";
     }
   }
 }
@@ -402,18 +407,20 @@ export function initHandoutCart() {
     });
   }
 
-  // 지문 결과 화면 좌측 상단 헤더: 빠른 프로젝트 전환
-  const selQuickProj = document.getElementById("selectQuickHandoutProject");
-  if (selQuickProj) {
-    selQuickProj.addEventListener("change", (e) => {
+
+
+  // 하단 플로팅 장바구니 바: 프로젝트 전환
+  const selFloatingProj = document.getElementById("selectFloatingHandoutProject");
+  if (selFloatingProj) {
+    selFloatingProj.addEventListener("change", (e) => {
       setCurrentProject(e.target.value);
     });
   }
 
-  // 빠른 새 프로젝트 생성
-  const btnQuickCreate = document.getElementById("btnQuickCreateProject");
-  if (btnQuickCreate) {
-    btnQuickCreate.addEventListener("click", () => {
+  // 하단 플로팅 장바구니 바: 새 프로젝트 생성
+  const btnFloatingCreate = document.getElementById("btnFloatingCreateProject");
+  if (btnFloatingCreate) {
+    btnFloatingCreate.addEventListener("click", () => {
       const name = prompt("새 유인물 프로젝트 이름을 입력하세요:", "");
       if (name !== null) {
         createProject(name);

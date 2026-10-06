@@ -478,13 +478,6 @@
                   <input type="checkbox" id="chkHandoutSelectCurrent" class="handout-q-select-checkbox">
                   <span id="txtHandoutSelectLabel">📄 유인물 담기</span>
                 </label>
-                <div class="handout-project-quick-select" id="wrapQuickProjectSelect" title="현재 작업 중인 유인물 프로젝트">
-                  <span class="quick-proj-icon">📁</span>
-                  <select id="selectQuickHandoutProject" class="handout-project-dropdown" title="문항을 담을 유인물 프로젝트를 선택하세요">
-                    <!-- JS 동적 렌더링 -->
-                  </select>
-                  <button type="button" id="btnQuickCreateProject" class="btn-project-tool" title="새 유인물 프로젝트 생성">➕</button>
-                </div>
               </div>
               <div class="panel-header-actions" id="panelActionsTopLeft">
                 <button type="button" class="btn btn-secondary btn-sm" id="btnRecapturePdf" title="원본 PDF 파일에서 이 문항 영역을 다시 캡처하고 형광펜을 재생성합니다">
@@ -942,12 +935,16 @@
   <div class="handout-floating-cart" id="handoutFloatingCart">
     <div class="cart-info">
       <span>🛒 유인물 보관함</span>
+      <select id="selectFloatingHandoutProject" class="handout-floating-select" title="유인물 프로젝트 선택 / 전환"></select>
+      <button type="button" id="btnFloatingCreateProject" class="btn-floating-new-project" title="새 유인물 프로젝트 생성">
+        <span>➕ 새 프로젝트</span>
+      </button>
       <span class="cart-count-badge" id="cartCountBadge">0문항</span>
     </div>
     <button type="button" class="btn-open-handout-view" id="btnOpenHandoutView">
       <span>📄 유인물 제작소 이동</span>
     </button>
-    <button type="button" class="btn-clear-floating-cart" id="btnClearFloatingCart" title="보관함 비우기">
+    <button type="button" class="btn-clear-floating-cart" id="btnClearFloatingCart" title="현재 프로젝트 보관함 비우기">
       비우기
     </button>
   </div>
