@@ -2521,3 +2521,31 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile gichul/paths.py gichul/services/hwpx_generator.py gichul/routers/handouts.py`: 컴파일 오류 0건 통과
   - `node -c static/js/handout-cart.js static/js/handout-passage.js static/js/navigation.js static/js/passage-render.js static/js/main.js`: 자바스크립트 구문 오류 0건 통과
   - `python -m pytest tests/`: 전체 211개 단위/통합 테스트 100% 통과 (16.57s)
+
+### [2026-10-06 18:35] 업데이트 이력 (Commit ID: d6331a3b)
+- **수정 내용**:
+  - **1) 유인물 양식 템플릿 엔터 20줄 일괄 제거 및 단 나눔(`<hp:p columnBreak="1"/>`) 최적화 (`static/data/templates/`)**:
+    - **문제지 양식 (`default_b4_question.hwpx`)**: 1번 문항 뒤에 수동 삽입되었던 불필요한 빈 문단 19줄(`P#05~P#23`)을 완전 제거하고, 1번 문항 직후(`P#04`)에 `<hp:p columnBreak="1"/>`를 명시하여 2번 문항이 우측단 최상단에 안정적으로 시작되도록 최적화 (29개 문단 $\rightarrow$ 10개 문단 경량화).
+    - **해설지 양식 (`default_b4_explanation.hwpx`)**: 1번 문항 해설 뒤의 빈 문단 23줄(`P#06~P#28`)을 완전 제거하고, 1번 해설 직후(`P#05`)에 `<hp:p columnBreak="1"/>`를 명시 (34개 문단 $\rightarrow$ 11개 문단 경량화).
+    - 한글 프로그램에서 원본을 열거나 유인물 제작소에서 다운로드할 때 지문 길이에 상관없이 완벽한 2단 배치가 보장되도록 개선.
+  - **2) 유인물 제작소 화면 내 '검색 화면으로 복귀' 버튼 동작 복구 (`static/js/navigation.js`, `static/js/handout-passage.js`)**:
+    - `btnHandoutBackToResults` 클릭 시 미구현된 `switchView` 호출로 무반응이던 버그 해결.
+    - `navigation.js`에 `backFromHandoutView()` 신규 구현: 검색 결과가 존재하면 결과 화면(`showResultsScreen`), 없으면 홈 검색 화면(`showHomeScreen`)으로 지능형 복귀.
+    - 헤더의 `btnBackToSearch`와 유인물 상단 `[🔙 검색 화면으로 복귀]` 버튼 모두 `backFromHandoutView()`로 일원화 연동.
+  - **3) C드라이브 '다운로드' 폴더 다운로드 피드백 및 헤더 인코딩 보강 (`static/js/handout-passage.js`, `gichul/routers/handouts.py`)**:
+    - 웹 브라우저 표준 다운로드 메커니즘을 통해 Windows 기본 다운로드 경로(`C:\Users\user\Downloads`)로 문제지/해설지/ZIP 파일 정상 저장.
+    - 다운로드 완료 시 `✅ '[파일명]' 파일이 C드라이브 '다운로드' 폴더로 다운로드되었습니다.` 확인 알림 표출.
+    - `Content-Disposition` 헤더에 RFC 5987 UTF-8 인코딩 및 RFC 2616 ASCII fallback을 함께 제공하여 한글 파일명 호환성 보장.
+    - 양식 파일 업로드 확장자 검사 시 자바스크립트 메소드 오타(`endswith` $\rightarrow$ `.endsWith()`) 수정.
+  - **4) 양식 파일명 상호 호환 경로 보완 (`gichul/services/hwpx_generator.py`)**:
+    - 사용자가 수정한 `default_b4_question.hwpx` 외에도 혹시 모를 하이픈(`-`) 및 언더스코어(`_`) 명칭 불일치가 있더라도 둘 다 자동 탐색하도록 `get_template_path()` 및 `list_templates()` 보강.
+  - **5) 문서 작성 및 동기화**:
+    - `docs/reviews/2026-10-06_handout-template-structure-analysis.md`: 기본 템플릿의 B4 규격, 2단 레이아웃, 상단 헤더 표, 해설지 출처 표 정밀 구조 분석 및 적합성 검토 보고서 신규 작성.
+    - `docs/plans/2026-10-06_02_handout-generation-system.md`: 진행 현황 표에 템플릿 최적화 및 UX/버그 수정 내역 완료 반영.
+    - `docs/README.md`: 신규 리뷰 문서 등록.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py gichul/routers/handouts.py`: 파이썬 구문 오류 0건 통과
+  - `node -c static/js/navigation.js static/js/handout-passage.js`: 자바스크립트 문법 오류 0건 통과
+  - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과 (3.01s)
+  - `pytest tests/test_api_smoke.py tests/test_routers.py`: 11개 API 스모크 테스트 100% 통과 (6.10s)
+
