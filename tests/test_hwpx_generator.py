@@ -86,8 +86,13 @@ def test_generate_question_handout():
         # 사용자 지정 번호 '1. ' 및 '2. ' 확인
         assert "1. 다음 글의 목적으로" in sec0
         assert "2. 다음 글에 드러난" in sec0
-        # 형광펜 마크 확인
-        assert "markPenBegin" in sec0 or "shadeColor" in sec0
+        # 형광펜 마크 확인 (OWPML 표준 markpenBegin / markPenBegin 호환)
+        assert "markpenBegin" in sec0 or "markPenBegin" in sec0
+        hdr = zf.read("Contents/header.xml").decode("utf-8")
+        # 문제지 글자 크기 13pt (height="1300") 검증
+        assert 'height="1300"' in hdr
+        # 노란색 음영 검증
+        assert 'shadeColor="#FFFF00"' in hdr
 
 def test_generate_explanation_handout():
     options = {
@@ -100,6 +105,7 @@ def test_generate_explanation_handout():
     import io
     with zipfile.ZipFile(io.BytesIO(hwpx_bytes), "r") as zf:
         sec0 = zf.read("Contents/section0.xml").decode("utf-8")
+        hdr = zf.read("Contents/header.xml").decode("utf-8")
         # 1행 4열 출처 표 각 셀 주입 확인 (년도, 학년, 월, 번호)
         assert "2026년" in sec0
         assert "고2" in sec0
@@ -108,6 +114,8 @@ def test_generate_explanation_handout():
         # 좌측하단패널 해설 텍스트 및 정답 포함 확인
         assert "[정답] ②" in sec0
         assert "소책자" in sec0
+        # 녹색 상자 테두리(#35A434)가 SOLID로 출력되지 않는지 검증 (NONE으로 무력화됨)
+        assert 'type="SOLID" width="0.4 mm" color="#35A434"' not in hdr
 
 def test_generate_handout_zip():
     zip_bytes = generate_handout_zip(SAMPLE_ITEMS)

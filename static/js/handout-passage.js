@@ -329,6 +329,11 @@ async function downloadHandout(handoutType) {
   const headerCenter = (document.getElementById("handoutHeaderCenter")?.value || "").trim();
   const headerRight = (document.getElementById("handoutHeaderRight")?.value || "").trim();
 
+  let selectedTemplate = document.getElementById("handoutTemplateSelect")?.value || null;
+  if (handoutType === "explanation" && selectedTemplate && (selectedTemplate.includes("question") || selectedTemplate === "default_b4_question.hwpx")) {
+    selectedTemplate = "default_b4_explanation.hwpx";
+  }
+
   const payload = {
     handout_type: handoutType,
     passage_ids: items.map((i) => i.id),
@@ -340,7 +345,7 @@ async function downloadHandout(handoutType) {
     header_sub: headerRight,
     footer_text: (document.getElementById("handoutFooterText")?.value || "").trim(),
     highlight_answer: !!document.getElementById("handoutHighlightAnswer")?.checked,
-    template_name: document.getElementById("handoutTemplateSelect")?.value || null,
+    template_name: selectedTemplate,
   };
 
   const btnQ = document.getElementById("btnDownloadQuestion");

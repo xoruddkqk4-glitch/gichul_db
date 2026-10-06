@@ -2580,4 +2580,28 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과 (4.38s)
   - 다페이지(4문항) 생성 파이프라인 검증: `columnBreak="1"` 2개, `pageBreak="1"` 1개 정확 분할 확인 완료
 
+### [2026-10-06 20:25] 업데이트 이력 (Commit ID: af81ba13)
+- **수정 내용**:
+  - **1) 문제지 유인물 정답 선지 번호 노란색 형광펜 표시 복원 (`gichul/services/hwpx_generator.py`)**:
+    - **OWPML 표준 태그 교정**: 개방형 HWPX(KS X 6101) 표준 규격에 따라 대문자 `markPenBegin`/`markPenEnd` 대신 소문자 표준 태그 `<hp:markpenBegin color="#FFFF00" beginColor="#FFFF00"/>` 및 `<hp:markpenEnd/>`로 수정하여 한글 뷰어/편집기 호환성 확보.
+    - **글자 모양(charPr) 음영 이중 보장**: `header.xml` 내 정답 번호용 글자 모양(`charPr`)에 `shadeColor="#FFFF00"`(노란색 음영)을 함께 등록하여, 한/글 프로그램의 '형광펜 표시' On/Off 설정과 관계없이 정답 번호에 선명한 노란색 하이라이트가 상시 표시되도록 이중 보장.
+  - **2) 문제지 및 해설지 본문 기본 볼드체 해제 (일반체 표준화) (`gichul/services/hwpx_generator.py`)**:
+    - **원인 해결**: HWPX 템플릿의 `charPr id="0"`(기본 텍스트 서식)에 `<hh:bold/>` 태그가 내장되어 있어 본문 텍스트 전체가 굵은 글씨로 출력되던 현상 해결.
+    - **일반체 서식 분리 주입**: `_inject_char_properties`에서 `<hh:bold/>` 요소를 명시적으로 제거한 전용 `normal_char_id`를 새로 정의하여 발문, 지문 본문, 선지, 해설 본문 등 모든 텍스트가 가독성 높은 일반체(Non-bold)로 출력되도록 교정.
+  - **3) 문제지 유인물 본문 글자 크기 13pt 고정 (`gichul/services/hwpx_generator.py`)**:
+    - 기존 템플릿 기본값(10pt, `height="1000"`) 대신 B4 2단 모의고사 유인물 실무 규격에 최적화된 **13 pt (`height="1300"`, 1pt = 100 HWPUnit)**로 고정 주입하여 발문, 지문, 선지의 가독성을 대폭 향상.
+  - **4) 해설지 첫 페이지 및 단 나눔 시 녹색 상자 테두리 제거 (`gichul/services/hwpx_generator.py`)**:
+    - **템플릿 녹색 테두리 무력화**: `header.xml`에 잔존하던 녹색 실선 테두리(`type="SOLID" width="0.4 mm" color="#35A434"`)를 `_clean_borders_and_boxes` 함수를 통해 `NONE`으로 일괄 무력화.
+    - **공백 행 단락 스타일 정규화**: 기존에 녹색 테두리가 상속되던 `paraPr 20/21/24` 스타일을 테두리 없는 순수 빈 문단 `para_pr_id="0"`으로 전면 교체하여 첫 페이지 상단 및 단/페이지 나눔 시 불필요한 녹색 박스가 생기는 현상을 원천 제거.
+  - **5) 해설지 다운로드 시 템플릿 선택 자동 보정 (`gichul/services/hwpx_generator.py`, `static/js/handout-passage.js`)**:
+    - 사용자가 템플릿 드롭다운에서 문제지용 템플릿을 선택한 상태에서 해설지 단독 다운로드 클릭 시, 백엔드와 프론트엔드 양쪽에서 자동으로 해설지 전용 템플릿(`default_b4_explanation.hwpx`)으로 전환하도록 방어 로직 추가.
+  - **6) 검증 테스트 케이스 추가 및 전체 회귀 테스트 통과 (`tests/test_hwpx_generator.py`)**:
+    - 13pt 글자 크기(`height="1300"`), 노란색 음영(`shadeColor="#FFFF00"`), 표준 형광펜 마크펜, 녹색 상자 테두리 배제 검증 케이스 추가.
+    - 전체 211개(HWPX 5개 + 핵심 기능 206개) 단위/통합 테스트 100% 통과.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py tests/test_hwpx_generator.py`: 파이썬 구문 검증 완료 (통과, 오류 0건)
+  - `node -c static/js/handout-passage.js`: 자바스크립트 문법 검사 통과 (오류 0건)
+  - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과
+  - `pytest tests/`: 211개 전체 테스트 100% 통과 (5개 hwpx + 206개 전체 기능)
+
 

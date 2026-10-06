@@ -47,8 +47,19 @@ CIRCLE_NUMS = {1: "①", 2: "②", 3: "③", 4: "④", 5: "⑤"}
 
 def get_template_path(template_name: Optional[str] = None, is_explanation: bool = False) -> str:
     """사용할 HWPX 템플릿의 절대 경로 반환"""
-    if template_name:
-        bname = os.path.basename(template_name)
+    default_name = DEFAULT_EXPLANATION_TEMPLATE if is_explanation else DEFAULT_QUESTION_TEMPLATE
+
+    # 템플릿명이 비어있거나, 해설지 생성인데 문제지 기본양식이 전달된 경우 (또는 반대) 올바른 기본 양식으로 교정
+    effective_name = template_name
+    if is_explanation:
+        if not effective_name or effective_name in (DEFAULT_QUESTION_TEMPLATE, "default_b4-question.hwpx", "default_b4_template.hwpx"):
+            effective_name = default_name
+    else:
+        if not effective_name or effective_name in (DEFAULT_EXPLANATION_TEMPLATE, "default_b4-explanation.hwpx", "default_b4_template.hwpx"):
+            effective_name = default_name
+
+    if effective_name:
+        bname = os.path.basename(effective_name)
         # 1. 사용자 업로드 템플릿 폴더 우선 확인
         custom_path = os.path.join(CUSTOM_TEMPLATES_DIR, bname)
         if os.path.exists(custom_path):
@@ -57,8 +68,12 @@ def get_template_path(template_name: Optional[str] = None, is_explanation: bool 
         builtin_path = os.path.join(HANDOUT_TEMPLATES_DIR, bname)
         if os.path.exists(builtin_path):
             return builtin_path
+        # 대체 파일명 지원 (하이픈 <-> 언더스코어 상호 호환 지원)
+        alt_bname = bname.replace("_", "-") if "_" in bname else bname.replace("-", "_")
+        alt_builtin = os.path.join(HANDOUT_TEMPLATES_DIR, alt_bname)
+        if os.path.exists(alt_builtin):
+            return alt_builtin
 
-    default_name = DEFAULT_EXPLANATION_TEMPLATE if is_explanation else DEFAULT_QUESTION_TEMPLATE
     default_path = os.path.join(HANDOUT_TEMPLATES_DIR, default_name)
     if os.path.exists(default_path):
         return default_path
@@ -178,31 +193,102 @@ def _clean_passage_body_and_title(passage_text: str, question_title: str) -> Tup
     return pure_title_body, body, choices
 
 
-def _inject_char_properties(hdr_root: ET.Element) -> Tuple[str, str]:
-    """header.xml 에 일반 텍스트용 charPr과 노란색 형광펜용 charPr 등록 (ID 반환)"""
+def _clean_borders_and_boxes(hdr_root: ET.Element):
+    """
+    header.xml 에서 녹색 테두리(#35A434, borderFill id=10 등) 및 불필요한 문단 테두리를 제거/무력화하여
+    해설지나 문제지에 녹색 상자나 원치 않는 테두리가 출력되지 않도록 처리
+    """
+    # 1. borderFill 중 초록색 테두리(#35A434) 또는 id="10"인 항목의 모든 테두리를 NONE으로 변경
+    for bf in hdr_root.findall(f".//{{{NS_HH}}}borderFill"):
+        bf_id = bf.get("id")
+        is_green = False
+        for border_tag in ("leftBorder", "rightBorder", "topBorder", "bottomBorder"):
+            b_elem = bf.find(f"{{{NS_HH}}}{border_tag}")
+            if b_elem is not None:
+                color = b_elem.get("color", "").upper()
+                if "35A434" in color or bf_id == "10":
+                    is_green = True
+                    b_elem.set("type", "NONE")
+                    b_elem.set("width", "0.1 mm")
+                    b_elem.set("color", "#000000")
+        if is_green or bf_id == "10":
+            diag = bf.find(f"{{{NS_HH}}}diagonal")
+            if diag is not None:
+                diag.set("type", "NONE")
+
+    # 2. paraPr 중 borderFillIDRef="10"을 참조하는 문단 테두리를 투명(borderFillIDRef="1")으로 변경
+    for pp in hdr_root.findall(f".//{{{NS_HH}}}paraPr"):
+        b_elem = pp.find(f"{{{NS_HH}}}border")
+        if b_elem is not None and b_elem.get("borderFillIDRef") == "10":
+            b_elem.set("borderFillIDRef", "1")
+
+
+def _inject_char_properties(
+    hdr_root: ET.Element,
+    font_size_pt: int = 13,
+    is_explanation: bool = False
+) -> Tuple[str, str]:
+    """
+    header.xml 에 일반 본문용 charPr과 정답 형광펜용 charPr 등록 (ID 반환)
+    - font_size_pt: 글자 크기 pt (문제지: 13pt -> 1300, 해설지: 11pt -> 1100 등)
+    - bold 태그를 제거하여 본문이 볼드체로 인쇄되지 않도록 보장
+    - 형광펜용 charPr에는 노란색 음영(shadeColor="#FFFF00") 주입
+    """
     cps = hdr_root.find(f".//{{{NS_HH}}}charProperties")
     if cps is None:
         return "0", "0"
 
-    # 기존 charPr 확인
-    normal_id = "0"
-    highlight_id = "99"
+    # 기존 charPr id 확인
+    existing_ids = {int(cp.get("id")) for cp in cps.findall(f"{{{NS_HH}}}charPr") if cp.get("id", "").isdigit()}
+    max_id = max(existing_ids) if existing_ids else 100
 
-    # 혹시 이미 99가 있으면 새 ID 생성
-    existing_ids = {cp.get("id") for cp in cps.findall(f"{{{NS_HH}}}charPr")}
-    if highlight_id in existing_ids:
-        highlight_id = str(max([int(x) for x in existing_ids if x.isdigit()] + [100]) + 1)
+    normal_char_id = str(max_id + 1)
+    highlight_char_id = str(max_id + 2)
 
-    # 0번 charPr 복제하여 노란색 음영(shadeColor="#FFFF00") 추가
+    # 0번 charPr (또는 첫 charPr) 가져오기
     cp0 = cps.find(f"{{{NS_HH}}}charPr")
     if cp0 is not None:
-        cp_high = copy.deepcopy(cp0)
-        cp_high.set("id", highlight_id)
-        cp_high.set("shadeColor", "#FFFF00")
-        cps.append(cp_high)
-        cps.set("itemCnt", str(int(cps.get("itemCnt", "7")) + 1))
+        # cp0 자체에서도 볼드 태그 제거 (기본 서식 볼드화 방지)
+        b0 = cp0.find(f"{{{NS_HH}}}bold")
+        if b0 is not None:
+            cp0.remove(b0)
 
-    return normal_id, highlight_id
+        # 1) 일반 본문용 charPr: 지정된 pt 크기, 볼드 없음, 검은색 글자
+        cp_norm = copy.deepcopy(cp0)
+        cp_norm.set("id", normal_char_id)
+        cp_norm.set("height", str(font_size_pt * 100))
+        cp_norm.set("textColor", "#000000")
+        cp_norm.set("shadeColor", "none")
+        b_norm = cp_norm.find(f"{{{NS_HH}}}bold")
+        if b_norm is not None:
+            cp_norm.remove(b_norm)
+        cps.append(cp_norm)
+
+        # 2) 형광펜용 charPr: 지정된 pt 크기, 볼드 없음, 노란색 음영(#FFFF00)
+        cp_high = copy.deepcopy(cp0)
+        cp_high.set("id", highlight_char_id)
+        cp_high.set("height", str(font_size_pt * 100))
+        cp_high.set("textColor", "#000000")
+        cp_high.set("shadeColor", "#FFFF00")
+        b_high = cp_high.find(f"{{{NS_HH}}}bold")
+        if b_high is not None:
+            cp_high.remove(b_high)
+        cps.append(cp_high)
+
+        cps.set("itemCnt", str(len(cps.findall(f"{{{NS_HH}}}charPr"))))
+    else:
+        normal_char_id = "0"
+        highlight_char_id = "99"
+
+    # header.xml 내 빨간색(#FF0000) 플레이스홀더 글자색을 검은색으로 정규화 및 볼드 제거
+    for cp in cps.findall(f"{{{NS_HH}}}charPr"):
+        if cp.get("textColor", "").upper() == "#FF0000":
+            cp.set("textColor", "#000000")
+            b_red = cp.find(f"{{{NS_HH}}}bold")
+            if b_red is not None:
+                cp.remove(b_red)
+
+    return normal_char_id, highlight_char_id
 
 
 def _create_paragraph(
@@ -215,9 +301,12 @@ def _create_paragraph(
     para_pr_id: str = "0"
 ) -> ET.Element:
     """HWPX 문단(<hp:p>) 엘리먼트 생성 헬퍼"""
+    # 빈 줄인 경우 테두리가 들어갈 가능성이 있는 para_pr_id(20, 21 등)를 안전한 '0'으로 정규화
+    clean_para_pr_id = "0" if (not text and para_pr_id in ("20", "21")) else para_pr_id
+
     p = ET.Element(f"{{{NS_HP}}}p", {
         "id": str(abs(hash(text + str(page_break) + str(column_break) + str(os.urandom(4)))) % 2000000000),
-        "paraPrIDRef": para_pr_id,
+        "paraPrIDRef": clean_para_pr_id,
         "styleIDRef": "0",
         "pageBreak": "1" if page_break else "0",
         "columnBreak": "1" if column_break else "0",
@@ -227,11 +316,11 @@ def _create_paragraph(
     if text:
         run = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": char_pr_id})
         if highlight:
-            ET.SubElement(run, f"{{{NS_HP}}}markPenBegin", {"color": "#FFFF00"})
+            ET.SubElement(run, f"{{{NS_HP}}}markpenBegin", {"color": "#FFFF00", "beginColor": "#FFFF00"})
         t = ET.SubElement(run, f"{{{NS_HP}}}t")
         t.text = text
         if highlight:
-            ET.SubElement(run, f"{{{NS_HP}}}markPenEnd")
+            ET.SubElement(run, f"{{{NS_HP}}}markpenEnd")
 
     return p
 
@@ -278,75 +367,6 @@ def _extract_and_populate_header_table(
                         r.set("charPrIDRef", normal_char_id)
 
     return sec_run, tbl_run
-
-
-def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dict[str, Any]] = None) -> bytes:
-    """
-    선택한 문항 목록으로 B4 단면 2문항 문제지 HWPX 문서 생성
-    - options:
-        - header_title: 머리말 제목
-        - header_sub: 머리말 소제목
-        - footer_text: 꼬리말
-        - highlight_answer: 정답 형광펜 표시 여부 (기본 True)
-        - template_name: 사용자 선택 템플릿 파일명
-    """
-    options = options or {}
-    template_path = get_template_path(options.get("template_name"), is_explanation=False)
-    header_left = options.get("header_left", "").strip()
-    header_center = options.get("header_center", "").strip() or options.get("header_title", "").strip()
-    header_right = options.get("header_right", "").strip() or options.get("header_sub", "").strip()
-    footer_text = options.get("footer_text", "").strip()
-    highlight_answer = bool(options.get("highlight_answer", True))
-
-    with zipfile.ZipFile(template_path, "r") as zf:
-        file_map = {name: zf.read(name) for name in zf.namelist()}
-
-    # 1. header.xml 수정 (형광펜 charPr 등록)
-    hdr_root = ET.fromstring(file_map["Contents/header.xml"])
-    normal_char_id, highlight_char_id = _inject_char_properties(hdr_root)
-    file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
-
-    # 2. section0.xml 파싱 및 본문 조립
-    sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
-
-    # 첫 문단(secPr 및 상단 1x3 표 보관용) 확인
-    first_p = sec0_root.find(f"{{{NS_HP}}}p")
-    sec_run, tbl_run = _extract_and_populate_header_table(
-        first_p, normal_char_id, header_left, header_center, header_right
-    )
-
-    # 기존 문단 비우기
-    sec0_root.clear()
-
-    # secPr과 상단 1x3 표를 담은 첫 문단 재구성
-    new_first_p = ET.SubElement(sec0_root, f"{{{NS_HP}}}p", {
-        "id": "1000000001",
-        "paraPrIDRef": "0",
-        "styleIDRef": "0",
-        "pageBreak": "0",
-        "columnBreak": "0",
-        "merged": "0",
-    })
-    if sec_run is not None:
-        new_first_p.append(sec_run)
-    else:
-        ET.SubElement(new_first_p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
-
-    if tbl_run is not None:
-        new_first_p.append(tbl_run)
-        # 상단 표 아래 공백 문단 추가
-        sec0_root.append(_create_paragraph(""))
-    else:
-        # 상단 표가 없는 템플릿의 경우 텍스트로 폴백
-        if header_center:
-            sec0_root.append(_create_paragraph(f"■ {header_center}", char_pr_id=normal_char_id))
-        if header_right:
-            sec0_root.append(_create_paragraph(f"  ({header_right})", char_pr_id=normal_char_id))
-        if header_center or header_right:
-            sec0_root.append(_create_paragraph(""))
-
-    # 문항들 순회 (1페이지당 2개 문항: 좌단 1문항, 우단 1문항)
-    total_q = len(items)
 def _parse_passage_source_parts(item: Dict[str, Any]) -> Tuple[str, str, str, str]:
     """지문 데이터에서 기출 메타데이터 (년도, 학년, 월, 번호) 문자열 추출"""
     raw_id = item.get("id", "").strip("[]")
@@ -424,6 +444,9 @@ def _create_source_table_paragraph(
 def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dict[str, Any]] = None) -> bytes:
     """
     선택한 문항 목록으로 B4 단면 2문항 문제지 HWPX 문서 생성
+    - 글자 크기 13 pt 고정 (height="1300")
+    - 본문 기본 텍스트 볼드체 해제 (non-bold)
+    - 정답 선지 번호 노란색 형광펜 (markpenBegin + shadeColor #FFFF00)
     - 발문(paraPr 26), 지문 본문(paraPr 35 양쪽정렬), 선지(paraPr 35)
     - 홀수 문항 후 columnBreak=1, 짝수 문항 후 pageBreak=1 다페이지 레이아웃
     """
@@ -438,9 +461,10 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
     with zipfile.ZipFile(template_path, "r") as zf:
         file_map = {name: zf.read(name) for name in zf.namelist()}
 
-    # 1. header.xml 처리 (형광펜 charPr 등록)
+    # 1. header.xml 처리 (13pt 글자크기, non-bold, 형광펜 charPr 등록 및 테두리 정리)
     hdr_root = ET.fromstring(file_map["Contents/header.xml"])
-    normal_char_id, highlight_char_id = _inject_char_properties(hdr_root)
+    _clean_borders_and_boxes(hdr_root)
+    normal_char_id, highlight_char_id = _inject_char_properties(hdr_root, font_size_pt=13, is_explanation=False)
     file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     # 2. section0.xml 파싱
@@ -469,14 +493,14 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
 
     if tbl_run is not None:
         new_first_p.append(tbl_run)
-        sec0_root.append(_create_paragraph("", para_pr_id="26"))
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))
     else:
         if header_center:
             sec0_root.append(_create_paragraph(f"■ {header_center}", char_pr_id=normal_char_id, para_pr_id="26"))
         if header_right:
             sec0_root.append(_create_paragraph(f"  ({header_right})", char_pr_id=normal_char_id, para_pr_id="26"))
         if header_center or header_right:
-            sec0_root.append(_create_paragraph("", para_pr_id="26"))
+            sec0_root.append(_create_paragraph("", para_pr_id="0"))
 
     # 문항들 순회 (1페이지당 2개 문항: 좌단 1문항, 우단 1문항)
     total_q = len(items)
@@ -492,12 +516,12 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
 
         pure_title, body_text, choices = _clean_passage_body_and_title(p_text, q_title)
 
-        # 1) 발문 문단: [사용자 지정 번호]. [발문] (paraPr 26)
+        # 1) 발문 문단: [사용자 지정 번호]. [발문] (13pt, non-bold, paraPr 26)
         full_title_text = f"{custom_q_num}. {pure_title}" if pure_title else f"{custom_q_num}. 다음 글을 읽고 물음에 답하시오."
         sec0_root.append(_create_paragraph(full_title_text, char_pr_id=normal_char_id, para_pr_id="26"))
-        sec0_root.append(_create_paragraph("", para_pr_id="26"))  # 공백 행
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))  # 공백 행
 
-        # 2) 지문 본문 문단 (줄 단위로 문단 생성, paraPr 35 양쪽정렬 승계)
+        # 2) 지문 본문 문단 (줄 단위로 문단 생성, 13pt, non-bold, paraPr 35 양쪽정렬 승계)
         if body_text:
             body_lines = [line.strip() for line in body_text.splitlines() if line.strip()]
             for bline in body_lines:
@@ -505,9 +529,9 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
         else:
             sec0_root.append(_create_paragraph("(지문 본문이 비어 있습니다.)", char_pr_id=normal_char_id, para_pr_id="35"))
 
-        sec0_root.append(_create_paragraph("", para_pr_id="35"))  # 선지 전 공백 행
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))  # 선지 전 공백 행
 
-        # 3) 선지 문단 (① ~ ⑤, paraPr 35)
+        # 3) 선지 문단 (① ~ ⑤, 13pt, non-bold, paraPr 35)
         if choices:
             for c_idx in range(1, 6):
                 c_text = choices.get(c_idx, "").strip()
@@ -526,11 +550,13 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
                 })
 
                 if is_correct:
+                    # 정답 번호에 노란색 형광펜 적용
                     c_run_num = ET.SubElement(choice_p, f"{{{NS_HP}}}run", {"charPrIDRef": highlight_char_id})
-                    ET.SubElement(c_run_num, f"{{{NS_HP}}}markPenBegin", {"color": "#FFFF00"})
+                    ET.SubElement(c_run_num, f"{{{NS_HP}}}markpenBegin", {"color": "#FFFF00", "beginColor": "#FFFF00"})
                     t_num = ET.SubElement(c_run_num, f"{{{NS_HP}}}t")
                     t_num.text = circ
-                    ET.SubElement(c_run_num, f"{{{NS_HP}}}markPenEnd")
+                    ET.SubElement(c_run_num, f"{{{NS_HP}}}markpenEnd")
+
                     c_run_txt = ET.SubElement(choice_p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
                     t_txt = ET.SubElement(c_run_txt, f"{{{NS_HP}}}t")
                     t_txt.text = f" {c_text}"
@@ -545,20 +571,20 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
         if not is_last_item:
             if pos_in_page == 0:
                 # 좌측단 문항 완료 -> 우측단으로 나눔 (columnBreak=1)
-                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="26"))
+                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="0"))
             else:
                 # 우측단 문항 완료 -> 다음 페이지로 나눔 (pageBreak=1)
-                sec0_root.append(_create_paragraph("", page_break=True, para_pr_id="26"))
+                sec0_root.append(_create_paragraph("", page_break=True, para_pr_id="0"))
         else:
             if pos_in_page == 0:
-                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="26"))
+                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="0"))
                 sec0_root.append(_create_paragraph("[ 오답 정리 및 메모란 ]", char_pr_id=normal_char_id, para_pr_id="26"))
                 for _ in range(8):
-                    sec0_root.append(_create_paragraph("", para_pr_id="26"))
+                    sec0_root.append(_create_paragraph("", para_pr_id="0"))
 
     # 꼬리말 안내 텍스트가 있으면 문서 끝에 삽입
     if footer_text:
-        sec0_root.append(_create_paragraph("", para_pr_id="26"))
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))
         sec0_root.append(_create_paragraph(f"[{footer_text}]", char_pr_id=normal_char_id, para_pr_id="26"))
 
     file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
@@ -575,6 +601,8 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
     """
     선택한 문항 목록으로 B4 단면 2문항 해설지 HWPX 문서 생성
     - 템플릿의 1행 4열 기출 출처 표(년도|학년|월|번호) 보존 및 데이터 주입
+    - 본문 기본 텍스트 볼드체 해제 (non-bold)
+    - 녹색 상자 테두리 완전 제거 및 공백 줄 paraPr 0 정규화
     - 정답 및 문항 번호(paraPr 25), 해설 본문(paraPr 27 양쪽정렬) 승계
     - 홀수 문항 후 columnBreak=1, 짝수 문항 후 pageBreak=1 다페이지 레이아웃
     """
@@ -588,9 +616,10 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
     with zipfile.ZipFile(template_path, "r") as zf:
         file_map = {name: zf.read(name) for name in zf.namelist()}
 
-    # 1. header.xml 처리
+    # 1. header.xml 처리 (녹색 테두리 중화, non-bold charPr 등록)
     hdr_root = ET.fromstring(file_map["Contents/header.xml"])
-    normal_char_id, highlight_char_id = _inject_char_properties(hdr_root)
+    _clean_borders_and_boxes(hdr_root)
+    normal_char_id, highlight_char_id = _inject_char_properties(hdr_root, font_size_pt=11, is_explanation=True)
     file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     # 2. section0.xml 파싱
@@ -621,14 +650,14 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
 
     if tbl_run is not None:
         new_first_p.append(tbl_run)
-        sec0_root.append(_create_paragraph("", para_pr_id="24"))
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))
     else:
         if header_center:
             sec0_root.append(_create_paragraph(f"■ {header_center}", char_pr_id=normal_char_id, para_pr_id="24"))
         if header_right:
             sec0_root.append(_create_paragraph(f"  ({header_right})", char_pr_id=normal_char_id, para_pr_id="24"))
         if header_center or header_right:
-            sec0_root.append(_create_paragraph("", para_pr_id="24"))
+            sec0_root.append(_create_paragraph("", para_pr_id="0"))
 
     total_q = len(items)
     for idx, item in enumerate(items):
@@ -644,39 +673,39 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
         y_str, g_str, m_str, q_str = _parse_passage_source_parts(item)
         src_p = _create_source_table_paragraph(source_tbl_template, y_str, g_str, m_str, q_str, normal_char_id)
         sec0_root.append(src_p)
-        sec0_root.append(_create_paragraph("", para_pr_id="24"))  # 공백 행
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))  # 공백 행
 
-        # 2) 문항 번호 및 정답 표시 (paraPr 25: 14pt 진하게)
+        # 2) 문항 번호 및 정답 표시 (paraPr 25: non-bold normal_char_id)
         ans_line = f"{custom_q_num}번. [정답] {ans_display}"
         sec0_root.append(_create_paragraph(ans_line, char_pr_id=normal_char_id, para_pr_id="25"))
-        sec0_root.append(_create_paragraph("", para_pr_id="20"))
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))
 
-        # 3) 해설 텍스트 본문 (paraPr 27: 14pt 양쪽정렬)
+        # 3) 해설 텍스트 본문 (paraPr 27: non-bold normal_char_id)
         exp_text = item.get("explanation_text") or "해설 정보가 등록되지 않았습니다."
         exp_lines = [line.rstrip() for line in exp_text.splitlines()]
 
         for eline in exp_lines:
             if not eline.strip():
-                sec0_root.append(_create_paragraph("", para_pr_id="20"))
+                sec0_root.append(_create_paragraph("", para_pr_id="0"))
                 continue
             sec0_root.append(_create_paragraph(eline, char_pr_id=normal_char_id, para_pr_id="27"))
 
-        sec0_root.append(_create_paragraph("", para_pr_id="20"))
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))
 
         # 4) 단 및 페이지 나눔
         if not is_last_item:
             if pos_in_page == 0:
-                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="25"))
+                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="0"))
             else:
-                sec0_root.append(_create_paragraph("", page_break=True, para_pr_id="25"))
+                sec0_root.append(_create_paragraph("", page_break=True, para_pr_id="0"))
         else:
             if pos_in_page == 0:
-                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="25"))
+                sec0_root.append(_create_paragraph("", column_break=True, para_pr_id="0"))
                 sec0_root.append(_create_paragraph("[ 메모 및 참고사항 ]", char_pr_id=normal_char_id, para_pr_id="25"))
 
     if footer_text:
-        sec0_root.append(_create_paragraph(""))
-        sec0_root.append(_create_paragraph(f"[{footer_text}]", char_pr_id=normal_char_id))
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))
+        sec0_root.append(_create_paragraph(f"[{footer_text}]", char_pr_id=normal_char_id, para_pr_id="24"))
 
     file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
 
@@ -698,6 +727,11 @@ def generate_handout_zip(items: List[Dict[str, Any]], options: Optional[Dict[str
     if "header_title" in exp_options and exp_options["header_title"]:
         if not "해설" in exp_options["header_title"]:
             exp_options["header_title"] = f"{exp_options['header_title']} (정답 및 해설)"
+
+    # 기본 문제지 양식명이 지정되어 있으면 해설지 전용 기본 양식으로 전환
+    if exp_options.get("template_name") in (DEFAULT_QUESTION_TEMPLATE, "default_b4-question.hwpx", "default_b4_template.hwpx"):
+        exp_options["template_name"] = DEFAULT_EXPLANATION_TEMPLATE
+
     e_bytes = generate_explanation_handout(items, exp_options)
 
     zip_buf = io.BytesIO()
