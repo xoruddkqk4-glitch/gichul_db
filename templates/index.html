@@ -38,6 +38,9 @@
       <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal" onclick="window.__openAiSettingsModal && window.__openAiSettingsModal()" title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
         🔑 AI 설정
       </button>
+      <button class="btn btn-outline-danger btn-sm" id="btnOpenReportsModal" title="신고된 오류 내역 확인 및 관리">
+        🚨 오류 신고 내역 <span class="header-report-count-badge" id="headerReportCountBadge" style="display: none;">0</span>
+      </button>
       <button class="btn btn-primary btn-sm" id="btnOpenUploadModal">
         📁 시험지 업로드 및 관리
       </button>
@@ -443,6 +446,9 @@
               <button type="button" class="btn-tree-change-exam" id="btnTreeChangeExam" style="display: none;">
                 🔄 다른 시험 선택
               </button>
+              <button type="button" class="btn btn-outline-danger btn-sm btn-report-passage" id="btnReportPassage" title="현재 열람 중인 문항의 오류를 신고합니다">
+                🚨 오류 신고
+              </button>
             </div>
           </div>
 
@@ -471,6 +477,10 @@
                 <button type="button" class="btn btn-secondary btn-sm" id="btnRecapturePdf" title="원본 PDF 파일에서 이 문항 영역을 다시 캡처하고 형광펜을 재생성합니다">
                   🔄 다시 캡처
                 </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnUploadPassageCrop" title="이 문항의 올바른 캡처 이미지를 직접 업로드하여 최신 자료로 교체합니다">
+                  📤 이미지 수동 업로드
+                </button>
+                <input type="file" id="inputUploadPassageCrop" accept="image/png, image/jpeg, image/webp" style="display: none;">
                 <span class="text-muted text-hint" id="pdfImageStatus">클릭 시 새 창 원본 확대</span>
               </div>
             </div>
@@ -533,6 +543,15 @@
                       <span class="tts-btn-label">전체 ZIP</span>
                       <span class="tts-badge-count" id="ttsListeningZipRange">1~17</span>
                     </button>
+                  </div>
+
+                  <!-- 4. 오디오 수동 업로드 군 -->
+                  <div class="tts-seg tts-seg--upload" role="group" aria-label="오디오 수동 업로드">
+                    <button type="button" class="tts-tool-btn tts-tool-btn--upload" id="btnUploadListeningAudio" title="올바른 듣기 오디오 파일(MP3/WAV)을 직접 업로드하여 최신 음성으로 교체합니다" aria-label="음성 수동 업로드">
+                      <span class="tts-btn-icon" aria-hidden="true">📤</span>
+                      <span class="tts-btn-label">음성 업로드</span>
+                    </button>
+                    <input type="file" id="inputUploadListeningAudio" accept="audio/mpeg, audio/mp3, audio/wav, audio/m4a" style="display: none;">
                   </div>
                 </div>
               </div>
@@ -2176,6 +2195,176 @@
     </div>
   </div>
 
-  <script type="module" src="/static/js/main.js?v=20260929_0005"></script>
+  <!-- ====================================================================
+       문항(지문) 오류 신고 모달창
+       ==================================================================== -->
+  <div class="modal-backdrop" id="modalReportPassage" style="display: none;">
+    <div class="modal-content report-modal-content">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
+            <span>🚨 문항 오류 신고</span>
+          </h3>
+          <p class="modal-subtitle" id="reportPassageTargetTitle">
+            문항 식별자
+          </p>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="btn-modal-close" id="btnCloseReportPassageModal" title="닫기">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body report-modal-body">
+        <input type="hidden" id="reportPassageId" value="">
+        <input type="hidden" id="reportPassageExamId" value="">
+        <p class="report-section-desc">발견하신 오류 유형을 선택해 주세요 (복수 선택 가능):</p>
+        <div class="report-types-grid">
+          <label class="report-type-card">
+            <input type="checkbox" name="passageErrorType" value="pdf_capture">
+            <div class="report-type-info">
+              <span class="report-type-name">1. PDF 캡처 오류</span>
+              <span class="report-type-hint">이미지 잘림, 흑백 왜곡, 흐림, 다른 문항 노출 등</span>
+            </div>
+          </label>
+          <label class="report-type-card">
+            <input type="checkbox" name="passageErrorType" value="explanation">
+            <div class="report-type-info">
+              <span class="report-type-name">2. 해설지 오류</span>
+              <span class="report-type-hint">해설 내용 오탈자, 해석 누락, 어색한 번역 등</span>
+            </div>
+          </label>
+          <label class="report-type-card">
+            <input type="checkbox" name="passageErrorType" value="answer">
+            <div class="report-type-info">
+              <span class="report-type-name">3. 정답 오류</span>
+              <span class="report-type-hint">정답 번호 불일치, 복수 정답 등</span>
+            </div>
+          </label>
+          <label class="report-type-card">
+            <input type="checkbox" name="passageErrorType" value="accuracy">
+            <div class="report-type-info">
+              <span class="report-type-name">4. 정답률 오류</span>
+              <span class="report-type-hint">정답률 수치 이상, 선지 선택률 누락/오표기 등</span>
+            </div>
+          </label>
+          <label class="report-type-card">
+            <input type="checkbox" name="passageErrorType" value="other" id="chkPassageErrorOther">
+            <div class="report-type-info">
+              <span class="report-type-name">5. 기타 오류</span>
+              <span class="report-type-hint">듣기 대본/음성 싱크 이상, 문제 유형 오분류 등</span>
+            </div>
+          </label>
+        </div>
+
+        <div class="report-comment-group">
+          <label for="inputReportPassageComment" class="report-comment-label">
+            상세 내용 작성 <span class="report-comment-sub">(기타 오류 선택 시 또는 추가 설명 필요 시)</span>
+          </label>
+          <textarea 
+            class="report-textarea" 
+            id="inputReportPassageComment" 
+            placeholder="구체적인 오류 내용을 적어주시면 신속하고 정확한 수정에 큰 도움이 됩니다..." 
+            rows="3"
+          ></textarea>
+        </div>
+      </div>
+      <div class="modal-footer report-modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelReportPassage">취소</button>
+        <button type="button" class="btn btn-danger btn-sm" id="btnSubmitReportPassage">🚨 오류 신고 접수</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       문장 오류 신고 모달창
+       ==================================================================== -->
+  <div class="modal-backdrop" id="modalReportSentence" style="display: none;">
+    <div class="modal-content report-modal-content">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
+            <span>🚨 문장 오류 신고</span>
+          </h3>
+          <p class="modal-subtitle" id="reportSentenceTargetTitle">
+            문장 식별자
+          </p>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="btn-modal-close" id="btnCloseReportSentenceModal" title="닫기">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body report-modal-body">
+        <input type="hidden" id="reportSentenceId" value="">
+        <input type="hidden" id="reportSentencePassageId" value="">
+
+        <div class="report-preview-box">
+          <span class="preview-label">대상 문장 원문:</span>
+          <div class="preview-text" id="reportSentencePreviewText">-</div>
+        </div>
+
+        <div class="report-comment-group">
+          <label for="inputReportSentenceComment" class="report-comment-label">
+            오류 내용 입력 <span class="report-comment-required">*</span>
+          </label>
+          <textarea 
+            class="report-textarea" 
+            id="inputReportSentenceComment" 
+            placeholder="문장 내 오탈자, 해석 오류, 어법 태그 오분류, 끊어읽기 이상 등 오류 내용을 자세히 적어주세요..." 
+            rows="4"
+          ></textarea>
+        </div>
+      </div>
+      <div class="modal-footer report-modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCancelReportSentence">취소</button>
+        <button type="button" class="btn btn-danger btn-sm" id="btnSubmitReportSentence">🚨 오류 신고 접수</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====================================================================
+       신고된 오류 내역 통합 관리 모달창
+       ==================================================================== -->
+  <div class="modal-backdrop" id="modalReportsList" style="display: none;">
+    <div class="modal-content reports-list-modal-content">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <h3 class="modal-title flex-row-center">
+            <span>🚨 등록된 오류 신고 목록</span>
+          </h3>
+          <p class="modal-subtitle">
+            사용자가 신고한 문항 및 문장의 오류를 검토하고, 수정이 완료된 항목은 목록에서 삭제합니다.
+          </p>
+        </div>
+        <div class="modal-header-actions">
+          <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshReportsList" title="목록 새로고침">🔄 새로고침</button>
+          <button type="button" class="btn-modal-close" id="btnCloseReportsListModal" title="닫기">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body reports-list-modal-body">
+        <!-- 탭 필터 바: [전체 (N)] [문항 오류 (N)] [문장 오류 (N)] -->
+        <div class="reports-filter-tabs">
+          <button type="button" class="reports-tab-btn active" data-filter="all" id="tabFilterAllReports">
+            전체 (<span id="countTabAll">0</span>)
+          </button>
+          <button type="button" class="reports-tab-btn" data-filter="passage" id="tabFilterPassageReports">
+            📘 문항 오류 (<span id="countTabPassage">0</span>)
+          </button>
+          <button type="button" class="reports-tab-btn" data-filter="sentence" id="tabFilterSentenceReports">
+            📝 문장 오류 (<span id="countTabSentence">0</span>)
+          </button>
+        </div>
+
+        <!-- 목록 컨테이너 -->
+        <div class="reports-items-container" id="reportsItemsContainer">
+          <!-- JS에서 동적 렌더링 -->
+        </div>
+      </div>
+      <div class="modal-footer reports-list-modal-footer">
+        <span class="reports-list-status" id="reportsListStatusText">총 0건의 오류가 접수되었습니다.</span>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnCloseReportsListFooter">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/main.js?v=20261006_0001"></script>
 </body>
 </html>

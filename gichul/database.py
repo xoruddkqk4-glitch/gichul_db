@@ -356,6 +356,24 @@ def init_db():
             );
         """)
 
+        # 6-2. 문항 및 문장 오류 신고 테이블
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS error_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_type TEXT NOT NULL,         -- 'passage' | 'sentence'
+                passage_id TEXT,                   -- passages.id
+                sentence_id TEXT,                  -- sentences.id
+                exam_id TEXT,                      -- exams.id
+                error_types TEXT,                  -- JSON 문자열 (예: '["pdf_capture", "answer"]')
+                comment TEXT,                      -- 사용자 주관식 상세 내용
+                status TEXT DEFAULT 'pending',     -- 'pending' | 'resolved'
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (passage_id) REFERENCES passages (id) ON DELETE CASCADE,
+                FOREIGN KEY (sentence_id) REFERENCES sentences (id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES exams (id) ON DELETE CASCADE
+            );
+        """)
+
         # 8. 고속 복합 B-Tree 인덱스 생성
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_exams_filter ON exams(grade, year, month);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passages_exam ON passages(exam_id);")
@@ -377,6 +395,8 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_passage_tags_tag ON passage_tags(tag_name);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_sid ON sentence_tags(sentence_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_sentence_tags_tag ON sentence_tags(tag_name);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_error_reports_target_status ON error_reports(target_type, status);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_error_reports_created ON error_reports(created_at DESC);")
 
         # 9. FTS5 전문 검색(Full-Text Search) 가상 테이블 및 자동 동기화 트리거
         try:
@@ -1430,7 +1450,10 @@ def update_sentence_text(sentence_id: str, new_text: str, word_count: Optional[i
             (new_text.strip(), word_count, clean_id)
         )
         conn.commit()
-        return cursor.rowcount > 0
+        if cursor.rowcount > 0:
+            invalidate_exams_cache()
+            return True
+        return False
 
 
 def add_passage_tag(passage_id: str, tag_name: str) -> bool:
@@ -2465,6 +2488,132 @@ def get_db_stats() -> Dict[str, Any]:
         }
 
 
+# ====================================================================
+# 문항 및 문장 오류 신고 (error_reports) 헬퍼 함수
+# ====================================================================
+
+def create_error_report(
+    target_type: str,
+    passage_id: Optional[str] = None,
+    sentence_id: Optional[str] = None,
+    exam_id: Optional[str] = None,
+    error_types: Optional[List[str]] = None,
+    comment: Optional[str] = "",
+) -> Dict[str, Any]:
+    """신규 문항/문장 오류 신고 등록"""
+    import json
+    error_types_json = json.dumps(error_types or [], ensure_ascii=False)
+    clean_p_id = normalize_bracket_id(passage_id) if passage_id else None
+    clean_s_id = normalize_bracket_id(sentence_id) if sentence_id else None
+    clean_e_id = normalize_bracket_id(exam_id) if exam_id else None
+
+    # 유효한 외래키 검증 및 exam_id 자동 보완
+    with get_connection() as conn:
+        if clean_p_id:
+            p_row = conn.execute("SELECT id, exam_id FROM passages WHERE id = ?", (clean_p_id,)).fetchone()
+            if p_row:
+                clean_e_id = clean_e_id or p_row["exam_id"]
+            else:
+                clean_p_id = None
+        if clean_s_id:
+            s_row = conn.execute("SELECT s.id, p.exam_id FROM sentences s JOIN passages p ON s.passage_id = p.id WHERE s.id = ?", (clean_s_id,)).fetchone()
+            if s_row:
+                clean_e_id = clean_e_id or s_row["exam_id"]
+            else:
+                clean_s_id = None
+        if clean_e_id:
+            e_row = conn.execute("SELECT id FROM exams WHERE id = ?", (clean_e_id,)).fetchone()
+            if not e_row:
+                clean_e_id = None
+
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO error_reports (target_type, passage_id, sentence_id, exam_id, error_types, comment, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')
+            """,
+            (target_type, clean_p_id, clean_s_id, clean_e_id, error_types_json, comment or ""),
+        )
+        report_id = cursor.lastrowid
+        conn.commit()
+
+    return {"success": True, "report_id": report_id, "message": "오류 신고가 성공적으로 접수되었습니다."}
+
+
+def get_error_reports(target_type: Optional[str] = None, status: str = "pending") -> List[Dict[str, Any]]:
+    """신고된 오류 목록 조회 (출처 메타데이터 및 문항/문장 정보 JOIN)"""
+    import json
+    with get_connection() as conn:
+        query = """
+            SELECT 
+                r.id,
+                r.target_type,
+                r.passage_id,
+                r.sentence_id,
+                r.exam_id,
+                r.error_types,
+                r.comment,
+                r.status,
+                r.created_at,
+                p.q_num,
+                p.question_type,
+                p.area,
+                p.answer_text,
+                s.order_index AS sentence_order,
+                s.sentence_text,
+                COALESCE(e.grade, ep.grade, es.grade) AS grade,
+                COALESCE(e.year, ep.year, es.year) AS year,
+                COALESCE(e.month, ep.month, es.month) AS month
+            FROM error_reports r
+            LEFT JOIN passages p ON r.passage_id = p.id
+            LEFT JOIN sentences s ON r.sentence_id = s.id
+            LEFT JOIN exams e ON r.exam_id = e.id
+            LEFT JOIN exams ep ON p.exam_id = ep.id
+            LEFT JOIN passages ps ON s.passage_id = ps.id
+            LEFT JOIN exams es ON ps.exam_id = es.id
+            WHERE 1=1
+        """
+        params = []
+        if status and status != "all":
+            query += " AND r.status = ?"
+            params.append(status)
+        if target_type and target_type != "all":
+            query += " AND r.target_type = ?"
+            params.append(target_type)
+
+        query += " ORDER BY r.created_at DESC, r.id DESC"
+        rows = conn.execute(query, params).fetchall()
+
+        results = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["error_types"] = json.loads(d["error_types"]) if d["error_types"] else []
+            except Exception:
+                d["error_types"] = []
+            results.append(d)
+        return results
+
+
+def delete_error_report(report_id: int) -> bool:
+    """오류 신고 항목 삭제 (수정 완료 처리)"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM error_reports WHERE id = ?", (report_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def get_pending_reports_count() -> int:
+    """미해결 오류 건수 반환"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM error_reports WHERE status = 'pending'")
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+
 # init_db()는 import 시점에 자동 실행하지 않는다 (import 부작용 제거).
 # - 웹 서버: app.py의 FastAPI lifespan에서 기동 시 1회 호출
 # - tools/*.py 등 단독 스크립트: main()에서 db.init_db()를 직접 호출
+

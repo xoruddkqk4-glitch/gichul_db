@@ -87,6 +87,7 @@ import {
   currentLoadedExamRawFilesId,
   renderBreadcrumbExamFiles,
 } from "./passage-render.js";
+import { openPassageReportModal } from "./reports.js";
 
 // 메모 저장 상태 관리
 export let memoSaveTimer = null;
@@ -892,6 +893,127 @@ export function initPassageEvents() {
       const btn = e.target && e.target.closest(".btn-inline-recapture");
       if (btn && !btn.disabled && !isRecapturingPdf) {
         handleRecapturePdf();
+      }
+    });
+  }
+
+  // 문항 오류 신고 버튼
+  const btnReportPassage = document.getElementById("btnReportPassage");
+  if (btnReportPassage) {
+    btnReportPassage.addEventListener("click", () => {
+      const p = getCurrentActivePassage();
+      if (p) {
+        openPassageReportModal(p);
+      } else {
+        showToast("선택된 문항이 없습니다.", "warning");
+      }
+    });
+  }
+
+  // PDF 문항 캡처 이미지 수동 업로드
+  const btnUploadCrop = document.getElementById("btnUploadPassageCrop");
+  const inputUploadCrop = document.getElementById("inputUploadPassageCrop");
+  if (btnUploadCrop && inputUploadCrop) {
+    btnUploadCrop.addEventListener("click", () => {
+      const p = getCurrentActivePassage();
+      if (!p) {
+        showToast("선택된 문항이 없습니다.", "warning");
+        return;
+      }
+      inputUploadCrop.value = "";
+      inputUploadCrop.click();
+    });
+
+    inputUploadCrop.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const p = getCurrentActivePassage();
+      if (!p) return;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      btnUploadCrop.disabled = true;
+      btnUploadCrop.textContent = "업로드 중...";
+      try {
+        const cleanId = (p.id || "").replace(/^\[|\]$/g, "");
+        const res = await fetch(`/api/passages/${encodeURIComponent(cleanId)}/upload-crop`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.detail || data.message || "이미지 업로드에 실패했습니다.");
+        }
+
+        // 최신 이미지 반영
+        if (data.passage) {
+          applyPassageUpdate(data.passage, p.id);
+        }
+        // DOM 상의 이미지 강제 리로드 (캐시 버스팅)
+        if (panelPdfImageContainer && data.image_url) {
+          const img = panelPdfImageContainer.querySelector("img");
+          if (img) {
+            img.src = data.image_url;
+          }
+        }
+        showToast(data.message || "PDF 문항 이미지가 성공적으로 최신 파일로 교체되었습니다.", "success");
+      } catch (err) {
+        showToast(`이미지 교체 실패: ${err.message}`, "error");
+      } finally {
+        btnUploadCrop.disabled = false;
+        btnUploadCrop.textContent = "📤 이미지 수동 업로드";
+        inputUploadCrop.value = "";
+      }
+    });
+  }
+
+  // 듣기 음성 파일 수동 업로드
+  const btnUploadAudio = document.getElementById("btnUploadListeningAudio");
+  const inputUploadAudio = document.getElementById("inputUploadListeningAudio");
+  if (btnUploadAudio && inputUploadAudio) {
+    btnUploadAudio.addEventListener("click", () => {
+      const p = getCurrentActivePassage();
+      if (!p) {
+        showToast("선택된 문항이 없습니다.", "warning");
+        return;
+      }
+      inputUploadAudio.value = "";
+      inputUploadAudio.click();
+    });
+
+    inputUploadAudio.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const p = getCurrentActivePassage();
+      if (!p) return;
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      btnUploadAudio.disabled = true;
+      const originalHtml = btnUploadAudio.innerHTML;
+      btnUploadAudio.innerHTML = `<span class="tts-btn-icon">⏳</span><span class="tts-btn-label">업로드 중</span>`;
+      try {
+        const cleanId = (p.id || "").replace(/^\[|\]$/g, "");
+        const res = await fetch(`/api/passages/${encodeURIComponent(cleanId)}/upload-audio`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.detail || data.message || "오디오 업로드에 실패했습니다.");
+        }
+
+        showToast(data.message || "듣기 오디오가 성공적으로 최신 음성으로 교체되었습니다.", "success");
+      } catch (err) {
+        showToast(`오디오 교체 실패: ${err.message}`, "error");
+      } finally {
+        btnUploadAudio.disabled = false;
+        btnUploadAudio.innerHTML = originalHtml;
+        inputUploadAudio.value = "";
       }
     });
   }

@@ -28,7 +28,7 @@ from .core.state import (
     search_cache,
 )
 from .logging_config import get_logger, setup_logging
-from .routers import exams, grammar, listening, passages, search, settings
+from .routers import exams, grammar, listening, passages, reports, search, settings
 from .services.ingest import _regenerate_exam_crops, background_auto_analyze_exam_grammar
 
 logger = get_logger("gichul.app")
@@ -125,6 +125,7 @@ app.include_router(passages.router)
 app.include_router(settings.router)
 app.include_router(grammar.router)
 app.include_router(exams.router)
+app.include_router(reports.router)
 
 
 # --- 하위 호환 re-export ---

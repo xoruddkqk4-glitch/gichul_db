@@ -2461,5 +2461,37 @@ CREATE TABLE user_sentence_status (
   - Node.js ESM Import 검증: `main.js`, `search.js`, `results-passage.js`, `results-sentence.js`, `upload.js`, `files-status.js`, `navigation.js`, `ai-settings.js`, `grammar.js` 등 전체 프론트엔드 모듈 정상 임포트 및 초기화 확인
   - `python -m pytest tests -q`: **206개 단위/통합 테스트 100% 통과** (20.27s)
 
+### [2026-10-06 12:45] 업데이트 이력 (Commit ID: 2c00cbc9)
+- **수정 내용**:
+  - **문항 및 문장 오류 신고 시스템 구축 (`docs/plans/2026-10-06_error-report-system.md`)**:
+    - **지문 및 문장 오류 신고 모달**:
+      - 지문 결과창 2x2 패널 좌상단에 `[🚨 오류 신고]` 버튼 배치: 5종 오류(1. pdf 캡처 오류, 2. 해설지 오류, 3. 정답 오류, 4. 정답률 오류, 5. 기타 오류 주관식 입력창) 복수 선택 신고 지원
+      - 문장 결과창 1행 테이블 액션 열에 `[🚨 신고]` 버튼 배치: 문장 오류 내용 주관식 상세 입력 모달 지원
+    - **우측 상단 공통 [🚨 오류 신고 내역] 관리 모달**:
+      - 메인 첫 화면, 지문 결과 화면, 문장 결과 화면 전체의 헤더 우측 상단 동일 위치에 `[🚨 오류 신고 내역]` 버튼 통일 배치
+      - 신고 내역 통합 관리 모달: '문항 오류' / '문장 오류' 탭 분리, 신고 일시, 오류 항목 및 내용 확인, 수정 완료 시 '해결 완료(삭제)' 기능 제공
+    - **백엔드 오류 관리 API 및 DB 구현**:
+      - `gichul/routers/reports.py`: `POST /api/reports`, `GET /api/reports`, `DELETE /api/reports/{id}` RESTful API 구현
+      - `gichul/database.py`: `reports` 테이블 스키마 자동 마이그레이션 및 CRUD 헬퍼 함수 구현
+  - **지문 자료(문제 PDF 캡처 이미지 · 듣기 음성 파일) 수동 업로드 교체 기능 구축**:
+    - 지문 결과창 패널에 `[🖼️ 문제 이미지 교체]`, `[🎧 듣기 파일 교체]` 수동 업로드 버튼 추가
+    - 업로드 시 기존 파일을 덮어쓰고 최신 자료로 즉시 교체되며 화면 캐시 버스팅(`?t=timestamp`)을 통해 실시간 화면 갱신
+    - 백엔드 `POST /api/passages/{passage_id}/upload-capture`, `POST /api/passages/{passage_id}/upload-listening` 엔드포인트 구현 (`gichul/routers/passages.py`)
+  - **문장 분석 결과 화면 내 문장 텍스트 수동 직접 수정 기능 구축 (`docs/plans/2026-10-06_01_sentence-text-manual-edit.md`)**:
+    - 문장 검색 테이블 액션 열에 `[✏️ 수정]` 버튼 추가 (`static/js/results-sentence.js`)
+    - 클릭 시 해당 행의 문장 셀이 인라인 `<textarea>` 편집 모드로 전환되며, `Ctrl + Enter` (저장) 및 `ESC` (취소) 단축키 지원
+    - 저장 시 `PATCH /api/sentences/{sentence_id:path}/text` API를 호출하여 DB `sentences.sentence_text` 및 `word_count` 자동 재계산 및 갱신, 시험 캐시 무효화 (`gichul/routers/passages.py`, `gichul/database.py`)
+    - 화면 본문 텍스트 및 `[📋 복사]` 버튼의 복사 데이터(`data-text`) 실시간 동기화, 어법 분석 문장의 경우 재분석 안내 토스트 제공
+    - 인라인 문장 에디터 전용 반응형 스타일 추가 (`static/css/viewer.css`)
+  - **문서 동기화**:
+    - `docs/plans/2026-10-06_error-report-system.md`: 완료 반영
+    - `docs/plans/2026-10-06_01_sentence-text-manual-edit.md`: 완료 반영
+    - `docs/README.md`: 계획서 목록 및 상태 `✅ 완료` 동기화
+- **검증 결과**:
+  - `python -m py_compile gichul/routers/passages.py gichul/routers/reports.py gichul/database.py gichul/app.py`: 파이썬 구문 오류 0건 통과
+  - `node -c static/js/results-sentence.js static/js/reports.js static/js/passage-events.js static/js/main.js`: 프론트엔드 자바스크립트 구문 오류 0건 통과
+  - FastAPI `TestClient`를 통한 `PATCH /api/sentences/{id}/text` 200 OK 단위 검증 및 롤백 확인 완료
+
+
 
 

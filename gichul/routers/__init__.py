@@ -2,7 +2,7 @@
 05-gichul_db: 라우터 패키지 (gichul/routers/__init__.py)
 """
 
-from . import exams, grammar, listening, passages, search, settings
+from . import exams, grammar, listening, passages, reports, search, settings
 
 __all__ = [
     "search",
@@ -11,4 +11,6 @@ __all__ = [
     "settings",
     "grammar",
     "exams",
+    "reports",
 ]
+

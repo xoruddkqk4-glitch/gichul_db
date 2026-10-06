@@ -37,6 +37,7 @@ import { executeSearch, highlightSentenceKeyword, loadStats } from "./search.js"
 import { groupPassageItems, renderPassageView, selectPassageTab, stopAllListeningAudio } from "./results-passage.js";
 import { copyToClipboard, cssSafeId, escapeHtml, showToast } from "./utils.js";
 import { openGrammarModalForSentence } from "./grammar.js";
+import { openSentenceReportModal } from "./reports.js";
 
 // =========================================================================
 // 7. [전체 문장 보기] <-> [지문 결과창으로 돌아가기] 연동
@@ -461,6 +462,12 @@ function createSentenceRow(s, currentQuery) {
           <button type="button" class="btn-analyze-inline" data-id="${escapeHtml(s.id)}" title="AI로 어법 포인트 분석">
             🤖 분석
           </button>
+          <button type="button" class="btn-edit-sentence-inline" data-id="${escapeHtml(s.id)}" title="이 문장의 텍스트를 직접 수정합니다">
+            ✏️ 수정
+          </button>
+          <button type="button" class="btn-report-sentence-inline" data-id="${escapeHtml(s.id)}" title="이 문장의 오류 신고">
+            🚨 신고
+          </button>
         </div>
       </td>
     `;
@@ -672,6 +679,127 @@ function createSentenceRow(s, currentQuery) {
         copyBtn.innerHTML = "📋 복사";
         copyBtn.classList.remove("copied");
       }, 1500);
+    });
+  }
+
+  // 인라인 문장 오류 신고 이벤트
+  const reportBtn = tr.querySelector(".btn-report-sentence-inline");
+  if (reportBtn) {
+    reportBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openSentenceReportModal(s.id, s.sentence_text);
+    });
+  }
+
+  // 인라인 문장 텍스트 직접 수정 이벤트
+  const editBtn = tr.querySelector(".btn-edit-sentence-inline");
+  const sentenceCell = tr.querySelector(".col-sentence");
+  if (editBtn && sentenceCell) {
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      // 이미 편집 모드라면 내부 텍스트영역 포커스
+      if (sentenceCell.querySelector(".sentence-inline-edit-wrapper")) {
+        const ta = sentenceCell.querySelector(".sentence-inline-edit-textarea");
+        if (ta) ta.focus();
+        return;
+      }
+
+      const originalHtml = sentenceCell.innerHTML;
+      sentenceCell.innerHTML = `
+        <div class="sentence-inline-edit-wrapper">
+          <textarea class="sentence-inline-edit-textarea" rows="3">${escapeHtml(s.sentence_text)}</textarea>
+          <div class="sentence-inline-edit-actions">
+            <button type="button" class="btn btn-primary btn-xs btn-save-sentence-edit">💾 저장</button>
+            <button type="button" class="btn btn-secondary btn-xs btn-cancel-sentence-edit">취소</button>
+            <span class="sentence-inline-edit-hint">Ctrl + Enter 로 저장 / ESC 로 취소</span>
+          </div>
+        </div>
+      `;
+
+      const textarea = sentenceCell.querySelector(".sentence-inline-edit-textarea");
+      const saveBtn = sentenceCell.querySelector(".btn-save-sentence-edit");
+      const cancelBtn = sentenceCell.querySelector(".btn-cancel-sentence-edit");
+
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
+
+      const restoreOriginal = () => {
+        sentenceCell.innerHTML = originalHtml;
+      };
+
+      const doSave = async () => {
+        const newText = (textarea ? textarea.value : "").trim();
+        if (!newText) {
+          showToast("문장 텍스트는 비워둘 수 없습니다.", "warning");
+          if (textarea) textarea.focus();
+          return;
+        }
+
+        if (newText === s.sentence_text) {
+          restoreOriginal();
+          return;
+        }
+
+        if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.textContent = "저장 중...";
+        }
+
+        try {
+          const res = await fetch(`/api/sentences/${encodeURIComponent(s.id)}/text`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sentence_text: newText }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.detail || data.message || "문장 수정에 실패했습니다.");
+          }
+
+          s.sentence_text = data.sentence_text;
+          s.word_count = data.word_count;
+
+          // 화면 갱신
+          sentenceCell.innerHTML = `<div class="sentence-text-content">${highlightSentenceKeyword(s.sentence_text, currentQuery)}</div>`;
+
+          // 복사 버튼 데이터 갱신
+          const copyBtn = tr.querySelector(".btn-copy-sentence");
+          if (copyBtn) {
+            const prefix = s.id ? (s.id.startsWith("[") && s.id.endsWith("]") ? s.id : `[${s.id}]`) + " " : "";
+            copyBtn.dataset.text = prefix + s.sentence_text;
+          }
+
+          if (s.grammar_analyzed || (s.grammar_annotations && s.grammar_annotations.length > 0)) {
+            showToast("문장 텍스트가 수정되었습니다. 변경된 내용에 맞춰 🤖 분석 버튼으로 어법을 재분석할 수 있습니다.", "success");
+          } else {
+            showToast("문장 텍스트가 성공적으로 수정되었습니다.", "success");
+          }
+        } catch (err) {
+          showToast(`수정 실패: ${err.message}`, "error");
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = "💾 저장";
+          }
+        }
+      };
+
+      if (saveBtn) saveBtn.addEventListener("click", doSave);
+      if (cancelBtn) cancelBtn.addEventListener("click", restoreOriginal);
+
+      if (textarea) {
+        textarea.addEventListener("keydown", (keyEvent) => {
+          if (keyEvent.key === "Enter" && (keyEvent.ctrlKey || keyEvent.metaKey)) {
+            keyEvent.preventDefault();
+            doSave();
+          } else if (keyEvent.key === "Escape") {
+            keyEvent.preventDefault();
+            restoreOriginal();
+          }
+        });
+      }
     });
   }
 

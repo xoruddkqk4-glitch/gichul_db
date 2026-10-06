@@ -299,4 +299,406 @@
   width: 100%;
 }
 
+/* ====================================================================
+   오류 신고 모달 및 관리 시스템 스타일
+   ==================================================================== */
+
+/* 헤더 오류 신고 배지 */
+.header-report-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ef4444;
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  margin-left: 4px;
+}
+
+/* 브레드크럼 우측 오류 신고 버튼 */
+.btn-report-passage {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+  transition: all 0.15s ease;
+}
+.btn-report-passage:hover {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+/* 문장 테이블 내 인라인 오류 신고 버튼 */
+.btn-report-sentence-inline {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid #fca5a5;
+  background: rgba(239, 68, 68, 0.06);
+  color: #b91c1c;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-report-sentence-inline:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+/* 오류 신고 모달 레이아웃 */
+.report-modal-content {
+  max-width: 580px;
+  width: 92%;
+}
+
+.report-section-desc {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.75rem;
+}
+
+/* 5종 체크박스 카드 그리드 */
+.report-types-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.report-type-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.report-type-card:hover {
+  border-color: #f87171;
+  background: #fff5f5;
+}
+
+.report-type-card input[type="checkbox"] {
+  margin-top: 0.2rem;
+  accent-color: #ef4444;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.report-type-card:has(input[type="checkbox"]:checked) {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.report-type-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.report-type-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.report-type-hint {
+  font-size: 0.76rem;
+  color: #6b7280;
+  margin-top: 1px;
+}
+
+/* 주관식 입력 텍스트영역 */
+.report-comment-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.report-comment-label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.report-comment-sub {
+  font-size: 0.76rem;
+  font-weight: 400;
+  color: #6b7280;
+}
+
+.report-comment-required {
+  color: #ef4444;
+}
+
+.report-textarea {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-family: inherit;
+  resize: vertical;
+  background: #ffffff;
+}
+
+.report-textarea:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+/* 문장 신고 미리보기 박스 */
+.report-preview-box {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #ef4444;
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.9rem;
+}
+
+.report-preview-box .preview-label {
+  display: block;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #4b5563;
+  margin-bottom: 0.25rem;
+}
+
+.report-preview-box .preview-text {
+  font-size: 0.88rem;
+  color: #111827;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* ====================================================================
+   신고된 오류 내역 통합 관리 모달 (reports-list-modal)
+   ==================================================================== */
+.reports-list-modal-content {
+  max-width: 860px;
+  width: 95%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-list-modal-body {
+  overflow-y: auto;
+  max-height: calc(85vh - 140px);
+  padding: 1rem 1.25rem;
+}
+
+.reports-filter-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+}
+
+.reports-tab-btn {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reports-tab-btn:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+.reports-tab-btn.active {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.reports-items-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* 각 신고 항목 카드 */
+.report-item-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.report-item-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.06);
+}
+
+.report-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.report-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.report-target-badge {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.report-target-badge.badge-passage {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.report-target-badge.badge-sentence {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.report-target-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.report-type-pill {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 9999px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.report-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-goto-report {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  color: #0284c7;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-goto-report:hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.btn-resolve-report {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #86efac;
+  background: #f0fdf4;
+  color: #16a34a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-resolve-report:hover {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.report-item-body {
+  font-size: 0.86rem;
+  color: #374151;
+  background: #f8fafc;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  line-height: 1.45;
+  margin-bottom: 0.4rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.report-item-sentence-quote {
+  font-size: 0.82rem;
+  font-style: italic;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+  padding-left: 0.5rem;
+  border-left: 3px solid #cbd5e1;
+}
+
+.report-item-footer {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+/* 빈 상태 (Empty State) */
+.report-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.report-empty-icon {
+  font-size: 3rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-empty-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 0.25rem;
+}
+
+.report-empty-subtitle {
+  font-size: 0.84rem;
+  color: #6b7280;
+}
+
+
 
