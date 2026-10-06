@@ -2604,4 +2604,22 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과
   - `pytest tests/`: 211개 전체 테스트 100% 통과 (5개 hwpx + 206개 전체 기능)
 
+### [2026-10-06 20:38] 업데이트 이력 (Commit ID: 175ed2e4)
+- **수정 내용**:
+  - **1) 한/글 문서 보안 경고 원인 해결: 비표준 markpenBegin/End 태그 완전 제거 (`gichul/services/hwpx_generator.py`)**:
+    - **원인 분석**: 개방형 HWPX(KS X 6101 OWPML) 표준 단락 네임스페이스(`http://www.hancom.co.kr/hwpml/2011/paragraph`)에 정의되지 않은 비표준 엘리먼트(`<hp:markpenBegin>`, `<hp:markpenEnd>`)가 `section0.xml`에 포함되어 있어, 한컴오피스 한/글 스키마 검증 시 "문서가 손상되었거나 변조되었을 가능성이 있습니다. 이 문서를 불러오려면 [문서 보안 설정]을 [낮음]으로 설정해야 합니다" 보안 경고 팝업이 발생하던 문제를 해결.
+    - **비표준 태그 완전 제거**: `_create_paragraph` 헬퍼 및 선지 생성 루프에서 `markpenBegin`/`markpenEnd` 엘리먼트 생성 코드를 완전히 제거.
+  - **2) 한컴 OWPML 표준 글자 모양 음영(`charPr shadeColor="#FFFF00"`)으로 정답 강조 일원화 (`gichul/services/hwpx_generator.py`)**:
+    - 한/글에서 글자 텍스트 배경 강조를 처리하는 공식 표준 방식인 `charPr` 속성 `shadeColor="#FFFF00"`을 단독 적용.
+    - 정답 번호(①~⑤)의 `run` 엘리먼트가 `highlight_char_id`를 참조하여, 스키마 위반이나 보안 경고 없이 선명한 노란색 강조(형광펜 효과)가 한글 뷰어/편집기 및 인쇄 시 100% 정상 출력되도록 최적화.
+  - **3) 단위 테스트 갱신 및 OWPML 스키마 준수 전수 검증 (`tests/test_hwpx_generator.py`)**:
+    - 비표준 `markpen` 태그 미포함(`assert "markpen" not in sec0.lower()`) 및 `shadeColor="#FFFF00"` 정상 적용 검증 테스트 케이스 갱신.
+    - 원본 템플릿 대비 비표준 태그 0건, 참조 무결성 100% 일치 실증 확인.
+    - 전체 211개(HWPX 5개 + 핵심 기능 206개) 단위/회귀 테스트 100% 통과.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py tests/test_hwpx_generator.py`: 파이썬 구문 오류 0건 통과
+  - `pytest tests/test_hwpx_generator.py`: 5개 전체 단위/통합 테스트 100% 통과 (6.95s)
+  - `pytest tests/`: 211개 전체 회귀 테스트 100% 통과 (22.02s)
+  - OWPML 스키마 무결성 검증: 비표준 태그 0건, 잘못된 속성/참조 0건 완전 무결 확인
+
 

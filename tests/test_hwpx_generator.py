@@ -86,12 +86,12 @@ def test_generate_question_handout():
         # 사용자 지정 번호 '1. ' 및 '2. ' 확인
         assert "1. 다음 글의 목적으로" in sec0
         assert "2. 다음 글에 드러난" in sec0
-        # 형광펜 마크 확인 (OWPML 표준 markpenBegin / markPenBegin 호환)
-        assert "markpenBegin" in sec0 or "markPenBegin" in sec0
+        # 비표준 markpenBegin/End 태그가 없어 한글 보안 경고가 발생하지 않음을 검증
+        assert "markpen" not in sec0.lower()
         hdr = zf.read("Contents/header.xml").decode("utf-8")
         # 문제지 글자 크기 13pt (height="1300") 검증
         assert 'height="1300"' in hdr
-        # 노란색 음영 검증
+        # 노란색 음영(shadeColor) 검증
         assert 'shadeColor="#FFFF00"' in hdr
 
 def test_generate_explanation_handout():

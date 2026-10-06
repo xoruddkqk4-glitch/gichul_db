@@ -315,12 +315,8 @@ def _create_paragraph(
 
     if text:
         run = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": char_pr_id})
-        if highlight:
-            ET.SubElement(run, f"{{{NS_HP}}}markpenBegin", {"color": "#FFFF00", "beginColor": "#FFFF00"})
         t = ET.SubElement(run, f"{{{NS_HP}}}t")
         t.text = text
-        if highlight:
-            ET.SubElement(run, f"{{{NS_HP}}}markpenEnd")
 
     return p
 
@@ -446,7 +442,7 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
     선택한 문항 목록으로 B4 단면 2문항 문제지 HWPX 문서 생성
     - 글자 크기 13 pt 고정 (height="1300")
     - 본문 기본 텍스트 볼드체 해제 (non-bold)
-    - 정답 선지 번호 노란색 형광펜 (markpenBegin + shadeColor #FFFF00)
+    - 정답 선지 번호 노란색 형광펜 하이라이트 (charPr shadeColor #FFFF00 음영)
     - 발문(paraPr 26), 지문 본문(paraPr 35 양쪽정렬), 선지(paraPr 35)
     - 홀수 문항 후 columnBreak=1, 짝수 문항 후 pageBreak=1 다페이지 레이아웃
     """
@@ -550,12 +546,10 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
                 })
 
                 if is_correct:
-                    # 정답 번호에 노란색 형광펜 적용
+                    # 정답 번호에 노란색 음영(shadeColor="#FFFF00") 스타일 적용 (OWPML 표준)
                     c_run_num = ET.SubElement(choice_p, f"{{{NS_HP}}}run", {"charPrIDRef": highlight_char_id})
-                    ET.SubElement(c_run_num, f"{{{NS_HP}}}markpenBegin", {"color": "#FFFF00", "beginColor": "#FFFF00"})
                     t_num = ET.SubElement(c_run_num, f"{{{NS_HP}}}t")
                     t_num.text = circ
-                    ET.SubElement(c_run_num, f"{{{NS_HP}}}markpenEnd")
 
                     c_run_txt = ET.SubElement(choice_p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
                     t_txt = ET.SubElement(c_run_txt, f"{{{NS_HP}}}t")
