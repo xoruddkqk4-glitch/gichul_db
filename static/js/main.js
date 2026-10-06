@@ -22,6 +22,8 @@ import { init as init_files_status } from "./files-status.js";
 import { init as init_grammar } from "./grammar.js";
 import { init as init_ai_settings } from "./ai-settings.js";
 import { initReports } from "./reports.js";
+import { initHandoutCart } from "./handout-cart.js";
+import { initHandoutPassageView } from "./handout-passage.js";
 import { setHeaderSlotState, updateGrammarFiltersVisibility } from "./navigation.js";
 import { refreshAiStatusIndicator } from "./ai-settings.js";
 import { prefetchPassageMetadata } from "./search.js";
@@ -36,6 +38,8 @@ init_files_status();
 init_grammar();
 init_ai_settings();
 initReports();
+initHandoutCart();
+initHandoutPassageView();
 
 // 초기 상태: 홈 검색 화면이 기본이므로 헤더 슬롯을 'home' 상태(통계 배지 노출, 해당 지문 버튼 숨김)로 명시 초기화
 setHeaderSlotState("home");

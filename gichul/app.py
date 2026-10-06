@@ -28,7 +28,7 @@ from .core.state import (
     search_cache,
 )
 from .logging_config import get_logger, setup_logging
-from .routers import exams, grammar, listening, passages, reports, search, settings
+from .routers import exams, grammar, handouts, listening, passages, reports, search, settings
 from .services.ingest import _regenerate_exam_crops, background_auto_analyze_exam_grammar
 
 logger = get_logger("gichul.app")
@@ -91,7 +91,7 @@ async def no_cache_static_js(request: Request, call_next):
 
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # 검색 결과에 영향을 주지 않는 쓰기 경로 (AI 키 저장/테스트, TTS 미리듣기 등)
-_CACHE_SAFE_WRITE_PREFIXES = ("/api/settings/",)
+_CACHE_SAFE_WRITE_PREFIXES = ("/api/settings/", "/api/handouts/")
 
 
 @app.middleware("http")
@@ -126,6 +126,7 @@ app.include_router(settings.router)
 app.include_router(grammar.router)
 app.include_router(exams.router)
 app.include_router(reports.router)
+app.include_router(handouts.router)
 
 
 # --- 하위 호환 re-export ---

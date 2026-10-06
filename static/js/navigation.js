@@ -106,6 +106,9 @@ export function showHomeScreen() {
   appState.treeNavState = { grade: null, year: null, month: null };
   homeSearchView.style.display = "flex";
   resultsView.style.display = "none";
+  const handoutView = document.getElementById("handoutViewContainer");
+  if (handoutView) handoutView.style.display = "none";
+
   if (emptyResultsBox) emptyResultsBox.style.display = "none";
   if (passageViewContainer) passageViewContainer.style.display = "none";
   if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
@@ -116,6 +119,8 @@ export function showHomeScreen() {
   setHeaderSlotState("home");
   setSearchWithinState(false);
   updateGrammarFiltersVisibility();
+
+  import("./handout-cart.js").then((m) => m.updateFloatingCartUI());
 
   // 결과창 검색어 및 필터를 홈 검색창에 동기화
   if (resultsSearchInput && resultsSearchInput.value) {
@@ -146,6 +151,9 @@ export function updateResultsNavHeight() {
 export function showResultsScreen() {
   stopAllListeningAudio();
   homeSearchView.style.display = "none";
+  const handoutView = document.getElementById("handoutViewContainer");
+  if (handoutView) handoutView.style.display = "none";
+
   resultsView.style.display = "flex";
   if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -153,6 +161,31 @@ export function showResultsScreen() {
   if (typeof updateClearButtons === "function") updateClearButtons();
   setTimeout(updateResultsNavHeight, 30);
   setHeaderSlotState(appState.currentMode);
+  import("./handout-cart.js").then((m) => m.updateFloatingCartUI());
+}
+
+/** 교사용 지문 유인물 제작소 화면으로 전환 */
+export function switchToHandoutView() {
+  stopAllListeningAudio();
+  if (homeSearchView) homeSearchView.style.display = "none";
+  if (resultsView) resultsView.style.display = "none";
+
+  const handoutView = document.getElementById("handoutViewContainer");
+  if (handoutView) {
+    handoutView.style.display = "flex";
+  }
+
+  const floatingBar = document.getElementById("handoutFloatingCart");
+  if (floatingBar) floatingBar.style.display = "none";
+
+  if (statsBadge) statsBadge.style.display = "none";
+  if (btnHeaderFlow) btnHeaderFlow.style.display = "none";
+  if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  import("./handout-passage.js").then((m) => {
+    if (m.renderHandoutView) m.renderHandoutView();
+  });
 }
 // =========================================================================
 // 3. 모드 전환 (지문 검색 vs 문장 검색)
@@ -202,7 +235,19 @@ export function init() {
 
   // 홈으로 이동 버튼 이벤트 연결
   btnGoHome.addEventListener("click", showHomeScreen);
-  btnBackToSearch.addEventListener("click", showHomeScreen);
+  btnBackToSearch.addEventListener("click", () => {
+    const handoutView = document.getElementById("handoutViewContainer");
+    if (handoutView && handoutView.style.display !== "none") {
+      showResultsScreen();
+    } else {
+      showHomeScreen();
+    }
+  });
+
+  const btnHeaderHandout = document.getElementById("btnHeaderHandout");
+  if (btnHeaderHandout) {
+    btnHeaderHandout.addEventListener("click", switchToHandoutView);
+  }
   if (btnEmptyBackToSearch) {
     btnEmptyBackToSearch.addEventListener("click", showHomeScreen);
   }

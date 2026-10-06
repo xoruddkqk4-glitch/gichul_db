@@ -29,6 +29,10 @@ VOICES_DIR = os.path.join(STATIC_DIR, "voices")
 KEYS_DIR = os.path.join(ROOT_DIR, "data", "answer_keys")
 GRAMMAR_CATEGORIES_JSON = os.path.join(STATIC_DIR, "data", "grammar_categories.json")
 
+# 유인물 HWPX 템플릿 디렉토리 (기본 내장 템플릿: static/data/templates, 사용자 업로드 템플릿: uploads/templates)
+HANDOUT_TEMPLATES_DIR = os.path.join(STATIC_DIR, "data", "templates")
+CUSTOM_TEMPLATES_DIR = os.path.join(UPLOADS_DIR, "templates")
+
 # 로그 파일 디렉토리 및 경로
 LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 APP_LOG_PATH = os.path.join(LOGS_DIR, "app.log")

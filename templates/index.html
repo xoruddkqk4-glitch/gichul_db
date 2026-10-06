@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/static/css/modal.css?v=20261005_1910">
   <link rel="stylesheet" href="/static/css/grammar.css?v=20261005_1910">
   <link rel="stylesheet" href="/static/css/upload.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/handouts.css?v=20261006_0001">
 </head>
 <body>
 
@@ -37,6 +38,9 @@
       </div>
       <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal" onclick="window.__openAiSettingsModal && window.__openAiSettingsModal()" title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
         🔑 AI 설정
+      </button>
+      <button type="button" class="btn btn-outline-primary btn-sm btn-nav-handout" id="btnHeaderHandout" title="교사용 지문 유인물 제작소로 이동">
+        📄 유인물 제작소
       </button>
       <button class="btn btn-outline-danger btn-sm" id="btnOpenReportsModal" title="신고된 오류 내역 확인 및 관리">
         🚨 오류 신고 내역 <span class="header-report-count-badge" id="headerReportCountBadge" style="display: none;">0</span>
@@ -440,6 +444,13 @@
             </div>
 
             <div class="breadcrumb-right" id="breadcrumbRight">
+              <label class="handout-checkbox-label" id="labelHandoutSelectCurrent" title="현재 문항을 유인물 보관함에 담거나 제외합니다">
+                <input type="checkbox" id="chkHandoutSelectCurrent" class="handout-q-select-checkbox">
+                <span>📄 유인물 담기</span>
+              </label>
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="btnHandoutToggleAllExam" title="현재 시험지의 전체 문항을 유인물에 담거나 제외합니다">
+                📑 시험 전체 담기
+              </button>
               <button type="button" class="btn-tree-reset-exam" id="btnTreeResetExam" style="display: none;" title="검색 조건 및 시험 선택 초기화">
                 ↺ 검색 조건 초기화
               </button>
@@ -766,6 +777,150 @@
 
     </section>
 
+    <!-- ====================================================================
+         [화면 3] 교사용 지문 유인물 제작소 화면 (#handoutViewContainer)
+         ==================================================================== -->
+    <section class="handout-view-container" id="handoutViewContainer" style="display: none;">
+      <!-- 상단 헤더 바 -->
+      <div class="handout-header-bar">
+        <div class="handout-title-wrap">
+          <span style="font-size: 1.5rem;">📄</span>
+          <div>
+            <h2 class="handout-page-title">교사용 지문 유인물 제작소</h2>
+            <span style="font-size: 0.82rem; color: #64748b;">선택한 기출 문항으로 B4 단면 2문항 규격의 문제지 및 해설지 HWPX 문서를 자동 생성합니다.</span>
+          </div>
+          <span class="handout-page-badge" id="handoutTotalCountBadge">0개 문항</span>
+          <span style="font-size: 0.85rem; font-weight: 700; color: #2563eb;" id="handoutEstimatedPages"></span>
+        </div>
+        <div>
+          <button type="button" class="btn-handout-back" id="btnHandoutBackToResults">
+            🔙 검색 화면으로 복귀
+          </button>
+        </div>
+      </div>
+
+      <!-- 2열 레이아웃: 좌측 문항 목록 / 우측 서식 및 다운로드 설정 -->
+      <div class="handout-layout">
+        <!-- 좌측: 선택 문항 목록 섹션 -->
+        <div class="handout-list-section">
+          <div class="handout-toolbar">
+            <div class="handout-toolbar-left">
+              <span>선택된 문항 목록</span>
+            </div>
+            <div class="handout-toolbar-actions">
+              <button type="button" class="btn-handout-tool" id="btnHandoutRenumber1" title="모든 문항 번호를 1번부터 차례대로 다시 매깁니다">
+                🔢 1번부터 순차 재부여
+              </button>
+              <div style="display: inline-flex; align-items: center; gap: 4px;">
+                <input type="number" class="input-start-num" id="inputHandoutStartNum" value="1" min="1" max="99" title="시작 번호">
+                <button type="button" class="btn-handout-tool" id="btnHandoutRenumberN" title="지정한 시작 번호부터 차례대로 다시 매깁니다">
+                  번부터 부여
+                </button>
+              </div>
+              <button type="button" class="btn-handout-tool" id="btnHandoutClearAll" style="color: #ef4444;" title="모든 문항을 비웁니다">
+                🗑️ 전체 비우기
+              </button>
+            </div>
+          </div>
+
+          <!-- 동적 문항 카드 컨테이너 -->
+          <div class="handout-items-list" id="handoutItemsList">
+            <!-- JS에서 동적으로 렌더링됩니다 -->
+          </div>
+        </div>
+
+        <!-- 우측: 유인물 서식 설정 및 다운로드 패널 -->
+        <aside class="handout-settings-panel">
+          <!-- 카드 1: 머리말 / 꼬리말 설정 -->
+          <div class="handout-panel-card">
+            <h3 class="panel-card-title">📝 머리말 &amp; 꼬리말 설정</h3>
+            <div class="form-group">
+              <label class="form-label" for="handoutHeaderTitle">머리말 제목</label>
+              <input type="text" class="form-input" id="handoutHeaderTitle" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출" maxlength="60">
+              <span class="form-help">유인물 상단에 인쇄될 메인 제목입니다.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="handoutHeaderSub">머리말 소제목 / 인적사항</label>
+              <input type="text" class="form-input" id="handoutHeaderSub" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
+              <span class="form-help">제목 아래 또는 우측에 표기할 인적사항/부서입니다.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="handoutFooterText">꼬리말 텍스트</label>
+              <input type="text" class="form-input" id="handoutFooterText" placeholder="예: OO고등학교 영어과 / 무단 배포 금지" maxlength="60">
+              <span class="form-help">문서 하단에 인쇄될 소속 문구입니다.</span>
+            </div>
+          </div>
+
+          <!-- 카드 2: HWPX 템플릿 양식 관리 -->
+          <div class="handout-panel-card">
+            <h3 class="panel-card-title">📑 B4 HWPX 양식 선택</h3>
+            <div class="form-group">
+              <label class="form-label" for="handoutTemplateSelect">적용할 양식 템플릿</label>
+              <div class="template-upload-wrap">
+                <select class="form-select" id="handoutTemplateSelect">
+                  <!-- JS에서 템플릿 목록 로드 -->
+                </select>
+                <button type="button" class="btn-template-upload" id="btnUploadHandoutTemplate" title="자체 제작한 B4 HWPX 양식을 업로드합니다">
+                  📤 양식 업로드
+                </button>
+                <input type="file" id="inputHandoutTemplateFile" accept=".hwpx" style="display: none;">
+              </div>
+              <div style="display: flex; gap: 8px; margin-top: 6px;">
+                <a href="/static/data/templates/default_b4_question.hwpx" download="기본B4_문제지_양식.hwpx" class="btn-template-upload" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 5px 10px;" title="기본 B4 문제지 양식을 다운로드하여 한글 프로그램에서 편집 후 업로드할 수 있습니다">
+                  📥 기본 문제지 양식 받기
+                </a>
+                <a href="/static/data/templates/default_b4_explanation.hwpx" download="기본B4_해설지_양식.hwpx" class="btn-template-upload" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 5px 10px;" title="기본 B4 해설지 양식을 다운로드하여 한글 프로그램에서 편집 후 업로드할 수 있습니다">
+                  📥 기본 해설지 양식 받기
+                </a>
+              </div>
+              <span class="form-help">기본 B4 양식을 내려받아 학교 로고나 서식을 보완한 뒤 '양식 업로드'로 등록할 수 있습니다.</span>
+            </div>
+            <div class="form-group" style="padding-top: 6px;">
+              <label class="toggle-switch-label" title="문제지 정답 선지 번호에 노란색 형광펜 하이라이트를 표시합니다">
+                <span>🟡 정답 번호 노란색 형광펜 표시 (교사용)</span>
+                <input type="checkbox" id="handoutHighlightAnswer" checked>
+              </label>
+              <span class="form-help">체크 해제 시 형광펜 없는 학생 배포용 시험지로 출력됩니다.</span>
+            </div>
+          </div>
+
+          <!-- 카드 3: HWPX 다운로드 액션 -->
+          <div class="handout-panel-card">
+            <h3 class="panel-card-title">📥 유인물 다운로드</h3>
+            <div class="download-actions-wrap">
+              <button type="button" class="btn-download-handout btn-primary" id="btnDownloadQuestion">
+                <span>📄 문제지 다운로드 (HWPX)</span>
+              </button>
+              <button type="button" class="btn-download-handout btn-secondary" id="btnDownloadExplanation">
+                <span>📘 해설지 다운로드 (HWPX)</span>
+              </button>
+              <button type="button" class="btn-download-handout btn-zip" id="btnDownloadZip">
+                <span>📦 문제+해설 일괄 다운로드 (ZIP)</span>
+              </button>
+            </div>
+            <span class="form-help" style="text-align: center; display: block; line-height: 1.5;">
+              * 문제지: 출처 배제, 발문+지문+선지(정답 형광펜)<br>
+              * 해설지: 번호+원출처 병기, 좌측하단 상세해설 전문
+            </span>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- 하단 플로팅 장바구니 바 -->
+  <div class="handout-floating-cart" id="handoutFloatingCart">
+    <div class="cart-info">
+      <span>🛒 유인물 보관함</span>
+      <span class="cart-count-badge" id="cartCountBadge">0문항</span>
+    </div>
+    <button type="button" class="btn-open-handout-view" id="btnOpenHandoutView">
+      <span>📄 유인물 제작소 이동</span>
+    </button>
+    <button type="button" class="btn-clear-floating-cart" id="btnClearFloatingCart" title="보관함 비우기">
+      비우기
+    </button>
   </div>
 
   <!-- 토스트 알림 컨테이너 -->

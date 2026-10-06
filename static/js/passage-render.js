@@ -1662,6 +1662,12 @@ export function loadPassageDetail(p) {
   appState.currentPassageId = p.id;
   setHeaderSlotState("passage");
 
+  // 유인물 보관함 선택 상태 동기화
+  import("./handout-cart.js").then((m) => {
+    if (m.syncCurrentPassageCheckbox) m.syncCurrentPassageCheckbox();
+    if (m.syncExamToggleAllButton) m.syncExamToggleAllButton();
+  }).catch(() => {});
+
   if (p.passage_text === undefined && p.exam_id) {
     ensureExamPassagesLoaded(p.exam_id, (fresh) => {
       if (currentDetailPassage && currentDetailPassage.id === fresh.id) {
