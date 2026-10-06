@@ -2650,5 +2650,27 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_hwpx_generator.py`: 5개 전체 HWPX 엔진 테스트 100% 통과.
   - `pytest tests/`: 211개 전체 회귀 테스트 100% 통과.
 
+### [2026-10-06 21:30] 업데이트 이력 (Commit ID: fd9ad3b5)
+- **수정 내용**:
+  - **1) 해설지 기출 출처 표 셀 내부 텍스트 세로 가운데 정렬 (`vertAlign="CENTER"`) (`gichul/services/hwpx_generator.py`)**:
+    - 1행 4열 기출 출처 표 생성 시 `subList`의 기존 속성을 초기화하지 않고 `vertAlign="CENTER"`를 명시적으로 유지하여, 셀 내부 텍스트(년도, 학년, 월, 번호)가 가로 정렬(`horizontal="CENTER"`)뿐만 아니라 상하 세로 기준으로도 완벽한 정중앙에 정렬되도록 개선.
+  - **2) 해설 본문 선두의 중복 정답 표기(2~3회 반복) 제거 및 1회 단독 표기 (`gichul/services/hwpx_generator.py`)**:
+    - 유인물 상단에 이미 문항 번호와 정답(`{custom_q_num}번. [정답] {ans_display}`)이 독립 라인으로 표기되므로, 본문 텍스트(`explanation_text`) 선두에 중복 포함되어 있던 `[정답] ⑤`, `⑤` 등의 반복 표기를 자동으로 감지하여 제거하는 `_clean_explanation_lines()` 정규화 파이프라인 신설.
+    - 정답이 2~3회 불필요하게 반복 인쇄되는 문제를 해결하고 `[출제 의도]`, `[해석]`, `[해설]` 본문이 깔끔하게 이어지도록 정돈.
+  - **3) 기출 출처 표 앞 불필요한 엔터(공백 줄) 제거 (`gichul/services/hwpx_generator.py`)**:
+    - 첫 번째 문항(`idx == 0`)의 출처 표 런(`src_run0`)을 머리말 단락(`new_first_p`)에 직접 결합하고, 머리말 뒤에 삽입되던 불필요한 빈 단락(`_create_paragraph("", para_pr_id="0")`)을 제거.
+    - 해설지 첫 페이지 상단에서 출처 표 위에 불필요한 공백 엔터 없이 양식 최상단에 표가 정확히 밀착 배치되도록 교정.
+- **검증 결과**:
+  - **실제 한/글 2022 프로세스(`Hwp.exe`) 연동 실증 검증 완료**:
+    - 세로 가운데 정렬 및 출처 표 최상단 배치가 적용된 해설지 HWPX 파일을 실제 한/글 2022 프로세스로 열어 윈도우 타이틀 및 모달 대화상자 상태를 정밀 검사한 결과, 보안 경고 없이 100% 정상 열림 확인 (`popup_error=False, success_opened=True`).
+  - **XML 구조 무결성 검증**:
+    - `colCnt="4"` 표의 모든 셀 `subList.vertAlign="CENTER"` 적용 확인.
+    - 표 앞 빈 단락 0개 확인.
+    - Q1 첫 6문단 내 정답 기호(⑤) 출현 횟수: 기존 3회에서 **1회 단독 출현**으로 정상 정규화 확인.
+  - `python -m py_compile gichul/services/hwpx_generator.py`: 파이썬 구문 오류 0건 통과.
+  - `pytest tests/test_hwpx_generator.py`: 5개 전체 HWPX 엔진 테스트 100% 통과.
+  - `pytest tests/`: 211개 전체 회귀 테스트 100% 통과.
+
+
 
 

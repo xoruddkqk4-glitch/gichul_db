@@ -399,7 +399,35 @@ def _extract_source_table_template(sec0_root: ET.Element) -> Optional[ET.Element
     return None
 
 
-def _create_source_table_paragraph(
+def _clean_explanation_lines(exp_text: str) -> List[str]:
+    """
+    해설 본문 텍스트의 선두에 중복으로 포함된 정답 표기(예: '[정답] ⑤', '⑤' 등) 및 불필요한 공백 행을 제거.
+    유인물 상단에 이미 '{custom_q_num}번. [정답] {ans_display}'가 표시되므로 중복 표기를 방지.
+    """
+    raw_lines = [line.rstrip() for line in (exp_text or "").splitlines()]
+    idx = 0
+    while idx < len(raw_lines):
+        line = raw_lines[idx].strip()
+        if not line:
+            idx += 1
+            continue
+        # [정답] ⑤, 정답: ⑤, 【정답】 ⑤ 등 정답 단독 표기 라인
+        is_ans_header = bool(re.match(r"^(\[|【)?\s*정답\s*(\]|】)?\s*[:：]?\s*([①-⑤\d]+|\([1-5]\))?\s*$", line))
+        # ⑤, (5), 1 등 단독 번호 표기 라인
+        is_bare_num = bool(re.match(r"^([①-⑤]|\([1-5]\)|[1-5])$", line))
+
+        if is_ans_header or is_bare_num:
+            idx += 1
+            continue
+        break
+
+    while idx < len(raw_lines) and not raw_lines[idx].strip():
+        idx += 1
+
+    return raw_lines[idx:]
+
+
+def _create_source_table_run(
     template_tbl: Optional[ET.Element],
     year: str,
     grade: str,
@@ -407,21 +435,14 @@ def _create_source_table_paragraph(
     qnum: str,
     normal_char_id: str
 ) -> ET.Element:
-    """1행 4열 출처 표를 담은 <hp:p paraPrIDRef='24'> 문단 생성"""
-    p_id = str(abs(hash(f"src_tbl_{year}_{grade}_{month}_{qnum}_{os.urandom(4)}")) % 2000000000)
-    p = ET.Element(f"{{{NS_HP}}}p", {
-        "id": p_id,
-        "paraPrIDRef": "24",
-        "styleIDRef": "0",
-        "pageBreak": "0",
-        "columnBreak": "0",
-        "merged": "0",
-    })
+    """1행 4열 기출 출처 표를 담은 <hp:run> 엘리먼트 생성 (셀 텍스트 세로 가운데 정렬 유지)"""
+    run_id = str(abs(hash(f"src_tbl_{year}_{grade}_{month}_{qnum}_{os.urandom(4)}")) % 2000000000)
+    run = ET.Element(f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
 
     if template_tbl is not None:
         tbl = copy.deepcopy(template_tbl)
         # 1) 표 자체에 고유 ID 부여
-        tbl.set("id", str(abs(hash(f"tbl_{p_id}_{os.urandom(4)}")) % 2000000000))
+        tbl.set("id", str(abs(hash(f"tbl_{run_id}_{os.urandom(4)}")) % 2000000000))
 
         values = {"0": year, "1": grade, "2": month, "3": qnum}
         for tc_idx, tc in enumerate(tbl.findall(f".//{{{NS_HP}}}tc")):
@@ -430,15 +451,18 @@ def _create_source_table_paragraph(
             val = values.get(col, "")
 
             # 2) 셀 내부를 OWPML 표준의 깨끗한 단일 문단 구조로 재구성
-            # (템플릿의 누름틀 CLICK_HERE fieldBegin/fieldEnd 및 불일치 linesegarray가 한글 보안 경고를 유발하므로 정규화)
+            # subList의 vertAlign="CENTER" 속성을 유지하여 텍스트 세로 가운데 정렬 보장
             subList = tc.find(f"{{{NS_HP}}}subList")
             if subList is not None:
                 orig_p = subList.find(f"{{{NS_HP}}}p")
                 cell_para_pr_id = orig_p.get("paraPrIDRef", "22") if orig_p is not None else "22"
 
-                subList.clear()
+                subList.set("vertAlign", "CENTER")
+                for child in list(subList):
+                    subList.remove(child)
+
                 cell_p = ET.SubElement(subList, f"{{{NS_HP}}}p", {
-                    "id": str(abs(hash(f"cell_p_{p_id}_{tc_idx}_{os.urandom(4)}")) % 2000000000),
+                    "id": str(abs(hash(f"cell_p_{run_id}_{tc_idx}_{os.urandom(4)}")) % 2000000000),
                     "paraPrIDRef": cell_para_pr_id,
                     "styleIDRef": "0",
                     "pageBreak": "0",
@@ -449,14 +473,34 @@ def _create_source_table_paragraph(
                 t_elem = ET.SubElement(cell_run, f"{{{NS_HP}}}t")
                 t_elem.text = val
 
-        run = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
         run.append(tbl)
     else:
-        # 폴백: 표가 없는 경우 텍스트 박스로 생성
-        run = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": normal_char_id})
         t = ET.SubElement(run, f"{{{NS_HP}}}t")
         t.text = f"[출처: {year} {grade} {month} {qnum}]"
 
+    return run
+
+
+def _create_source_table_paragraph(
+    template_tbl: Optional[ET.Element],
+    year: str,
+    grade: str,
+    month: str,
+    qnum: str,
+    normal_char_id: str
+) -> ET.Element:
+    """1행 4열 출처 표를 담은 <hp:p paraPrIDRef='24'> 문단 생성"""
+    p_id = str(abs(hash(f"src_tbl_p_{year}_{grade}_{month}_{qnum}_{os.urandom(4)}")) % 2000000000)
+    p = ET.Element(f"{{{NS_HP}}}p", {
+        "id": p_id,
+        "paraPrIDRef": "24",
+        "styleIDRef": "0",
+        "pageBreak": "0",
+        "columnBreak": "0",
+        "merged": "0",
+    })
+    run = _create_source_table_run(template_tbl, year, grade, month, qnum, normal_char_id)
+    p.append(run)
     return p
 
 
@@ -667,7 +711,6 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
 
     if tbl_run is not None:
         new_first_p.append(tbl_run)
-        sec0_root.append(_create_paragraph("", para_pr_id="0"))
     else:
         if header_center:
             sec0_root.append(_create_paragraph(f"■ {header_center}", char_pr_id=normal_char_id, para_pr_id="24"))
@@ -688,18 +731,26 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
 
         # 1) 1행 4열 기출 출처 표 주입 (년도 | 학년 | 월 | 번호)
         y_str, g_str, m_str, q_str = _parse_passage_source_parts(item)
-        src_p = _create_source_table_paragraph(source_tbl_template, y_str, g_str, m_str, q_str, normal_char_id)
-        sec0_root.append(src_p)
-        sec0_root.append(_create_paragraph("", para_pr_id="0"))  # 공백 행
+
+        if idx == 0 and tbl_run is not None:
+            # 첫 문항(idx == 0) 출처 표는 new_first_p에 직접 결합하여 표 앞 불필요한 엔터/공백 행 원천 제거
+            src_run0 = _create_source_table_run(source_tbl_template, y_str, g_str, m_str, q_str, normal_char_id)
+            new_first_p.set("paraPrIDRef", "24")
+            new_first_p.append(src_run0)
+        else:
+            src_p = _create_source_table_paragraph(source_tbl_template, y_str, g_str, m_str, q_str, normal_char_id)
+            sec0_root.append(src_p)
+
+        sec0_root.append(_create_paragraph("", para_pr_id="0"))  # 출처 표 아래 공백 행
 
         # 2) 문항 번호 및 정답 표시 (paraPr 25: non-bold normal_char_id)
         ans_line = f"{custom_q_num}번. [정답] {ans_display}"
         sec0_root.append(_create_paragraph(ans_line, char_pr_id=normal_char_id, para_pr_id="25"))
         sec0_root.append(_create_paragraph("", para_pr_id="0"))
 
-        # 3) 해설 텍스트 본문 (paraPr 27: non-bold normal_char_id)
+        # 3) 해설 텍스트 본문 (paraPr 27: non-bold normal_char_id, 선두 중복 정답 표기 제거)
         exp_text = item.get("explanation_text") or "해설 정보가 등록되지 않았습니다."
-        exp_lines = [line.rstrip() for line in exp_text.splitlines()]
+        exp_lines = _clean_explanation_lines(exp_text)
 
         for eline in exp_lines:
             if not eline.strip():
