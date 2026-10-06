@@ -2492,6 +2492,32 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/results-sentence.js static/js/reports.js static/js/passage-events.js static/js/main.js`: 프론트엔드 자바스크립트 구문 오류 0건 통과
   - FastAPI `TestClient`를 통한 `PATCH /api/sentences/{id}/text` 200 OK 단위 검증 및 롤백 확인 완료
 
-
-
-
+### [2026-10-06 15:30] 업데이트 이력 (Commit ID: d702fdba)
+- **수정 내용**:
+  - **교사용 지문 유인물 자동 제작 시스템 구축 (`docs/plans/2026-10-06_02_handout-generation-system.md`)**:
+    - **1) B4 단면 2문항 HWPX 생성 엔진 구현 (`gichul/services/hwpx_generator.py`)**:
+      - ZIP/XML 조작 기반 고속 생성 엔진: 표준 라이브러리(`zipfile`, `xml.etree.ElementTree`)로 외부 프로세스 없이 0.05초 만에 메모리 내 조립 및 스트리밍
+      - **사용자 지정 문항 번호 (`custom_q_num`)**: 원출처 번호와 별개로 교사가 원하는 문항 번호(1, 2, 3...) 직접 지정 및 자동 순차 재부여 지원
+      - **문제지 규격**: 출처 완전 배제, 사용자 지정 번호 + 발문 + 지문 본문 + 5지 선지(①~⑤) + 정답 번호 노란색 형광펜(`markPenBegin` / `shadeColor`) 하이라이트 (교사용/학생용 토글 지원)
+      - **해설지 규격**: 사용자 번호 + 원출처 병기, 지문 결과 화면 좌측 하단 상세 해설 패널 전문(`[정답]`, `[해석]`, `[해설]`, `[어휘]`) 가독성 높은 소제목 단락으로 주입
+      - **머리말 & 꼬리말 동적 주입**: 학교명, 시험명, 소속 문구 등 사용자 입력 텍스트를 `section0.xml`에 동적 치환
+      - 문제지/해설지 개별 HWPX 다운로드 및 ZIP 일괄 패키징 스트리밍 지원
+    - **2) 유인물 REST API 라우터 구현 (`gichul/routers/handouts.py`)**:
+      - `POST /api/handouts/generate`: 문항 목록, `custom_q_num`, 머리말/꼬리말, 형광펜 옵션을 받아 문제지/해설지/ZIP 파일 스트리밍
+      - `GET /api/handouts/templates`: 등록된 템플릿 목록 조회
+      - `POST /api/handouts/templates/upload`: 교사 자체 제작 B4 HWPX 양식 업로드 및 검증 저장
+      - `gichul/paths.py`: 기본 양식 저장소(`static/data/templates/`)와 사용자 업로드 양식 저장소(`uploads/templates/`) 분리
+      - `gichul/app.py`: 라우터 등록 및 `_CACHE_SAFE_WRITE_PREFIXES`에 `/api/handouts/` 등록
+    - **3) 프론트엔드 장바구니 및 유인물 뷰어 독립 모듈화**:
+      - `static/js/handout-cart.js`: `localStorage` 기반 문항 보관함 상태 관리, 결과 화면 우측 하단 플로팅 바 UI, 체크박스 실시간 동기화
+      - `static/js/handout-passage.js`: 유인물 제작소 화면 렌더링, 사용자 지정 문항 번호 입력/순차 재부여, 순서 변경(위/아래), 개별 삭제, 머리말/꼬리말 폼(`localStorage` 자동 저장), HWPX 양식 업로드 및 다운로드 비동기 호출
+      - `static/css/handouts.css`: 기존 스타일과 격리된 유인물 제작 화면 및 보관함 전용 독립 스타일링
+      - `templates/index.html`: 헤더 `[📄 유인물 제작]` 버튼, 검색결과 breadcrumb 내 `[☑ 유인물 담기]` 체크박스, `<section id="handoutViewContainer">` 및 `#handoutFloatingCart` 추가
+      - `templates/index.html`: 교사가 한글 프로그램에서 학교 양식으로 커스텀할 수 있도록 `[📥 기본 문제지 양식 받기]`, `[📥 기본 해설지 양식 받기]` 직접 다운로드 버튼 제공
+  - **문서 동기화**:
+    - `docs/plans/2026-10-06_02_handout-generation-system.md`: 완료 반영
+    - `docs/README.md`: 계획서 목록 상태 `✅ 완료` 동기화
+- **검증 결과**:
+  - `python -m py_compile gichul/paths.py gichul/services/hwpx_generator.py gichul/routers/handouts.py`: 컴파일 오류 0건 통과
+  - `node -c static/js/handout-cart.js static/js/handout-passage.js static/js/navigation.js static/js/passage-render.js static/js/main.js`: 자바스크립트 구문 오류 0건 통과
+  - `python -m pytest tests/`: 전체 211개 단위/통합 테스트 100% 통과 (16.57s)
