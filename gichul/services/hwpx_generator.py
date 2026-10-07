@@ -13,6 +13,7 @@ import os
 import re
 import io
 import copy
+import math
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional, Tuple
@@ -29,6 +30,7 @@ os.makedirs(CUSTOM_TEMPLATES_DIR, exist_ok=True)
 
 DEFAULT_QUESTION_TEMPLATE = "default_b4_question.hwpx"
 DEFAULT_EXPLANATION_TEMPLATE = "default_b4_explanation.hwpx"
+DEFAULT_SENTENCE_TEMPLATE = "default_a4_sentence.hwpx"
 
 # HWPX XML 네임스페이스
 NS_HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -106,7 +108,9 @@ def list_templates() -> List[Dict[str, Any]]:
                 templates.append({
                     "filename": fname,
                     "name": "기본 B4 문제지 양식" if fname in (DEFAULT_QUESTION_TEMPLATE, "default_b4-question.hwpx") else (
-                        "기본 B4 해설지 양식" if fname in (DEFAULT_EXPLANATION_TEMPLATE, "default_b4-explanation.hwpx") else fname
+                        "기본 B4 해설지 양식" if fname in (DEFAULT_EXPLANATION_TEMPLATE, "default_b4-explanation.hwpx") else (
+                            "기본 A4 문장 유인물 양식" if fname in (DEFAULT_SENTENCE_TEMPLATE, "default_a4-sentence.hwpx") else fname
+                        )
                     ),
                     "is_default": True,
                     "size_kb": round(stat.st_size / 1024, 1),
@@ -291,6 +295,177 @@ def _inject_char_properties(
     return normal_char_id, highlight_char_id
 
 
+def _calc_text_effective_width(text: str) -> float:
+    """텍스트의 유효 글자 폭(한글/전각=1.0, 영문/숫자/기호/공백=0.45~0.55) 계산"""
+    units = 0.0
+    for ch in (text or ""):
+        if ('\uac00' <= ch <= '\ud7a3') or ('\u1100' <= ch <= '\u11ff') or ('\u4e00' <= ch <= '\u9fff'):
+            units += 1.0
+        elif ch in (' ', '\t'):
+            units += 0.45
+        elif ch in ('(', ')', '[', ']', '{', '}', ':', '-', '_', '.', ','):
+            units += 0.4
+        else:
+            units += 0.55
+    return max(units, 1.0)
+
+
+def _get_dynamic_header_font_size(col_type: str, text: str) -> Tuple[int, int, int]:
+    """
+    머리말 텍스트 길이에 맞춰 셀 영역(높이/너비)을 벗어나지 않도록 동적 글자 크기, 장평, 자간 계산
+    col_type: 'left' | 'center' | 'right'
+    반환값: (height in 1/100 pt, ratio in %, spacing in %)
+    """
+    text = (text or "").strip()
+    if not text:
+        if col_type == "center":
+            return (950, 100, 0)
+        return (1000, 100, 0)
+
+    units = _calc_text_effective_width(text)
+
+    if col_type == "center":
+        # 가운데 셀: 1x1 고정 테두리 박스 (가용너비 약 160pt, 셀 높이 약 18.5pt)
+        # 상하 테두리가 머리말 밑줄을 침범하지 않도록 최대 10.5pt로 제한하고 길이에 따라 정밀 축소
+        if units <= 6.0:
+            return (1050, 100, 0)       # 10.5pt (매우 짧은 과목명)
+        elif units <= 9.0:
+            return (950, 98, -2)        # 9.5pt ('세계 문화와 영어' 등 8~9자)
+        elif units <= 13.0:
+            return (850, 95, -4)        # 8.5pt
+        elif units <= 18.0:
+            return (780, 93, -6)        # 7.8pt
+        else:
+            return (700, 90, -8)        # 7.0pt
+
+    elif col_type == "right":
+        # 오른쪽 셀: 가용너비 약 155pt, 줄바꿈(2줄 밀림) 방지가 최우선!
+        # '2 학년 (  )반 (  )번 이름: (          )' -> 약 18~22 유닛
+        if units <= 8.0:
+            return (950, 100, 0)        # 9.5pt
+        elif units <= 12.0:
+            return (850, 98, -2)        # 8.5pt
+        elif units <= 16.0:
+            return (780, 95, -4)        # 7.8pt
+        elif units <= 22.0:
+            return (720, 92, -6)        # 7.2pt (긴 학년/반/번호/이름도 단 1줄에 쏙!)
+        elif units <= 28.0:
+            return (650, 88, -8)        # 6.5pt
+        else:
+            return (600, 85, -10)       # 6.0pt
+
+    else:  # 'left'
+        # 왼쪽 셀: 학교명 등
+        if units <= 8.0:
+            return (1000, 100, 0)       # 10.0pt ('홍대부여고' 등)
+        elif units <= 13.0:
+            return (900, 98, -2)        # 9.0pt
+        elif units <= 18.0:
+            return (800, 95, -4)        # 8.0pt
+        else:
+            return (720, 92, -6)        # 7.2pt
+
+
+def _register_header_char_pr(
+    hdr_root: ET.Element,
+    height: int,
+    ratio: int = 100,
+    spacing: int = 0,
+    bold: bool = False,
+    base_char_id: str = "7"
+) -> str:
+    """header.xml의 charProperties에 지정된 크기/장평/자간의 charPr 등록 후 ID 반환"""
+    cps = hdr_root.find(f".//{{{NS_HH}}}charProperties")
+    if cps is None:
+        return base_char_id
+
+    existing_ids = {int(cp.get("id")) for cp in cps.findall(f"{{{NS_HH}}}charPr") if cp.get("id", "").isdigit()}
+    new_id = str(max(existing_ids) + 1) if existing_ids else "60"
+
+    base_cp = None
+    for cp in cps.findall(f"{{{NS_HH}}}charPr"):
+        if cp.get("id") == base_char_id:
+            base_cp = cp
+            break
+    if base_cp is None:
+        base_cp = cps.find(f"{{{NS_HH}}}charPr")
+
+    new_cp = copy.deepcopy(base_cp) if base_cp is not None else ET.Element(f"{{{NS_HH}}}charPr")
+    new_cp.set("id", new_id)
+    new_cp.set("height", str(height))
+    new_cp.set("textColor", "#000000")
+    new_cp.set("shadeColor", "none")
+
+    # 볼드 설정
+    b_tag = new_cp.find(f"{{{NS_HH}}}bold")
+    if bold:
+        if b_tag is None:
+            ET.SubElement(new_cp, f"{{{NS_HH}}}bold")
+    else:
+        if b_tag is not None:
+            new_cp.remove(b_tag)
+
+    # 장평 (ratio)
+    ratio_tag = new_cp.find(f"{{{NS_HH}}}ratio")
+    if ratio_tag is not None:
+        for k in ratio_tag.attrib:
+            ratio_tag.set(k, str(ratio))
+
+    # 자간 (spacing)
+    spacing_tag = new_cp.find(f"{{{NS_HH}}}spacing")
+    if spacing_tag is not None:
+        for k in spacing_tag.attrib:
+            spacing_tag.set(k, str(spacing))
+
+    cps.append(new_cp)
+    cps.set("itemCnt", str(len(cps.findall(f"{{{NS_HH}}}charPr"))))
+    return new_id
+
+
+def _create_compact_header_para_pr(
+    hdr_root: ET.Element,
+    align_type: str = "CENTER",
+    line_spacing: int = 130
+) -> str:
+    """머리말 박스 높이 초과를 방지하는 콤팩트 paraPr 등록 후 ID 반환"""
+    pps = hdr_root.find(f".//{{{NS_HH}}}paraProperties")
+    if pps is None:
+        return "13"
+
+    existing_ids = {int(pp.get("id")) for pp in pps.findall(f"{{{NS_HH}}}paraPr") if pp.get("id", "").isdigit()}
+    new_id = str(max(existing_ids) + 1) if existing_ids else "60"
+
+    base_pp = None
+    for pp in pps.findall(f"{{{NS_HH}}}paraPr"):
+        if pp.get("id") in ("13", "3", "15"):
+            base_pp = pp
+            break
+    if base_pp is None:
+        base_pp = pps.find(f"{{{NS_HH}}}paraPr")
+
+    new_pp = copy.deepcopy(base_pp) if base_pp is not None else ET.Element(f"{{{NS_HH}}}paraPr")
+    new_pp.set("id", new_id)
+
+    # 정렬
+    align_tag = new_pp.find(f"{{{NS_HH}}}align")
+    if align_tag is not None:
+        align_tag.set("horizontal", align_type)
+
+    # 줄간격 콤팩트화 (120~130%)
+    for ls in new_pp.iter(f"{{{NS_HH}}}lineSpacing"):
+        ls.set("value", str(line_spacing))
+
+    # 단락 위/아래 여백 제거
+    margin_tag = new_pp.find(f"{{{NS_HH}}}margin")
+    if margin_tag is not None:
+        margin_tag.set("top", "0")
+        margin_tag.set("bottom", "0")
+
+    pps.append(new_pp)
+    pps.set("itemCnt", str(len(pps.findall(f"{{{NS_HH}}}paraPr"))))
+    return new_id
+
+
 def _create_paragraph(
     text: str = "",
     char_pr_id: str = "0",
@@ -326,9 +501,10 @@ def _extract_and_populate_header_table(
     normal_char_id: str,
     h_left: str,
     h_center: str,
-    h_right: str
+    h_right: str,
+    hdr_root: Optional[ET.Element] = None
 ) -> Tuple[Optional[ET.Element], Optional[ET.Element]]:
-    """first_p 에서 secPr run과 상단 1x3 표 run을 추출하고 텍스트(왼쪽 상단, 가운데 상단, 오른쪽 상단)를 주입"""
+    """first_p 에서 secPr run과 상단 1x3 표 run을 추출하고 동적 글자 크기로 텍스트 주입"""
     sec_run = None
     tbl_run = None
     if first_p is not None:
@@ -345,6 +521,18 @@ def _extract_and_populate_header_table(
 
         tbl = tbl_run.find(f".//{{{NS_HP}}}tbl")
         if tbl is not None:
+            # 동적 글자 크기 charPr 사전 등록 (hdr_root 가 주어진 경우)
+            char_map = {}
+            if hdr_root is not None:
+                lh, lr, ls = _get_dynamic_header_font_size("left", h_left)
+                char_map["0"] = _register_header_char_pr(hdr_root, lh, lr, ls, bold=False, base_char_id=normal_char_id)
+
+                ch, cr, cs = _get_dynamic_header_font_size("center", h_center)
+                char_map["1"] = _register_header_char_pr(hdr_root, ch, cr, cs, bold=True, base_char_id=normal_char_id)
+
+                rh, rr, rs = _get_dynamic_header_font_size("right", h_right)
+                char_map["2"] = _register_header_char_pr(hdr_root, rh, rr, rs, bold=False, base_char_id=normal_char_id)
+
             for tc in tbl.findall(f".//{{{NS_HP}}}tc"):
                 addr = tc.find(f".//{{{NS_HP}}}cellAddr")
                 if addr is None:
@@ -355,16 +543,22 @@ def _extract_and_populate_header_table(
                     val = h_left
                 elif col == "1":
                     val = h_center
+                    # 가운데 셀 상하 여백을 줄여 테두리 박스가 아래 구분선을 침범하지 않도록 보호
+                    cm = tc.find(f".//{{{NS_HP}}}cellMargin")
+                    if cm is not None:
+                        cm.set("top", "20")
+                        cm.set("bottom", "20")
                 elif col == "2":
                     val = h_right
 
                 t_elems = tc.findall(f".//{{{NS_HP}}}t")
                 for i, t in enumerate(t_elems):
                     t.text = val if i == 0 else ""
-                # 글자 모양을 일반 검은색 폰트로 정규화
+
+                target_char_id = char_map.get(col, normal_char_id)
+                # 글자 모양을 동적 검은색 폰트로 교체
                 for r in tc.findall(f".//{{{NS_HP}}}run"):
-                    if r.get("charPrIDRef") in ("30", "31", "32", "27", "28"):
-                        r.set("charPrIDRef", normal_char_id)
+                    r.set("charPrIDRef", target_char_id)
 
     return sec_run, tbl_run
 
@@ -528,15 +722,16 @@ def generate_question_handout(items: List[Dict[str, Any]], options: Optional[Dic
     hdr_root = ET.fromstring(file_map["Contents/header.xml"])
     _clean_borders_and_boxes(hdr_root)
     normal_char_id, highlight_char_id = _inject_char_properties(hdr_root, font_size_pt=13, is_explanation=False)
-    file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     # 2. section0.xml 파싱
     sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
 
     first_p = sec0_root.find(f"{{{NS_HP}}}p")
     sec_run, tbl_run = _extract_and_populate_header_table(
-        first_p, normal_char_id, header_left, header_center, header_right
+        first_p, normal_char_id, header_left, header_center, header_right, hdr_root=hdr_root
     )
+
+    file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     sec0_root.clear()
 
@@ -681,7 +876,6 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
     hdr_root = ET.fromstring(file_map["Contents/header.xml"])
     _clean_borders_and_boxes(hdr_root)
     normal_char_id, highlight_char_id = _inject_char_properties(hdr_root, font_size_pt=11, is_explanation=True)
-    file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     # 2. section0.xml 파싱
     sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
@@ -691,8 +885,10 @@ def generate_explanation_handout(items: List[Dict[str, Any]], options: Optional[
 
     first_p = sec0_root.find(f"{{{NS_HP}}}p")
     sec_run, tbl_run = _extract_and_populate_header_table(
-        first_p, normal_char_id, header_left, header_center, header_right
+        first_p, normal_char_id, header_left, header_center, header_right, hdr_root=hdr_root
     )
+
+    file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     sec0_root.clear()
 
@@ -808,3 +1004,328 @@ def generate_handout_zip(items: List[Dict[str, Any]], options: Optional[Dict[str
         zf.writestr("해설지_B4_유인물.hwpx", e_bytes)
 
     return zip_buf.getvalue()
+
+
+def get_sentence_template_path(template_name: Optional[str] = None) -> str:
+    """사용할 A4 문장 HWPX 템플릿의 절대 경로 반환"""
+    effective_name = template_name or DEFAULT_SENTENCE_TEMPLATE
+    bname = os.path.basename(effective_name)
+    # 1. 사용자 업로드 템플릿 폴더 우선 확인
+    custom_path = os.path.join(CUSTOM_TEMPLATES_DIR, bname)
+    if os.path.exists(custom_path):
+        return custom_path
+    # 2. 기본 내장 템플릿 폴더 확인
+    builtin_path = os.path.join(HANDOUT_TEMPLATES_DIR, bname)
+    if os.path.exists(builtin_path):
+        return builtin_path
+    alt_bname = bname.replace("_", "-") if "_" in bname else bname.replace("-", "_")
+    alt_builtin = os.path.join(HANDOUT_TEMPLATES_DIR, alt_bname)
+    if os.path.exists(alt_builtin):
+        return alt_builtin
+
+    default_path = os.path.join(HANDOUT_TEMPLATES_DIR, DEFAULT_SENTENCE_TEMPLATE)
+    if os.path.exists(default_path):
+        return default_path
+
+    raise FileNotFoundError(f"문장 유인물 HWPX 템플릿 파일을 찾을 수 없습니다: {DEFAULT_SENTENCE_TEMPLATE}")
+
+
+def format_sentence_source(raw_id: str) -> str:
+    """문장 식별자 문자열에서 '[OOOO년 고O O월 OO번]' 형태의 표준 출처 표기 추출"""
+    cleaned = (raw_id or "").strip("[]")
+    m_year = re.search(r"(\d{4})년?", cleaned)
+    m_grade = re.search(r"(고[123]|중[123])", cleaned)
+    m_month = re.search(r"(\d{1,2})월", cleaned)
+    m_q = re.search(r"(\d{1,2})번", cleaned)
+
+    year = m_year.group(1) if m_year else "2024"
+    grade = m_grade.group(1) if m_grade else "고3"
+    month = str(int(m_month.group(1))) if m_month else "6"
+    q_num = str(int(m_q.group(1))) if m_q else "1"
+
+    return f"[{year}년 {grade} {month}월 {q_num}번]"
+
+
+def generate_sentence_handout(items: List[Dict[str, Any]], options: Optional[Dict[str, Any]] = None) -> bytes:
+    """
+    선택한 문장 목록으로 A4 단면 문장 유인물 HWPX 문서 생성
+    - 글자 크기 12 pt 고정 (height="1200", non-bold, 검은색)
+    - 문장 간 충분한 줄간격 (줄간격 180% 문단 서식 및 문장 사이 공백 문단 주입)
+    - 상단 1x3 머리말 표(왼쪽, 가운데, 오른쪽) 및 유인물 메인 제목([ 제목 ]) 주입
+    - '개념 설명 1x1 테이블' 선택 옵션:
+      - True (포함): 상단 Row 1 빈칸 유지 + 총 6문장 (또는 6개 단위)
+      - False (미포함): 상단 Row 1 행 제거 + 총 10문장 (또는 10개 단위)
+    - 각 문장 포맷: '1. [OOOO년 고O O월 OO번] 순수 영문 문장 텍스트' (사용자 지정 custom_num 지원)
+    """
+    options = options or {}
+    template_path = get_sentence_template_path(options.get("template_name"))
+    header_left = options.get("header_left", "").strip()
+    header_center = options.get("header_center", "").strip() or options.get("header_title", "").strip()
+    header_right = options.get("header_right", "").strip() or options.get("header_sub", "").strip()
+    main_title = options.get("main_title", "").strip() or "핵심 기출 구문 분석"
+    include_concept_table = bool(options.get("include_concept_table", True))
+
+    with zipfile.ZipFile(template_path, "r") as zf:
+        file_map = {name: zf.read(name) for name in zf.namelist()}
+
+    # 1. header.xml 처리 (동적 머리말 charPr, 12pt 글자크기, non-bold, 줄간격 180% paraPr 등록 및 빨간색 폰트 정규화)
+    hdr_root = ET.fromstring(file_map["Contents/header.xml"])
+
+    # 템플릿 내 빨간색(#FF0000) 글자색을 검은색으로 정규화
+    cps = hdr_root.find(f".//{{{NS_HH}}}charProperties")
+    for cp in cps.findall(f"{{{NS_HH}}}charPr"):
+        if cp.get("textColor", "").upper() == "#FF0000":
+            cp.set("textColor", "#000000")
+
+    # 머리말 3개 셀 동적 글자 크기, 장평, 자간 charPr 등록
+    lh, lr, ls = _get_dynamic_header_font_size("left", header_left)
+    left_char_id = _register_header_char_pr(hdr_root, lh, lr, ls, bold=False, base_char_id="7")
+
+    ch, cr, cs = _get_dynamic_header_font_size("center", header_center)
+    center_char_id = _register_header_char_pr(hdr_root, ch, cr, cs, bold=True, base_char_id="8")
+
+    rh, rr, rs = _get_dynamic_header_font_size("right", header_right)
+    right_char_id = _register_header_char_pr(hdr_root, rh, rr, rs, bold=False, base_char_id="7")
+
+    # 가운데 상자 높이 초과를 방지하는 콤팩트 paraPr (lineSpacing 125%, margin 0)
+    center_para_id = _create_compact_header_para_pr(hdr_root, align_type="CENTER", line_spacing=125)
+
+    # 0. 문장 수 및 내용물 줄 수 추정
+    max_limit = 6 if include_concept_table else 10
+    target_sentences = items[:max_limit] if len(items) > max_limit else items
+
+    # 텍스트 예상 줄 수 계산 (가용 셀 너비 50458: 줄당 영문 약 82자)
+    text_lines = 0
+    for s_idx, s in enumerate(target_sentences, 1):
+        raw_id = s.get("id", "")
+        src_str = format_sentence_source(raw_id)
+        sent_text = (s.get("sentence_text") or "").strip()
+        custom_num = str(s.get("custom_num") or s_idx).strip()
+        full_line = f"{custom_num}. {src_str} {sent_text}"
+        lines = max(1, math.ceil(len(full_line) / 82))
+        text_lines += lines
+
+    # 6문장은 문장 사이 빈 줄 2개씩(총 5*2=10줄), 10문장은 문장 사이 빈 줄 1개씩(총 9*1=9줄)
+    empty_lines_per_gap = 2 if include_concept_table else 1
+    total_gaps = max(0, len(target_sentences) - 1)
+    bottom_enters = 2
+    total_empty_lines = (total_gaps * empty_lines_per_gap) + bottom_enters
+    total_lines = text_lines + total_empty_lines
+
+    # 테이블 가용 최대 높이 (A4 1페이지 절대 초과 방지: 6문장=48000, 10문장=65000)
+    max_tbl_height = 48000 if include_concept_table else 65000
+
+    # 6문장과 10문장의 글자 크기와 줄간격을 12pt / 180% 로 완전히 일정하게 통일!
+    sent_pt = 12.0
+    base_line_spacing = 180
+
+    # 1줄당 높이 계산 및 스케일링
+    line_h = int(sent_pt * 100 * (base_line_spacing / 100))
+    needed_height = (total_lines * line_h) + 1020
+
+    if needed_height > max_tbl_height:
+        scale = max_tbl_height / needed_height
+        sent_line_spacing = max(155, int(base_line_spacing * scale))
+        line_h = int(sent_pt * 100 * (sent_line_spacing / 100))
+        needed_height = (total_lines * line_h) + 1020
+    else:
+        sent_line_spacing = base_line_spacing
+
+    final_tbl_height = min(needed_height, max_tbl_height)
+
+    # 본문 문장용 charPr 등록 (ID 반환, 12pt)
+    char_sentence_id = _register_header_char_pr(
+        hdr_root, height=int(sent_pt * 100), bold=False, base_char_id="0"
+    )
+
+    # 필기용 빈 줄(엔터) 전용 charPr (본문과 같은 12pt로 일정하게 유지)
+    char_empty_id = _register_header_char_pr(
+        hdr_root, height=int(sent_pt * 100), bold=False, base_char_id="0"
+    )
+
+    # 줄간격 설정된 문장 전용 paraPr 등록 (ID 반환)
+    para_sentence_id = _create_compact_header_para_pr(
+        hdr_root, align_type="LEFT", line_spacing=sent_line_spacing
+    )
+
+    # 필기용 빈 줄 전용 paraPr 등록 (동일 줄간격 적용으로 꽉 찬 시각적 효과)
+    para_empty_id = _create_compact_header_para_pr(
+        hdr_root, align_type="LEFT", line_spacing=sent_line_spacing
+    )
+
+    file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
+
+    # 2. section0.xml 파싱 및 치환
+    sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
+
+    # 상단 1열 2행 표 (tbl 1195242981) 찾기
+    tbl_top = None
+    for tbl in sec0_root.iter(f"{{{NS_HP}}}tbl"):
+        if tbl.get("id") == "1195242981":
+            tbl_top = tbl
+            break
+
+    if tbl_top is not None:
+        trs = tbl_top.findall(f"{{{NS_HP}}}tr")
+        if len(trs) >= 1:
+            tr0 = trs[0]
+            # 상단 1x3 표 (tbl 1195242984) 치환
+            tbl_1x3 = None
+            for tbl in tr0.iter(f"{{{NS_HP}}}tbl"):
+                if tbl.get("id") == "1195242984":
+                    tbl_1x3 = tbl
+                    break
+            if tbl_1x3 is not None:
+                tcs_1x3 = tbl_1x3.findall(f".//{{{NS_HP}}}tc")
+                vals = [header_left, header_center, header_right]
+                char_ids = [left_char_id, center_char_id, right_char_id]
+                for i, tc in enumerate(tcs_1x3[:3]):
+                    # 가운데 셀의 상하 패딩을 축소하여 테두리 박스가 아래 검은 구분선을 침범하지 않도록 보호
+                    if i == 1:
+                        cm = tc.find(f".//{{{NS_HP}}}cellMargin")
+                        if cm is not None:
+                            cm.set("top", "20")
+                            cm.set("bottom", "20")
+
+                    # tc 내부 문단 및 텍스트를 깨끗하게 교체
+                    for p in tc.iter(f"{{{NS_HP}}}p"):
+                        if i == 1:
+                            p.set("paraPrIDRef", center_para_id)
+                        for child in list(p):
+                            p.remove(child)
+                        new_run = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": char_ids[i]})
+                        new_t = ET.SubElement(new_run, f"{{{NS_HP}}}t")
+                        new_t.text = vals[i]
+
+            # [ 제목 ] 문단 찾아서 main_title 주입 (단, 1x3 표가 담긴 header run은 보존)
+            title_p = None
+            for p in tr0.iter(f"{{{NS_HP}}}p"):
+                if p.get("paraPrIDRef") == "13":
+                    title_p = p
+                    break
+            if title_p is not None:
+                for r in list(title_p.findall(f"{{{NS_HP}}}run")):
+                    if r.find(f".//{{{NS_HP}}}header") is not None:
+                        # header run은 보존하고 뒤따르는 텍스트/필드만 정리
+                        for t in list(r.findall(f"{{{NS_HP}}}t")):
+                            r.remove(t)
+                        for ctrl in list(r.findall(f"{{{NS_HP}}}ctrl")):
+                            if ctrl.find(f"{{{NS_HP}}}header") is None:
+                                r.remove(ctrl)
+                    else:
+                        title_p.remove(r)
+                run_title = ET.SubElement(title_p, f"{{{NS_HP}}}run", {"charPrIDRef": "9"})
+                t_title = ET.SubElement(run_title, f"{{{NS_HP}}}t")
+                t_title.text = f"[ {main_title} ]"
+
+        # 개념 설명 1x1 테이블 처리 (Row 1)
+        if len(trs) >= 2:
+            tr1 = trs[1]
+            if include_concept_table:
+                # 개념 설명 포함: Row 1 유지, 내부 안내문구만 비워서 필기용 빈칸으로 확보
+                for p in tr1.iter(f"{{{NS_HP}}}p"):
+                    for child in list(p):
+                        p.remove(child)
+                    run_blank = ET.SubElement(p, f"{{{NS_HP}}}run", {"charPrIDRef": char_sentence_id})
+                    t_blank = ET.SubElement(run_blank, f"{{{NS_HP}}}t")
+                    t_blank.text = ""
+            else:
+                # 개념 설명 미선택:
+                # 1) Row 1 완전 삭제 및 1x1 단일 행 표로 변경
+                tbl_top.remove(tr1)
+                tbl_top.set("rowCnt", "1")
+                # 2) 제목이 포함된 1x1 테이블의 외곽 테두리를 완전히 투명(borderFillIDRef=1)으로 변경
+                tbl_top.set("borderFillIDRef", "1")
+                sz_elem = tbl_top.find(f"{{{NS_HP}}}sz")
+                if sz_elem is not None:
+                    sz_elem.set("height", "2500")
+
+                # 3) 제목 셀(tc)의 아래쪽 구분선(borderFillIDRef=6)도 투명(1)으로 변경하여 테두리 완전 제거
+                for tc in tr0.findall(f".//{{{NS_HP}}}tc"):
+                    if tc.get("borderFillIDRef") == "6":
+                        tc.set("borderFillIDRef", "1")
+                        cm = tc.find(f".//{{{NS_HP}}}cellMargin")
+                        if cm is not None:
+                            cm.set("bottom", "0")
+
+    # 예문 테이블 (tbl 1214106299)
+    tbl_example = None
+    for tbl in sec0_root.iter(f"{{{NS_HP}}}tbl"):
+        if tbl.get("id") == "1214106299":
+            tbl_example = tbl
+            break
+
+    if tbl_example is not None:
+        # 내용물 높이에 정확히 일치시켜 아래쪽 빈 공간 없이 꽉 차도록 테이블 높이 최적화
+        sz_ex = tbl_example.find(f".//{{{NS_HP}}}sz")
+        if sz_ex is not None:
+            sz_ex.set("height", str(final_tbl_height))
+        for tc_ex in tbl_example.findall(f".//{{{NS_HP}}}tc"):
+            csz_ex = tc_ex.find(f".//{{{NS_HP}}}cellSz")
+            if csz_ex is not None:
+                csz_ex.set("height", str(final_tbl_height))
+
+        sublist = tbl_example.find(f".//{{{NS_HP}}}tc/{{{NS_HP}}}subList")
+        if sublist is not None:
+            # 기존 자식 p 모두 제거
+            for child in list(sublist):
+                sublist.remove(child)
+
+            for s_idx, s in enumerate(target_sentences):
+                raw_id = s.get("id", "")
+                src_str = format_sentence_source(raw_id)
+                sent_text = (s.get("sentence_text") or "").strip()
+                custom_num = str(s.get("custom_num") or (s_idx + 1)).strip()
+                full_line = f"{custom_num}. {src_str} {sent_text}"
+
+                # 1) 문장 문단 생성 (6문장/10문장 일정한 180% 줄간격, 12pt)
+                p_elem = ET.SubElement(sublist, f"{{{NS_HP}}}p", {
+                    "id": str(3000000000 + s_idx * 10),
+                    "paraPrIDRef": para_sentence_id,
+                    "styleIDRef": "0",
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0"
+                })
+                run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": char_sentence_id})
+                t_elem = ET.SubElement(run_elem, f"{{{NS_HP}}}t")
+                t_elem.text = full_line
+
+                # 2) 문장 간 충분한 줄간격을 위해 빈 줄 삽입 (6문장은 2줄, 10문장은 1줄)
+                if s_idx < len(target_sentences) - 1:
+                    for g_idx in range(empty_lines_per_gap):
+                        p_spacer = ET.SubElement(sublist, f"{{{NS_HP}}}p", {
+                            "id": str(3000000000 + s_idx * 10 + g_idx + 1),
+                            "paraPrIDRef": para_empty_id,
+                            "styleIDRef": "0",
+                            "pageBreak": "0",
+                            "columnBreak": "0",
+                            "merged": "0"
+                        })
+                        run_spacer = ET.SubElement(p_spacer, f"{{{NS_HP}}}run", {"charPrIDRef": char_empty_id})
+                        t_spacer = ET.SubElement(run_spacer, f"{{{NS_HP}}}t")
+                        t_spacer.text = ""
+
+            # 3) 맨 마지막 문장 아래 필기 공간 확보를 위한 엔터 2번 (빈 줄 2개 문단) 삽입
+            for e_idx in range(bottom_enters):
+                p_last_spacer = ET.SubElement(sublist, f"{{{NS_HP}}}p", {
+                    "id": str(3000000000 + len(target_sentences) * 10 + e_idx + 1),
+                    "paraPrIDRef": para_empty_id,
+                    "styleIDRef": "0",
+                    "pageBreak": "0",
+                    "columnBreak": "0",
+                    "merged": "0"
+                })
+                r_last = ET.SubElement(p_last_spacer, f"{{{NS_HP}}}run", {"charPrIDRef": char_empty_id})
+                t_last = ET.SubElement(r_last, f"{{{NS_HP}}}t")
+                t_last.text = ""
+
+    file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
+
+    out_buf = io.BytesIO()
+    with zipfile.ZipFile(out_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf_out:
+        for fname, fcontent in file_map.items():
+            zf_out.writestr(fname, fcontent)
+
+    return out_buf.getvalue()
+

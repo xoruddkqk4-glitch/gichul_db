@@ -164,8 +164,8 @@ export function showResultsScreen() {
   import("./handout-cart.js").then((m) => m.updateFloatingCartUI());
 }
 
-/** 교사용 지문 유인물 제작소 화면으로 전환 */
-export function switchToHandoutView() {
+/** 교사용 지문/문장 유인물 제작소 화면으로 전환 */
+export function switchToHandoutView(targetTab = null) {
   stopAllListeningAudio();
   if (homeSearchView) homeSearchView.style.display = "none";
   if (resultsView) resultsView.style.display = "none";
@@ -183,9 +183,22 @@ export function switchToHandoutView() {
   if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
 
   window.scrollTo({ top: 0, behavior: "smooth" });
-  import("./handout-passage.js").then((m) => {
-    if (m.renderHandoutView) m.renderHandoutView();
-  });
+
+  const tabPassage = document.getElementById("tabHandoutPassage");
+  const tabSentence = document.getElementById("tabHandoutSentence");
+
+  // targetTab 이 지정되어 있거나, 현재 모드가 문장 모드인 경우 문장 탭으로 활성화
+  const shouldOpenSentenceTab = targetTab === "sentence" || (!targetTab && appState.currentMode === "sentence");
+
+  if (shouldOpenSentenceTab && tabSentence) {
+    tabSentence.click();
+  } else if (tabPassage) {
+    tabPassage.click();
+  } else {
+    import("./handout-passage.js").then((m) => {
+      if (m.renderHandoutView) m.renderHandoutView();
+    });
+  }
 }
 
 /** 교사용 지문 유인물 제작소 화면에서 지문 결과 화면으로 복귀 */
@@ -231,6 +244,12 @@ export function setMode(mode, triggerSearch = false) {
   }
 
   updateGrammarFiltersVisibility();
+
+  import("./handout-cart.js").then((m) => {
+    if (m.setCurrentFloatingTargetType) {
+      m.setCurrentFloatingTargetType(mode);
+    }
+  });
 
   if (triggerSearch && resultsView.style.display !== "none") {
     executeSearch("results");

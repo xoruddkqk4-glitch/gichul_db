@@ -50,6 +50,12 @@
 - **원클릭 자동 설치 및 실행 지원 (`install.bat`, `start.bat`)**: 완제품 패키지 보관소(`dist/`)를 통해 GPU 데스크탑 등 새 컴퓨터로 이전 시 Visual Studio C++ 빌드 도구 설치 없이 원클릭 초고속 설치 및 웹앱 자동 구동 지원.
 - **FELS 약형드랩 시스템**: 7대 기능어 추출, 학생용 최장 단어 기준 균일 공백(`[        ]`) 복사, 담화문(독백/안내/강의) 문장 단위 유인물(1문장 1행) 복사 및 교사용 정답(`[단어]`) 1:1 동기화 지원.
 
+### 9. 유인물 제작소: 교사용 지문 및 문장 유인물 자동 제작 시스템 (HWPX)
+- **B4 지문 유인물 (2단 분할 2문항 규격)**: 문제지 및 해설지 HWPX 템플릿 기반 실무 맞춤 제작, 사용자 문항 번호 지정, 정답 선지 노란색 음영(형광펜) 강조, 머리말/꼬리말 커스텀 주입.
+- **A4 문장 유인물 (1페이지 완결 단면 규격)**: `default_a4_sentence.hwpx` 기반 문장 유인물 제작. 개념 설명 1x1 테이블 유무 선택(선택 시 6문장, 미선택 시 10문장), 12pt 180% 균일 줄간격, 동적 테이블 높이 밀착 및 마지막 문장 하단 필기 공간(엔터 2회) 자동 확보.
+- **지문/문장 프로젝트 완전 분리 & 스마트 플로팅 보관함**: 지문과 문장 프로젝트를 독립 관리하며, 선택된 프로젝트 타입에 맞춰 플로팅 카트 바가 컴팩트하게 노출(지문/문장 모드별 배지 색상 구분).
+- **머리말 동적 폰트 사이징(Dynamic Font Sizing)**: 과목명 및 반/이름 텍스트 길이에 맞춰 셀 폰트와 마진/자간을 실시간 동적 압축하여 본문 구분선 침범 방지.
+
 ---
 
 ## 🖥️ 화면 구성 및 사용자 경험 (UI/UX)
@@ -72,6 +78,11 @@
    - **출처 링크 원클릭 이동**: 출처 버튼을 클릭하면 해당 문항의 2x2 지문 상세 화면으로 즉시 전환되고 해당 탭으로 자동 포커스
    - **텍스트 복사**: 버튼 클릭 즉시 클립보드에 복사(`navigator.clipboard.writeText`)되어 한글, 워드 등에 바로 `Ctrl+V` 가능 (토스트 알림 피드백)
    - 각 문장 행마다 실시간 태그 추가 및 삭제 지원
+
+4. **[유인물 제작소] 지문 및 문장 유인물 편집기 & 생성기**
+   - 상단 탭으로 `[📄 지문 유인물]`과 `[📝 문장 유인물]` 간편 전환 및 독립 프로젝트 관리
+   - 프로젝트별 담긴 지문/문장 순서 변경 및 삭제, 문항/문장 번호 커스텀 부여
+   - A4 단면 문장 유인물 및 B4 문제지/해설지 실시간 HWPX 생성 및 다운로드
 
 ---
 
@@ -119,10 +130,11 @@
 │   ├── plans/              # 구현 계획서 YYYY-MM-DD_<슬러그>.md (/ask 작성, /apply 실행)
 │   └── reviews/            # 코드 리뷰·분석 보고서
 ├── templates/
-│   └── index.html          # 구글 스타일 검색 + 2x2 그리드 + 문장 테이블 + AI 설정 모달 SPA
+│   └── index.html          # 구글 스타일 검색 + 2x2 그리드 + 문장 테이블 + 유인물 제작소 SPA
 └── static/
     ├── css/
-    │   └── style.css       # 모던 디자인 시스템 스타일시트 (어법 태그, 별표, 필터 바 등)
+    │   ├── style.css       # 모던 디자인 시스템 스타일시트 (어법 태그, 별표, 필터 바 등)
+    │   └── handouts.css    # 유인물 제작소, 플로팅 보관함 및 문장/지문 프로젝트 전용 스타일시트
     ├── js/                 # ES 모듈 (index.html 에서 <script type="module" src="main.js">)
     │   ├── main.js         # 진입점: 각 모듈 init() 순서 호출 + 초기 상태
     │   ├── dom.js          # DOM 요소 참조 230개 (named export)
@@ -133,13 +145,17 @@
     │   ├── passage-api.js  # 지문 서버 API · 시험 문항 캐시 · 파일 다운로드 · TTS 폴링
     │   ├── passage-render.js # 지문 트리 탭 · 2x2 그리드 · 복합 지문 통합 · FELS · 선지 선택률
     │   ├── passage-events.js # 오디오 재생/정지 · TTS 생성 · 메모 자동저장 · 이벤트 바인딩
-    │   ├── results-sentence.js # 전체 문장 보기 · 문장 테이블 · 어법 팝오버
+    │   ├── results-sentence.js # 전체 문장 보기 · 문장 테이블 · 어법 팝오버 · 문장 담기
+    │   ├── handout-cart.js     # 유인물 프로젝트 CRUD 및 플로팅 카트 바 관리 (지문/문장 분리)
+    │   ├── handout-passage.js  # 지문 유인물(B4) 편집기 및 다운로드 모듈
+    │   ├── handout-sentence.js # 문장 유인물(A4) 편집기 및 다운로드 모듈
     │   ├── utils.js        # 클립보드 · 토스트 · escapeHtml
     │   ├── upload.js       # 업로드/DB 관리 모달 · 샘플 주입
     │   ├── files-status.js # 원본 파일 현황 탭 · 선택 삭제
     │   ├── grammar.js      # 어법 범주 모달 · 브레드크럼 필터 · 일괄 분석 진행
     │   └── ai-settings.js  # AI 설정 모달 (Multi-LLM / OpenRouter 앙상블)
     ├── data/
+    │   ├── templates/      # HWPX 서식 템플릿 (B4 문제지/해설지, A4 문장 유인물)
     │   └── grammar_categories.json # 8개 대분류, 243개 세부 어법 분류체계 JSON
     └── captures/           # 크롭된 PDF 문항 고화질 이미지 저장소
 ```
@@ -2671,6 +2687,32 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_hwpx_generator.py`: 5개 전체 HWPX 엔진 테스트 100% 통과.
   - `pytest tests/`: 211개 전체 회귀 테스트 100% 통과.
 
-
-
-
+### [2026-10-07 17:55] 업데이트 이력 (Commit ID: f926b0ab)
+- **수정 내용**:
+  - **1) 교사용 문장 유인물 자동 제작 엔진 신설 (`default_a4_sentence.hwpx` 연동) (`gichul/services/hwpx_generator.py`, `gichul/routers/handouts.py`)**:
+    - A4 단면 규격의 문장 유인물 전용 템플릿(`default_a4_sentence.hwpx`) 파싱 및 스트리밍 다운로드 API(`/api/handouts/sentence/download`) 구축.
+    - 문장 유인물은 해설지 없이 문제지만 단독 생성되며, 사용자 지정 문장 번호(`1.`, `2.`, ...) 및 기출 출처(`[2024년 고2 6월 32번]`)를 자동 조합하여 표기.
+    - **개념 설명 1x1 테이블 동적 처리**:
+      - '개념 설명' 선택 시: 1x1 개념 설명 표 유지 + 최대 6문장 배치.
+      - '개념 설명' 미선택 시: 1x1 개념 설명 표 삭제 + 최대 10문장 배치.
+    - **개념 설명 미선택 시 제목 1x1 테이블 테두리 제거**:
+      - `include_concept_table = False`일 때 상단 제목 1x1 테이블(`tbl_top`) 및 셀(`tc0`)의 `borderFillIDRef = "1"`(선 없음/투명)으로 전환하고 하단 여백을 0pt로 처리하여 테두리 없는 깔끔한 헤더 레이아웃 완성.
+    - **마지막 문장 하단 필기 공간(엔터 2회) 확보 & 테이블 꽉 채우기**:
+      - 맨 마지막 문장 아래 필기 공간 확보를 위해 2개의 빈 문단(`enter_gap`) 추가.
+      - 6문장(문장 간 빈 줄 2개씩 + 마지막 엔터 2개 = 18개 문단)과 10문장(문장 간 빈 줄 1개씩 + 마지막 엔터 2개 = 21개 문단) 모두 글자 크기 12pt, 줄간격 170~180%로 균일 적용.
+      - 실제 내용물 높이에 비례한 `final_tbl_height` 동적 계산으로 테이블 하단의 거대한 공백을 완전 제거하고 가용 영역을 꽉 채우며 A4 1페이지를 절대 초과하지 않도록 최적화.
+  - **2) 머리말 동적 폰트 사이징(Dynamic Font Sizing) 및 영역 침범 방어 (`gichul/services/hwpx_generator.py`)**:
+    - 문장 유인물 및 B4 문제지/해설지 머리말에서 과목명이나 학년/반/이름 텍스트가 길어질 경우 머리말이 2행으로 밀려 본문 구분선을 침범하는 현상 방어.
+    - 텍스트 길이와 문자 폭(한글 1.0, 공백 0.45, 기호 0.4, 영문/숫자 0.55)을 계산하여 가운데 셀 폰트 크기(10.5pt ~ 7.0pt) 및 상하 여백 슬림화, 우측 셀 폰트(9.5pt ~ 6.0pt) 및 장평(92%), 자간(-6%) 동적 자동 압축 적용.
+  - **3) 유인물 제작소 화면 내 지문 유인물 ↔ 문장 유인물 화면 및 프로젝트 분리 (`templates/index.html`, `static/js/navigation.js`, `static/js/handout-sentence.js`, `static/js/handout-cart.js`)**:
+    - 상단에 `[📄 지문 유인물]`과 `[📝 문장 유인물]` 모드 전환 탭 신설.
+    - 프로젝트 저장소(`handout_type`: `"passage"` vs `"sentence"`)를 완전 분리하여 지문 프로젝트와 문장 프로젝트가 서로 간섭하지 않도록 격리.
+    - 문장 검색 결과 화면(`results-sentence.js`)에 '유인물 담기' 버튼 및 카트 상태 동기화 연동.
+  - **4) 하단 플로팅 보관함 창 콤팩트 최적화 (`static/js/handout-cart.js`, `static/css/handouts.css`)**:
+    - 지문 프로젝트 선택 시 `[지문 N문항] [📄 지문 유인물 N ➔]`만 노출, 문장 프로젝트 선택 시 `[문장 M개] [📝 문장 유인물 M ➔]`만 노출하도록 `currentFloatingTargetType` 필터링 적용.
+    - 청록색 테마 배지(`.badge-sentence`)와 파란색 테마 배지(`.badge-passage`)를 차별화 적용하고 불필요한 패널 가로 너비를 대폭 축소하여 화면 가림 최소화.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py gichul/routers/handouts.py tests/test_sentence_hwpx.py`: 파이썬 구문 오류 0건 통과.
+  - `node -c static/js/handout-cart.js static/js/handout-sentence.js static/js/navigation.js static/js/results-sentence.js`: 자바스크립트 문법 검사 0건 통과.
+  - `pytest tests/test_sentence_hwpx.py`: 7개 단위 테스트 100% 통과 (6문장/10문장 레이아웃, 개념 테이블 유무, 제목 테두리 투명화, 마지막 엔터 2회, 높이 상한 캡 검증).
+  - `pytest tests/`: 218개 전체 회귀 테스트 100% 통과.

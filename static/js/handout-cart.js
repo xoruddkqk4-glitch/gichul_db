@@ -1,102 +1,201 @@
 /**
  * 05-gichul_db: 교사용 유인물 프로젝트 및 장바구니 상태 관리 (handout-cart.js)
- * - 프로젝트별 독립된 출제 문항 목록(items), 사용자 지정 인쇄 번호(custom_q_num), 머리말 서식 설정 관리
+ * - 지문 유인물 프로젝트(passage_projects)와 문장 유인물 프로젝트(sentence_projects)의 완전 분리
+ * - 각 프로젝트별 독립된 출제 문항 목록(items / sentence_items), 인쇄 번호(custom_q_num / custom_num), 머리말 서식 설정 관리
  * - 프로젝트 생성(Create), 이름 수정(Rename), 삭제(Delete), 전환(Switch) 기능 지원
- * - 지문 결과 화면 내 [📄 유인물 담기] 체크박스 및 빠른 프로젝트 선택기 연동
+ * - 지문/문장 결과 화면 내 [📄 유인물 담기] 체크박스 및 빠른 프로젝트 선택기 연동
  * - 하단 플로팅 장바구니 바 및 유인물 제작소 화면 실시간 반응형 동기화
  */
 
 import { appState } from "./state.js";
 
-const KEY_PROJECTS = "gichul_handout_projects";
-const KEY_CURRENT_PROJECT_ID = "gichul_handout_current_project_id";
-const OLD_STORAGE_KEY = "gichul_handout_cart";
+// 로컬스토리지 키 (지문용 / 문장용 완전 분리)
+const KEY_PASSAGE_PROJECTS = "gichul_handout_passage_projects";
+const KEY_CURRENT_PASSAGE_PROJECT_ID = "gichul_handout_cur_passage_proj_id";
 
-/** 로컬스토리지에서 모든 프로젝트 목록 로드: Array<Project> */
-export function getProjects() {
+const KEY_SENTENCE_PROJECTS = "gichul_handout_sentence_projects";
+const KEY_CURRENT_SENTENCE_PROJECT_ID = "gichul_handout_cur_sentence_proj_id";
+
+// 레거시 통합 키 (자동 마이그레이션 대상)
+const LEGACY_PROJECTS_KEY = "gichul_handout_projects";
+const LEGACY_CURRENT_PROJECT_ID = "gichul_handout_current_project_id";
+const OLD_CART_STORAGE_KEY = "gichul_handout_cart";
+
+/** 이전 단일/통합 프로젝트 데이터를 지문/문장 프로젝트로 자동 마이그레이션 */
+function ensureMigration() {
+  const hasPassage = localStorage.getItem(KEY_PASSAGE_PROJECTS);
+  const hasSentence = localStorage.getItem(KEY_SENTENCE_PROJECTS);
+  if (hasPassage && hasSentence) return;
+
+  const legacyRaw = localStorage.getItem(LEGACY_PROJECTS_KEY);
+  if (legacyRaw) {
+    try {
+      const legacyProjects = JSON.parse(legacyRaw);
+      if (Array.isArray(legacyProjects) && legacyProjects.length > 0) {
+        if (!hasPassage) {
+          const passageProjects = legacyProjects.map((p) => ({
+            id: p.id,
+            name: p.name,
+            createdAt: p.createdAt || Date.now(),
+            updatedAt: p.updatedAt || Date.now(),
+            items: Array.isArray(p.items) ? p.items : [],
+            settings: p.settings || {},
+          }));
+          localStorage.setItem(KEY_PASSAGE_PROJECTS, JSON.stringify(passageProjects));
+          const curId = localStorage.getItem(LEGACY_CURRENT_PROJECT_ID);
+          if (curId) localStorage.setItem(KEY_CURRENT_PASSAGE_PROJECT_ID, curId);
+        }
+        if (!hasSentence) {
+          const sentenceProjects = legacyProjects.map((p) => ({
+            id: p.id.startsWith("proj_sent_") ? p.id : `proj_sent_${p.id.replace("proj_", "")}`,
+            name: p.name.includes("문장") ? p.name : `${p.name} (문장)`,
+            createdAt: p.createdAt || Date.now(),
+            updatedAt: p.updatedAt || Date.now(),
+            sentence_items: Array.isArray(p.sentence_items) ? p.sentence_items : [],
+            settings: p.sentence_settings || {},
+          }));
+          localStorage.setItem(KEY_SENTENCE_PROJECTS, JSON.stringify(sentenceProjects));
+          const curId = localStorage.getItem(LEGACY_CURRENT_PROJECT_ID);
+          if (curId) {
+            const sentCurId = curId.startsWith("proj_sent_") ? curId : `proj_sent_${curId.replace("proj_", "")}`;
+            localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, sentCurId);
+          }
+        }
+        return;
+      }
+    } catch (e) {
+      console.warn("Handout migration error", e);
+    }
+  }
+
+  // 신규 기본 프로젝트 초기화
+  if (!hasPassage) {
+    let initialItems = [];
+    try {
+      const oldCartRaw = localStorage.getItem(OLD_CART_STORAGE_KEY);
+      if (oldCartRaw) {
+        const parsed = JSON.parse(oldCartRaw);
+        if (Array.isArray(parsed)) initialItems = parsed;
+      }
+    } catch (e) {
+      // 무시
+    }
+    const defaultPassageProj = [{
+      id: "proj_passage_default",
+      name: "기본 지문 프로젝트",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      items: initialItems,
+      settings: {},
+    }];
+    localStorage.setItem(KEY_PASSAGE_PROJECTS, JSON.stringify(defaultPassageProj));
+    localStorage.setItem(KEY_CURRENT_PASSAGE_PROJECT_ID, defaultPassageProj[0].id);
+  }
+
+  if (!hasSentence) {
+    const defaultSentenceProj = [{
+      id: "proj_sentence_default",
+      name: "기본 문장 프로젝트",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sentence_items: [],
+      settings: {},
+    }];
+    localStorage.setItem(KEY_SENTENCE_PROJECTS, JSON.stringify(defaultSentenceProj));
+    localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, defaultSentenceProj[0].id);
+  }
+}
+
+ensureMigration();
+
+// =========================================================================
+// 1. 지문 유인물 프로젝트 관리 (Passage Projects)
+// =========================================================================
+
+/** 지문 프로젝트 목록 조회 */
+export function getPassageProjects() {
   try {
-    const raw = localStorage.getItem(KEY_PROJECTS);
+    const raw = localStorage.getItem(KEY_PASSAGE_PROJECTS);
     if (raw) {
       const list = JSON.parse(raw);
-      if (Array.isArray(list) && list.length > 0) {
-        return list;
-      }
+      if (Array.isArray(list) && list.length > 0) return list;
     }
   } catch (e) {
-    console.warn("Failed to parse handout projects", e);
+    console.warn("Failed to parse passage projects", e);
   }
-
-  // 이전 단일 카트 데이터가 있으면 '기본 프로젝트'로 자동 마이그레이션
-  let initialItems = [];
-  try {
-    const oldRaw = localStorage.getItem(OLD_STORAGE_KEY);
-    if (oldRaw) {
-      const parsed = JSON.parse(oldRaw);
-      if (Array.isArray(parsed)) initialItems = parsed;
-    }
-  } catch (e) {
-    // 무시
-  }
-
-  const defaultProject = {
-    id: "proj_default",
-    name: "기본 프로젝트",
+  const defaultProj = [{
+    id: "proj_passage_default",
+    name: "기본 지문 프로젝트",
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    items: initialItems,
+    items: [],
     settings: {},
-  };
-
-  const list = [defaultProject];
-  saveProjects(list);
-  return list;
+  }];
+  savePassageProjects(defaultProj);
+  return defaultProj;
 }
 
-/** 프로젝트 목록 저장 헬퍼 */
-function saveProjects(projects) {
+/** 지문 프로젝트 목록 저장 */
+export function savePassageProjects(projects) {
   try {
-    localStorage.setItem(KEY_PROJECTS, JSON.stringify(projects));
+    localStorage.setItem(KEY_PASSAGE_PROJECTS, JSON.stringify(projects));
   } catch (e) {
-    console.warn("Failed to save handout projects", e);
+    console.warn("Failed to save passage projects", e);
   }
 }
 
-/** 현재 활성화된 프로젝트 ID 반환 */
-export function getCurrentProjectId() {
-  const projects = getProjects();
-  let curId = localStorage.getItem(KEY_CURRENT_PROJECT_ID);
+/** 현재 활성화된 지문 프로젝트 ID */
+export function getCurrentPassageProjectId() {
+  const projects = getPassageProjects();
+  let curId = localStorage.getItem(KEY_CURRENT_PASSAGE_PROJECT_ID);
   if (!curId || !projects.some((p) => p.id === curId)) {
-    curId = projects[0]?.id || "proj_default";
-    localStorage.setItem(KEY_CURRENT_PROJECT_ID, curId);
+    curId = projects[0]?.id || "proj_passage_default";
+    localStorage.setItem(KEY_CURRENT_PASSAGE_PROJECT_ID, curId);
   }
   return curId;
 }
 
-/** 현재 활성화된 프로젝트 객체 반환 */
-export function getCurrentProject() {
-  const projects = getProjects();
-  const curId = getCurrentProjectId();
+/** 현재 활성화된 지문 프로젝트 객체 */
+export function getCurrentPassageProject() {
+  const projects = getPassageProjects();
+  const curId = getCurrentPassageProjectId();
   return projects.find((p) => p.id === curId) || projects[0];
 }
 
-/** 활성 프로젝트 변경 (전환) */
-export function setCurrentProject(projectId) {
-  const projects = getProjects();
+// 현재 하단 플로팅 바에서 활성화된 프로젝트 유형 ('passage' | 'sentence')
+let currentFloatingTargetType = "passage";
+
+export function getCurrentFloatingTargetType() {
+  return currentFloatingTargetType;
+}
+
+export function setCurrentFloatingTargetType(type) {
+  if (type === "sentence" || type === "passage") {
+    currentFloatingTargetType = type;
+    updateFloatingCartUI();
+  }
+}
+
+/** 활성 지문 프로젝트 전환 */
+export function setCurrentPassageProject(projectId) {
+  const projects = getPassageProjects();
   if (!projects.some((p) => p.id === projectId)) return;
 
-  localStorage.setItem(KEY_CURRENT_PROJECT_ID, projectId);
+  currentFloatingTargetType = "passage";
+  localStorage.setItem(KEY_CURRENT_PASSAGE_PROJECT_ID, projectId);
+  window.dispatchEvent(new CustomEvent("handout-passage-project-changed", { detail: { projectId } }));
   window.dispatchEvent(new CustomEvent("handout-project-changed", { detail: { projectId } }));
   window.dispatchEvent(new CustomEvent("handout-cart-changed", { detail: getCartItems() }));
   updateFloatingCartUI();
   syncAllProjectDropdowns();
 }
 
-/** 새 프로젝트 생성 */
-export function createProject(name) {
-  const trimmed = (name || "").trim() || `새 프로젝트 ${new Date().toLocaleDateString()}`;
-  const projects = getProjects();
-  const newId = `proj_${Date.now()}`;
-  const newProject = {
+/** 새 지문 프로젝트 생성 */
+export function createPassageProject(name) {
+  const trimmed = (name || "").trim() || `지문 프로젝트 ${new Date().toLocaleDateString()}`;
+  const projects = getPassageProjects();
+  const newId = `proj_passage_${Date.now()}`;
+  const newProj = {
     id: newId,
     name: trimmed,
     createdAt: Date.now(),
@@ -104,53 +203,51 @@ export function createProject(name) {
     items: [],
     settings: {},
   };
-
-  projects.push(newProject);
-  saveProjects(projects);
-  setCurrentProject(newId);
-  return newProject;
+  projects.push(newProj);
+  savePassageProjects(projects);
+  setCurrentPassageProject(newId);
+  return newProj;
 }
 
-/** 프로젝트 이름 변경 */
-export function renameProject(projectId, newName) {
+/** 지문 프로젝트 이름 변경 */
+export function renamePassageProject(projectId, newName) {
   const trimmed = (newName || "").trim();
   if (!trimmed) return false;
-
-  const projects = getProjects();
+  const projects = getPassageProjects();
   const proj = projects.find((p) => p.id === projectId);
   if (!proj) return false;
 
   proj.name = trimmed;
   proj.updatedAt = Date.now();
-  saveProjects(projects);
-
+  savePassageProjects(projects);
+  window.dispatchEvent(new CustomEvent("handout-passage-project-changed", { detail: { projectId } }));
   window.dispatchEvent(new CustomEvent("handout-project-changed", { detail: { projectId } }));
   updateFloatingCartUI();
   syncAllProjectDropdowns();
   return true;
 }
 
-/** 프로젝트 삭제 */
-export function deleteProject(projectId) {
-  let projects = getProjects();
+/** 지문 프로젝트 삭제 */
+export function deletePassageProject(projectId) {
+  let projects = getPassageProjects();
   if (!projects.some((p) => p.id === projectId)) return false;
 
   projects = projects.filter((p) => p.id !== projectId);
   if (projects.length === 0) {
     projects = [{
-      id: `proj_${Date.now()}`,
-      name: "기본 프로젝트",
+      id: `proj_passage_${Date.now()}`,
+      name: "기본 지문 프로젝트",
       createdAt: Date.now(),
       updatedAt: Date.now(),
       items: [],
       settings: {},
     }];
   }
-
-  saveProjects(projects);
+  savePassageProjects(projects);
   const nextCurId = projects[0].id;
-  localStorage.setItem(KEY_CURRENT_PROJECT_ID, nextCurId);
+  localStorage.setItem(KEY_CURRENT_PASSAGE_PROJECT_ID, nextCurId);
 
+  window.dispatchEvent(new CustomEvent("handout-passage-project-changed", { detail: { projectId: nextCurId } }));
   window.dispatchEvent(new CustomEvent("handout-project-changed", { detail: { projectId: nextCurId } }));
   window.dispatchEvent(new CustomEvent("handout-cart-changed", { detail: projects[0].items }));
   updateFloatingCartUI();
@@ -158,57 +255,69 @@ export function deleteProject(projectId) {
   return true;
 }
 
-/** 프로젝트별 서식 설정 조회 */
-export function getProjectSettings(projectId = null) {
-  const curProj = projectId ? getProjects().find((p) => p.id === projectId) : getCurrentProject();
-  return (curProj && curProj.settings) || {};
+/** 지문 프로젝트 서식 설정 조회 */
+export function getPassageProjectSettings(projectId = null) {
+  const proj = projectId ? getPassageProjects().find((p) => p.id === projectId) : getCurrentPassageProject();
+  return (proj && proj.settings) || {};
 }
 
-/** 프로젝트별 서식 설정 저장 */
-export function saveProjectSettings(projectId, settings) {
-  const projects = getProjects();
-  const proj = projects.find((p) => p.id === (projectId || getCurrentProjectId()));
+/** 지문 프로젝트 서식 설정 저장 */
+export function savePassageProjectSettings(projectId, settings) {
+  const projects = getPassageProjects();
+  const proj = projects.find((p) => p.id === (projectId || getCurrentPassageProjectId()));
   if (proj) {
     proj.settings = { ...proj.settings, ...settings };
     proj.updatedAt = Date.now();
-    saveProjects(projects);
+    savePassageProjects(projects);
   }
 }
 
+// 기존 handout-passage.js 호환용 별칭(Aliases)
+export const getProjects = getPassageProjects;
+export const saveProjects = savePassageProjects;
+export const getCurrentProjectId = getCurrentPassageProjectId;
+export const getCurrentProject = getCurrentPassageProject;
+export const setCurrentProject = setCurrentPassageProject;
+export const createProject = createPassageProject;
+export const renameProject = renamePassageProject;
+export const deleteProject = deletePassageProject;
+export const getProjectSettings = getPassageProjectSettings;
+export const saveProjectSettings = savePassageProjectSettings;
+
 // =========================================================================
-// 활성 프로젝트 내 문항 목록(items) 관리 (기존 카트 인터페이스 호환)
+// 2. 활성 지문 프로젝트 내 문항 목록(items) 관리
 // =========================================================================
 
-/** 현재 활성 프로젝트의 카트 목록 로드: Array<{ id: string, custom_q_num: string }> */
+/** 현재 활성 지문 프로젝트의 문항 목록 조회 */
 export function getCartItems() {
-  const proj = getCurrentProject();
+  const proj = getCurrentPassageProject();
   return Array.isArray(proj.items) ? proj.items : [];
 }
 
-/** 현재 활성 프로젝트의 카트 목록 저장 */
+/** 현재 활성 지문 프로젝트의 문항 목록 저장 */
 export function saveCartItems(items) {
-  const projects = getProjects();
-  const curId = getCurrentProjectId();
+  const projects = getPassageProjects();
+  const curId = getCurrentPassageProjectId();
   const proj = projects.find((p) => p.id === curId);
   if (proj) {
     proj.items = items;
     proj.updatedAt = Date.now();
-    saveProjects(projects);
+    savePassageProjects(projects);
   }
   window.dispatchEvent(new CustomEvent("handout-cart-changed", { detail: items }));
   updateFloatingCartUI();
 }
 
-/** 특정 문항이 현재 활성 프로젝트에 담겨있는지 확인 */
+/** 특정 문항이 현재 활성 지문 프로젝트에 담겨있는지 확인 */
 export function isInCart(passageId) {
   if (!passageId) return false;
-  const items = getCartItems();
-  return items.some((item) => item.id === passageId);
+  return getCartItems().some((item) => item.id === passageId);
 }
 
-/** 현재 활성 프로젝트에 문항 추가 */
+/** 현재 활성 지문 프로젝트에 문항 추가 */
 export function addToCart(passageId, customNum = null) {
   if (!passageId) return;
+  currentFloatingTargetType = "passage";
   const items = getCartItems();
   if (items.some((item) => item.id === passageId)) return;
 
@@ -217,7 +326,7 @@ export function addToCart(passageId, customNum = null) {
   saveCartItems(items);
 }
 
-/** 현재 활성 프로젝트에서 문항 제거 */
+/** 현재 활성 지문 프로젝트에서 문항 제거 */
 export function removeFromCart(passageId) {
   if (!passageId) return;
   let items = getCartItems();
@@ -236,12 +345,12 @@ export function toggleCart(passageId) {
   }
 }
 
-/** 현재 활성 프로젝트 문항 전체 비우기 */
+/** 지문 프로젝트 문항 전체 비우기 */
 export function clearCart() {
   saveCartItems([]);
 }
 
-/** 문항 순서 변경 (fromIdx -> toIdx) */
+/** 지문 순서 변경 */
 export function reorderCart(fromIdx, toIdx) {
   const items = getCartItems();
   if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx >= items.length) return;
@@ -271,41 +380,364 @@ export function renumberCart(startNum = 1) {
 }
 
 // =========================================================================
-// UI 동기화 및 렌더링
+// 3. 문장 유인물 프로젝트 관리 (Sentence Projects)
+// =========================================================================
+
+/** 문장 프로젝트 목록 조회 */
+export function getSentenceProjects() {
+  try {
+    const raw = localStorage.getItem(KEY_SENTENCE_PROJECTS);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) return list;
+    }
+  } catch (e) {
+    console.warn("Failed to parse sentence projects", e);
+  }
+  const defaultProj = [{
+    id: "proj_sentence_default",
+    name: "기본 문장 프로젝트",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    sentence_items: [],
+    settings: {},
+  }];
+  saveSentenceProjects(defaultProj);
+  return defaultProj;
+}
+
+/** 문장 프로젝트 목록 저장 */
+export function saveSentenceProjects(projects) {
+  try {
+    localStorage.setItem(KEY_SENTENCE_PROJECTS, JSON.stringify(projects));
+  } catch (e) {
+    console.warn("Failed to save sentence projects", e);
+  }
+}
+
+/** 현재 활성화된 문장 프로젝트 ID */
+export function getCurrentSentenceProjectId() {
+  const projects = getSentenceProjects();
+  let curId = localStorage.getItem(KEY_CURRENT_SENTENCE_PROJECT_ID);
+  if (!curId || !projects.some((p) => p.id === curId)) {
+    curId = projects[0]?.id || "proj_sentence_default";
+    localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, curId);
+  }
+  return curId;
+}
+
+/** 현재 활성화된 문장 프로젝트 객체 */
+export function getCurrentSentenceProject() {
+  const projects = getSentenceProjects();
+  const curId = getCurrentSentenceProjectId();
+  return projects.find((p) => p.id === curId) || projects[0];
+}
+
+/** 활성 문장 프로젝트 전환 */
+export function setCurrentSentenceProject(projectId) {
+  const projects = getSentenceProjects();
+  if (!projects.some((p) => p.id === projectId)) return;
+
+  currentFloatingTargetType = "sentence";
+  localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, projectId);
+  window.dispatchEvent(new CustomEvent("handout-sentence-project-changed", { detail: { projectId } }));
+  window.dispatchEvent(new CustomEvent("handout-sentence-cart-changed", { detail: getSentenceCartItems() }));
+  updateFloatingCartUI();
+  syncAllProjectDropdowns();
+}
+
+/** 새 문장 프로젝트 생성 */
+export function createSentenceProject(name) {
+  const trimmed = (name || "").trim() || `문장 프로젝트 ${new Date().toLocaleDateString()}`;
+  const projects = getSentenceProjects();
+  const newId = `proj_sentence_${Date.now()}`;
+  const newProj = {
+    id: newId,
+    name: trimmed,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    sentence_items: [],
+    settings: {},
+  };
+  projects.push(newProj);
+  saveSentenceProjects(projects);
+  setCurrentSentenceProject(newId);
+  return newProj;
+}
+
+/** 문장 프로젝트 이름 변경 */
+export function renameSentenceProject(projectId, newName) {
+  const trimmed = (newName || "").trim();
+  if (!trimmed) return false;
+  const projects = getSentenceProjects();
+  const proj = projects.find((p) => p.id === projectId);
+  if (!proj) return false;
+
+  proj.name = trimmed;
+  proj.updatedAt = Date.now();
+  saveSentenceProjects(projects);
+  window.dispatchEvent(new CustomEvent("handout-sentence-project-changed", { detail: { projectId } }));
+  updateFloatingCartUI();
+  syncAllProjectDropdowns();
+  return true;
+}
+
+/** 문장 프로젝트 삭제 */
+export function deleteSentenceProject(projectId) {
+  let projects = getSentenceProjects();
+  if (!projects.some((p) => p.id === projectId)) return false;
+
+  projects = projects.filter((p) => p.id !== projectId);
+  if (projects.length === 0) {
+    projects = [{
+      id: `proj_sentence_${Date.now()}`,
+      name: "기본 문장 프로젝트",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      sentence_items: [],
+      settings: {},
+    }];
+  }
+  saveSentenceProjects(projects);
+  const nextCurId = projects[0].id;
+  localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, nextCurId);
+
+  window.dispatchEvent(new CustomEvent("handout-sentence-project-changed", { detail: { projectId: nextCurId } }));
+  window.dispatchEvent(new CustomEvent("handout-sentence-cart-changed", { detail: projects[0].sentence_items }));
+  updateFloatingCartUI();
+  syncAllProjectDropdowns();
+  return true;
+}
+
+/** 문장 프로젝트 서식 설정 조회 */
+export function getSentenceProjectSettings(projectId = null) {
+  const proj = projectId ? getSentenceProjects().find((p) => p.id === projectId) : getCurrentSentenceProject();
+  return (proj && proj.settings) || {};
+}
+
+/** 문장 프로젝트 서식 설정 저장 */
+export function saveSentenceProjectSettings(projectId, settings) {
+  const projects = getSentenceProjects();
+  const proj = projects.find((p) => p.id === (projectId || getCurrentSentenceProjectId()));
+  if (proj) {
+    proj.settings = { ...proj.settings, ...settings };
+    proj.updatedAt = Date.now();
+    saveSentenceProjects(projects);
+  }
+}
+
+// =========================================================================
+// 4. 활성 문장 프로젝트 내 문장 목록(sentence_items) 관리
+// =========================================================================
+
+/** 현재 활성 문장 프로젝트의 문장 카트 목록: Array<{ id: string, custom_num: string } */
+export function getSentenceCartItems() {
+  const proj = getCurrentSentenceProject();
+  const rawList = Array.isArray(proj.sentence_items) ? proj.sentence_items : [];
+  // 번호 필드 정규화
+  return rawList.map((item, idx) => {
+    if (typeof item === "string") {
+      return { id: item, custom_num: String(idx + 1) };
+    }
+    return {
+      id: item.id,
+      custom_num: item.custom_num ? String(item.custom_num) : String(idx + 1),
+    };
+  });
+}
+
+/** 현재 활성 문장 프로젝트의 문장 카트 목록 저장 */
+export function saveSentenceCartItems(items) {
+  const projects = getSentenceProjects();
+  const curId = getCurrentSentenceProjectId();
+  const proj = projects.find((p) => p.id === curId);
+  if (proj) {
+    proj.sentence_items = items;
+    proj.updatedAt = Date.now();
+    saveSentenceProjects(projects);
+  }
+  window.dispatchEvent(new CustomEvent("handout-sentence-cart-changed", { detail: items }));
+  updateFloatingCartUI();
+  syncAllSentenceCheckboxes();
+}
+
+/** 특정 문장이 현재 활성 문장 프로젝트에 담겨있는지 확인 */
+export function isInSentenceCart(sentenceId) {
+  if (!sentenceId) return false;
+  return getSentenceCartItems().some((item) => item.id === sentenceId);
+}
+
+/** 현재 활성 문장 프로젝트에 문장 추가 (기본 순차 번호 부여) */
+export function addToSentenceCart(sentenceId, customNum = null) {
+  if (!sentenceId) return;
+  currentFloatingTargetType = "sentence";
+  const items = getSentenceCartItems();
+  if (items.some((item) => item.id === sentenceId)) return;
+
+  const nextNum = customNum || String(items.length + 1);
+  items.push({ id: sentenceId, custom_num: String(nextNum) });
+  saveSentenceCartItems(items);
+}
+
+/** 현재 활성 문장 프로젝트에서 문장 제거 */
+export function removeFromSentenceCart(sentenceId) {
+  if (!sentenceId) return;
+  let items = getSentenceCartItems();
+  items = items.filter((item) => item.id !== sentenceId);
+  saveSentenceCartItems(items);
+}
+
+/** 문장 담기/제외 토글 */
+export function toggleSentenceCart(sentenceId) {
+  if (isInSentenceCart(sentenceId)) {
+    removeFromSentenceCart(sentenceId);
+    return false;
+  } else {
+    addToSentenceCart(sentenceId);
+    return true;
+  }
+}
+
+/** 현재 활성 문장 프로젝트 비우기 */
+export function clearSentenceCart() {
+  saveSentenceCartItems([]);
+}
+
+/** 문장 순서 변경 */
+export function reorderSentenceCart(fromIdx, toIdx) {
+  const items = getSentenceCartItems();
+  if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx >= items.length) return;
+  const [moved] = items.splice(fromIdx, 1);
+  items.splice(toIdx, 0, moved);
+  saveSentenceCartItems(items);
+}
+
+/** 특정 문장의 사용자 지정 번호 수정 */
+export function setCustomSentenceNum(sentenceId, customNum) {
+  const items = getSentenceCartItems();
+  const target = items.find((item) => item.id === sentenceId);
+  if (target) {
+    target.custom_num = String(customNum).trim();
+    saveSentenceCartItems(items);
+  }
+}
+
+/** 전체 문장 번호 순차 재부여 */
+export function renumberSentenceCart(startNum = 1) {
+  const items = getSentenceCartItems();
+  let cur = parseInt(startNum, 10) || 1;
+  items.forEach((item) => {
+    item.custom_num = String(cur++);
+  });
+  saveSentenceCartItems(items);
+}
+
+/** 화면에 렌더링된 모든 문장 체크박스 UI 동기화 */
+export function syncAllSentenceCheckboxes() {
+  const chks = document.querySelectorAll(".handout-sentence-chk");
+  chks.forEach((chk) => {
+    const sid = chk.dataset.id;
+    if (sid) {
+      const inCart = isInSentenceCart(sid);
+      chk.checked = inCart;
+      const lbl = chk.closest(".handout-sentence-chk-label");
+      if (lbl) {
+        lbl.classList.toggle("checked", inCart);
+        lbl.title = inCart ? "현재 문장 프로젝트에서 제외 (클릭 시 제외)" : "문장 유인물 보관함에 담기 (클릭 시 담기)";
+      }
+    }
+  });
+}
+
+// =========================================================================
+// 5. UI 드롭다운 및 플로팅 카트 바 동기화
 // =========================================================================
 
 /** 모든 화면의 프로젝트 드롭다운 셀렉트 박스 동기화 */
 export function syncAllProjectDropdowns() {
-  const projects = getProjects();
-  const curId = getCurrentProjectId();
-
-  const dropdowns = [
-    document.getElementById("selectHandoutProject"),
-    document.getElementById("selectFloatingHandoutProject"),
+  // 1) 지문 유인물 프로젝트 셀렉트 박스
+  const passageDropdowns = [
+    document.getElementById("selectHandoutPassageProject"),
+    document.getElementById("selectHandoutProject"), // 하위 호환
   ];
+  const pProjects = getPassageProjects();
+  const curPId = getCurrentPassageProjectId();
 
-  dropdowns.forEach((select) => {
+  passageDropdowns.forEach((select) => {
     if (!select) return;
-    const currentVal = curId;
     let html = "";
-    projects.forEach((p) => {
+    pProjects.forEach((p) => {
       const qCount = Array.isArray(p.items) ? p.items.length : 0;
-      const isSel = p.id === currentVal ? "selected" : "";
+      const isSel = p.id === curPId ? "selected" : "";
       html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${qCount}문항)</option>`;
     });
     select.innerHTML = html;
   });
 
-  // 제작소 화면 메타정보(생성일) 갱신
-  const metaEl = document.getElementById("txtProjectMetaInfo");
-  if (metaEl) {
-    const curProj = getCurrentProject();
-    if (curProj && curProj.createdAt) {
-      const d = new Date(curProj.createdAt);
-      metaEl.textContent = `생성일: ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  // 지문 제작소 생성일 메타 정보
+  const pMetaEl = document.getElementById("txtPassageProjectMetaInfo") || document.getElementById("txtProjectMetaInfo");
+  if (pMetaEl) {
+    const curPProj = getCurrentPassageProject();
+    if (curPProj && curPProj.createdAt) {
+      const d = new Date(curPProj.createdAt);
+      pMetaEl.textContent = `생성일: ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     } else {
-      metaEl.textContent = "";
+      pMetaEl.textContent = "";
     }
+  }
+
+  // 2) 문장 유인물 프로젝트 셀렉트 박스
+  const selectSentenceProj = document.getElementById("selectHandoutSentenceProject");
+  const sProjects = getSentenceProjects();
+  const curSId = getCurrentSentenceProjectId();
+
+  if (selectSentenceProj) {
+    let html = "";
+    sProjects.forEach((p) => {
+      const sCount = Array.isArray(p.sentence_items) ? p.sentence_items.length : 0;
+      const isSel = p.id === curSId ? "selected" : "";
+      html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${sCount}문장)</option>`;
+    });
+    selectSentenceProj.innerHTML = html;
+  }
+
+  // 문장 제작소 생성일 메타 정보
+  const sMetaEl = document.getElementById("txtSentenceProjectMetaInfo");
+  if (sMetaEl) {
+    const curSProj = getCurrentSentenceProject();
+    if (curSProj && curSProj.createdAt) {
+      const d = new Date(curSProj.createdAt);
+      sMetaEl.textContent = `생성일: ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    } else {
+      sMetaEl.textContent = "";
+    }
+  }
+
+  // 3) 하단 플로팅 카트 바 프로젝트 셀렉트 박스 (지문 및 문장 프로젝트 그룹화)
+  const selFloating = document.getElementById("selectFloatingHandoutProject");
+  if (selFloating) {
+    const isSentType = (currentFloatingTargetType === "sentence");
+    let html = "";
+
+    // 1) 지문 프로젝트 그룹
+    html += `<optgroup label="📄 지문 프로젝트">`;
+    pProjects.forEach((p) => {
+      const cnt = Array.isArray(p.items) ? p.items.length : 0;
+      const isSel = (!isSentType && p.id === curPId) ? "selected" : "";
+      html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${cnt}문항)</option>`;
+    });
+    html += `</optgroup>`;
+
+    // 2) 문장 프로젝트 그룹
+    html += `<optgroup label="📝 문장 프로젝트">`;
+    sProjects.forEach((p) => {
+      const cnt = Array.isArray(p.sentence_items) ? p.sentence_items.length : 0;
+      const isSel = (isSentType && p.id === curSId) ? "selected" : "";
+      html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${cnt}문장)</option>`;
+    });
+    html += `</optgroup>`;
+
+    selFloating.innerHTML = html;
   }
 }
 
@@ -320,37 +752,73 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
-/** 하단 플로팅 장바구니 바 UI 갱신 */
+/** 하단 플로팅 장바구니 바 UI 갱신 (선택된 프로젝트 영역의 정보만 콤팩트하게 노출) */
 export function updateFloatingCartUI() {
   const floatingBar = document.getElementById("handoutFloatingCart");
   const countBadge = document.getElementById("cartCountBadge");
-  const projects = getProjects();
-  const curProj = getCurrentProject();
-  const items = getCartItems();
+  const btnOpenPassage = document.getElementById("btnOpenPassageHandoutView");
+  const btnOpenSentence = document.getElementById("btnOpenSentenceHandoutView");
+  const btnFloatingCreate = document.getElementById("btnFloatingCreateProject");
+  const btnClearFloating = document.getElementById("btnClearFloatingCart");
+  const cntPassageEl = document.getElementById("floatingPassageCount");
+  const cntSentenceEl = document.getElementById("floatingSentenceCount");
 
-  if (countBadge) {
-    countBadge.textContent = `${items.length}문항`;
+  const pItems = getCartItems();
+  const sItems = getSentenceCartItems();
+
+  const pProjects = getPassageProjects();
+  const sProjects = getSentenceProjects();
+
+  const isSentType = (currentFloatingTargetType === "sentence");
+
+  // 각각의 버튼 내부 카운트 배지 갱신
+  if (cntPassageEl) cntPassageEl.textContent = pItems.length;
+  if (cntSentenceEl) cntSentenceEl.textContent = sItems.length;
+
+  // 선택된 프로젝트 영역에 맞춰 배지 텍스트/스타일 및 이동 버튼을 전환하여 패널 너비 축소
+  if (isSentType) {
+    if (countBadge) {
+      countBadge.textContent = `문장 ${sItems.length}개`;
+      countBadge.className = "cart-count-badge badge-sentence";
+    }
+    if (btnOpenSentence) btnOpenSentence.style.display = "inline-flex";
+    if (btnOpenPassage) btnOpenPassage.style.display = "none";
+    if (btnFloatingCreate) btnFloatingCreate.title = "새 문장 프로젝트 생성";
+    if (btnClearFloating) btnClearFloating.title = "현재 문장 프로젝트 보관함 비우기";
+  } else {
+    if (countBadge) {
+      countBadge.textContent = `지문 ${pItems.length}문항`;
+      countBadge.className = "cart-count-badge badge-passage";
+    }
+    if (btnOpenPassage) btnOpenPassage.style.display = "inline-flex";
+    if (btnOpenSentence) btnOpenSentence.style.display = "none";
+    if (btnFloatingCreate) btnFloatingCreate.title = "새 지문 프로젝트 생성";
+    if (btnClearFloating) btnClearFloating.title = "현재 지문 프로젝트 보관함 비우기";
   }
 
-  // 유인물 제작소 화면이 열려있지 않고, 프로젝트 목록에 1개 이상의 문항이 담겨있거나 현재 프로젝트에 문항이 있을 때 플로팅 바 표시
+  // 제작소 화면이 열려있지 않을 때만 플로팅 바 표시
   const handoutView = document.getElementById("handoutViewContainer");
   const isHandoutViewActive = handoutView && handoutView.style.display !== "none";
-  const hasAnyItems = projects.some((p) => Array.isArray(p.items) && p.items.length > 0);
+
+  const hasAnyPassage = pProjects.some((p) => Array.isArray(p.items) && p.items.length > 0);
+  const hasAnySentence = sProjects.some((p) => Array.isArray(p.sentence_items) && p.sentence_items.length > 0);
+  const shouldShow = (pItems.length > 0 || sItems.length > 0 || hasAnyPassage || hasAnySentence);
 
   if (floatingBar) {
-    if ((items.length > 0 || hasAnyItems) && !isHandoutViewActive) {
+    if (shouldShow && !isHandoutViewActive) {
       floatingBar.style.display = "flex";
     } else {
       floatingBar.style.display = "none";
     }
   }
 
-  // 지문 상세 화면 체크박스 동기화
+  // 체크박스 및 드롭다운 동기화
   syncCurrentPassageCheckbox();
+  syncAllSentenceCheckboxes();
   syncAllProjectDropdowns();
 }
 
-/** 현재 열람 중인 문항의 체크박스 상태 동기화 */
+/** 현재 열람 중인 지문의 체크박스 상태 동기화 */
 export function syncCurrentPassageCheckbox() {
   const chkCurrent = document.getElementById("chkHandoutSelectCurrent");
   const lblCurrent = document.getElementById("labelHandoutSelectCurrent");
@@ -362,7 +830,7 @@ export function syncCurrentPassageCheckbox() {
     chkCurrent.checked = inCart;
     if (lblCurrent) {
       lblCurrent.classList.toggle("checked", inCart);
-      lblCurrent.title = inCart ? "현재 프로젝트에서 제외합니다 (클릭 시 제외)" : "현재 프로젝트에 담습니다 (클릭 시 담기)";
+      lblCurrent.title = inCart ? "현재 지문 프로젝트에서 제외합니다 (클릭 시 제외)" : "현재 지문 프로젝트에 담습니다 (클릭 시 담기)";
     }
     if (txtLabel) {
       txtLabel.textContent = inCart ? "✔ 유인물 담김" : "📄 유인물 담기";
@@ -372,13 +840,32 @@ export function syncCurrentPassageCheckbox() {
 
 /** 전체 이벤트 초기화 */
 export function initHandoutCart() {
+  const btnOpenPassage = document.getElementById("btnOpenPassageHandoutView");
+  const btnOpenSentence = document.getElementById("btnOpenSentenceHandoutView");
   const btnOpen = document.getElementById("btnOpenHandoutView");
   const btnClear = document.getElementById("btnClearFloatingCart");
+
+  if (btnOpenPassage) {
+    btnOpenPassage.addEventListener("click", () => {
+      import("./navigation.js").then((m) => {
+        if (m.switchToHandoutView) m.switchToHandoutView("passage");
+      });
+    });
+  }
+
+  if (btnOpenSentence) {
+    btnOpenSentence.addEventListener("click", () => {
+      import("./navigation.js").then((m) => {
+        if (m.switchToHandoutView) m.switchToHandoutView("sentence");
+      });
+    });
+  }
 
   if (btnOpen) {
     btnOpen.addEventListener("click", () => {
       import("./navigation.js").then((m) => {
-        if (m.switchToHandoutView) m.switchToHandoutView();
+        const targetTab = (appState.currentMode === "sentence") ? "sentence" : "passage";
+        if (m.switchToHandoutView) m.switchToHandoutView(targetTab);
       });
     });
   }
@@ -386,9 +873,27 @@ export function initHandoutCart() {
   if (btnClear) {
     btnClear.addEventListener("click", (e) => {
       e.stopPropagation();
-      const curProj = getCurrentProject();
-      if (confirm(`'${curProj.name}' 프로젝트의 모든 문항을 비우시겠습니까?`)) {
-        clearCart();
+      const isSentType = (currentFloatingTargetType === "sentence");
+      if (isSentType) {
+        const curSProj = getCurrentSentenceProject();
+        const sItems = getSentenceCartItems();
+        if (sItems.length === 0) {
+          alert("현재 선택된 문장 프로젝트에 담긴 문장이 없습니다.");
+          return;
+        }
+        if (confirm(`'${curSProj.name}' 문장 프로젝트의 모든 문장(${sItems.length}개)을 비우시겠습니까?`)) {
+          clearSentenceCart();
+        }
+      } else {
+        const curPProj = getCurrentPassageProject();
+        const pItems = getCartItems();
+        if (pItems.length === 0) {
+          alert("현재 선택된 지문 프로젝트에 담긴 문항이 없습니다.");
+          return;
+        }
+        if (confirm(`'${curPProj.name}' 지문 프로젝트의 모든 문항(${pItems.length}개)을 비우시겠습니까?`)) {
+          clearCart();
+        }
       }
     });
   }
@@ -407,69 +912,121 @@ export function initHandoutCart() {
     });
   }
 
-
-
-  // 하단 플로팅 장바구니 바: 프로젝트 전환
+  // 하단 플로팅 장바구니 바: 프로젝트 전환 (선택한 프로젝트 영역으로 즉시 전환 및 컴팩트화)
   const selFloatingProj = document.getElementById("selectFloatingHandoutProject");
   if (selFloatingProj) {
     selFloatingProj.addEventListener("change", (e) => {
-      setCurrentProject(e.target.value);
+      const val = e.target.value;
+      const sProjects = getSentenceProjects();
+      const isSentProj = sProjects.some((p) => p.id === val);
+      if (isSentProj) {
+        currentFloatingTargetType = "sentence";
+        setCurrentSentenceProject(val);
+      } else {
+        currentFloatingTargetType = "passage";
+        setCurrentPassageProject(val);
+      }
+      updateFloatingCartUI();
     });
   }
 
-  // 하단 플로팅 장바구니 바: 새 프로젝트 생성
+  // 하단 플로팅 장바구니 바: 새 프로젝트 생성 (선택된 프로젝트 영역에 맞춤)
   const btnFloatingCreate = document.getElementById("btnFloatingCreateProject");
   if (btnFloatingCreate) {
     btnFloatingCreate.addEventListener("click", () => {
-      const name = prompt("새 유인물 프로젝트 이름을 입력하세요:", "");
+      const isSentType = (currentFloatingTargetType === "sentence");
+      const defaultName = isSentType ? "새 문장 프로젝트" : "새 지문 프로젝트";
+      const name = prompt(`새 ${isSentType ? "문장" : "지문"} 프로젝트 이름을 입력하세요:`, defaultName);
       if (name !== null) {
-        createProject(name);
+        if (isSentType) {
+          createSentenceProject(name);
+          currentFloatingTargetType = "sentence";
+        } else {
+          createPassageProject(name);
+          currentFloatingTargetType = "passage";
+        }
+        updateFloatingCartUI();
       }
     });
   }
 
-  // 유인물 제작소 화면: 메인 프로젝트 선택 드롭다운
-  const selMainProj = document.getElementById("selectHandoutProject");
-  if (selMainProj) {
-    selMainProj.addEventListener("change", (e) => {
-      setCurrentProject(e.target.value);
+  // 지문 제작소: 프로젝트 드롭다운 및 버튼
+  const selPassageProj = document.getElementById("selectHandoutPassageProject") || document.getElementById("selectHandoutProject");
+  if (selPassageProj) {
+    selPassageProj.addEventListener("change", (e) => {
+      setCurrentPassageProject(e.target.value);
     });
   }
 
-  // 유인물 제작소: 새 프로젝트 생성
-  const btnCreateNew = document.getElementById("btnCreateNewProject");
-  if (btnCreateNew) {
-    btnCreateNew.addEventListener("click", () => {
-      const name = prompt("새 유인물 프로젝트 이름을 입력하세요:", "");
+  const btnCreatePassage = document.getElementById("btnCreatePassageProject") || document.getElementById("btnCreateNewProject");
+  if (btnCreatePassage) {
+    btnCreatePassage.addEventListener("click", () => {
+      const name = prompt("새 지문 유인물 프로젝트 이름을 입력하세요:", "");
       if (name !== null) {
-        createProject(name);
+        createPassageProject(name);
       }
     });
   }
 
-  // 유인물 제작소: 프로젝트 이름 변경
-  const btnRename = document.getElementById("btnRenameCurrentProject");
-  if (btnRename) {
-    btnRename.addEventListener("click", () => {
-      const curProj = getCurrentProject();
-      const newName = prompt("프로젝트의 새 이름을 입력하세요:", curProj.name);
+  const btnRenamePassage = document.getElementById("btnRenamePassageProject") || document.getElementById("btnRenameCurrentProject");
+  if (btnRenamePassage) {
+    btnRenamePassage.addEventListener("click", () => {
+      const curProj = getCurrentPassageProject();
+      const newName = prompt("지문 프로젝트의 새 이름을 입력하세요:", curProj.name);
       if (newName !== null && newName.trim()) {
-        renameProject(curProj.id, newName);
+        renamePassageProject(curProj.id, newName);
       }
     });
   }
 
-  // 유인물 제작소: 프로젝트 삭제
-  const btnDelete = document.getElementById("btnDeleteCurrentProject");
-  if (btnDelete) {
-    btnDelete.addEventListener("click", () => {
-      const curProj = getCurrentProject();
-      if (confirm(`'${curProj.name}' 프로젝트를 삭제하시겠습니까?\n담긴 문항들도 함께 삭제됩니다.`)) {
-        deleteProject(curProj.id);
+  const btnDeletePassage = document.getElementById("btnDeletePassageProject") || document.getElementById("btnDeleteCurrentProject");
+  if (btnDeletePassage) {
+    btnDeletePassage.addEventListener("click", () => {
+      const curProj = getCurrentPassageProject();
+      if (confirm(`'${curProj.name}' 지문 프로젝트를 삭제하시겠습니까?\n담긴 문항들도 함께 삭제됩니다.`)) {
+        deletePassageProject(curProj.id);
+      }
+    });
+  }
+
+  // 문장 제작소: 프로젝트 드롭다운 및 버튼
+  const selSentenceProj = document.getElementById("selectHandoutSentenceProject");
+  if (selSentenceProj) {
+    selSentenceProj.addEventListener("change", (e) => {
+      setCurrentSentenceProject(e.target.value);
+    });
+  }
+
+  const btnCreateSentence = document.getElementById("btnCreateSentenceProject");
+  if (btnCreateSentence) {
+    btnCreateSentence.addEventListener("click", () => {
+      const name = prompt("새 문장 유인물 프로젝트 이름을 입력하세요:", "");
+      if (name !== null) {
+        createSentenceProject(name);
+      }
+    });
+  }
+
+  const btnRenameSentence = document.getElementById("btnRenameSentenceProject");
+  if (btnRenameSentence) {
+    btnRenameSentence.addEventListener("click", () => {
+      const curProj = getCurrentSentenceProject();
+      const newName = prompt("문장 프로젝트의 새 이름을 입력하세요:", curProj.name);
+      if (newName !== null && newName.trim()) {
+        renameSentenceProject(curProj.id, newName);
+      }
+    });
+  }
+
+  const btnDeleteSentence = document.getElementById("btnDeleteSentenceProject");
+  if (btnDeleteSentence) {
+    btnDeleteSentence.addEventListener("click", () => {
+      const curProj = getCurrentSentenceProject();
+      if (confirm(`'${curProj.name}' 문장 프로젝트를 삭제하시겠습니까?\n담긴 문장들도 함께 삭제됩니다.`)) {
+        deleteSentenceProject(curProj.id);
       }
     });
   }
 
   updateFloatingCartUI();
 }
-

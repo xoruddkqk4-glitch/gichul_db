@@ -19,6 +19,8 @@ from ..services.hwpx_generator import (
     generate_question_handout,
     generate_explanation_handout,
     generate_handout_zip,
+    generate_sentence_handout,
+    format_sentence_source,
     list_templates,
     save_uploaded_template,
 )
@@ -44,6 +46,22 @@ class HandoutGenerateRequest(BaseModel):
 
 class HandoutPreviewRequest(BaseModel):
     passage_ids: List[str] = Field(default_factory=list, description="지문 ID 목록")
+
+
+class SentenceHandoutGenerateRequest(BaseModel):
+    sentence_ids: List[str] = Field(default_factory=list, description="선택된 문장 ID 목록 (정렬 순서 유지)")
+    custom_sentence_nums: Dict[str, str] = Field(default_factory=dict, description="문장 ID별 사용자 지정 문장 번호 맵")
+    start_num: int = Field(default=1, description="미지정 시 순차 시작 번호")
+    include_concept_table: bool = Field(default=True, description="개념 설명 1x1 테이블 포함 여부 (True: 6문장, False: 10문장)")
+    main_title: Optional[str] = Field(default="핵심 기출 구문 분석", description="문장 유인물 메인 제목")
+    header_left: Optional[str] = Field(default="", description="왼쪽 상단 텍스트")
+    header_center: Optional[str] = Field(default="", description="가운데 상단 텍스트")
+    header_right: Optional[str] = Field(default="", description="오른쪽 상단 텍스트")
+    template_name: Optional[str] = Field(default=None, description="선택된 템플릿 파일명")
+
+
+class SentenceHandoutPreviewRequest(BaseModel):
+    sentence_ids: List[str] = Field(default_factory=list, description="문장 ID 목록")
 
 
 def _resolve_passages_with_custom_nums(passage_ids: List[str], custom_q_nums: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -190,3 +208,81 @@ def api_generate_handout(req: HandoutGenerateRequest):
     except Exception as e:
         logger.error("유인물 HWPX 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"유인물 생성 중 오류가 발생했습니다: {e}")
+
+
+@router.post("/sentence-preview-info")
+def api_get_sentence_preview_info(req: SentenceHandoutPreviewRequest):
+    """선택된 문장들의 유인물 제작소 표시용 메타데이터 반환"""
+    if not req.sentence_ids:
+        return {"items": []}
+
+    items = []
+    for sid in req.sentence_ids:
+        s = db.get_sentence(sid)
+        if s:
+            items.append({
+                "id": s["id"],
+                "sentence_text": s.get("sentence_text", ""),
+                "source_label": format_sentence_source(s["id"]),
+                "passage_id": s.get("passage_id", ""),
+                "order_index": s.get("order_index", 0),
+            })
+        else:
+            items.append({
+                "id": sid,
+                "sentence_text": "",
+                "source_label": format_sentence_source(sid),
+                "passage_id": "",
+                "order_index": 0,
+            })
+
+    return {"items": items}
+
+
+@router.post("/generate-sentence")
+def api_generate_sentence_handout(req: SentenceHandoutGenerateRequest):
+    """A4 단면 문장 유인물 HWPX 생성 및 바이너리 다운로드 스트리밍"""
+    if not req.sentence_ids:
+        raise HTTPException(status_code=400, detail="유인물로 제작할 문장을 1개 이상 선택해야 합니다.")
+
+    items = []
+    custom_map = req.custom_sentence_nums or {}
+    start_n = req.start_num or 1
+    for idx, sid in enumerate(req.sentence_ids):
+        s = db.get_sentence(sid)
+        if s:
+            s_dict = dict(s)
+            s_dict["custom_num"] = str(custom_map.get(sid, str(start_n + idx))).strip()
+            items.append(s_dict)
+        else:
+            logger.warning("유인물 생성 대상 문장을 찾을 수 없음: %s", sid)
+
+    if not items:
+        raise HTTPException(status_code=404, detail="선택된 문장의 데이터를 DB에서 찾을 수 없습니다.")
+
+    options = {
+        "header_left": (req.header_left or "").strip(),
+        "header_center": (req.header_center or "").strip(),
+        "header_right": (req.header_right or "").strip(),
+        "main_title": (req.main_title or "").strip() or "핵심 기출 구문 분석",
+        "include_concept_table": req.include_concept_table,
+        "template_name": req.template_name,
+    }
+
+    try:
+        file_bytes = generate_sentence_handout(items, options)
+        actual_cnt = min(len(items), 6 if req.include_concept_table else 10)
+        default_filename = f"문장유인물_A4_{actual_cnt}문장.hwpx"
+
+        encoded_filename = urllib.parse.quote(default_filename)
+        fallback_ascii = f"sentence_handout_{actual_cnt}.hwpx"
+        headers = {
+            "Content-Disposition": f'attachment; filename="{fallback_ascii}"; filename*=UTF-8\'\'{encoded_filename}',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        }
+
+        return Response(content=file_bytes, media_type="application/haansofthwpx", headers=headers)
+
+    except Exception as e:
+        logger.error("문장 유인물 HWPX 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"문장 유인물 생성 중 오류가 발생했습니다: {e}")

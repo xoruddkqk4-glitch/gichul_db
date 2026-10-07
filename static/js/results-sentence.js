@@ -38,6 +38,7 @@ import { groupPassageItems, renderPassageView, selectPassageTab, stopAllListenin
 import { copyToClipboard, cssSafeId, escapeHtml, showToast } from "./utils.js";
 import { openGrammarModalForSentence } from "./grammar.js";
 import { openSentenceReportModal } from "./reports.js";
+import { isInSentenceCart, toggleSentenceCart, addToSentenceCart } from "./handout-cart.js";
 
 // =========================================================================
 // 7. [전체 문장 보기] <-> [지문 결과창으로 돌아가기] 연동
@@ -413,8 +414,14 @@ function createSentenceRow(s, currentQuery) {
   // 검색 표현 형광펜 하이라이트 적용
   const highlightedSentence = highlightSentenceKeyword(s.sentence_text, currentQuery);
   const isStarred = s.is_starred === 1 || s.is_starred === true;
+  const inSentenceCart = isInSentenceCart(s.id);
 
   tr.innerHTML = `
+      <td class="col-handout-select" style="text-align: center; vertical-align: middle;">
+        <label class="handout-sentence-chk-label ${inSentenceCart ? "checked" : ""}" title="${inSentenceCart ? "현재 프로젝트에서 제외" : "유인물 보관함에 담기"}" style="cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">
+          <input type="checkbox" class="handout-sentence-chk" data-id="${escapeHtml(s.id)}" ${inSentenceCart ? "checked" : ""} style="cursor: pointer; width: 15px; height: 15px;">
+        </label>
+      </td>
       <td class="col-star" style="text-align: center;">
         <button type="button" class="btn-star ${isStarred ? "starred" : ""}" data-id="${escapeHtml(s.id)}" title="${isStarred ? "중요 문장 해제" : "중요 문장(⭐)으로 등록"}">
           ${isStarred ? "★" : "☆"}
@@ -579,6 +586,22 @@ function createSentenceRow(s, currentQuery) {
       openGrammarModalForSentence(s, () => {
         updateGrammarCell();
       });
+    });
+  }
+
+  // 유인물 담기 체크박스 이벤트
+  const chkHandout = tr.querySelector(".handout-sentence-chk");
+  if (chkHandout) {
+    chkHandout.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const inCart = toggleSentenceCart(s.id);
+      chkHandout.checked = inCart;
+      const lbl = chkHandout.closest(".handout-sentence-chk-label");
+      if (lbl) {
+        lbl.classList.toggle("checked", inCart);
+        lbl.title = inCart ? "현재 프로젝트에서 제외" : "유인물 보관함에 담기";
+      }
+      showToast(inCart ? "문장이 유인물 보관함에 담겼습니다." : "문장이 유인물 보관함에서 제외되었습니다.", inCart ? "success" : "info");
     });
   }
 
@@ -988,6 +1011,26 @@ export function init() {
   if (btnSentenceBackToPassage) {
     btnSentenceBackToPassage.addEventListener("click", () => {
       backToPassageView();
+    });
+  }
+
+  // 문장 결과창 헤더의 '📄 문장 유인물 담기' 일괄 담기 버튼
+  const btnBatchAdd = document.getElementById("btnBatchAddSentenceHandout");
+  if (btnBatchAdd) {
+    btnBatchAdd.addEventListener("click", () => {
+      const currentList = _currentSentenceItems || [];
+      if (currentList.length === 0) {
+        showToast("보관함에 담을 문장이 없습니다.", "warning");
+        return;
+      }
+      let addedCount = 0;
+      currentList.forEach((s) => {
+        if (!isInSentenceCart(s.id)) {
+          addToSentenceCart(s.id);
+          addedCount++;
+        }
+      });
+      showToast(`${currentList.length}개 중 신규 ${addedCount}개 문장이 유인물 보관함에 담겼습니다.`, "success");
     });
   }
 
