@@ -2956,16 +2956,15 @@
       <div class="classroom-sentence-board">
         <div class="classroom-sentence-top-meta">
           <span class="classroom-speaker-badge speaker-m" id="classroomSpeakerBadge">M</span>
-          <span class="classroom-q-type" id="classroomQType">(짧은 대화 응답)</span>
           <div class="classroom-text-toggles">
-            <label class="classroom-toggle-chk" title="FELS 기능어 약형드랩 [  ] 빈칸으로 표시하여 학생 딕테이션 훈련">
-              <input type="checkbox" id="chkClassroomFelsBlank">
-              <span>🎯 FELS 빈칸 퀴즈 모드</span>
-            </label>
-            <label class="classroom-toggle-chk" title="우리말 해석 표시 토글">
-              <input type="checkbox" id="chkClassroomKoreanTrans">
-              <span>📘 해석 보기</span>
-            </label>
+            <button type="button" class="btn-classroom-toggle-mode active-fels" id="btnToggleClassroomMode" title="약형드랩(빈칸) 모드와 Script(원문) 모드를 전환합니다">
+              <span id="txtClassroomModeIcon">🎯</span>
+              <span id="txtClassroomModeLabel">약형드랩 모드</span>
+            </button>
+            <button type="button" class="btn-classroom-toggle-trans" id="btnToggleClassroomTrans" title="문장의 우리말 해석을 표시하거나 숨깁니다">
+              <span id="txtClassroomTransIcon">📘</span>
+              <span id="txtClassroomTransLabel">우리말 해석 보기</span>
+            </button>
           </div>
         </div>
 
@@ -3065,8 +3064,10 @@
         <kbd>Space</kbd> 재생/정지
         <kbd>←</kbd> 이전 문장
         <kbd>→</kbd> 다음 문장
+        <kbd>S</kbd> 약형/Script 전환
+        <kbd>T</kbd> 해석 토글
         <kbd>R</kbd> 구간 반복
-        <kbd>F</kbd> 전체화면 토글
+        <kbd>F</kbd> 전체화면
         <kbd>Esc</kbd> 닫기
       </div>
     </div>

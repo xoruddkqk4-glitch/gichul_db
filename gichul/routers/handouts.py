@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from .. import database as db
 from ..text_utils import normalize_bracket_id
-from ..fels_engine import generate_fels_blank
+from ..fels_engine import generate_fels_blank, generate_fels_text
 from ..services.hwpx_generator import (
     generate_question_handout,
     generate_explanation_handout,
@@ -575,51 +575,78 @@ async def api_get_listening_classroom_data(req: ListeningClassroomDataRequest):
         custom_q = str(custom_q_nums.get(pid) or (g_idx + 1))
         prep = _prepare_listening_item_data(p, custom_q)
 
+        # 우리말 해석 보강 (비어있으면 AI 자동 번역)
+        kor_full = (prep.get("korean_translation") or "").strip()
+        if not kor_full:
+            script_candidate = p.get("script_text") or p.get("passage_text") or ""
+            if script_candidate:
+                try:
+                    from ..grammar_analyzer import translate_listening_script
+                    ai_trans = translate_listening_script(script_candidate)
+                    if ai_trans:
+                        kor_full = ai_trans.strip()
+                        prep["korean_translation"] = kor_full
+                except Exception as e:
+                    logger.warning("AI 우리말 해석 생성 실패: %s", e)
+
+        # 번역 라인들 (해석 텍스트 정제)
+        raw_trans_lines = [
+            re.sub(r"^\s*([MW남여]\d*|[①-⑤\d]+[\.\)]?)\s*[:：]?\s*", "", l).strip()
+            for l in kor_full.splitlines()
+            if l.strip() and not l.strip().startswith("[") and not l.strip().startswith("출제")
+        ]
+
         # 문장 목록 구성
         db_sents = s_rows.get(pid, [])
         sentences_list = []
+        source_sents = []
         if db_sents:
-            last_speaker = "M"
             for s in db_sents:
-                raw_text = (s.get("sentence_text") or "").strip()
-                if not raw_text:
-                    continue
-                m_spk = re.match(r"^\s*([MW남여])\s*:\s*", raw_text, flags=re.IGNORECASE)
-                if m_spk:
-                    spk_char = m_spk.group(1).upper()
-                    last_speaker = "W" if spk_char in ("W", "여") else "M"
-                clean_t = re.sub(r"^\s*([MW남여])\s*:\s*", "", raw_text, flags=re.IGNORECASE).strip()
-                f_blank = generate_fels_blank(clean_t, title="", question_type=p.get("question_type") or "")
-                sentences_list.append({
-                    "order_index": s.get("order_index", len(sentences_list) + 1),
-                    "speaker": last_speaker,
-                    "sentence_text": raw_text,
-                    "raw_text": raw_text,
-                    "clean_text": clean_t,
-                    "fels_blank_text": f_blank,
-                    "fels_blank": f_blank,
-                })
+                t = (s.get("sentence_text") or "").strip()
+                if t:
+                    source_sents.append((s.get("order_index", len(source_sents) + 1), t))
         else:
-            # fallback: script_text 기반 실시간 분할
             script = p.get("script_text") or p.get("passage_text") or ""
             raw_splits = [l.strip() for l in script.splitlines() if l.strip()]
-            last_speaker = "M"
             for r_idx, line in enumerate(raw_splits):
-                m_spk = re.match(r"^\s*([MW남여])\s*:\s*", line, flags=re.IGNORECASE)
-                if m_spk:
-                    spk_char = m_spk.group(1).upper()
-                    last_speaker = "W" if spk_char in ("W", "여") else "M"
-                clean_t = re.sub(r"^\s*([MW남여])\s*:\s*", "", line, flags=re.IGNORECASE).strip()
-                f_blank = generate_fels_blank(clean_t, title="", question_type=p.get("question_type") or "")
-                sentences_list.append({
-                    "order_index": r_idx + 1,
-                    "speaker": last_speaker,
-                    "sentence_text": line,
-                    "raw_text": line,
-                    "clean_text": clean_t,
-                    "fels_blank_text": f_blank,
-                    "fels_blank": f_blank,
-                })
+                source_sents.append((r_idx + 1, line))
+
+        m_turn = 0
+        w_turn = 0
+        last_speaker = "M"
+        for s_idx, (ord_idx, raw_text) in enumerate(source_sents):
+            m_spk = re.match(r"^\s*([MW남여])(\d*)\s*[:：]\s*", raw_text, flags=re.IGNORECASE)
+            if m_spk:
+                spk_char = m_spk.group(1).upper()
+                last_speaker = "W" if spk_char in ("W", "여") else "M"
+
+            if last_speaker == "W":
+                w_turn += 1
+                turn_label = f"W{w_turn}"
+            else:
+                m_turn += 1
+                turn_label = f"M{m_turn}"
+
+            clean_t = re.sub(r"^\s*([MW남여])\d*\s*[:：]\s*", "", raw_text, flags=re.IGNORECASE).strip()
+            fels_ans = generate_fels_text(clean_t)
+            f_blank = generate_fels_blank(clean_t, split_sentences_for_monologue=False, title=prep.get("question_title", ""), question_type=p.get("question_type") or "")
+
+            s_trans = raw_trans_lines[s_idx] if s_idx < len(raw_trans_lines) else ""
+            if not s_trans and kor_full:
+                s_trans = kor_full
+
+            sentences_list.append({
+                "order_index": ord_idx,
+                "speaker": last_speaker,
+                "speaker_turn": turn_label,
+                "sentence_text": f"{turn_label}: {clean_t}",
+                "raw_text": f"{turn_label}: {clean_t}",
+                "clean_text": clean_t,
+                "fels_answer_text": fels_ans,
+                "fels_blank_text": f_blank,
+                "fels_blank": f_blank,
+                "korean_translation": s_trans,
+            })
 
         exam_id = p.get("exam_id") or ""
         q_num = p.get("q_num") or (g_idx + 1)

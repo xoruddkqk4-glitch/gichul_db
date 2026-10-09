@@ -33,6 +33,11 @@ class ListeningClassroomController {
     this.currentLoopCount = 0;
     this.targetLoopCount = 3;
 
+    // 텍스트 모드 & 인터랙티브 FELS 빈칸 (디폴트: 약형드랩 먼저 표시)
+    this.textMode = "fels"; // "fels" (약형드랩) | "script" (원문)
+    this.showTrans = false; // 우리말 해석 표시 여부
+    this.revealedSlots = new Set(); // 정답이 노출된 [ ] 슬롯 인덱스 번호
+
     // 캐시 & 설정
     this.audioBufferCache = new Map(); // url -> AudioBuffer
     this.currentAudioUrl = "";
@@ -62,8 +67,12 @@ class ListeningClassroomController {
       // 문장 텍스트 영역
       speakerBadge: document.getElementById("classroomSpeakerBadge"),
       qType: document.getElementById("classroomQType"),
-      chkFelsBlank: document.getElementById("chkClassroomFelsBlank"),
-      chkKoreanTrans: document.getElementById("chkClassroomKoreanTrans"),
+      btnToggleMode: document.getElementById("btnToggleClassroomMode"),
+      txtModeIcon: document.getElementById("txtClassroomModeIcon"),
+      txtModeLabel: document.getElementById("txtClassroomModeLabel"),
+      btnToggleTrans: document.getElementById("btnToggleClassroomTrans"),
+      txtTransIcon: document.getElementById("txtClassroomTransIcon"),
+      txtTransLabel: document.getElementById("txtClassroomTransLabel"),
       sentenceText: document.getElementById("classroomSentenceText"),
       koreanTrans: document.getElementById("classroomKoreanTrans"),
 
@@ -109,11 +118,39 @@ class ListeningClassroomController {
       }
     });
 
-    // FELS 빈칸 / 우리말 해석 토글
-    this.dom.chkFelsBlank?.addEventListener("change", () => this.updateSentenceDisplay());
-    this.dom.chkKoreanTrans?.addEventListener("change", () => {
-      if (this.dom.koreanTrans) {
-        this.dom.koreanTrans.style.display = this.dom.chkKoreanTrans.checked ? "block" : "none";
+    // [약형드랩 모드] <-> [Script 모드] 대형 토글 버튼
+    this.dom.btnToggleMode?.addEventListener("click", () => {
+      this.textMode = this.textMode === "fels" ? "script" : "fels";
+      this.updateSentenceDisplay();
+    });
+
+    // [우리말 해석 보기/숨기기] 대형 토글 버튼
+    this.dom.btnToggleTrans?.addEventListener("click", () => {
+      this.showTrans = !this.showTrans;
+      this.updateTranslationDisplay();
+    });
+
+    // 약형드랩 텍스트 모드에서 [ ] 클릭 시 해당 빈칸의 정답 보였다/안보였다 토글
+    this.dom.sentenceText?.addEventListener("click", (e) => {
+      const slotEl = e.target.closest(".fels-blank-slot");
+      if (!slotEl) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const slotIdx = parseInt(slotEl.dataset.slotIndex, 10);
+      const answer = slotEl.dataset.answer || "";
+      if (isNaN(slotIdx)) return;
+
+      if (this.revealedSlots.has(slotIdx)) {
+        this.revealedSlots.delete(slotIdx);
+        slotEl.classList.remove("revealed");
+        slotEl.innerHTML = `[ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ]`;
+        slotEl.title = "클릭하여 정답 보기";
+      } else {
+        this.revealedSlots.add(slotIdx);
+        slotEl.classList.add("revealed");
+        slotEl.innerHTML = `[ ${this.escapeHtml(answer)} ]`;
+        slotEl.title = "클릭하여 빈칸으로 가리기";
       }
     });
 
@@ -197,6 +234,14 @@ class ListeningClassroomController {
       } else if (e.code === "KeyR") {
         e.preventDefault();
         this.startRegionLoop();
+      } else if (e.code === "KeyS") {
+        e.preventDefault();
+        this.textMode = this.textMode === "fels" ? "script" : "fels";
+        this.updateSentenceDisplay();
+      } else if (e.code === "KeyT") {
+        e.preventDefault();
+        this.showTrans = !this.showTrans;
+        this.updateTranslationDisplay();
       } else if (e.code === "KeyF") {
         e.preventDefault();
         this.toggleFullscreen();
@@ -458,6 +503,7 @@ class ListeningClassroomController {
     this.stopAudio();
     this.stopRegionLoop();
     this.clearSelectedRegion();
+    this.revealedSlots.clear(); // 정답 공개 슬롯 초기화
 
     this.currentQIndex = qIdx;
     this.currentSIndex = sIdx;
@@ -478,24 +524,22 @@ class ListeningClassroomController {
       this.dom.posBadge.textContent = `문항 ${qIdx + 1}/${totalQuestions} (${qNum}번) · 문장 ${sIdx + 1}/${totalSentences}`;
     }
 
-    // 2. 화자 배지 및 유형 업데이트
+    // 2. 화자 배지 및 유형 업데이트 (W1, M1 등 발화 순번)
     const speaker = (s.speaker || "M").toUpperCase();
+    const turnLabel = s.speaker_turn || `${speaker}1`;
     if (this.dom.speakerBadge) {
-      this.dom.speakerBadge.textContent = speaker;
+      this.dom.speakerBadge.textContent = turnLabel;
       this.dom.speakerBadge.className = `classroom-speaker-badge speaker-${speaker.toLowerCase()}`;
     }
     if (this.dom.qType) {
       this.dom.qType.textContent = q.question_type ? `(${q.question_type})` : "";
     }
 
-    // 3. 문장 텍스트 디스플레이 업데이트
+    // 3. 문장 텍스트 디스플레이 업데이트 (디폴트: 약형드랩 텍스트 먼저 표시)
     this.updateSentenceDisplay();
 
-    // 4. 우리말 해석
-    if (this.dom.koreanTrans) {
-      this.dom.koreanTrans.textContent = s.korean_translation || "(우리말 해석이 등록되지 않았습니다)";
-      this.dom.koreanTrans.style.display = this.dom.chkKoreanTrans?.checked ? "block" : "none";
-    }
+    // 4. 우리말 해석 뷰 업데이트
+    this.updateTranslationDisplay();
 
     // 5. 상단 라벨
     const projTitleClean = (this.classroomData.project_title || "듣기").replace(/\s+/g, "_");
@@ -523,20 +567,69 @@ class ListeningClassroomController {
     await this.fetchAndRenderWave(audioUrl);
   }
 
-  /** 문장 텍스트 표시 (일반 vs FELS 약형드랩 퀴즈) */
+  /** 문장 텍스트 표시 (약형드랩 모드 vs Script 원문 모드) */
   updateSentenceDisplay() {
     const q = this.classroomData?.questions[this.currentQIndex];
     const s = q?.sentences?.[this.currentSIndex];
     if (!s || !this.dom.sentenceText) return;
 
-    const isFels = this.dom.chkFelsBlank?.checked;
-    if (isFels && s.fels_blank_text) {
-      // [  ] 빈칸을 눈에 띄는 노란색 밑줄 박스로 래핑
-      const formatted = this.escapeHtml(s.fels_blank_text)
-        .replace(/\[\s*\]/g, `<span class="fels-blank-slot" title="약형/기능어 딕테이션 빈칸">[ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ]</span>`);
-      this.dom.sentenceText.innerHTML = formatted;
+    const speaker = (s.speaker || "M").toUpperCase();
+    const turnLabel = s.speaker_turn || `${speaker}1`;
+
+    if (this.textMode === "fels") {
+      // 🎯 약형드랩 모드 (디폴트): [ ] 클릭 시 해당 빈칸 정답 보였다/안보였다 토글
+      this.dom.btnToggleMode?.classList.add("active-fels");
+      this.dom.btnToggleMode?.classList.remove("active-script");
+      if (this.dom.txtModeIcon) this.dom.txtModeIcon.textContent = "🎯";
+      if (this.dom.txtModeLabel) this.dom.txtModeLabel.textContent = "약형드랩 모드";
+
+      const sourceText = s.fels_answer_text || s.fels_blank_text || s.clean_text || "";
+      let slotCounter = 0;
+
+      // [단어] 또는 [   ] 형태 파싱
+      const formatted = sourceText.replace(/\[([^\]]*)\]/g, (match, word) => {
+        const slotIdx = slotCounter++;
+        const isRevealed = this.revealedSlots.has(slotIdx);
+        const ansWord = (word && word.trim()) ? word.trim() : (s.clean_text ? "word" : "");
+        const safeAns = this.escapeHtml(ansWord);
+
+        if (isRevealed) {
+          return `<span class="fels-blank-slot revealed" data-slot-index="${slotIdx}" data-answer="${safeAns}" title="클릭하여 빈칸으로 숨기기">[ ${safeAns} ]</span>`;
+        } else {
+          return `<span class="fels-blank-slot" data-slot-index="${slotIdx}" data-answer="${safeAns}" title="클릭하여 정답 보기">[ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ]</span>`;
+        }
+      });
+
+      this.dom.sentenceText.innerHTML = `<span style="color: #60a5fa; font-weight: 800; margin-right: 8px;">${turnLabel}:</span> ${formatted}`;
     } else {
-      this.dom.sentenceText.textContent = s.raw_text || s.clean_text || "";
+      // 📜 Script 원문 모드
+      this.dom.btnToggleMode?.classList.remove("active-fels");
+      this.dom.btnToggleMode?.classList.add("active-script");
+      if (this.dom.txtModeIcon) this.dom.txtModeIcon.textContent = "📜";
+      if (this.dom.txtModeLabel) this.dom.txtModeLabel.textContent = "Script 모드";
+
+      const cleanText = s.clean_text || s.raw_text || "";
+      this.dom.sentenceText.innerHTML = `<span style="color: #60a5fa; font-weight: 800; margin-right: 8px;">${turnLabel}:</span> ${this.escapeHtml(cleanText)}`;
+    }
+  }
+
+  /** 우리말 해석 뷰 업데이트 */
+  updateTranslationDisplay() {
+    const q = this.classroomData?.questions[this.currentQIndex];
+    const s = q?.sentences?.[this.currentSIndex];
+
+    if (this.dom.koreanTrans) {
+      this.dom.koreanTrans.style.display = this.showTrans ? "block" : "none";
+      const trans = (s?.korean_translation || "").trim();
+      this.dom.koreanTrans.textContent = trans || "우리말 해석을 준비 중입니다.";
+    }
+
+    if (this.showTrans) {
+      this.dom.btnToggleTrans?.classList.add("active");
+      if (this.dom.txtTransLabel) this.dom.txtTransLabel.textContent = "우리말 해석 숨기기";
+    } else {
+      this.dom.btnToggleTrans?.classList.remove("active");
+      if (this.dom.txtTransLabel) this.dom.txtTransLabel.textContent = "우리말 해석 보기";
     }
   }
 

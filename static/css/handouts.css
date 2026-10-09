@@ -1377,11 +1377,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  min-width: 44px;
   height: 32px;
-  border-radius: 50%;
-  font-weight: 900;
-  font-size: 1.05rem;
+  padding: 0 10px;
+  border-radius: 16px;
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
 }
 
 .classroom-speaker-badge.speaker-m {
@@ -1406,22 +1408,71 @@
 .classroom-text-toggles {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
-.classroom-toggle-chk {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.88rem;
+/* 대형 고가시성 모드 전환 및 해석 토글 버튼 */
+.btn-classroom-toggle-mode,
+.btn-classroom-toggle-trans {
+  padding: 8px 16px;
+  font-size: 0.92rem;
   font-weight: 700;
-  color: #cbd5e1;
+  border-radius: 8px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  letter-spacing: -0.2px;
 }
 
-.classroom-toggle-chk input {
-  cursor: pointer;
-  accent-color: #8b5cf6;
+/* 약형드랩(기본 활성) 모드 버튼 */
+.btn-classroom-toggle-mode.active-fels {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #ffffff;
+  border: 1px solid #34d399;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+}
+
+.btn-classroom-toggle-mode.active-fels:hover {
+  background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  transform: translateY(-1px);
+}
+
+/* Script(원문) 모드 버튼 */
+.btn-classroom-toggle-mode.active-script {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  color: #ffffff;
+  border: 1px solid #60a5fa;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
+}
+
+.btn-classroom-toggle-mode.active-script:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  transform: translateY(-1px);
+}
+
+/* 해석 토글 버튼 기본(숨김 상태) */
+.btn-classroom-toggle-trans {
+  background: rgba(30, 41, 59, 0.9);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.btn-classroom-toggle-trans:hover {
+  background: rgba(51, 65, 85, 0.95);
+  color: #f1f5f9;
+  border-color: #64748b;
+  transform: translateY(-1px);
+}
+
+/* 해석 토글 버튼 활성(노출 상태) */
+.btn-classroom-toggle-trans.active {
+  background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
+  color: #ffffff;
+  border: 1px solid #7dd3fc;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
 }
 
 .classroom-sentence-text {
@@ -1432,6 +1483,37 @@
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
   word-break: keep-all;
   letter-spacing: -0.3px;
+}
+
+/* FELS 클릭 정답 토글 빈칸 슬롯 */
+.fels-blank-slot {
+  display: inline-block;
+  background: rgba(254, 240, 138, 0.14);
+  color: #fef08a;
+  border: 1.5px dashed #facc15;
+  border-radius: 6px;
+  padding: 1px 8px;
+  margin: 0 3px;
+  cursor: pointer;
+  font-weight: 700;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-shadow: 0 0 4px rgba(250, 204, 21, 0.3);
+}
+
+.fels-blank-slot:hover {
+  background: rgba(254, 240, 138, 0.28);
+  border-color: #fde047;
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+}
+
+.fels-blank-slot.revealed {
+  background: rgba(0, 255, 204, 0.18);
+  color: #00ffcc;
+  border: 1.5px solid #00ffcc;
+  box-shadow: 0 0 10px rgba(0, 255, 204, 0.4);
+  text-shadow: 0 0 6px rgba(0, 255, 204, 0.6);
 }
 
 .classroom-korean-trans {

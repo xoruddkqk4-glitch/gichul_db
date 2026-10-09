@@ -2830,6 +2830,28 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile gichul/routers/handouts.py gichul/tts_service.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
   - `pytest -q tests/test_listening_handout.py`: 신규 수업 데이터 및 문장 오디오 API 포함 7개 단위 테스트 100% 통과 (0건 실패).
 
+### [2026-10-09 21:39] 업데이트 이력 (Commit ID: b2464080)
+- **수정 내용**:
+  - **1) 화자별 발화 순번 표시 기능 구축 (`W1`, `M1`, `W2`, `M2`...) (`gichul/routers/handouts.py`, `static/js/listening-classroom.js`, `static/css/handouts.css`)**:
+    - **발화 턴 누적 카운팅**: 대화 및 담화문에서 화자별 발화 순번을 누적 카운트(`W1`, `M1`, `W2`...)하여 약형드랩과 동일하게 숫자로 표시.
+    - **UI 배지 및 문장 텍스트 동기화**: 상단 원형 배지(`min-width: 44px; border-radius: 16px;`)에 `W1`, `M1`을 선명하게 표출하고, 문장 앞단에도 `W1: Travis, I emailed you...` 형태로 화자 순번 적용.
+  - **2) 약형드랩 텍스트 우선(디폴트) 표시 (`static/js/listening-classroom.js`)**:
+    - 수업 모달 실행 및 문장 이동 시 영어 원문 대신 **약형드랩(FELS 빈칸 모드) 텍스트를 기본(디폴트)**으로 먼저 표시하여 딕테이션 훈련 효과 극대화.
+  - **3) 전자칠판 터치 친화적 대형 고가시성 토글 버튼 2종 개편 (`templates/index.html`, `static/css/handouts.css`)**:
+    - 기존의 작은 체크박스를 전면 제거하고, 가시성을 극대화한 대형 버튼 2종으로 전면 개편.
+    - **모드 전환 버튼 (`#btnToggleClassroomMode`, 단축키 `S`)**: `🎯 약형드랩 모드` (에메랄드 네온) ↔ `📜 Script 모드` (로열 블루 네온) 원클릭 상호 전환.
+    - **우리말 해석 토글 버튼 (`#btnToggleClassroomTrans`, 단축키 `T`)**: `📘 우리말 해석 보기` ↔ `📘 우리말 해석 숨기기` (스카이블루 네온) 전환.
+  - **4) 우리말 해석 누락 시 AI 자동 해석 생성 연동 (`gichul/routers/handouts.py`)**:
+    - DB에 우리말 해석이 누락된 문항에 대해 `translate_listening_script()`를 자동 호출하여 AI 번역 텍스트를 생성하고, 각 문장별로 1:1 분할 매핑하여 제공.
+  - **5) 약형드랩 `[ ]` 클릭 시 해당 정답 보였다/안보였다 인터랙티브 토글 (`static/js/listening-classroom.js`, `static/css/handouts.css`)**:
+    - 약형드랩 모드에서 노란색 점선 빈칸 `[       ]` 클릭 시, 해당 빈칸 자리에 정답 단어(형광 민트 하이라이트 `[ would ]`)가 즉시 나타나고 다시 클릭하면 빈칸으로 숨겨지는 개별 슬롯 토글 엔진 구현.
+    - 문장 이동 시 빈칸 공개 상태 자동 리셋.
+- **검증 결과**:
+  - `node -c static/js/listening-classroom.js static/js/handout-listening.js`: 자바스크립트 문법 검사 통과 (0건 오류).
+  - `python -m py_compile gichul/routers/handouts.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
+  - `pytest -q tests/test_listening_handout.py`: 단위 테스트 7개 100% 통과 (7.92s, 0건 실패).
+
+
 
 
 
