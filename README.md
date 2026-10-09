@@ -2851,6 +2851,23 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile gichul/routers/handouts.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
   - `pytest -q tests/test_listening_handout.py`: 단위 테스트 7개 100% 통과 (7.92s, 0건 실패).
 
+### [2026-10-09 21:46] 업데이트 이력 (Commit ID: 643ce00f)
+- **수정 내용**:
+  - **1) 구간 선택 시 '재생' 버튼의 '선택 구간 재생' 모드 자동 전환 (`templates/index.html`, `static/css/handouts.css`, `static/js/listening-classroom.js`)**:
+    - 마우스 드래그로 오디오 파형 창의 특정 구간을 선택하면, 하단의 '재생' 버튼이 즉시 에메랄드/민트 그라디언트와 펄스 글로우 애니메이션이 적용된 **`🔁 선택 구간 재생`** 모드로 자동 전환.
+    - 구간 재생 중에는 `⏸ 일시정지` 상태로 전환되며, 일시정지 후 다시 클릭 시 구간 반복 재생 재개.
+    - `✕ 구간 선택 해제`를 클릭하거나 다음/이전 문장으로 이동 시 기본 `▶ 재생` 버튼으로 자동 복귀.
+  - **2) 별도의 '선택 구간 반복' 버튼 삭제 및 조작 동선 간소화 (`templates/index.html`, `static/js/listening-classroom.js`)**:
+    - 기존의 중복되던 `#btnClassroomLoopRegion` 버튼을 마크업 및 자바스크립트 이벤트 바인딩에서 완전히 삭제.
+    - 하단 컨트롤 바에 '반복 횟수(1회/2회/3회/5회/무한)' 셀렉트 박스와 반복 상태 배지만 깔끔하게 배치하여 수업 진행 시 조작 직관성 향상.
+  - **3) 선택 구간 반복 시 각 반복 루프 사이에 0.5초 무음(Silent) 간격 삽입 (`static/js/listening-classroom.js`)**:
+    - 구간 반복 재생 중 선택 구간의 끝(`endTime`)에 도달했을 때, 즉시 오디오를 `pause()`하고 **0.5초(500ms) 동안 무음 대기**한 후 다음 반복 루프(시작점)를 재생하도록 로직 고도화.
+    - 0.5초 무음 대기 중에는 상태 배지에 `반복 X/Y (0.5초 대기)`로 실시간 안내되며, 대기 중에도 일시정지 및 문장 탐색이 즉각 반응하도록 안전 타이머(`loopWaitTimeout`) 및 플래그(`isLoopWaiting`) 연동.
+- **검증 결과**:
+  - `node -c static/js/listening-classroom.js static/js/handout-listening.js`: 자바스크립트 문법 검사 통과 (0건 오류).
+  - `pytest tests/test_listening_handout.py`: 7개 단위 테스트 100% 통과 (6.25s, 0건 실패).
+
+
 
 
 

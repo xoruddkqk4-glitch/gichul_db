@@ -3022,14 +3022,11 @@
           </button>
         </div>
 
-        <!-- 중앙: 구간 반복 (A-B Looper) 컨트롤 -->
+        <!-- 중앙: 구간 선택 시 반복 설정 및 상태 -->
         <div class="classroom-loop-actions">
-          <button type="button" class="btn-classroom-loop" id="btnClassroomLoopRegion" title="마우스로 드래그하여 선택한 구간을 반복 재생합니다 (단축키: R)">
-            <span>🔁 선택 구간 반복</span>
-          </button>
-          <div class="loop-count-wrap">
-            <label for="selectClassroomLoopCount" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">횟수:</label>
-            <select id="selectClassroomLoopCount" class="classroom-select-sm" title="선택 구간 반복 횟수">
+          <div class="loop-count-wrap" title="선택 구간 재생 시 반복할 횟수">
+            <label for="selectClassroomLoopCount" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">반복 횟수:</label>
+            <select id="selectClassroomLoopCount" class="classroom-select-sm" title="선택 구간 반복 횟수 (반복 사이에 0.5초 무음 간격)">
               <option value="1">1회</option>
               <option value="2">2회</option>
               <option value="3" selected>3회</option>
@@ -3038,8 +3035,8 @@
             </select>
           </div>
           <span class="classroom-loop-badge" id="classroomLoopBadge" style="display: none;">반복 0/3</span>
-          <button type="button" class="btn-classroom-clear-region" id="btnClassroomClearRegion" style="display: none;" title="구간 선택 해제">
-            ✕ 선택 해제
+          <button type="button" class="btn-classroom-clear-region" id="btnClassroomClearRegion" style="display: none;" title="선택 구간 해제 (기본 전체 재생으로 복귀)">
+            ✕ 구간 선택 해제
           </button>
         </div>
 

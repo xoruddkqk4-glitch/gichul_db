@@ -30,6 +30,8 @@ class ListeningClassroomController {
     this.isDragging = false;
     this.dragStartX = 0;
     this.isLoopMode = false;
+    this.isLoopWaiting = false; // 반복 사이 0.5초 무음 대기 중 여부
+    this.loopWaitTimeout = null;
     this.currentLoopCount = 0;
     this.targetLoopCount = 3;
 
@@ -91,7 +93,6 @@ class ListeningClassroomController {
       playIcon: document.getElementById("classroomPlayIcon"),
       playText: document.getElementById("classroomPlayText"),
       btnNextSentence: document.getElementById("btnClassroomNextSentence"),
-      btnLoopRegion: document.getElementById("btnClassroomLoopRegion"),
       selectLoopCount: document.getElementById("selectClassroomLoopCount"),
       loopBadge: document.getElementById("classroomLoopBadge"),
       btnClearRegion: document.getElementById("btnClassroomClearRegion"),
@@ -154,15 +155,14 @@ class ListeningClassroomController {
       }
     });
 
-    // 재생 / 일시정지
+    // 재생 / 일시정지 (구간 선택 시 자동으로 '선택 구간 재생'으로 동작)
     this.dom.btnPlayPause?.addEventListener("click", () => this.togglePlayPause());
 
     // 이전 / 다음 문장
     this.dom.btnPrevSentence?.addEventListener("click", () => this.prevSentence());
     this.dom.btnNextSentence?.addEventListener("click", () => this.nextSentence());
 
-    // 구간 반복 재생 (A-B Looper)
-    this.dom.btnLoopRegion?.addEventListener("click", () => this.startRegionLoop());
+    // 구간 해제 버튼
     this.dom.btnClearRegion?.addEventListener("click", () => this.clearSelectedRegion());
     this.dom.selectLoopCount?.addEventListener("change", (e) => {
       this.targetLoopCount = parseInt(e.target.value, 10) || 3;
@@ -188,7 +188,7 @@ class ListeningClassroomController {
     });
 
     this.audioElement.addEventListener("pause", () => {
-      if (!this.isLoopMode) {
+      if (!this.isLoopWaiting) {
         this.setPlayingState(false);
       }
     });
@@ -315,10 +315,10 @@ class ListeningClassroomController {
       } else {
         // 드래그 확정: 최소 0.2초 이상
         if (this.selectedRegion && (this.selectedRegion.endTime - this.selectedRegion.startTime >= 0.2)) {
-          this.dom.btnClearRegion.style.display = "inline-flex";
-          // 시각적 강조
-          this.dom.btnLoopRegion?.classList.add("pulse-highlight");
-          setTimeout(() => this.dom.btnLoopRegion?.classList.remove("pulse-highlight"), 1000);
+          if (this.dom.btnClearRegion) {
+            this.dom.btnClearRegion.style.display = "inline-flex";
+          }
+          this.updatePlayButtonUi();
         } else {
           this.clearSelectedRegion();
         }
@@ -357,6 +357,7 @@ class ListeningClassroomController {
       this.dom.btnClearRegion.style.display = "none";
     }
     this.stopRegionLoop();
+    this.updatePlayButtonUi();
   }
 
   /** 수업 모달 열기 */
@@ -834,12 +835,16 @@ class ListeningClassroomController {
     this.updateTimecode(this.audioElement.currentTime, duration);
   }
 
-  /** 재생 / 일시정지 토글 */
+  /** 재생 / 일시정지 토글 (구간 선택 시 자동으로 '선택 구간 재생' 실행) */
   togglePlayPause() {
-    if (this.isPlaying) {
+    if (this.isPlaying || this.isLoopWaiting) {
       this.pauseAudio();
     } else {
-      this.playAudio();
+      if (this.selectedRegion) {
+        this.startRegionLoop();
+      } else {
+        this.playAudio();
+      }
     }
   }
 
@@ -850,11 +855,21 @@ class ListeningClassroomController {
   }
 
   pauseAudio() {
+    if (this.loopWaitTimeout) {
+      clearTimeout(this.loopWaitTimeout);
+      this.loopWaitTimeout = null;
+    }
+    this.isLoopWaiting = false;
     this.audioElement.pause();
     this.setPlayingState(false);
   }
 
   stopAudio() {
+    if (this.loopWaitTimeout) {
+      clearTimeout(this.loopWaitTimeout);
+      this.loopWaitTimeout = null;
+    }
+    this.isLoopWaiting = false;
     try {
       this.audioElement.pause();
       this.audioElement.currentTime = 0;
@@ -870,17 +885,44 @@ class ListeningClassroomController {
 
   setPlayingState(playing) {
     this.isPlaying = playing;
-    if (this.dom.playIcon) {
-      this.dom.playIcon.textContent = playing ? "⏸" : "▶";
-    }
-    if (this.dom.playText) {
-      this.dom.playText.textContent = playing ? "일시정지" : "재생";
-    }
-    if (this.dom.btnPlayPause) {
-      if (playing) {
+    this.updatePlayButtonUi();
+  }
+
+  /** 재생 버튼 UI 동적 전환
+   * - 구간 선택 시: 정지 상태면 '🔁 선택 구간 재생' (.region-mode), 재생/대기 중이면 '⏸ 일시정지'
+   * - 구간 미선택 시: 정지 상태면 '▶ 재생', 재생 중이면 '⏸ 일시정지'
+   */
+  updatePlayButtonUi() {
+    if (!this.dom.btnPlayPause) return;
+
+    const isRunning = this.isPlaying || this.isLoopWaiting;
+    const hasRegion = !!this.selectedRegion;
+
+    if (hasRegion) {
+      this.dom.btnPlayPause.classList.add("region-mode");
+      if (isRunning) {
         this.dom.btnPlayPause.classList.add("playing");
+        if (this.dom.playIcon) this.dom.playIcon.textContent = "⏸";
+        if (this.dom.playText) this.dom.playText.textContent = "일시정지";
+        this.dom.btnPlayPause.title = "일시정지 (단축키: Space)";
       } else {
         this.dom.btnPlayPause.classList.remove("playing");
+        if (this.dom.playIcon) this.dom.playIcon.textContent = "🔁";
+        if (this.dom.playText) this.dom.playText.textContent = "선택 구간 재생";
+        this.dom.btnPlayPause.title = "선택 구간 반복 재생 (단축키: Space 또는 R)";
+      }
+    } else {
+      this.dom.btnPlayPause.classList.remove("region-mode");
+      if (isRunning) {
+        this.dom.btnPlayPause.classList.add("playing");
+        if (this.dom.playIcon) this.dom.playIcon.textContent = "⏸";
+        if (this.dom.playText) this.dom.playText.textContent = "일시정지";
+        this.dom.btnPlayPause.title = "일시정지 (단축키: Space)";
+      } else {
+        this.dom.btnPlayPause.classList.remove("playing");
+        if (this.dom.playIcon) this.dom.playIcon.textContent = "▶";
+        if (this.dom.playText) this.dom.playText.textContent = "재생";
+        this.dom.btnPlayPause.title = "재생 / 일시정지 (단축키: Space)";
       }
     }
   }
@@ -897,8 +939,8 @@ class ListeningClassroomController {
       const curTime = this.audioElement.currentTime;
       const duration = this.audioDuration || this.audioElement.duration || 1;
 
-      // 1. A-B Looper 구간 반복 검사
-      if (this.isLoopMode && this.selectedRegion) {
+      // 1. A-B Looper 구간 반복 검사 (0.5초 무음 대기 중에는 검사 건너뜀)
+      if (this.isLoopMode && this.selectedRegion && !this.isLoopWaiting) {
         if (curTime >= this.selectedRegion.endTime || curTime < this.selectedRegion.startTime - 0.1) {
           this.handleLoopStep();
           this.animFrameId = requestAnimationFrame(step);
@@ -922,41 +964,45 @@ class ListeningClassroomController {
   /** A-B Looper 구간 반복 실행 */
   startRegionLoop() {
     if (!this.selectedRegion) {
-      // 선택 영역이 없는 경우 사용자 안내
       alert("먼저 마우스로 파형 창의 원하는 구간을 좌우로 드래그하여 선택해주세요.");
       return;
     }
+
+    if (this.loopWaitTimeout) {
+      clearTimeout(this.loopWaitTimeout);
+      this.loopWaitTimeout = null;
+    }
+    this.isLoopWaiting = false;
 
     this.isLoopMode = true;
     this.currentLoopCount = 1;
     this.targetLoopCount = parseInt(this.dom.selectLoopCount?.value || "3", 10);
 
+    const loopLabel = this.targetLoopCount >= 999 ? "∞" : this.targetLoopCount;
     if (this.dom.loopBadge) {
       this.dom.loopBadge.style.display = "inline-flex";
-      this.dom.loopBadge.textContent = `반복 1/${this.targetLoopCount >= 999 ? "∞" : this.targetLoopCount}`;
+      this.dom.loopBadge.textContent = `반복 1/${loopLabel}`;
     }
-    this.dom.btnLoopRegion?.classList.add("loop-active");
 
     // 구간 시작점으로 이동 후 재생
     this.audioElement.currentTime = this.selectedRegion.startTime;
     this.playAudio();
   }
 
+  /** 선택 구간 반복 스텝 (반복 사이에 0.5초 무음 간격 적용) */
   handleLoopStep() {
-    if (!this.isLoopMode || !this.selectedRegion) return;
+    if (!this.isLoopMode || !this.selectedRegion || this.isLoopWaiting) return;
 
-    this.currentLoopCount++;
-    if (this.currentLoopCount <= this.targetLoopCount) {
-      // 다음 반복 재생
-      if (this.dom.loopBadge) {
-        this.dom.loopBadge.textContent = `반복 ${this.currentLoopCount}/${this.targetLoopCount >= 999 ? "∞" : this.targetLoopCount}`;
-      }
-      this.audioElement.currentTime = this.selectedRegion.startTime;
-      this.playAudio();
-    } else {
+    // 1. 즉시 일시정지하여 무음(Silent) 상태 돌입
+    this.audioElement.pause();
+    this.isLoopWaiting = true;
+
+    // 2. 반복 횟수 검사
+    if (this.targetLoopCount < 999 && this.currentLoopCount >= this.targetLoopCount) {
       // 목표 반복 횟수 완료
+      this.isLoopWaiting = false;
       this.stopRegionLoop();
-      this.pauseAudio();
+      this.setPlayingState(false);
       if (this.dom.loopBadge) {
         this.dom.loopBadge.style.display = "inline-flex";
         this.dom.loopBadge.textContent = `반복 완료 (${this.targetLoopCount}회)`;
@@ -966,15 +1012,50 @@ class ListeningClassroomController {
           }
         }, 3000);
       }
+      return;
     }
+
+    // 3. 아직 반복 횟수 남음 -> 카운트 증가 & 0.5초 무음 대기 안내
+    this.currentLoopCount++;
+    const loopLabel = this.targetLoopCount >= 999 ? "∞" : this.targetLoopCount;
+    if (this.dom.loopBadge) {
+      this.dom.loopBadge.style.display = "inline-flex";
+      this.dom.loopBadge.textContent = `반복 ${this.currentLoopCount}/${loopLabel} (0.5초 대기)`;
+    }
+    this.updatePlayButtonUi();
+
+    // 4. 0.5초(500ms) 무음 타이머
+    if (this.loopWaitTimeout) {
+      clearTimeout(this.loopWaitTimeout);
+    }
+    this.loopWaitTimeout = setTimeout(() => {
+      this.loopWaitTimeout = null;
+      this.isLoopWaiting = false;
+
+      // 대기 도중 취소/정지되었는지 검사
+      if (!this.isLoopMode || !this.selectedRegion || !this.isOpen) return;
+
+      if (this.dom.loopBadge) {
+        this.dom.loopBadge.textContent = `반복 ${this.currentLoopCount}/${loopLabel}`;
+      }
+
+      this.audioElement.currentTime = this.selectedRegion.startTime;
+      this.playAudio();
+      this.setPlayingState(true);
+    }, 500);
   }
 
   stopRegionLoop() {
     this.isLoopMode = false;
-    this.dom.btnLoopRegion?.classList.remove("loop-active");
+    this.isLoopWaiting = false;
+    if (this.loopWaitTimeout) {
+      clearTimeout(this.loopWaitTimeout);
+      this.loopWaitTimeout = null;
+    }
     if (this.dom.loopBadge && this.dom.loopBadge.textContent.indexOf("완료") === -1) {
       this.dom.loopBadge.style.display = "none";
     }
+    this.updatePlayButtonUi();
   }
 
   /** 타임코드 포맷팅 (03:57.1 / 04:12.8) */

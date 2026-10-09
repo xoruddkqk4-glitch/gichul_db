@@ -1689,6 +1689,29 @@
   box-shadow: 0 6px 16px rgba(2, 132, 199, 0.5);
 }
 
+/* 구간 선택 시 자동으로 바뀌는 '선택 구간 재생' 모드 버튼 */
+.btn-classroom-play.region-mode {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  border: 1px solid #34d399;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.55);
+  color: #ffffff;
+  animation: pulseRegionPlay 2s infinite;
+}
+
+.btn-classroom-play.region-mode:hover {
+  background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.75);
+}
+
+@keyframes pulseRegionPlay {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 22px rgba(16, 185, 129, 0.85);
+  }
+}
+
 .classroom-loop-actions {
   display: flex;
   align-items: center;
