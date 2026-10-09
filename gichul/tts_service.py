@@ -31,6 +31,7 @@ import numpy as np
 import edge_tts
 from . import database as db
 from . import paths
+from .text_utils import normalize_bracket_id
 
 logger = logging.getLogger(__name__)
 
@@ -989,3 +990,89 @@ def create_listening_zip(exam_id: str) -> Dict[str, Any]:
         "zip_filename": zip_filename,
         "included_files_count": included_count
     }
+
+
+async def merge_listening_mp3s(passage_ids: List[str]) -> bytes:
+    """
+    선택된 듣기 문항들의 MP3 음원을 순서대로 로드(미생성 시 즉시 합성)하여,
+    문항 간 2.0초의 무음(Silence)을 삽입한 단일 통합 MP3 오디오 바이너리를 생성하여 반환.
+    """
+    if not passage_ids:
+        raise ValueError("통합할 듣기 문항이 지정되지 않았습니다.")
+
+    sample_rate = 24000
+    channels = 1
+    pause_sec = 2.0
+    silence_gap = b"\x00" * (int(sample_rate * pause_sec) * channels * 2)
+
+    merged_pcm = bytearray()
+    loop = asyncio.get_running_loop()
+
+    for idx, pid in enumerate(passage_ids):
+        clean_id = normalize_bracket_id(pid)
+        passage = db.get_passage(pid) or db.get_passage(clean_id)
+        if not passage:
+            logger.warning(f"[merge_listening_mp3s] 지문을 찾을 수 없음: {pid}")
+            continue
+
+        # MP3 파일 경로 확인
+        mp3_path = None
+        audio_url = passage.get("audio_file_path") or passage.get("audio_url")
+        if audio_url:
+            local_rel = audio_url.replace("/static/audio/", "")
+            cand = os.path.join(AUDIO_DIR, local_rel)
+            if os.path.exists(cand):
+                mp3_path = cand
+
+        if not mp3_path:
+            safe_id = sanitize_filename(passage["id"])
+            cand = os.path.join(AUDIO_DIR, f"{safe_id}.mp3")
+            if os.path.exists(cand):
+                mp3_path = cand
+
+        mp3_bytes = None
+        if mp3_path and os.path.exists(mp3_path):
+            with open(mp3_path, "rb") as f:
+                mp3_bytes = f.read()
+        else:
+            # 음원이 아직 생성되지 않은 경우 즉시 합성 진행
+            logger.info(f"[merge_listening_mp3s] 문항 {passage['id']} 음원 부재로 즉시 합성 진행")
+            try:
+                res = await generate_passage_audio(passage["id"])
+                safe_id = sanitize_filename(passage["id"])
+                cand = os.path.join(AUDIO_DIR, f"{safe_id}.mp3")
+                if os.path.exists(cand):
+                    with open(cand, "rb") as f:
+                        mp3_bytes = f.read()
+            except Exception as e:
+                logger.error(f"[merge_listening_mp3s] 문항 {passage['id']} 음성 생성 실패: {e}")
+                continue
+
+        if not mp3_bytes:
+            continue
+
+        # MP3 -> PCM 디코딩
+        try:
+            pcm_chunk = await loop.run_in_executor(None, mp3_to_pcm, mp3_bytes, sample_rate)
+            if pcm_chunk:
+                if len(merged_pcm) > 0:
+                    merged_pcm.extend(silence_gap)
+                merged_pcm.extend(pcm_chunk)
+        except Exception as e:
+            logger.error(f"[merge_listening_mp3s] PCM 디코딩 실패 ({passage['id']}): {e}")
+
+    if not merged_pcm:
+        raise RuntimeError("통합할 오디오 데이터를 생성하거나 로드할 수 없습니다.")
+
+    # 전체 통합 MP3 인코딩
+    encoded_mp3 = await loop.run_in_executor(
+        None,
+        encode_pcm_to_mp3,
+        bytes(merged_pcm),
+        sample_rate,
+        channels,
+        MP3_BITRATE_KBPS
+    )
+
+    return encoded_mp3
+

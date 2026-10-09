@@ -806,38 +806,45 @@
         </div>
       </div>
 
-      <!-- 상단 대형 모드 선택기 (지문 유인물 제작소 ↔ 문장 유인물 제작소) -->
+      <!-- 상단 대형 3대 모드 선택기 (독해 유인물 ↔ 문장 유인물 ↔ 듣기 유인물) -->
       <div class="handout-mode-selector-bar" id="handoutModeSelectorBar">
-        <button type="button" class="btn-handout-mode-selector active" id="tabHandoutPassage" data-tab="passage">
+        <button type="button" class="btn-handout-mode-selector active" id="tabHandoutPassage" data-tab="passage" title="독해 유인물 제작소">
           <span class="mode-icon">📄</span>
           <div class="mode-text-wrap">
-            <span class="mode-title">지문 유인물 제작소</span>
-            <span class="mode-desc">B4 단면 2문항 규격 (문제지 · 해설지 선택 다운로드)</span>
+            <span class="mode-title">독해 유인물</span>
+            <span class="mode-desc">B4 가로 2문항 규격 (문제지 · 해설지 선택 다운로드)</span>
           </div>
         </button>
-        <button type="button" class="btn-handout-mode-selector" id="tabHandoutSentence" data-tab="sentence">
+        <button type="button" class="btn-handout-mode-selector" id="tabHandoutSentence" data-tab="sentence" title="문장 유인물 제작소">
           <span class="mode-icon">📝</span>
           <div class="mode-text-wrap">
-            <span class="mode-title">문장 유인물 제작소</span>
-            <span class="mode-desc">A4 단면 구문 분석 훈련 (해설 불필요 · 단일 문제지 전용)</span>
+            <span class="mode-title">문장 유인물</span>
+            <span class="mode-desc">A4 세로 구문 분석 훈련 (해설 불필요 · 단일 문제지 전용)</span>
+          </div>
+        </button>
+        <button type="button" class="btn-handout-mode-selector" id="tabHandoutListening" data-tab="listening" title="듣기 유인물 제작소">
+          <span class="mode-icon">🎧</span>
+          <div class="mode-text-wrap">
+            <span class="mode-title">듣기 유인물</span>
+            <span class="mode-desc">B4 세로 2x3 테이블 규격 (문제지 · 해설지 · 통합 MP3)</span>
           </div>
         </button>
       </div>
 
-      <!-- [지문 전용] 프로젝트 선택 및 관리 바 -->
+      <!-- [독해 전용] 프로젝트 선택 및 관리 바 -->
       <div class="handout-project-bar" id="handoutPassageProjectBar">
         <div class="handout-project-bar-left">
-          <span class="project-bar-label">📁 지문 프로젝트:</span>
-          <select id="selectHandoutPassageProject" class="handout-project-main-select" title="작업할 지문 유인물 프로젝트를 선택하세요">
+          <span class="project-bar-label">📁 독해 프로젝트:</span>
+          <select id="selectHandoutPassageProject" class="handout-project-main-select" title="작업할 독해 유인물 프로젝트를 선택하세요">
             <!-- JS 동적 렌더링 -->
           </select>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreatePassageProject" title="새로운 지문 유인물 프로젝트를 생성합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreatePassageProject" title="새로운 독해 유인물 프로젝트를 생성합니다">
             ➕ 새 프로젝트
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenamePassageProject" title="현재 지문 프로젝트의 이름을 변경합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenamePassageProject" title="현재 독해 프로젝트의 이름을 변경합니다">
             ✏️ 이름 변경
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeletePassageProject" style="color: #ef4444;" title="현재 지문 프로젝트를 삭제합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeletePassageProject" style="color: #ef4444;" title="현재 독해 프로젝트를 삭제합니다">
             🗑️ 프로젝트 삭제
           </button>
         </div>
@@ -865,6 +872,28 @@
         </div>
         <div class="handout-project-bar-right">
           <span class="project-meta-info" id="txtSentenceProjectMetaInfo">프로젝트 생성일: -</span>
+        </div>
+      </div>
+
+      <!-- [듣기 전용] 프로젝트 선택 및 관리 바 -->
+      <div class="handout-project-bar" id="handoutListeningProjectBar" style="display: none;">
+        <div class="handout-project-bar-left">
+          <span class="project-bar-label">📁 듣기 프로젝트:</span>
+          <select id="selectHandoutListeningProject" class="handout-project-main-select" title="작업할 듣기 유인물 프로젝트를 선택하세요">
+            <!-- JS 동적 렌더링 -->
+          </select>
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreateListeningProject" title="새로운 듣기 유인물 프로젝트를 생성합니다">
+            ➕ 새 프로젝트
+          </button>
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenameListeningProject" title="현재 듣기 프로젝트의 이름을 변경합니다">
+            ✏️ 이름 변경
+          </button>
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeleteListeningProject" style="color: #ef4444;" title="현재 듣기 프로젝트를 삭제합니다">
+            🗑️ 프로젝트 삭제
+          </button>
+        </div>
+        <div class="handout-project-bar-right">
+          <span class="project-meta-info" id="txtListeningProjectMetaInfo">프로젝트 생성일: -</span>
         </div>
       </div>
 
@@ -1074,6 +1103,92 @@
           </div>
         </aside>
       </div>
+
+      <!-- [듣기 유인물 뷰] 2열 레이아웃: 좌측 문항 목록 / 우측 서식 및 다운로드 설정 -->
+      <div class="handout-layout" id="handoutListeningLayout" style="display: none;">
+        <!-- 좌측: 선택 듣기 문항 목록 섹션 -->
+        <div class="handout-list-section">
+          <div class="handout-toolbar">
+            <div class="handout-toolbar-left">
+              <span>선택된 듣기 문항 목록</span>
+              <span class="badge" id="listeningCountBadge" style="margin-left: 6px; background: #ede9fe; color: #6d28d9; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">0문항</span>
+            </div>
+            <div class="handout-toolbar-actions">
+              <button type="button" class="btn-handout-tool" id="btnListeningRenumber1" title="모든 듣기 문항 번호를 1번부터 차례대로 다시 매깁니다">
+                🔢 1번부터 순차 재부여
+              </button>
+              <div style="display: inline-flex; align-items: center; gap: 4px;">
+                <input type="number" class="input-start-num" id="inputListeningStartNum" value="1" min="1" max="999" title="시작 번호">
+                <button type="button" class="btn-handout-tool" id="btnListeningRenumberN" title="지정한 시작 번호부터 차례대로 다시 매깁니다">
+                  번부터 부여
+                </button>
+              </div>
+              <span id="listeningGuidanceNotice" style="font-size: 0.8rem; color: #6d28d9; font-weight: 600; margin: 0 4px;">B4 세로 2문항/페이지</span>
+              <button type="button" class="btn-handout-tool" id="btnListeningClearAll" style="color: #ef4444;" title="모든 듣기 문항을 비웁니다">
+                🗑️ 전체 비우기
+              </button>
+            </div>
+          </div>
+
+          <!-- 동적 듣기 문항 카드 컨테이너 -->
+          <div class="handout-items-list" id="handoutListeningItemsList">
+            <!-- JS에서 동적으로 렌더링됩니다 -->
+          </div>
+        </div>
+
+        <!-- 우측: 듣기 유인물 서식 설정 및 다운로드 패널 -->
+        <aside class="handout-settings-panel">
+          <!-- 카드 1: 머리말 설정 -->
+          <div class="handout-panel-card">
+            <h3 class="panel-card-title">📝 머리말 서식 설정</h3>
+            <div class="form-group">
+              <label class="form-label" for="listeningHeaderLeft">왼쪽 상단 (과목명 등)</label>
+              <input type="text" class="form-input" id="listeningHeaderLeft" placeholder="예: 영어 듣기 실전 모의고사" maxlength="40">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="listeningHeaderCenter">가운데 상단 (학교/학원명)</label>
+              <input type="text" class="form-input" id="listeningHeaderCenter" placeholder="예: OO고등학교 1학기 듣기평가" maxlength="40">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="listeningHeaderRight">오른쪽 상단 (학생 정보)</label>
+              <input type="text" class="form-input" id="listeningHeaderRight" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="50">
+            </div>
+          </div>
+
+          <!-- 카드 2: 템플릿 규격 및 레이아웃 안내 -->
+          <div class="handout-panel-card">
+            <h3 class="panel-card-title">📐 B4 세로 2x3 테이블 규격</h3>
+            <div style="padding: 10px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px; font-size: 0.82rem; color: #581c87; line-height: 1.6;">
+              <strong>✔ B4 Portrait (257mm x 364mm)</strong> 규격<br>
+              <strong>✔ 한 페이지당 2문항</strong> 자동 배치 (2문항 블록)<br>
+              • <strong>문제지</strong>: 1열 문항 텍스트 | 2열 FELS 약형드랩 [  ] | 3열 [표현 정리] 5행 필기 표<br>
+              • <strong>해설지</strong>: 1열 문항 텍스트(정답) | 2열 우리말 해석 전문 | 3열 script 영문 대본
+            </div>
+          </div>
+
+          <!-- 카드 3: HWPX 및 통합 오디오 다운로드 액션 -->
+          <div class="handout-panel-card">
+            <h3 class="panel-card-title">📥 듣기 유인물 및 오디오 다운로드</h3>
+            <div class="download-actions-wrap">
+              <button type="button" class="btn-download-handout btn-primary" id="btnDownloadListeningQuestion" style="background: #7c3aed; border-color: #6d28d9;">
+                <span>📄 듣기 문제지 다운로드 (B4 세로 2x3)</span>
+              </button>
+              <button type="button" class="btn-download-handout btn-secondary" id="btnDownloadListeningExplanation">
+                <span>📘 듣기 해설지 다운로드 (B4 세로 2x3)</span>
+              </button>
+              <button type="button" class="btn-download-handout" id="btnDownloadListeningMergedAudio" style="background: #0284c7; color: #fff; border-color: #0369a1;">
+                <span>🎵 전체 통합 MP3 다운로드 (순서 결합)</span>
+              </button>
+              <button type="button" class="btn-download-handout btn-zip" id="btnDownloadListeningZip">
+                <span>📦 일괄 다운로드 (문제+해설+오디오 ZIP)</span>
+              </button>
+            </div>
+            <span class="form-help" style="text-align: center; display: block; line-height: 1.5; margin-top: 8px;">
+              * 통합 MP3: 유인물 문항 순서대로 음성(차임벨+8초무음)이 하나로 결합되어 다운로드됩니다.
+            </span>
+          </div>
+        </aside>
+      </div>
     </section>
 
   </div>
@@ -1089,14 +1204,19 @@
       <span class="cart-count-badge" id="cartCountBadge">0문항</span>
     </div>
     <div class="floating-handout-btn-group">
-      <button type="button" class="btn-open-handout-view btn-open-passage" id="btnOpenPassageHandoutView" title="지문 유인물 제작소 이동 (B4 2문항)">
-        <span>📄 지문 유인물</span>
+      <button type="button" class="btn-open-handout-view btn-open-passage" id="btnOpenPassageHandoutView" title="독해 유인물 제작소 이동 (B4 2문항)">
+        <span>📄 독해 유인물</span>
         <span class="floating-item-cnt" id="floatingPassageCount">0</span>
         <span class="arrow">&rarr;</span>
       </button>
       <button type="button" class="btn-open-handout-view btn-open-sentence" id="btnOpenSentenceHandoutView" title="문장 유인물 제작소 이동 (A4 구문분석)">
         <span>📝 문장 유인물</span>
         <span class="floating-item-cnt" id="floatingSentenceCount">0</span>
+        <span class="arrow">&rarr;</span>
+      </button>
+      <button type="button" class="btn-open-handout-view btn-open-listening" id="btnOpenListeningHandoutView" title="듣기 유인물 제작소 이동 (B4 세로 2x3)">
+        <span>🎧 듣기 유인물</span>
+        <span class="floating-item-cnt" id="floatingListeningCount">0</span>
         <span class="arrow">&rarr;</span>
       </button>
       <button type="button" class="btn-open-handout-view" id="btnOpenHandoutView" style="display: none;"></button>

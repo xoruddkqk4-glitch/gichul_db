@@ -20,6 +20,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from ..logging_config import get_logger
 from ..text_utils import extract_choices, extract_answer_num, clean_hwp_glitches
+from ..fels_engine import generate_fels_text, generate_fels_blank
 from ..paths import HANDOUT_TEMPLATES_DIR, CUSTOM_TEMPLATES_DIR
 
 logger = get_logger("gichul.hwpx_generator")
@@ -31,6 +32,8 @@ os.makedirs(CUSTOM_TEMPLATES_DIR, exist_ok=True)
 DEFAULT_QUESTION_TEMPLATE = "default_b4_question.hwpx"
 DEFAULT_EXPLANATION_TEMPLATE = "default_b4_explanation.hwpx"
 DEFAULT_SENTENCE_TEMPLATE = "default_a4_sentence.hwpx"
+DEFAULT_LISTENING_QUESTION_TEMPLATE = "listening_b4_question.hwpx"
+DEFAULT_LISTENING_EXPLANATION_TEMPLATE = "listening_b4_explanation.hwpx"
 
 # HWPX XML 네임스페이스
 NS_HP = "http://www.hancom.co.kr/hwpml/2011/paragraph"
@@ -93,6 +96,43 @@ def get_template_path(template_name: Optional[str] = None, is_explanation: bool 
     raise FileNotFoundError(f"HWPX 템플릿 파일을 찾을 수 없습니다: {default_name}")
 
 
+def get_listening_template_path(template_name: Optional[str] = None, is_explanation: bool = False) -> str:
+    """사용할 듣기 유인물 HWPX 템플릿의 절대 경로 반환"""
+    default_name = DEFAULT_LISTENING_EXPLANATION_TEMPLATE if is_explanation else DEFAULT_LISTENING_QUESTION_TEMPLATE
+
+    effective_name = template_name
+    if is_explanation:
+        if not effective_name or effective_name in (DEFAULT_LISTENING_QUESTION_TEMPLATE, "listening_b4-question.hwpx"):
+            effective_name = default_name
+    else:
+        if not effective_name or effective_name in (DEFAULT_LISTENING_EXPLANATION_TEMPLATE, "listening_b4-explanation.hwpx"):
+            effective_name = default_name
+
+    if effective_name:
+        bname = os.path.basename(effective_name)
+        custom_path = os.path.join(CUSTOM_TEMPLATES_DIR, bname)
+        if os.path.exists(custom_path):
+            return custom_path
+        builtin_path = os.path.join(HANDOUT_TEMPLATES_DIR, bname)
+        if os.path.exists(builtin_path):
+            return builtin_path
+        alt_bname = bname.replace("_", "-") if "_" in bname else bname.replace("-", "_")
+        alt_builtin = os.path.join(HANDOUT_TEMPLATES_DIR, alt_bname)
+        if os.path.exists(alt_builtin):
+            return alt_builtin
+
+    default_path = os.path.join(HANDOUT_TEMPLATES_DIR, default_name)
+    if os.path.exists(default_path):
+        return default_path
+
+    alt_name = default_name.replace("_", "-") if "_" in default_name else default_name.replace("-", "_")
+    alt_path = os.path.join(HANDOUT_TEMPLATES_DIR, alt_name)
+    if os.path.exists(alt_path):
+        return alt_path
+
+    raise FileNotFoundError(f"듣기 HWPX 템플릿 파일을 찾을 수 없습니다: {default_name}")
+
+
 def list_templates() -> List[Dict[str, Any]]:
     """등록된 템플릿 파일 목록 조회 (기본 내장 static/data/templates + 사용자 업로드 uploads/templates)"""
     templates = []
@@ -109,7 +149,11 @@ def list_templates() -> List[Dict[str, Any]]:
                     "filename": fname,
                     "name": "기본 B4 문제지 양식" if fname in (DEFAULT_QUESTION_TEMPLATE, "default_b4-question.hwpx") else (
                         "기본 B4 해설지 양식" if fname in (DEFAULT_EXPLANATION_TEMPLATE, "default_b4-explanation.hwpx") else (
-                            "기본 A4 문장 유인물 양식" if fname in (DEFAULT_SENTENCE_TEMPLATE, "default_a4-sentence.hwpx") else fname
+                            "기본 A4 문장 유인물 양식" if fname in (DEFAULT_SENTENCE_TEMPLATE, "default_a4-sentence.hwpx") else (
+                                "기본 B4 듣기 문제지 양식" if fname in (DEFAULT_LISTENING_QUESTION_TEMPLATE, "listening_b4-question.hwpx") else (
+                                    "기본 B4 듣기 해설지 양식" if fname in (DEFAULT_LISTENING_EXPLANATION_TEMPLATE, "listening_b4-explanation.hwpx") else fname
+                                )
+                            )
                         )
                     ),
                     "is_default": True,
@@ -1328,4 +1372,352 @@ def generate_sentence_handout(items: List[Dict[str, Any]], options: Optional[Dic
             zf_out.writestr(fname, fcontent)
 
     return out_buf.getvalue()
+
+
+# =========================================================================
+# 듣기 유인물 (B4 Portrait 2x3 테이블 규격) 엔진
+# =========================================================================
+
+def get_listening_cell(tbl: ET.Element, col: int, row: int) -> Optional[ET.Element]:
+    """테이블 내 특정 (colAddr, rowAddr) 위치의 tc 셀 반환"""
+    for tc in tbl.findall(f".//{{{NS_HP}}}tc"):
+        addr = tc.find(f"./{{{NS_HP}}}cellAddr")
+        if addr is not None and addr.attrib.get("colAddr") == str(col) and addr.attrib.get("rowAddr") == str(row):
+            return tc
+    return None
+
+
+def _prepare_listening_item_data(p: Dict[str, Any], custom_q_num: str = "1") -> Dict[str, Any]:
+    """듣기 문항 1개의 데이터 정제 (문항 텍스트, FELS 약형드랩, 우리말 해석, 영문 script, 정답)"""
+    q_title = p.get("question_title") or ""
+    # 문항 번호(예: 1., 1) 등) 제거
+    m_num = re.match(r"^\s*\d{1,2}\s*[\.\)]\s*(.*)$", q_title)
+    pure_title = m_num.group(1).strip() if m_num else q_title.strip()
+    if not pure_title:
+        pure_title = "대화를 듣고, 알맞은 것을 고르시오."
+
+    full_q_title = f"{custom_q_num}. {pure_title}"
+
+    # 선지 추출 (지문 passage_text 우선, 없으면 explanation_text에서 추출)
+    exp_text = p.get("explanation_text") or ""
+    choices = extract_choices(p.get("passage_text") or "")
+    if not choices:
+        choices = extract_choices(exp_text)
+
+    choices_lines = []
+    for c_idx in range(1, 6):
+        c_val = choices.get(c_idx, "").strip()
+        if c_val:
+            circ = CIRCLE_NUMS.get(c_idx, f"({c_idx})")
+            choices_lines.append(f"{circ} {c_val}")
+
+    q_text_block = full_q_title
+    if choices_lines:
+        q_text_block += "\n\n" + "\n".join(choices_lines)
+
+    # 대본(script) 및 FELS 약형드랩 생성
+    script_text = (p.get("script_text") or p.get("passage_text") or "").strip()
+    fels_text = p.get("fels_text") or ""
+    if not fels_text and script_text:
+        fels_text = generate_fels_text(script_text)
+
+    fels_blank = generate_fels_blank(
+        fels_text,
+        split_sentences_for_monologue=True,
+        title=pure_title,
+        question_type=p.get("question_type") or ""
+    )
+
+    # 우리말 해석 추출 (explanation_text의 [해석] 블록 정밀 추출)
+    kor_trans = ""
+    if exp_text:
+        m_trans = re.search(r"\[해석\]\s*\n+(.*?)(?=\n+\[(?:출제\s*의도|풀이|해설|Words|어휘)|$)", exp_text, re.DOTALL)
+        if m_trans:
+            kor_trans = m_trans.group(1).strip()
+        else:
+            lines = [l.strip() for l in exp_text.splitlines() if re.search(r"[가-힣]", l) and not l.startswith("[")]
+            kor_trans = "\n".join(lines[:10])
+
+    # 정답 추출
+    ans_num = extract_answer_num(p.get("answer_text") or "")
+    if not ans_num and exp_text:
+        m_ans = re.search(r"\[정답\]\s*([①-⑤\d]+)", exp_text)
+        if m_ans:
+            ans_num = extract_answer_num(m_ans.group(1))
+
+    circ_ans = CIRCLE_NUMS.get(ans_num) if (ans_num and 1 <= ans_num <= 5) else (p.get("answer_text") or "-")
+
+    return {
+        "id": p.get("id"),
+        "question_title": pure_title,
+        "question_type": p.get("question_type") or "",
+        "question_text": q_text_block,
+        "fels_blank": fels_blank,
+        "korean_translation": kor_trans,
+        "script_text": script_text,
+        "answer_display": circ_ans,
+    }
+
+
+def _set_listening_cell_paragraphs(
+    tc: Optional[ET.Element],
+    text: str,
+    char_pr_id: str = "33",
+    para_pr_id: str = "2"
+) -> None:
+    """tc 셀 내부 문단을 비우고 개행 기준 단락들을 주입"""
+    if tc is None:
+        return
+
+    sublist = tc.find(f"{{{NS_HP}}}subList")
+    container = sublist if sublist is not None else tc
+
+    # 기존 p 문단 모두 제거
+    for child in list(container.findall(f"{{{NS_HP}}}p")):
+        container.remove(child)
+
+    raw_lines = (text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    lines = [l.rstrip() for l in raw_lines]
+    if not lines or (len(lines) == 1 and not lines[0]):
+        lines = [""]
+
+    for line in lines:
+        p_elem = ET.SubElement(container, f"{{{NS_HP}}}p", {
+            "paraPrIDRef": para_pr_id,
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+            "merged": "0"
+        })
+        run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": char_pr_id})
+        t_elem = ET.SubElement(run_elem, f"{{{NS_HP}}}t")
+        t_elem.text = line
+
+
+def _apply_listening_header(
+    tbl0: Optional[ET.Element],
+    header_left: str,
+    header_center: str,
+    header_right: str
+) -> None:
+    """듣기 유인물 상단 머리말 1x3 표 (Table 0) 내용 반영"""
+    if tbl0 is None:
+        return
+    tc_left = get_listening_cell(tbl0, 0, 0)
+    tc_center = get_listening_cell(tbl0, 1, 0)
+    tc_right = get_listening_cell(tbl0, 2, 0)
+
+    if tc_left is not None:
+        _set_listening_cell_paragraphs(tc_left, header_left, char_pr_id="8", para_pr_id="2")
+    if tc_center is not None:
+        _set_listening_cell_paragraphs(tc_center, header_center, char_pr_id="9", para_pr_id="13")
+    if tc_right is not None:
+        _set_listening_cell_paragraphs(tc_right, header_right, char_pr_id="28", para_pr_id="33")
+
+
+def generate_listening_question_handout(
+    items: List[Dict[str, Any]],
+    options: Dict[str, Any]
+) -> bytes:
+    """
+    B4 세로(Portrait) 규격 듣기 문제 유인물 HWPX 생성
+    - 한 페이지당 2문항 (2x3 테이블 구조)
+    - 1열: 문항 텍스트 (발문 + 선지)
+    - 2열: FELS 약형드랩 [  ]
+    - 3열: [표현 정리] 5행 빈칸 표 (템플릿 서식 100% 보존)
+    """
+    template_path = get_listening_template_path(options.get("template_name"), is_explanation=False)
+    file_map = {}
+    with zipfile.ZipFile(template_path, "r") as zf:
+        for fname in zf.namelist():
+            file_map[fname] = zf.read(fname)
+
+    header_left = (options.get("header_left") or "").strip()
+    header_center = (options.get("header_center") or "").strip()
+    header_right = (options.get("header_right") or "").strip()
+
+    sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
+
+    # 1. 머리말 Table 0 주입
+    tbl0 = sec0_root.find(f".//{{{NS_HP}}}tbl[@id='1315644029']")
+    _apply_listening_header(tbl0, header_left, header_center, header_right)
+
+    # 2. 본문 Table 1 찾기
+    tbl1 = sec0_root.find(f".//{{{NS_HP}}}tbl[@id='1216160613']")
+    if tbl1 is None:
+        raise ValueError("듣기 문제 유인물 템플릿에서 메인 표(id=1216160613)를 찾을 수 없습니다.")
+
+    # 3. 페이지당 2문항 배치
+    page_count = max(1, math.ceil(len(items) / 2))
+
+    for p_idx in range(page_count):
+        page_items = items[p_idx * 2 : p_idx * 2 + 2]
+        item1 = page_items[0] if len(page_items) >= 1 else None
+        item2 = page_items[1] if len(page_items) >= 2 else None
+
+        if p_idx == 0:
+            cur_tbl = tbl1
+        else:
+            cur_tbl = copy.deepcopy(tbl1)
+            cur_tbl.set("id", str(1216160613 + p_idx * 1000))
+            p_elem = ET.Element(f"{{{NS_HP}}}p", {
+                "id": str(2000000000 + p_idx * 10),
+                "paraPrIDRef": "0",
+                "styleIDRef": "0",
+                "pageBreak": "1",
+                "columnBreak": "0",
+                "merged": "0"
+            })
+            run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": "0"})
+            run_elem.append(cur_tbl)
+            sec0_root.append(p_elem)
+
+        # Question 1 (Row 0)
+        tc_q1_text = get_listening_cell(cur_tbl, 0, 0)
+        tc_q1_fels = get_listening_cell(cur_tbl, 1, 0)
+        if item1:
+            q_num_1 = str(item1.get("custom_q_num") or (p_idx * 2 + 1)).strip()
+            data1 = _prepare_listening_item_data(item1, q_num_1)
+            _set_listening_cell_paragraphs(tc_q1_text, data1["question_text"], char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_fels, data1["fels_blank"], char_pr_id="33", para_pr_id="2")
+        else:
+            _set_listening_cell_paragraphs(tc_q1_text, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_fels, "", char_pr_id="33", para_pr_id="2")
+
+        # Question 2 (Row 7)
+        tc_q2_text = get_listening_cell(cur_tbl, 0, 7)
+        tc_q2_fels = get_listening_cell(cur_tbl, 1, 7)
+        if item2:
+            q_num_2 = str(item2.get("custom_q_num") or (p_idx * 2 + 2)).strip()
+            data2 = _prepare_listening_item_data(item2, q_num_2)
+            _set_listening_cell_paragraphs(tc_q2_text, data2["question_text"], char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_fels, data2["fels_blank"], char_pr_id="33", para_pr_id="2")
+        else:
+            _set_listening_cell_paragraphs(tc_q2_text, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_fels, "", char_pr_id="33", para_pr_id="2")
+
+    file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
+
+    out_buf = io.BytesIO()
+    with zipfile.ZipFile(out_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf_out:
+        for fname, fcontent in file_map.items():
+            zf_out.writestr(fname, fcontent)
+
+    return out_buf.getvalue()
+
+
+def generate_listening_explanation_handout(
+    items: List[Dict[str, Any]],
+    options: Dict[str, Any]
+) -> bytes:
+    """
+    B4 세로(Portrait) 규격 듣기 해설 유인물 HWPX 생성
+    - 한 페이지당 2문항 (2x3 테이블 구조)
+    - 1열: 문항 텍스트 + [정답] {ans}
+    - 2열: 우리말 해석 텍스트
+    - 3열: script 영문 전문
+    """
+    template_path = get_listening_template_path(options.get("template_name"), is_explanation=True)
+    file_map = {}
+    with zipfile.ZipFile(template_path, "r") as zf:
+        for fname in zf.namelist():
+            file_map[fname] = zf.read(fname)
+
+    header_left = (options.get("header_left") or "").strip()
+    header_center = (options.get("header_center") or "").strip()
+    header_right = (options.get("header_right") or "").strip()
+
+    sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
+
+    # 1. 머리말 Table 0 주입
+    tbl0 = sec0_root.find(f".//{{{NS_HP}}}tbl[@id='1315644029']")
+    _apply_listening_header(tbl0, header_left, header_center, header_right)
+
+    # 2. 본문 Table 1 찾기
+    tbl1 = sec0_root.find(f".//{{{NS_HP}}}tbl[@id='1216160613']")
+    if tbl1 is None:
+        raise ValueError("듣기 해설 유인물 템플릿에서 메인 표(id=1216160613)를 찾을 수 없습니다.")
+
+    # 3. 페이지당 2문항 배치
+    page_count = max(1, math.ceil(len(items) / 2))
+
+    for p_idx in range(page_count):
+        page_items = items[p_idx * 2 : p_idx * 2 + 2]
+        item1 = page_items[0] if len(page_items) >= 1 else None
+        item2 = page_items[1] if len(page_items) >= 2 else None
+
+        if p_idx == 0:
+            cur_tbl = tbl1
+        else:
+            cur_tbl = copy.deepcopy(tbl1)
+            cur_tbl.set("id", str(1216160613 + p_idx * 1000))
+            p_elem = ET.Element(f"{{{NS_HP}}}p", {
+                "id": str(2000000000 + p_idx * 10),
+                "paraPrIDRef": "0",
+                "styleIDRef": "0",
+                "pageBreak": "1",
+                "columnBreak": "0",
+                "merged": "0"
+            })
+            run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": "0"})
+            run_elem.append(cur_tbl)
+            sec0_root.append(p_elem)
+
+        # Question 1 (Row 0)
+        tc_q1_text = get_listening_cell(cur_tbl, 0, 0)
+        tc_q1_trans = get_listening_cell(cur_tbl, 1, 0)
+        tc_q1_script = get_listening_cell(cur_tbl, 2, 0)
+        if item1:
+            q_num_1 = str(item1.get("custom_q_num") or (p_idx * 2 + 1)).strip()
+            data1 = _prepare_listening_item_data(item1, q_num_1)
+            q_text_ans1 = f"{data1['question_text']}\n\n[정답] {data1['answer_display']}"
+            _set_listening_cell_paragraphs(tc_q1_text, q_text_ans1, char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_trans, data1["korean_translation"], char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_script, data1["script_text"], char_pr_id="33", para_pr_id="2")
+        else:
+            _set_listening_cell_paragraphs(tc_q1_text, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_trans, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_script, "", char_pr_id="33", para_pr_id="2")
+
+        # Question 2 (Row 1)
+        tc_q2_text = get_listening_cell(cur_tbl, 0, 1)
+        tc_q2_trans = get_listening_cell(cur_tbl, 1, 1)
+        tc_q2_script = get_listening_cell(cur_tbl, 2, 1)
+        if item2:
+            q_num_2 = str(item2.get("custom_q_num") or (p_idx * 2 + 2)).strip()
+            data2 = _prepare_listening_item_data(item2, q_num_2)
+            q_text_ans2 = f"{data2['question_text']}\n\n[정답] {data2['answer_display']}"
+            _set_listening_cell_paragraphs(tc_q2_text, q_text_ans2, char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_trans, data2["korean_translation"], char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_script, data2["script_text"], char_pr_id="33", para_pr_id="2")
+        else:
+            _set_listening_cell_paragraphs(tc_q2_text, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_trans, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_script, "", char_pr_id="33", para_pr_id="2")
+
+    file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
+
+    out_buf = io.BytesIO()
+    with zipfile.ZipFile(out_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf_out:
+        for fname, fcontent in file_map.items():
+            zf_out.writestr(fname, fcontent)
+
+    return out_buf.getvalue()
+
+
+def generate_listening_handout_zip(
+    items: List[Dict[str, Any]],
+    options: Dict[str, Any]
+) -> bytes:
+    """듣기 문제 유인물과 해설 유인물을 동시 생성하여 단일 ZIP 압축 바이너리로 패키징"""
+    q_bytes = generate_listening_question_handout(items, options)
+    e_bytes = generate_listening_explanation_handout(items, options)
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(f"듣기문제유인물_{len(items)}문항.hwpx", q_bytes)
+        zf.writestr(f"듣기해설유인물_{len(items)}문항.hwpx", e_bytes)
+
+    return zip_buf.getvalue()
+
 

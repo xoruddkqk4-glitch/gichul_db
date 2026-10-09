@@ -22,6 +22,7 @@ docs/
 
 | 날짜 | 계획서 | 상태 | 비고 |
 |---|---|---|---|
+| 2026-10-09 | [교사용 유인물 제작소 3대 영역(독해·문장·듣기) 1차 분리 및 듣기 유인물(B4 세로 2x3 템플릿 기반 · 통합 MP3) 구축](plans/2026-10-09_02_handout-reading-listening-subtabs.md) | ✅ 완료 | 3대 모드 1계층 UI 개편, static/data/templates 실물 템플릿 2종 기반 B4 세로 2x3 테이블 HWPX 양식, 유인물 순서 맞춤 결합 단일 통합 MP3 오디오 스트리밍 로드맵 |
 | 2026-10-09 | [듣기 영역 대본(Script) 기준 검색 아키텍처 개편](plans/2026-10-09_listening-script-search-architecture.md) | ✅ 완료 | 듣기 지문 검색 대본(script) 기준 확립, 결과 내 재검색 script_text 누락 수정, 대본 문장 토큰화(80,686건 sentences 적재) 완료 |
 | 2026-10-07 | [교사용 유인물 제작소 화면·프로젝트 분리 및 문장 번호 부여 고도화](plans/2026-10-07_02_handout-sentence-enhancement.md) | ✅ 완료 | 화면/프로젝트 분리(지문용 vs 문장용), 문장 번호(1번/N번 재부여) 주입, 해설 불필요 단일 HWPX 확정 |
 | 2026-10-07 | [교사용 문장 유인물 자동 제작 기능 (A4 규격 default_a4_sentence.hwpx 연동)](plans/2026-10-07_01_handout-sentence-generation.md) | ✅ 완료 | 문장 담기(지문과 동일), 개념 설명 1x1 테이블 선택(6문장 vs 10문장), 12pt 글자크기 및 충분한 줄간격, A4 HWPX 스트리밍 |

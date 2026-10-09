@@ -112,6 +112,11 @@
   box-shadow: 0 0 10px rgba(13, 148, 136, 0.5);
 }
 
+.cart-count-badge.badge-listening {
+  background: #7c3aed;
+  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+}
+
 .floating-handout-btn-group {
   display: flex;
   align-items: center;
@@ -152,6 +157,16 @@
   background: linear-gradient(135deg, #0f766e, #115e59);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(13, 148, 136, 0.45);
+}
+
+.btn-open-handout-view.btn-open-listening {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+
+.btn-open-handout-view.btn-open-listening:hover {
+  background: linear-gradient(135deg, #6d28d9, #5b21b6);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.45);
 }
 
 .floating-item-cnt {
@@ -805,16 +820,22 @@
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
 }
 
-/* 상단 대형 모드 선택기 (Segmented Switcher) */
+/* 상단 대형 모드 선택기 (Segmented Switcher: 독해 / 문장 / 듣기 3대 영역) */
 .handout-mode-selector-bar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
   margin-bottom: 20px;
   background: #f8fafc;
   padding: 8px;
   border-radius: 14px;
   border: 1px solid #e2e8f0;
+}
+
+@media (max-width: 900px) {
+  .handout-mode-selector-bar {
+    grid-template-columns: 1fr;
+  }
 }
 
 .btn-handout-mode-selector {
@@ -842,6 +863,16 @@
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.12);
 }
 
+.btn-handout-mode-selector[data-tab="sentence"].active {
+  border-color: #0d9488;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.15);
+}
+
+.btn-handout-mode-selector[data-tab="listening"].active {
+  border-color: #7c3aed;
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.15);
+}
+
 .btn-handout-mode-selector .mode-icon {
   font-size: 1.8rem;
   line-height: 1;
@@ -862,10 +893,202 @@
   color: #2563eb;
 }
 
+.btn-handout-mode-selector[data-tab="sentence"].active .mode-title {
+  color: #0d9488;
+}
+
+.btn-handout-mode-selector[data-tab="listening"].active .mode-title {
+  color: #7c3aed;
+}
+
 .btn-handout-mode-selector .mode-desc {
   font-size: 0.8rem;
   color: #64748b;
   margin-top: 3px;
+}
+
+/* 듣기 유인물 페이지 카드 및 문항 아이템 스타일 (B4 세로 2문항/페이지) */
+.listening-page-group {
+  background: #ffffff;
+  border: 2px solid #e9d5ff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.06);
+}
+
+.listening-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1.5px dashed #d8b4fe;
+}
+
+.listening-page-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #6d28d9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.listening-page-badge {
+  background: #ede9fe;
+  color: #7c3aed;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.listening-card-item {
+  background: #faf5ff;
+  border: 1px solid #d8b4fe;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+  transition: all 0.2s ease;
+}
+
+.listening-card-item:hover {
+  border-color: #a855f7;
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.12);
+}
+
+.listening-card-item:last-child {
+  margin-bottom: 0;
+}
+
+.listening-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.listening-card-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-listening-custom-num {
+  width: 44px;
+  height: 26px;
+  border: 1px solid #c084fc;
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #6d28d9;
+  background: #ffffff;
+}
+
+.input-listening-custom-num:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+}
+
+.listening-card-source {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #581c87;
+  background: #f3e8ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #e9d5ff;
+}
+
+.listening-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-card-audio {
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease;
+}
+
+.btn-card-audio:hover {
+  background: #0369a1;
+}
+
+.btn-card-order, .btn-card-delete {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: #475569;
+  transition: all 0.15s ease;
+}
+
+.btn-card-order:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.btn-card-delete:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+  color: #dc2626;
+}
+
+/* 3열 레이아웃 미리보기 그리드 */
+.listening-preview-3col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #e9d5ff;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.listening-preview-col {
+  border-right: 1px dashed #e2e8f0;
+  padding-right: 8px;
+}
+
+.listening-preview-col:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+
+.preview-col-label {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #7c3aed;
+  margin-bottom: 6px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #ede9fe;
+}
+
+.preview-col-content {
+  color: #334155;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
 }
 
 /* 문장 카드 내 번호 입력 */

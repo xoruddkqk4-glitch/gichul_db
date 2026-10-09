@@ -509,14 +509,19 @@ export function initSentenceHandoutEvents() {
     });
   }
 
+  const tabListening = document.getElementById("tabHandoutListening");
+  const layoutListening = document.getElementById("handoutListeningLayout");
+  const barListening = document.getElementById("handoutListeningProjectBar");
+
   if (tabPassage && tabSentence) {
     tabPassage.addEventListener("click", () => {
       tabPassage.classList.add("active");
       tabSentence.classList.remove("active");
+      if (tabListening) tabListening.classList.remove("active");
 
       if (hdrIcon) hdrIcon.textContent = "📄";
-      if (hdrTitle) hdrTitle.textContent = "교사용 지문 유인물 제작소";
-      if (hdrSubtitle) hdrSubtitle.textContent = "선택한 기출 문항으로 B4 단면 2문항 규격의 문제지 및 해설지 HWPX 문서를 자동 생성합니다.";
+      if (hdrTitle) hdrTitle.textContent = "교사용 독해 유인물 제작소";
+      if (hdrSubtitle) hdrSubtitle.textContent = "선택한 기출 문항으로 B4 가로 2문항 규격의 문제지 및 해설지 HWPX 문서를 자동 생성합니다.";
       if (btnBack) {
         btnBack.textContent = "🔙 이전 화면으로 돌아가기";
         btnBack.title = "유인물 제작소 진입 전 이전 화면으로 복귀";
@@ -524,9 +529,11 @@ export function initSentenceHandoutEvents() {
 
       if (barPassage) barPassage.style.display = "flex";
       if (barSentence) barSentence.style.display = "none";
+      if (barListening) barListening.style.display = "none";
 
       if (layoutPassage) layoutPassage.style.display = "grid";
       if (layoutSentence) layoutSentence.style.display = "none";
+      if (layoutListening) layoutListening.style.display = "none";
 
       syncAllProjectDropdowns();
       import("./handout-passage.js").then((m) => {
@@ -537,10 +544,11 @@ export function initSentenceHandoutEvents() {
     tabSentence.addEventListener("click", () => {
       tabSentence.classList.add("active");
       tabPassage.classList.remove("active");
+      if (tabListening) tabListening.classList.remove("active");
 
       if (hdrIcon) hdrIcon.textContent = "📝";
       if (hdrTitle) hdrTitle.textContent = "교사용 문장 유인물 제작소";
-      if (hdrSubtitle) hdrSubtitle.textContent = "선택한 기출 문장으로 A4 단면 규격의 구문 분석 훈련용 HWPX 문서를 자동 생성합니다. (해설 유인물 불필요)";
+      if (hdrSubtitle) hdrSubtitle.textContent = "선택한 기출 문장으로 A4 세로 규격의 구문 분석 훈련용 HWPX 문서를 자동 생성합니다. (해설 유인물 불필요)";
       if (btnBack) {
         btnBack.textContent = "🔙 이전 화면으로 돌아가기";
         btnBack.title = "유인물 제작소 진입 전 이전 화면으로 복귀";
@@ -548,9 +556,11 @@ export function initSentenceHandoutEvents() {
 
       if (barPassage) barPassage.style.display = "none";
       if (barSentence) barSentence.style.display = "flex";
+      if (barListening) barListening.style.display = "none";
 
       if (layoutPassage) layoutPassage.style.display = "none";
       if (layoutSentence) layoutSentence.style.display = "grid";
+      if (layoutListening) layoutListening.style.display = "none";
 
       syncAllProjectDropdowns();
       renderSentenceHandoutView();

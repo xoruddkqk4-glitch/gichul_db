@@ -20,10 +20,15 @@ from ..services.hwpx_generator import (
     generate_explanation_handout,
     generate_handout_zip,
     generate_sentence_handout,
+    generate_listening_question_handout,
+    generate_listening_explanation_handout,
+    generate_listening_handout_zip,
+    _prepare_listening_item_data,
     format_sentence_source,
     list_templates,
     save_uploaded_template,
 )
+from ..tts_service import merge_listening_mp3s, AUDIO_DIR, sanitize_filename
 from ..logging_config import get_logger
 
 logger = get_logger("gichul.routers.handouts")
@@ -62,6 +67,25 @@ class SentenceHandoutGenerateRequest(BaseModel):
 
 class SentenceHandoutPreviewRequest(BaseModel):
     sentence_ids: List[str] = Field(default_factory=list, description="문장 ID 목록")
+
+
+class ListeningHandoutGenerateRequest(BaseModel):
+    handout_type: str = Field(default="question", description="question | explanation | zip")
+    passage_ids: List[str] = Field(default_factory=list, description="선택된 지문 ID 목록 (정렬 순서 유지)")
+    custom_q_nums: Dict[str, str] = Field(default_factory=dict, description="지문 ID별 사용자 지정 문항 번호 맵")
+    header_left: Optional[str] = Field(default="", description="왼쪽 상단 텍스트")
+    header_center: Optional[str] = Field(default="", description="가운데 상단 텍스트")
+    header_right: Optional[str] = Field(default="", description="오른쪽 상단 텍스트")
+    template_name: Optional[str] = Field(default=None, description="선택된 템플릿 파일명")
+
+
+class ListeningHandoutPreviewRequest(BaseModel):
+    passage_ids: List[str] = Field(default_factory=list, description="선택된 지문 ID 목록")
+
+
+class ListeningAudioDownloadRequest(BaseModel):
+    passage_ids: List[str] = Field(default_factory=list, description="선택된 지문 ID 목록")
+    project_name: Optional[str] = Field(default="듣기유인물", description="프로젝트 명칭")
 
 
 def _resolve_passages_with_custom_nums(passage_ids: List[str], custom_q_nums: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -286,3 +310,132 @@ def api_generate_sentence_handout(req: SentenceHandoutGenerateRequest):
     except Exception as e:
         logger.error("문장 유인물 HWPX 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"문장 유인물 생성 중 오류가 발생했습니다: {e}")
+
+
+@router.post("/listening/preview-info")
+def api_get_listening_preview_info(req: ListeningHandoutPreviewRequest):
+    """선택된 듣기 문항들의 유인물 제작소 표시용 상세 데이터(약형드랩, 우리말 해석, script, 정답, 음원 여부) 반환"""
+    if not req.passage_ids:
+        return {"items": []}
+
+    items = []
+    for pid in req.passage_ids:
+        clean_id = normalize_bracket_id(pid)
+        p = db.get_passage(pid) or db.get_passage(clean_id)
+        if p:
+            p_dict = dict(p)
+            data = _prepare_listening_item_data(p_dict)
+            audio_url = p_dict.get("audio_file_path") or p_dict.get("audio_url")
+            has_audio = False
+            if audio_url:
+                local_rel = audio_url.replace("/static/audio/", "")
+                cand = os.path.join(AUDIO_DIR, local_rel)
+                has_audio = os.path.exists(cand)
+            if not has_audio:
+                safe_id = sanitize_filename(p_dict.get("id", ""))
+                cand = os.path.join(AUDIO_DIR, f"{safe_id}.mp3")
+                has_audio = os.path.exists(cand)
+
+            items.append({
+                "id": p_dict.get("id"),
+                "question_title": data["question_title"],
+                "question_type": data["question_type"],
+                "question_text": data["question_text"],
+                "fels_blank": data["fels_blank"],
+                "korean_translation": data["korean_translation"],
+                "script_text": data["script_text"],
+                "answer_display": data["answer_display"],
+                "has_audio": has_audio,
+            })
+        else:
+            items.append({
+                "id": pid,
+                "question_title": "",
+                "question_type": "",
+                "question_text": "",
+                "fels_blank": "",
+                "korean_translation": "",
+                "script_text": "",
+                "answer_display": "-",
+                "has_audio": False,
+            })
+
+    return {"items": items}
+
+
+@router.post("/listening/download")
+def api_download_listening_handout(req: ListeningHandoutGenerateRequest):
+    """B4 세로 듣기 문제지 / 해설지 / 일괄 ZIP 파일 다운로드 스트리밍"""
+    if not req.passage_ids:
+        raise HTTPException(status_code=400, detail="유인물로 제작할 듣기 문항을 1개 이상 선택해야 합니다.")
+
+    items = _resolve_passages_with_custom_nums(req.passage_ids, req.custom_q_nums)
+    if not items:
+        raise HTTPException(status_code=404, detail="선택된 문항의 데이터를 DB에서 찾을 수 없습니다.")
+
+    options = {
+        "header_left": (req.header_left or "").strip(),
+        "header_center": (req.header_center or "").strip(),
+        "header_right": (req.header_right or "").strip(),
+        "template_name": req.template_name,
+    }
+
+    try:
+        htype = (req.handout_type or "question").lower()
+        if htype == "question":
+            file_bytes = generate_listening_question_handout(items, options)
+            default_filename = f"듣기문제유인물_B4_{len(items)}문항.hwpx"
+            media_type = "application/haansofthwpx"
+        elif htype == "explanation":
+            file_bytes = generate_listening_explanation_handout(items, options)
+            default_filename = f"듣기해설유인물_B4_{len(items)}문항.hwpx"
+            media_type = "application/haansofthwpx"
+        elif htype in ("zip", "both_zip"):
+            file_bytes = generate_listening_handout_zip(items, options)
+            default_filename = f"듣기유인물_일괄패키지_B4_{len(items)}문항.zip"
+            media_type = "application/zip"
+        else:
+            raise HTTPException(status_code=400, detail=f"지원하지 않는 듣기 유인물 종류입니다: {htype}")
+
+        encoded_filename = urllib.parse.quote(default_filename)
+        fallback_ascii = f"listening_{htype}_{len(items)}.hwpx" if not default_filename.endswith(".zip") else f"listening_{len(items)}.zip"
+        headers = {
+            "Content-Disposition": f'attachment; filename="{fallback_ascii}"; filename*=UTF-8\'\'{encoded_filename}',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        }
+
+        return Response(content=file_bytes, media_type=media_type, headers=headers)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("듣기 유인물 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"듣기 유인물 생성 중 오류가 발생했습니다: {e}")
+
+
+@router.post("/listening/download-audio")
+async def api_download_listening_merged_audio(req: ListeningAudioDownloadRequest):
+    """선택된 듣기 문항들을 순서대로 결합한 단일 통합 MP3 오디오 스트리밍"""
+    if not req.passage_ids:
+        raise HTTPException(status_code=400, detail="오디오로 결합할 듣기 문항이 없습니다.")
+
+    try:
+        audio_bytes = await merge_listening_mp3s(req.passage_ids)
+        safe_proj = re.sub(r'[^a-zA-Z0-9가-힣_\-]', '_', (req.project_name or "듣기유인물").strip()) or "듣기유인물"
+        default_filename = f"{safe_proj}_전체통합듣기_{len(req.passage_ids)}문항.mp3"
+
+        encoded_filename = urllib.parse.quote(default_filename)
+        fallback_ascii = f"listening_merged_{len(req.passage_ids)}.mp3"
+        headers = {
+            "Content-Disposition": f'attachment; filename="{fallback_ascii}"; filename*=UTF-8\'\'{encoded_filename}',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        }
+
+        return Response(content=audio_bytes, media_type="audio/mpeg", headers=headers)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("듣기 통합 MP3 생성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"듣기 통합 MP3 결합 중 오류가 발생했습니다: {e}")
+

@@ -203,11 +203,11 @@ export function switchToHandoutView(targetTab = null) {
 
   const tabPassage = document.getElementById("tabHandoutPassage");
   const tabSentence = document.getElementById("tabHandoutSentence");
+  const tabListening = document.getElementById("tabHandoutListening");
 
-  // targetTab 이 지정되어 있거나, 현재 모드가 문장 모드인 경우 문장 탭으로 활성화
-  const shouldOpenSentenceTab = targetTab === "sentence" || (!targetTab && appState.currentMode === "sentence");
-
-  if (shouldOpenSentenceTab && tabSentence) {
+  if (targetTab === "listening" && tabListening) {
+    tabListening.click();
+  } else if ((targetTab === "sentence" || (!targetTab && appState.currentMode === "sentence")) && tabSentence) {
     tabSentence.click();
   } else if (tabPassage) {
     tabPassage.click();

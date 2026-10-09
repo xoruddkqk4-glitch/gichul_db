@@ -2748,4 +2748,30 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_listening_sentences.py`: 5개 단위 테스트 100% 통과.
   - `pytest tests/`: 226개 전체 회귀 테스트 100% 통과.
 
+### [2026-10-09 20:00] 업데이트 이력 (Commit ID: d205afd2)
+- **수정 내용**:
+  - **1) 교사용 유인물 제작소 3대 핵심 영역(독해·문장·듣기) 1차 분리 및 1-Tier 직관적 탭 체계 구축 (`templates/index.html`, `static/css/handouts.css`, `static/js/navigation.js`, `static/js/handout-cart.js`)**:
+    - **요청 사항 반영**: 복잡한 계층 구조 대신 사용 빈도를 고려하여 `[📄 독해 유인물]`, `[📝 문장 유인물]`, `[🎧 듣기 유인물]`의 1개 층(1-Tier) 3분할 탭 바(`#handoutModeSelectorBar`)로 전면 개편.
+    - **프로젝트 및 장바구니 독립 격리**: 듣기 유인물 전용 로컬 스토리지 키(`KEY_LISTENING_PROJECTS`, `KEY_CURRENT_LISTENING_PROJECT_ID`) 신설 및 프로젝트 풀 CRUD(생성/이름변경/삭제/전환/머리말저장)와 장바구니 CRUD(추가/삭제/토글/순서변경/재부여/비우기) 14종 함수 완비.
+    - **스마트 카트 라우팅**: 검색 결과 및 지문 열람 화면에서 1~17번 문항은 자동으로 `[🎧 듣기 유인물 담기]`로 분기 저장되며 카트 수량 및 체크박스 상태가 실시간 동기화.
+    - **하단 플로팅 보관함 창 연동**: `btnOpenListeningHandoutView` (🎧 듣기 유인물) 버튼 및 보라색 배지(`.badge-listening`) 연동.
+  - **2) B4 세로(Portrait) 2x3 테이블 실물 템플릿 기반 듣기 유인물 HWPX 생성 엔진 구축 (`gichul/services/hwpx_generator.py`, `static/data/templates/`)**:
+    - **실물 템플릿 연동**: `static/data/templates/listening_b4_question.hwpx`, `listening_b4_explanation.hwpx` 정밀 역공학 분석 및 데이터 주입 파이프라인 개발.
+    - **듣기 문제 유인물 (`generate_listening_question_handout`)**: B4 세로 규격, 1페이지당 2문항 (2x3 테이블 구조). 1열: 문항 발문 + 선지(①~⑤) | 2열: FELS 7대 기능어 약형드랩(`[        ]`) 딕테이션 훈련 텍스트 | 3열: `[표현 정리]` 5행 2열 빈칸 필기 표 서식 100% 보존.
+    - **듣기 해설 유인물 (`generate_listening_explanation_handout`)**: B4 세로 규격, 1페이지당 2문항 (2x3 테이블 구조). 1열: 문항 발문 + 선지 + `[정답] {ans}` 강조 | 2열: 대본 우리말 해석 전문 | 3열: script 영문 대본 전문.
+    - **머리말 및 다페이지(Pagination) 처리**: 상단 Table 0 (`id="1315644029"`) 좌·중·우 머리말 셀 교체 및 2문항 단위 deepcopy 복제 페이지네이션(PageBreak 문단 주입) 완비.
+    - **일괄 패키징**: 문제지와 해설지를 동시 압축한 ZIP 파일 생성(`generate_listening_handout_zip`) 지원.
+  - **3) 유인물 문항 순서 맞춤 결합 단일 통합 MP3 오디오 스트리밍 엔진 구축 (`gichul/tts_service.py`, `gichul/routers/handouts.py`)**:
+    - **오디오 병합 파이프라인 (`merge_listening_mp3s`)**: 유인물에 담긴 문항들의 순서대로 개별 MP3(앞뒤 차임벨, 마지막 8초 무음, 1지문 2문항 8초 무음 2회 재생 기적용)를 순차 로드(미생성 시 즉시 합성)하고, 문항 간 2.0초의 무음(Silence) PCM을 삽입하여 단일 고품질 MP3로 인코딩 스트리밍.
+    - **REST API 엔드포인트 3종 신설**: `POST /api/handouts/listening/preview-info` (상세 미리보기 및 음원 유무 반환), `POST /api/handouts/listening/download` (문제지/해설지/ZIP HWPX 다운로드), `POST /api/handouts/listening/download-audio` (단일 통합 MP3 다운로드).
+  - **4) 프론트엔드 듣기 유인물 전용 뷰어 및 다운로드 UI 구축 (`static/js/handout-listening.js`, `static/js/main.js`)**:
+    - B4 세로 2문항/페이지 그룹화 카드 렌더링, 1열(문항)/2열(약형드랩)/3열(표현정리) 실시간 뷰, 문항 번호 수정, 순서 변경, 개별 오디오 미리듣기 토글, 1번/N번 재부여, 전체 비우기, 머리말 자동 저장, 4종 다운로드 핸들러 완비.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py gichul/tts_service.py gichul/routers/handouts.py`: 파이썬 구문 검증 완료 (통과, 0건 오류).
+  - `node -c static/js/handout-listening.js static/js/handout-cart.js static/js/navigation.js static/js/main.js`: 자바스크립트 문법 검사 통과 (0건 오류).
+  - `tests/test_listening_handout.py`: 5개 신규 단위 테스트 100% 통과 (데이터 정제, 문제지 생성, 해설지 생성, ZIP 생성, API 엔드포인트).
+  - `pytest tests/`: 231개 전체 단위/통합 회귀 테스트 100% 통과 (11.50s, 0건 실패).
+  - FastAPI TestClient 실연동 검증 완료 (`/api/handouts/listening/preview-info` 200 OK, `/api/handouts/listening/download` 200 OK 17KB, `/api/handouts/listening/download-audio` 200 OK 1.58MB MP3).
+
+
 

@@ -9,26 +9,29 @@
 
 import { appState } from "./state.js";
 
-// 로컬스토리지 키 (지문용 / 문장용 완전 분리)
+// 로컬스토리지 키 (독해용 / 문장용 / 듣기용 3대 영역 완전 분리)
 const KEY_PASSAGE_PROJECTS = "gichul_handout_passage_projects";
 const KEY_CURRENT_PASSAGE_PROJECT_ID = "gichul_handout_cur_passage_proj_id";
 
 const KEY_SENTENCE_PROJECTS = "gichul_handout_sentence_projects";
 const KEY_CURRENT_SENTENCE_PROJECT_ID = "gichul_handout_cur_sentence_proj_id";
 
+const KEY_LISTENING_PROJECTS = "gichul_handout_listening_projects";
+const KEY_CURRENT_LISTENING_PROJECT_ID = "gichul_handout_cur_listening_proj_id";
+
 // 레거시 통합 키 (자동 마이그레이션 대상)
 const LEGACY_PROJECTS_KEY = "gichul_handout_projects";
 const LEGACY_CURRENT_PROJECT_ID = "gichul_handout_current_project_id";
 const OLD_CART_STORAGE_KEY = "gichul_handout_cart";
 
-/** 이전 단일/통합 프로젝트 데이터를 지문/문장 프로젝트로 자동 마이그레이션 */
+/** 이전 단일/통합 프로젝트 데이터를 지문/문장/듣기 프로젝트로 자동 마이그레이션 및 초기화 */
 function ensureMigration() {
   const hasPassage = localStorage.getItem(KEY_PASSAGE_PROJECTS);
   const hasSentence = localStorage.getItem(KEY_SENTENCE_PROJECTS);
-  if (hasPassage && hasSentence) return;
+  const hasListening = localStorage.getItem(KEY_LISTENING_PROJECTS);
 
   const legacyRaw = localStorage.getItem(LEGACY_PROJECTS_KEY);
-  if (legacyRaw) {
+  if (legacyRaw && (!hasPassage || !hasSentence)) {
     try {
       const legacyProjects = JSON.parse(legacyRaw);
       if (Array.isArray(legacyProjects) && legacyProjects.length > 0) {
@@ -61,15 +64,14 @@ function ensureMigration() {
             localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, sentCurId);
           }
         }
-        return;
       }
     } catch (e) {
       console.warn("Handout migration error", e);
     }
   }
 
-  // 신규 기본 프로젝트 초기화
-  if (!hasPassage) {
+  // 1) 신규 기본 독해 프로젝트 초기화
+  if (!localStorage.getItem(KEY_PASSAGE_PROJECTS)) {
     let initialItems = [];
     try {
       const oldCartRaw = localStorage.getItem(OLD_CART_STORAGE_KEY);
@@ -82,7 +84,7 @@ function ensureMigration() {
     }
     const defaultPassageProj = [{
       id: "proj_passage_default",
-      name: "기본 지문 프로젝트",
+      name: "기본 독해 프로젝트",
       createdAt: Date.now(),
       updatedAt: Date.now(),
       items: initialItems,
@@ -92,7 +94,8 @@ function ensureMigration() {
     localStorage.setItem(KEY_CURRENT_PASSAGE_PROJECT_ID, defaultPassageProj[0].id);
   }
 
-  if (!hasSentence) {
+  // 2) 신규 기본 문장 프로젝트 초기화
+  if (!localStorage.getItem(KEY_SENTENCE_PROJECTS)) {
     const defaultSentenceProj = [{
       id: "proj_sentence_default",
       name: "기본 문장 프로젝트",
@@ -103,6 +106,20 @@ function ensureMigration() {
     }];
     localStorage.setItem(KEY_SENTENCE_PROJECTS, JSON.stringify(defaultSentenceProj));
     localStorage.setItem(KEY_CURRENT_SENTENCE_PROJECT_ID, defaultSentenceProj[0].id);
+  }
+
+  // 3) 신규 기본 듣기 프로젝트 초기화
+  if (!hasListening) {
+    const defaultListeningProj = [{
+      id: "proj_listening_default",
+      name: "기본 듣기 프로젝트",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      items: [],
+      settings: {},
+    }];
+    localStorage.setItem(KEY_LISTENING_PROJECTS, JSON.stringify(defaultListeningProj));
+    localStorage.setItem(KEY_CURRENT_LISTENING_PROJECT_ID, defaultListeningProj[0].id);
   }
 }
 
@@ -170,7 +187,7 @@ export function getCurrentFloatingTargetType() {
 }
 
 export function setCurrentFloatingTargetType(type) {
-  if (type === "sentence" || type === "passage") {
+  if (type === "sentence" || type === "passage" || type === "listening") {
     currentFloatingTargetType = type;
     updateFloatingCartUI();
   }
@@ -650,6 +667,259 @@ export function syncAllSentenceCheckboxes() {
 }
 
 // =========================================================================
+// 4. 듣기 유인물 프로젝트 관리 (Listening Projects)
+// =========================================================================
+
+/** 문항이 영어 듣기 영역인지 판별 (1~17번 또는 area === 'listening') */
+export function isListeningPassage(passageId = null) {
+  const pid = passageId || appState.currentPassageId;
+  if (!pid) return false;
+  if (appState.currentPassage && appState.currentPassage.area === "listening") {
+    return true;
+  }
+  const m = pid.match(/-(\d{1,2})번?\]?$/);
+  if (m) {
+    const qNum = parseInt(m[1], 10);
+    if (qNum >= 1 && qNum <= 17) return true;
+  }
+  return false;
+}
+
+/** 듣기 프로젝트 목록 조회 */
+export function getListeningProjects() {
+  try {
+    const raw = localStorage.getItem(KEY_LISTENING_PROJECTS);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list) && list.length > 0) return list;
+    }
+  } catch (e) {
+    console.warn("Failed to parse listening projects", e);
+  }
+  const defaultProj = [{
+    id: "proj_listening_default",
+    name: "기본 듣기 프로젝트",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    items: [],
+    settings: {},
+  }];
+  saveListeningProjects(defaultProj);
+  return defaultProj;
+}
+
+/** 듣기 프로젝트 목록 저장 */
+export function saveListeningProjects(projects) {
+  try {
+    localStorage.setItem(KEY_LISTENING_PROJECTS, JSON.stringify(projects));
+  } catch (e) {
+    console.warn("Failed to save listening projects", e);
+  }
+}
+
+/** 현재 활성화된 듣기 프로젝트 ID */
+export function getCurrentListeningProjectId() {
+  const projects = getListeningProjects();
+  let curId = localStorage.getItem(KEY_CURRENT_LISTENING_PROJECT_ID);
+  if (!curId || !projects.some((p) => p.id === curId)) {
+    curId = projects[0]?.id || "proj_listening_default";
+    localStorage.setItem(KEY_CURRENT_LISTENING_PROJECT_ID, curId);
+  }
+  return curId;
+}
+
+/** 현재 활성화된 듣기 프로젝트 객체 */
+export function getCurrentListeningProject() {
+  const projects = getListeningProjects();
+  const curId = getCurrentListeningProjectId();
+  return projects.find((p) => p.id === curId) || projects[0];
+}
+
+/** 활성 듣기 프로젝트 전환 */
+export function setCurrentListeningProject(projectId) {
+  const projects = getListeningProjects();
+  if (!projects.some((p) => p.id === projectId)) return;
+
+  currentFloatingTargetType = "listening";
+  localStorage.setItem(KEY_CURRENT_LISTENING_PROJECT_ID, projectId);
+  window.dispatchEvent(new CustomEvent("handout-listening-project-changed", { detail: { projectId } }));
+  window.dispatchEvent(new CustomEvent("handout-listening-cart-changed", { detail: getListeningCartItems() }));
+  updateFloatingCartUI();
+  syncAllProjectDropdowns();
+}
+
+/** 새 듣기 프로젝트 생성 */
+export function createListeningProject(name) {
+  const trimmed = (name || "").trim() || `듣기 프로젝트 ${new Date().toLocaleDateString()}`;
+  const projects = getListeningProjects();
+  const newId = `proj_listening_${Date.now()}`;
+  const newProj = {
+    id: newId,
+    name: trimmed,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    items: [],
+    settings: {},
+  };
+  projects.push(newProj);
+  saveListeningProjects(projects);
+  setCurrentListeningProject(newId);
+  return newProj;
+}
+
+/** 듣기 프로젝트 이름 변경 */
+export function renameListeningProject(projectId, newName) {
+  const trimmed = (newName || "").trim();
+  if (!trimmed) return false;
+  const projects = getListeningProjects();
+  const proj = projects.find((p) => p.id === projectId);
+  if (!proj) return false;
+
+  proj.name = trimmed;
+  proj.updatedAt = Date.now();
+  saveListeningProjects(projects);
+  window.dispatchEvent(new CustomEvent("handout-listening-project-changed", { detail: { projectId } }));
+  updateFloatingCartUI();
+  syncAllProjectDropdowns();
+  return true;
+}
+
+/** 듣기 프로젝트 삭제 */
+export function deleteListeningProject(projectId) {
+  let projects = getListeningProjects();
+  if (!projects.some((p) => p.id === projectId)) return false;
+
+  projects = projects.filter((p) => p.id !== projectId);
+  if (projects.length === 0) {
+    projects = [{
+      id: `proj_listening_${Date.now()}`,
+      name: "기본 듣기 프로젝트",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      items: [],
+      settings: {},
+    }];
+  }
+  saveListeningProjects(projects);
+  const nextCurId = projects[0].id;
+  localStorage.setItem(KEY_CURRENT_LISTENING_PROJECT_ID, nextCurId);
+
+  window.dispatchEvent(new CustomEvent("handout-listening-project-changed", { detail: { projectId: nextCurId } }));
+  window.dispatchEvent(new CustomEvent("handout-listening-cart-changed", { detail: projects[0].items }));
+  updateFloatingCartUI();
+  syncAllProjectDropdowns();
+  return true;
+}
+
+/** 듣기 프로젝트 서식 설정 조회 */
+export function getListeningProjectSettings(projectId = null) {
+  const proj = projectId ? getListeningProjects().find((p) => p.id === projectId) : getCurrentListeningProject();
+  return (proj && proj.settings) || {};
+}
+
+/** 듣기 프로젝트 서식 설정 저장 */
+export function saveListeningProjectSettings(projectId, settings) {
+  const projects = getListeningProjects();
+  const proj = projects.find((p) => p.id === (projectId || getCurrentListeningProjectId()));
+  if (proj) {
+    proj.settings = { ...proj.settings, ...settings };
+    proj.updatedAt = Date.now();
+    saveListeningProjects(projects);
+  }
+}
+
+/** 현재 활성 듣기 프로젝트의 문항 목록 조회 */
+export function getListeningCartItems() {
+  const proj = getCurrentListeningProject();
+  return Array.isArray(proj.items) ? proj.items : [];
+}
+
+/** 현재 활성 듣기 프로젝트의 문항 목록 저장 */
+export function saveListeningCartItems(items) {
+  const projects = getListeningProjects();
+  const curId = getCurrentListeningProjectId();
+  const proj = projects.find((p) => p.id === curId);
+  if (proj) {
+    proj.items = items;
+    proj.updatedAt = Date.now();
+    saveListeningProjects(projects);
+  }
+  window.dispatchEvent(new CustomEvent("handout-listening-cart-changed", { detail: items }));
+  updateFloatingCartUI();
+}
+
+/** 특정 문항이 현재 활성 듣기 프로젝트에 담겨있는지 확인 */
+export function isInListeningCart(passageId) {
+  if (!passageId) return false;
+  return getListeningCartItems().some((item) => item.id === passageId);
+}
+
+/** 현재 활성 듣기 프로젝트에 문항 추가 */
+export function addToListeningCart(passageId, customNum = null) {
+  if (!passageId) return;
+  currentFloatingTargetType = "listening";
+  const items = getListeningCartItems();
+  if (items.some((item) => item.id === passageId)) return;
+
+  const nextNum = customNum || String(items.length + 1);
+  items.push({ id: passageId, custom_q_num: String(nextNum) });
+  saveListeningCartItems(items);
+}
+
+/** 현재 활성 듣기 프로젝트에서 문항 제거 */
+export function removeFromListeningCart(passageId) {
+  if (!passageId) return;
+  let items = getListeningCartItems();
+  items = items.filter((item) => item.id !== passageId);
+  saveListeningCartItems(items);
+}
+
+/** 듣기 문항 담기/제외 토글 */
+export function toggleListeningCart(passageId) {
+  if (isInListeningCart(passageId)) {
+    removeFromListeningCart(passageId);
+    return false;
+  } else {
+    addToListeningCart(passageId);
+    return true;
+  }
+}
+
+/** 듣기 프로젝트 문항 전체 비우기 */
+export function clearListeningCart() {
+  saveListeningCartItems([]);
+}
+
+/** 듣기 문항 순서 변경 */
+export function reorderListeningCart(fromIdx, toIdx) {
+  const items = getListeningCartItems();
+  if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx >= items.length) return;
+  const [moved] = items.splice(fromIdx, 1);
+  items.splice(toIdx, 0, moved);
+  saveListeningCartItems(items);
+}
+
+/** 특정 듣기 문항의 사용자 지정 인쇄 번호 수정 */
+export function setListeningCustomQNum(passageId, customNum) {
+  const items = getListeningCartItems();
+  const target = items.find((item) => item.id === passageId);
+  if (target) {
+    target.custom_q_num = String(customNum).trim();
+    saveListeningCartItems(items);
+  }
+}
+
+/** 전체 듣기 문항 번호 순차 재부여 */
+export function renumberListeningCart(startNum = 1) {
+  const items = getListeningCartItems();
+  let cur = parseInt(startNum, 10) || 1;
+  items.forEach((item) => {
+    item.custom_q_num = String(cur++);
+  });
+  saveListeningCartItems(items);
+}
+
+// =========================================================================
 // 5. UI 드롭다운 및 플로팅 카트 바 동기화
 // =========================================================================
 
@@ -713,17 +983,43 @@ export function syncAllProjectDropdowns() {
     }
   }
 
-  // 3) 하단 플로팅 카트 바 프로젝트 셀렉트 박스 (지문 및 문장 프로젝트 그룹화)
+  // 3) 듣기 유인물 프로젝트 셀렉트 박스
+  const selectListeningProj = document.getElementById("selectHandoutListeningProject");
+  const lProjects = getListeningProjects();
+  const curLId = getCurrentListeningProjectId();
+
+  if (selectListeningProj) {
+    let html = "";
+    lProjects.forEach((p) => {
+      const lCount = Array.isArray(p.items) ? p.items.length : 0;
+      const isSel = p.id === curLId ? "selected" : "";
+      html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${lCount}문항)</option>`;
+    });
+    selectListeningProj.innerHTML = html;
+  }
+
+  // 듣기 제작소 생성일 메타 정보
+  const lMetaEl = document.getElementById("txtListeningProjectMetaInfo");
+  if (lMetaEl) {
+    const curLProj = getCurrentListeningProject();
+    if (curLProj && curLProj.createdAt) {
+      const d = new Date(curLProj.createdAt);
+      lMetaEl.textContent = `생성일: ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    } else {
+      lMetaEl.textContent = "";
+    }
+  }
+
+  // 4) 하단 플로팅 카트 바 프로젝트 셀렉트 박스 (독해 / 문장 / 듣기 프로젝트 그룹화)
   const selFloating = document.getElementById("selectFloatingHandoutProject");
   if (selFloating) {
-    const isSentType = (currentFloatingTargetType === "sentence");
     let html = "";
 
-    // 1) 지문 프로젝트 그룹
-    html += `<optgroup label="📄 지문 프로젝트">`;
+    // 1) 독해 프로젝트 그룹
+    html += `<optgroup label="📄 독해 프로젝트">`;
     pProjects.forEach((p) => {
       const cnt = Array.isArray(p.items) ? p.items.length : 0;
-      const isSel = (!isSentType && p.id === curPId) ? "selected" : "";
+      const isSel = (currentFloatingTargetType === "passage" && p.id === curPId) ? "selected" : "";
       html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${cnt}문항)</option>`;
     });
     html += `</optgroup>`;
@@ -732,8 +1028,17 @@ export function syncAllProjectDropdowns() {
     html += `<optgroup label="📝 문장 프로젝트">`;
     sProjects.forEach((p) => {
       const cnt = Array.isArray(p.sentence_items) ? p.sentence_items.length : 0;
-      const isSel = (isSentType && p.id === curSId) ? "selected" : "";
+      const isSel = (currentFloatingTargetType === "sentence" && p.id === curSId) ? "selected" : "";
       html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${cnt}문장)</option>`;
+    });
+    html += `</optgroup>`;
+
+    // 3) 듣기 프로젝트 그룹
+    html += `<optgroup label="🎧 듣기 프로젝트">`;
+    lProjects.forEach((p) => {
+      const cnt = Array.isArray(p.items) ? p.items.length : 0;
+      const isSel = (currentFloatingTargetType === "listening" && p.id === curLId) ? "selected" : "";
+      html += `<option value="${p.id}" ${isSel}>${escapeHtml(p.name)} (${cnt}문항)</option>`;
     });
     html += `</optgroup>`;
 
@@ -758,42 +1063,57 @@ export function updateFloatingCartUI() {
   const countBadge = document.getElementById("cartCountBadge");
   const btnOpenPassage = document.getElementById("btnOpenPassageHandoutView");
   const btnOpenSentence = document.getElementById("btnOpenSentenceHandoutView");
+  const btnOpenListening = document.getElementById("btnOpenListeningHandoutView");
   const btnFloatingCreate = document.getElementById("btnFloatingCreateProject");
   const btnClearFloating = document.getElementById("btnClearFloatingCart");
   const cntPassageEl = document.getElementById("floatingPassageCount");
   const cntSentenceEl = document.getElementById("floatingSentenceCount");
+  const cntListeningEl = document.getElementById("floatingListeningCount");
 
   const pItems = getCartItems();
   const sItems = getSentenceCartItems();
+  const lItems = getListeningCartItems();
 
   const pProjects = getPassageProjects();
   const sProjects = getSentenceProjects();
-
-  const isSentType = (currentFloatingTargetType === "sentence");
+  const lProjects = getListeningProjects();
 
   // 각각의 버튼 내부 카운트 배지 갱신
   if (cntPassageEl) cntPassageEl.textContent = pItems.length;
   if (cntSentenceEl) cntSentenceEl.textContent = sItems.length;
+  if (cntListeningEl) cntListeningEl.textContent = lItems.length;
 
   // 선택된 프로젝트 영역에 맞춰 배지 텍스트/스타일 및 이동 버튼을 전환하여 패널 너비 축소
-  if (isSentType) {
+  if (currentFloatingTargetType === "sentence") {
     if (countBadge) {
       countBadge.textContent = `문장 ${sItems.length}개`;
       countBadge.className = "cart-count-badge badge-sentence";
     }
     if (btnOpenSentence) btnOpenSentence.style.display = "inline-flex";
     if (btnOpenPassage) btnOpenPassage.style.display = "none";
+    if (btnOpenListening) btnOpenListening.style.display = "none";
     if (btnFloatingCreate) btnFloatingCreate.title = "새 문장 프로젝트 생성";
     if (btnClearFloating) btnClearFloating.title = "현재 문장 프로젝트 보관함 비우기";
+  } else if (currentFloatingTargetType === "listening") {
+    if (countBadge) {
+      countBadge.textContent = `듣기 ${lItems.length}문항`;
+      countBadge.className = "cart-count-badge badge-listening";
+    }
+    if (btnOpenListening) btnOpenListening.style.display = "inline-flex";
+    if (btnOpenPassage) btnOpenPassage.style.display = "none";
+    if (btnOpenSentence) btnOpenSentence.style.display = "none";
+    if (btnFloatingCreate) btnFloatingCreate.title = "새 듣기 프로젝트 생성";
+    if (btnClearFloating) btnClearFloating.title = "현재 듣기 프로젝트 보관함 비우기";
   } else {
     if (countBadge) {
-      countBadge.textContent = `지문 ${pItems.length}문항`;
+      countBadge.textContent = `독해 ${pItems.length}문항`;
       countBadge.className = "cart-count-badge badge-passage";
     }
     if (btnOpenPassage) btnOpenPassage.style.display = "inline-flex";
     if (btnOpenSentence) btnOpenSentence.style.display = "none";
-    if (btnFloatingCreate) btnFloatingCreate.title = "새 지문 프로젝트 생성";
-    if (btnClearFloating) btnClearFloating.title = "현재 지문 프로젝트 보관함 비우기";
+    if (btnOpenListening) btnOpenListening.style.display = "none";
+    if (btnFloatingCreate) btnFloatingCreate.title = "새 독해 프로젝트 생성";
+    if (btnClearFloating) btnClearFloating.title = "현재 독해 프로젝트 보관함 비우기";
   }
 
   // 제작소 화면이 열려있지 않을 때만 플로팅 바 표시
@@ -802,7 +1122,8 @@ export function updateFloatingCartUI() {
 
   const hasAnyPassage = pProjects.some((p) => Array.isArray(p.items) && p.items.length > 0);
   const hasAnySentence = sProjects.some((p) => Array.isArray(p.sentence_items) && p.sentence_items.length > 0);
-  const shouldShow = (pItems.length > 0 || sItems.length > 0 || hasAnyPassage || hasAnySentence);
+  const hasAnyListening = lProjects.some((p) => Array.isArray(p.items) && p.items.length > 0);
+  const shouldShow = (pItems.length > 0 || sItems.length > 0 || lItems.length > 0 || hasAnyPassage || hasAnySentence || hasAnyListening);
 
   if (floatingBar) {
     if (shouldShow && !isHandoutViewActive) {
@@ -818,7 +1139,7 @@ export function updateFloatingCartUI() {
   syncAllProjectDropdowns();
 }
 
-/** 현재 열람 중인 지문의 체크박스 상태 동기화 */
+/** 현재 열람 중인 지문의 체크박스 상태 동기화 (독해 vs 듣기 스마트 분기) */
 export function syncCurrentPassageCheckbox() {
   const chkCurrent = document.getElementById("chkHandoutSelectCurrent");
   const lblCurrent = document.getElementById("labelHandoutSelectCurrent");
@@ -826,14 +1147,23 @@ export function syncCurrentPassageCheckbox() {
   const curPid = appState.currentPassageId;
 
   if (chkCurrent) {
-    const inCart = curPid ? isInCart(curPid) : false;
+    const isListening = isListeningPassage(curPid);
+    const inCart = curPid ? (isListening ? isInListeningCart(curPid) : isInCart(curPid)) : false;
     chkCurrent.checked = inCart;
     if (lblCurrent) {
       lblCurrent.classList.toggle("checked", inCart);
-      lblCurrent.title = inCart ? "현재 지문 프로젝트에서 제외합니다 (클릭 시 제외)" : "현재 지문 프로젝트에 담습니다 (클릭 시 담기)";
+      if (isListening) {
+        lblCurrent.title = inCart ? "현재 듣기 프로젝트에서 제외합니다 (클릭 시 제외)" : "현재 듣기 프로젝트에 담습니다 (클릭 시 담기)";
+      } else {
+        lblCurrent.title = inCart ? "현재 독해 프로젝트에서 제외합니다 (클릭 시 제외)" : "현재 독해 프로젝트에 담습니다 (클릭 시 담기)";
+      }
     }
     if (txtLabel) {
-      txtLabel.textContent = inCart ? "✔ 유인물 담김" : "📄 유인물 담기";
+      if (isListening) {
+        txtLabel.textContent = inCart ? "✔ 듣기 담김" : "🎧 듣기 유인물 담기";
+      } else {
+        txtLabel.textContent = inCart ? "✔ 독해 담김" : "📄 독해 유인물 담기";
+      }
     }
   }
 }
@@ -842,6 +1172,7 @@ export function syncCurrentPassageCheckbox() {
 export function initHandoutCart() {
   const btnOpenPassage = document.getElementById("btnOpenPassageHandoutView");
   const btnOpenSentence = document.getElementById("btnOpenSentenceHandoutView");
+  const btnOpenListening = document.getElementById("btnOpenListeningHandoutView");
   const btnOpen = document.getElementById("btnOpenHandoutView");
   const btnClear = document.getElementById("btnClearFloatingCart");
 
@@ -861,6 +1192,14 @@ export function initHandoutCart() {
     });
   }
 
+  if (btnOpenListening) {
+    btnOpenListening.addEventListener("click", () => {
+      import("./navigation.js").then((m) => {
+        if (m.switchToHandoutView) m.switchToHandoutView("listening");
+      });
+    });
+  }
+
   if (btnOpen) {
     btnOpen.addEventListener("click", () => {
       import("./navigation.js").then((m) => {
@@ -873,8 +1212,7 @@ export function initHandoutCart() {
   if (btnClear) {
     btnClear.addEventListener("click", (e) => {
       e.stopPropagation();
-      const isSentType = (currentFloatingTargetType === "sentence");
-      if (isSentType) {
+      if (currentFloatingTargetType === "sentence") {
         const curSProj = getCurrentSentenceProject();
         const sItems = getSentenceCartItems();
         if (sItems.length === 0) {
@@ -884,29 +1222,48 @@ export function initHandoutCart() {
         if (confirm(`'${curSProj.name}' 문장 프로젝트의 모든 문장(${sItems.length}개)을 비우시겠습니까?`)) {
           clearSentenceCart();
         }
+      } else if (currentFloatingTargetType === "listening") {
+        const curLProj = getCurrentListeningProject();
+        const lItems = getListeningCartItems();
+        if (lItems.length === 0) {
+          alert("현재 선택된 듣기 프로젝트에 담긴 문항이 없습니다.");
+          return;
+        }
+        if (confirm(`'${curLProj.name}' 듣기 프로젝트의 모든 문항(${lItems.length}개)을 비우시겠습니까?`)) {
+          clearListeningCart();
+        }
       } else {
         const curPProj = getCurrentPassageProject();
         const pItems = getCartItems();
         if (pItems.length === 0) {
-          alert("현재 선택된 지문 프로젝트에 담긴 문항이 없습니다.");
+          alert("현재 선택된 독해 프로젝트에 담긴 문항이 없습니다.");
           return;
         }
-        if (confirm(`'${curPProj.name}' 지문 프로젝트의 모든 문항(${pItems.length}개)을 비우시겠습니까?`)) {
+        if (confirm(`'${curPProj.name}' 독해 프로젝트의 모든 문항(${pItems.length}개)을 비우시겠습니까?`)) {
           clearCart();
         }
       }
     });
   }
 
-  // 지문 결과 화면 좌측 상단 패널: 체크박스 토글
+  // 지문 결과 화면 좌측 상단 패널: 체크박스 토글 (독해 vs 듣기 스마트 분기)
   const chkCurrent = document.getElementById("chkHandoutSelectCurrent");
   if (chkCurrent) {
     chkCurrent.addEventListener("change", () => {
       if (appState.currentPassageId) {
+        const isListening = isListeningPassage(appState.currentPassageId);
         if (chkCurrent.checked) {
-          addToCart(appState.currentPassageId);
+          if (isListening) {
+            addToListeningCart(appState.currentPassageId);
+          } else {
+            addToCart(appState.currentPassageId);
+          }
         } else {
-          removeFromCart(appState.currentPassageId);
+          if (isListening) {
+            removeFromListeningCart(appState.currentPassageId);
+          } else {
+            removeFromCart(appState.currentPassageId);
+          }
         }
       }
     });
@@ -918,10 +1275,16 @@ export function initHandoutCart() {
     selFloatingProj.addEventListener("change", (e) => {
       const val = e.target.value;
       const sProjects = getSentenceProjects();
+      const lProjects = getListeningProjects();
       const isSentProj = sProjects.some((p) => p.id === val);
+      const isListProj = lProjects.some((p) => p.id === val);
+
       if (isSentProj) {
         currentFloatingTargetType = "sentence";
         setCurrentSentenceProject(val);
+      } else if (isListProj) {
+        currentFloatingTargetType = "listening";
+        setCurrentListeningProject(val);
       } else {
         currentFloatingTargetType = "passage";
         setCurrentPassageProject(val);
@@ -934,23 +1297,26 @@ export function initHandoutCart() {
   const btnFloatingCreate = document.getElementById("btnFloatingCreateProject");
   if (btnFloatingCreate) {
     btnFloatingCreate.addEventListener("click", () => {
-      const isSentType = (currentFloatingTargetType === "sentence");
-      const defaultName = isSentType ? "새 문장 프로젝트" : "새 지문 프로젝트";
-      const name = prompt(`새 ${isSentType ? "문장" : "지문"} 프로젝트 이름을 입력하세요:`, defaultName);
+      let areaLabel = "독해";
+      if (currentFloatingTargetType === "sentence") areaLabel = "문장";
+      else if (currentFloatingTargetType === "listening") areaLabel = "듣기";
+
+      const defaultName = `새 ${areaLabel} 프로젝트`;
+      const name = prompt(`새 ${areaLabel} 프로젝트 이름을 입력하세요:`, defaultName);
       if (name !== null) {
-        if (isSentType) {
+        if (currentFloatingTargetType === "sentence") {
           createSentenceProject(name);
-          currentFloatingTargetType = "sentence";
+        } else if (currentFloatingTargetType === "listening") {
+          createListeningProject(name);
         } else {
           createPassageProject(name);
-          currentFloatingTargetType = "passage";
         }
         updateFloatingCartUI();
       }
     });
   }
 
-  // 지문 제작소: 프로젝트 드롭다운 및 버튼
+  // 독해 제작소: 프로젝트 드롭다운 및 버튼
   const selPassageProj = document.getElementById("selectHandoutPassageProject") || document.getElementById("selectHandoutProject");
   if (selPassageProj) {
     selPassageProj.addEventListener("change", (e) => {
@@ -961,7 +1327,7 @@ export function initHandoutCart() {
   const btnCreatePassage = document.getElementById("btnCreatePassageProject") || document.getElementById("btnCreateNewProject");
   if (btnCreatePassage) {
     btnCreatePassage.addEventListener("click", () => {
-      const name = prompt("새 지문 유인물 프로젝트 이름을 입력하세요:", "");
+      const name = prompt("새 독해 유인물 프로젝트 이름을 입력하세요:", "");
       if (name !== null) {
         createPassageProject(name);
       }
@@ -972,7 +1338,7 @@ export function initHandoutCart() {
   if (btnRenamePassage) {
     btnRenamePassage.addEventListener("click", () => {
       const curProj = getCurrentPassageProject();
-      const newName = prompt("지문 프로젝트의 새 이름을 입력하세요:", curProj.name);
+      const newName = prompt("독해 프로젝트의 새 이름을 입력하세요:", curProj.name);
       if (newName !== null && newName.trim()) {
         renamePassageProject(curProj.id, newName);
       }
@@ -983,7 +1349,7 @@ export function initHandoutCart() {
   if (btnDeletePassage) {
     btnDeletePassage.addEventListener("click", () => {
       const curProj = getCurrentPassageProject();
-      if (confirm(`'${curProj.name}' 지문 프로젝트를 삭제하시겠습니까?\n담긴 문항들도 함께 삭제됩니다.`)) {
+      if (confirm(`'${curProj.name}' 독해 프로젝트를 삭제하시겠습니까?\n담긴 문항들도 함께 삭제됩니다.`)) {
         deletePassageProject(curProj.id);
       }
     });
@@ -1024,6 +1390,45 @@ export function initHandoutCart() {
       const curProj = getCurrentSentenceProject();
       if (confirm(`'${curProj.name}' 문장 프로젝트를 삭제하시겠습니까?\n담긴 문장들도 함께 삭제됩니다.`)) {
         deleteSentenceProject(curProj.id);
+      }
+    });
+  }
+
+  // 듣기 제작소: 프로젝트 드롭다운 및 버튼
+  const selListeningProj = document.getElementById("selectHandoutListeningProject");
+  if (selListeningProj) {
+    selListeningProj.addEventListener("change", (e) => {
+      setCurrentListeningProject(e.target.value);
+    });
+  }
+
+  const btnCreateListening = document.getElementById("btnCreateListeningProject");
+  if (btnCreateListening) {
+    btnCreateListening.addEventListener("click", () => {
+      const name = prompt("새 듣기 유인물 프로젝트 이름을 입력하세요:", "");
+      if (name !== null) {
+        createListeningProject(name);
+      }
+    });
+  }
+
+  const btnRenameListening = document.getElementById("btnRenameListeningProject");
+  if (btnRenameListening) {
+    btnRenameListening.addEventListener("click", () => {
+      const curProj = getCurrentListeningProject();
+      const newName = prompt("듣기 프로젝트의 새 이름을 입력하세요:", curProj.name);
+      if (newName !== null && newName.trim()) {
+        renameListeningProject(curProj.id, newName);
+      }
+    });
+  }
+
+  const btnDeleteListening = document.getElementById("btnDeleteListeningProject");
+  if (btnDeleteListening) {
+    btnDeleteListening.addEventListener("click", () => {
+      const curProj = getCurrentListeningProject();
+      if (confirm(`'${curProj.name}' 듣기 프로젝트를 삭제하시겠습니까?\n담긴 문항들도 함께 삭제됩니다.`)) {
+        deleteListeningProject(curProj.id);
       }
     });
   }
