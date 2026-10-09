@@ -1859,18 +1859,23 @@ export function loadPassageDetail(p) {
     const rawScript = (p.script_text || p.passage_text || "대본 정보가 등록되지 않았습니다.").trim();
     panelPassageText.dataset.rawText = rawScript;
 
-    let formattedScript = escapeHtml(rawScript);
-    formattedScript = formattedScript.replace(/(^|\n)\s*(M|W|Man|Woman|Boy|Girl|남|여)\s*:\s*/g, (match, p1, speaker) => {
-      const isMale = /^(M|Man|Boy|남)$/i.test(speaker);
-      const cls = isMale ? "speaker-tag speaker-male" : "speaker-tag speaker-female";
-      return `${p1}<span class="${cls}">${speaker}:</span> `;
-    });
-
     const currentQuery =
       (resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()) || "";
-    if (currentQuery) {
-      formattedScript = highlightTextKeyword(formattedScript, currentQuery, "passage-highlight");
-    }
+
+    // 1. 순수 텍스트에 검색어 하이라이트를 먼저 수행 (highlightTextKeyword 내부에서 escapeHtml 처리)
+    let formattedScript = currentQuery
+      ? highlightTextKeyword(rawScript, currentQuery, "passage-highlight")
+      : escapeHtml(rawScript);
+
+    // 2. 이미 이스케이프 및 하이라이트가 완료된 안전한 HTML에 화자 배지 태그(<span>) 적용
+    formattedScript = formattedScript.replace(
+      /(^|\n)\s*(?:<mark[^>]*>)?(M\d*|W\d*|Man|Woman|Boy|Girl|남|여)(?:<\/mark>)?\s*:\s*/gi,
+      (match, p1, speaker) => {
+        const isMale = /^(M\d*|Man|Boy|남)$/i.test(speaker);
+        const cls = isMale ? "speaker-tag speaker-male" : "speaker-tag speaker-female";
+        return `${p1}<span class="${cls}">${speaker.toUpperCase()}:</span> `;
+      }
+    );
     formattedScript = formattedScript.trim();
 
     const hasAudio = !!p.audio_file_path;

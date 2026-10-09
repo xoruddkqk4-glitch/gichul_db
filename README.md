@@ -2717,7 +2717,7 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_sentence_hwpx.py`: 7개 단위 테스트 100% 통과 (6문장/10문장 레이아웃, 개념 테이블 유무, 제목 테두리 투명화, 마지막 엔터 2회, 높이 상한 캡 검증).
   - `pytest tests/`: 218개 전체 회귀 테스트 100% 통과.
 
-### [2026-10-09 18:15] 업데이트 이력 (Commit ID: b04a1d4f)
+### [2026-10-09 18:15] 업데이트 이력 (Commit ID: a0dee26d)
 - **수정 내용**:
   - **1) 유인물 제작소 및 상단 헤더 내비게이션 명확화 ('처음 화면' vs '이전 화면' 분리) (`templates/index.html`, `static/css/search.css`, `static/css/handouts.css`, `static/js/dom.js`, `static/js/navigation.js`, `static/js/handout-passage.js`, `static/js/handout-sentence.js`)**:
     - **요청 사항 반영**: 유인물 제작소 화면 및 상단 헤더의 '처음 화면으로 돌아가기' 버튼이 직전 화면이 아닌 첫 검색 메인 화면으로 돌아가도록 명확히 정의하고, 직전 화면(검색 결과 등)으로 복귀하는 '이전 화면으로 돌아가기' 버튼을 신설하여 두 기능을 시각적/기능적으로 분리.
@@ -2737,4 +2737,15 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/test_listening_sentences.py`: 5개 듣기 대본 토큰화/검색 단위 테스트 100% 통과 (0.20s).
   - `pytest tests/test_tts_engine.py`: 6개 차임벨 및 1지문 2문항 8초 무음 단위 테스트 100% 통과 (0.16s).
   - `pytest tests/`: 226개 전체 단위/통합 회귀 테스트 100% 통과 (21.66s).
+
+### [2026-10-09 18:27] 업데이트 이력 (Commit ID: cc8d7c73)
+- **수정 내용**:
+  - **1) 듣기 영역 검색 결과 대본(Script) HTML 태그 이중 이스케이프 및 텍스트 노출 버그 수정 (`static/js/passage-render.js`)**:
+    - **원인 분석**: 듣기 지문 렌더링 시 화자 배지 태그(`<span class="speaker-tag ...">M:</span>`)를 먼저 생성한 후 검색어 하이라이트 함수(`highlightTextKeyword`)를 호출하여, 함수 내부의 `escapeHtml()`에 의해 태그(`<`, `>`) 및 아포스트로피(`'`)가 `&lt;span...&gt;`, `&#039;`로 이중 이스케이프되어 브라우저 화면에 태그 문자열이 날것으로 노출되던 문제 해결.
+    - **처리 순서 정상화**: 원본 대본(`rawScript`)에 대해 검색어 하이라이트를 먼저 수행한 후, 이미 이스케이프 및 `<mark>` 처리가 완료된 안전한 HTML에 화자 배지 태그(`<span class="speaker-tag ...">`)를 적용하도록 순서를 교정하여 태그 노출 방지 및 정상 배지 스타일 렌더링 복원.
+- **검증 결과**:
+  - `node -c static/js/passage-render.js`: 자바스크립트 구문 검사 0건 통과.
+  - `pytest tests/test_listening_sentences.py`: 5개 단위 테스트 100% 통과.
+  - `pytest tests/`: 226개 전체 회귀 테스트 100% 통과.
+
 
