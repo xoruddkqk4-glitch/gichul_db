@@ -1187,6 +1187,20 @@
               * 통합 MP3: 유인물 문항 순서대로 음성(차임벨+8초무음)이 하나로 결합되어 다운로드됩니다.
             </span>
           </div>
+
+          <!-- 카드 4: 교사용 인터랙티브 듣기 수업 진행 전용 액션 -->
+          <div class="handout-panel-card classroom-action-card" style="border: 2px solid #8b5cf6; background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); box-shadow: 0 4px 14px rgba(139, 92, 246, 0.25);">
+            <h3 class="panel-card-title" style="color: #6d28d9; display: flex; align-items: center; gap: 6px;">
+              <span>🎯 인터랙티브 수업 모드</span>
+            </h3>
+            <button type="button" class="btn-start-listening-classroom" id="btnOpenListeningClassroomModal" style="width: 100%; padding: 14px 16px; font-size: 1.05rem; font-weight: 800; color: #fff; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%); border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35); display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform 0.15s ease, box-shadow 0.15s ease;">
+              <span style="font-size: 1.3rem;">🎧</span>
+              <span>칠판형 듣기 수업 모드 시작</span>
+            </button>
+            <span class="form-help" style="text-align: center; display: block; line-height: 1.5; margin-top: 8px; color: #6b21a8; font-weight: 600;">
+              * 전체화면 파형 뷰어, 문장별 분할 재생, 마우스 드래그 구간 반복 지원
+            </span>
+          </div>
         </aside>
       </div>
     </section>
@@ -2914,6 +2928,146 @@
             ▶ 음성 결합 및 MP3 다운로드 시작
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 교사용 칠판형 듣기 수업 모드 전체화면 모달 (#listeningClassroomModal) -->
+  <div class="modal-backdrop classroom-modal-backdrop" id="listeningClassroomModal" style="display: none; z-index: 100000; background: rgba(0, 0, 0, 0.88); backdrop-filter: blur(6px);">
+    <div class="classroom-modal-window" id="classroomModalWindow">
+      <!-- 1. 칠판 상단 헤더 툴바 -->
+      <div class="classroom-header-toolbar">
+        <div class="classroom-title-area">
+          <span class="classroom-badge">🎧 교사용 듣기 수업 모드</span>
+          <span class="classroom-project-title" id="txtClassroomProjectTitle">기본 듣기 프로젝트</span>
+          <span class="classroom-pos-badge" id="txtClassroomPosBadge">문항 1/17 · 문장 1/8</span>
+        </div>
+        <div class="classroom-header-controls">
+          <label for="selectClassroomQuestion" style="font-size: 0.88rem; color: #94a3b8; font-weight: 600;">문항 이동:</label>
+          <select id="selectClassroomQuestion" class="classroom-select" title="다른 듣기 문항으로 바로 이동"></select>
+          <button type="button" class="btn-classroom-tool" id="btnClassroomFullscreen" title="전체 화면 토글 (단축키: F)">
+            <span id="txtFullscreenIcon">⛶</span> 전체화면
+          </button>
+          <button type="button" class="btn-classroom-close" id="btnCloseClassroomModal" title="수업 모드 닫기 (Esc)">&times;</button>
+        </div>
+      </div>
+
+      <!-- 2. 중앙 상단: 칠판형 대형 문장 텍스트 디스플레이 -->
+      <div class="classroom-sentence-board">
+        <div class="classroom-sentence-top-meta">
+          <span class="classroom-speaker-badge speaker-m" id="classroomSpeakerBadge">M</span>
+          <span class="classroom-q-type" id="classroomQType">(짧은 대화 응답)</span>
+          <div class="classroom-text-toggles">
+            <label class="classroom-toggle-chk" title="FELS 기능어 약형드랩 [  ] 빈칸으로 표시하여 학생 딕테이션 훈련">
+              <input type="checkbox" id="chkClassroomFelsBlank">
+              <span>🎯 FELS 빈칸 퀴즈 모드</span>
+            </label>
+            <label class="classroom-toggle-chk" title="우리말 해석 표시 토글">
+              <input type="checkbox" id="chkClassroomKoreanTrans">
+              <span>📘 해석 보기</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 영문 대본 문장 텍스트 (대형 폰트) -->
+        <div class="classroom-sentence-text" id="classroomSentenceText">
+          Loading sentence...
+        </div>
+
+        <!-- 우리말 해석 (토글 시 노출) -->
+        <div class="classroom-korean-trans" id="classroomKoreanTrans" style="display: none;">
+          우리말 해석 내용이 여기에 표시됩니다.
+        </div>
+      </div>
+
+      <!-- 3. 중앙 메인: 첨부 이미지 규격 오디오 Waveform 파형 창 -->
+      <div class="classroom-wave-panel">
+        <div class="classroom-wave-container" id="classroomWaveContainer">
+          <!-- 상단 중앙 파일명 라벨 -->
+          <div class="classroom-wave-header-label" id="classroomWaveFileName">
+            기본_듣기_프로젝트_1번_문장1.mp3
+          </div>
+
+          <!-- 파형 캔버스 -->
+          <canvas class="classroom-wave-canvas" id="classroomWaveCanvas"></canvas>
+
+          <!-- 마우스 드래그 선택 영역 오버레이 -->
+          <div class="classroom-region-overlay" id="classroomRegionOverlay" style="display: none;">
+            <div class="region-handle region-handle-start" id="regionHandleStart" title="시작점 조절"></div>
+            <div class="region-highlight-box" id="regionHighlightBox">
+              <span class="region-label" id="regionTimeLabel">00:00 - 00:00</span>
+            </div>
+            <div class="region-handle region-handle-end" id="regionHandleEnd" title="종료점 조절"></div>
+          </div>
+
+          <!-- 하단 중앙 타임코드 -->
+          <div class="classroom-wave-timecode" id="classroomWaveTimecode">
+            00:00.0 / 00:00.0
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 하단 네비게이션 & 구간 반복 재생 바 -->
+      <div class="classroom-footer-bar">
+        <!-- 좌측: 이전/다음 문장 & 재생 컨트롤 -->
+        <div class="classroom-nav-actions">
+          <button type="button" class="btn-classroom-nav" id="btnClassroomPrevSentence" title="이전 문장으로 이동 (단축키: ←)">
+            <span>⏮ 이전 문장</span>
+          </button>
+          <button type="button" class="btn-classroom-play" id="btnClassroomPlayPause" title="재생 / 일시정지 (단축키: Space)">
+            <span id="classroomPlayIcon">▶</span>
+            <span id="classroomPlayText">재생</span>
+          </button>
+          <button type="button" class="btn-classroom-nav" id="btnClassroomNextSentence" title="다음 문장으로 이동 (단축키: →)">
+            <span>다음 문장 ⏭</span>
+          </button>
+        </div>
+
+        <!-- 중앙: 구간 반복 (A-B Looper) 컨트롤 -->
+        <div class="classroom-loop-actions">
+          <button type="button" class="btn-classroom-loop" id="btnClassroomLoopRegion" title="마우스로 드래그하여 선택한 구간을 반복 재생합니다 (단축키: R)">
+            <span>🔁 선택 구간 반복</span>
+          </button>
+          <div class="loop-count-wrap">
+            <label for="selectClassroomLoopCount" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">횟수:</label>
+            <select id="selectClassroomLoopCount" class="classroom-select-sm" title="선택 구간 반복 횟수">
+              <option value="1">1회</option>
+              <option value="2">2회</option>
+              <option value="3" selected>3회</option>
+              <option value="5">5회</option>
+              <option value="999">무한 반복 (∞</option>
+            </select>
+          </div>
+          <span class="classroom-loop-badge" id="classroomLoopBadge" style="display: none;">반복 0/3</span>
+          <button type="button" class="btn-classroom-clear-region" id="btnClassroomClearRegion" style="display: none;" title="구간 선택 해제">
+            ✕ 선택 해제
+          </button>
+        </div>
+
+        <!-- 우측: 배속 및 볼륨 컨트롤 -->
+        <div class="classroom-audio-settings">
+          <label for="selectClassroomSpeed" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">속도:</label>
+          <select id="selectClassroomSpeed" class="classroom-select-sm" title="오디오 재생 속도">
+            <option value="0.8">0.8x</option>
+            <option value="0.9">0.9x</option>
+            <option value="1.0" selected>1.0x</option>
+            <option value="1.1">1.1x</option>
+            <option value="1.2">1.2x</option>
+          </select>
+          <span style="font-size: 0.9rem; color: #94a3b8; margin-left: 6px;">🔊</span>
+          <input type="range" id="rangeClassroomVolume" min="0" max="1" step="0.05" value="1" style="width: 70px; accent-color: #38bdf8;" title="볼륨 조절">
+        </div>
+      </div>
+
+      <!-- 5. 하단 단축키 가이드 팁 -->
+      <div class="classroom-shortcut-tips">
+        <span>💡 단축키:</span>
+        <kbd>Space</kbd> 재생/정지
+        <kbd>←</kbd> 이전 문장
+        <kbd>→</kbd> 다음 문장
+        <kbd>R</kbd> 구간 반복
+        <kbd>F</kbd> 전체화면 토글
+        <kbd>Esc</kbd> 닫기
       </div>
     </div>
   </div>

@@ -193,7 +193,7 @@ function bindItemEvents() {
       const pid = badge.dataset.id;
       if (pid) {
         import("./results-sentence.js").then((m) => {
-          m.navigateToPassageView(pid);
+          m.navigateToPassageView(pid, "reading");
         });
       }
     });

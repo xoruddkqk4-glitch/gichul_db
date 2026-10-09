@@ -632,6 +632,45 @@ async def generate_tts_preview(engine: str = "xtts", gender: str = "male", rate:
     return f"/static/audio/{preview_filename}?t={int(os.path.getmtime(preview_path))}"
 
 
+SENTENCE_AUDIO_DIR = os.path.join(AUDIO_DIR, "sentences")
+os.makedirs(SENTENCE_AUDIO_DIR, exist_ok=True)
+
+
+async def get_or_synthesize_sentence_audio(text: str, speaker: str = "M", speed: float = 1.0) -> str:
+    """
+    수업 진행 창 전용 단일 문장 고속 오디오 합성 및 캐싱 파일 경로 반환
+    - speaker: 'M' or 'W'
+    - speed: 0.8 ~ 1.2
+    - 반환: 절대 파일 경로 (MP3)
+    """
+    import hashlib
+    clean_txt = re.sub(r"^(M|W|남|여)\s*:\s*", "", text.strip(), flags=re.IGNORECASE)
+    clean_txt = re.sub(r"\([^)]*\)", "", clean_txt).strip()
+    if not clean_txt:
+        clean_txt = text.strip()
+
+    rate_str = "+0%"
+    if speed < 0.95:
+        rate_str = f"{int((speed - 1.0) * 100)}%"
+    elif speed > 1.05:
+        rate_str = f"+{int((speed - 1.0) * 100)}%"
+
+    voice = DEFAULT_EDGE_TTS_VOICE_FEMALE if str(speaker).upper() in ("W", "FEMALE", "여") else DEFAULT_EDGE_TTS_VOICE_MALE
+    hash_str = hashlib.md5(f"{clean_txt}_{voice}_{rate_str}".encode("utf-8")).hexdigest()
+    out_path = os.path.join(SENTENCE_AUDIO_DIR, f"s_{hash_str}.mp3")
+
+    if os.path.exists(out_path) and os.path.getsize(out_path) > 500:
+        return out_path
+
+    audio_bytes = await synthesize_edge_tts_turn(clean_txt, voice, rate=rate_str)
+    if audio_bytes:
+        with open(out_path, "wb") as f:
+            f.write(audio_bytes)
+        return out_path
+
+    return ""
+
+
 def sanitize_filename(name: str) -> str:
     """파일명으로 사용 가능한 안전한 문자열로 치환"""
     return re.sub(r'[\\/*?:"<>|\[\]\s]', '_', name).strip('_')

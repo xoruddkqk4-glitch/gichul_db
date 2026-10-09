@@ -1203,5 +1203,494 @@
   animation: listeningPulse 2s infinite ease-in-out;
 }
 
+/* =========================================================================
+   교사용 칠판형 듣기 수업 모드 & Waveform 파형 뷰어 스타일 (#listeningClassroomModal)
+   ========================================================================= */
+.classroom-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.classroom-modal-window {
+  width: 95vw;
+  max-width: 1280px;
+  height: 90vh;
+  max-height: 900px;
+  background: #091a2e;
+  border: 1px solid #1e3a5f;
+  border-radius: 14px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 35px rgba(56, 189, 248, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f1f5f9;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+/* 전체화면 활성화 시 전체 뷰 채움 */
+.classroom-modal-window.is-fullscreen {
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+}
+
+/* 1. 상단 헤더 툴바 */
+.classroom-header-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #061322;
+  border-bottom: 1px solid #1e3a5f;
+  gap: 16px;
+}
+
+.classroom-title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.classroom-badge {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+}
+
+.classroom-project-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.classroom-pos-badge {
+  background: #1e293b;
+  color: #38bdf8;
+  border: 1px solid #0284c7;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 6px;
+}
+
+.classroom-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.classroom-select {
+  background: #0f2744;
+  border: 1px solid #2563eb;
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.classroom-select-sm {
+  background: #0f2744;
+  border: 1px solid #1e3a5f;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+.btn-classroom-tool {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.btn-classroom-tool:hover {
+  background: #334155;
+  color: #fff;
+  border-color: #475569;
+}
+
+.btn-classroom-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color 0.15s ease;
+}
+
+.btn-classroom-close:hover {
+  color: #ef4444;
+}
+
+/* 2. 대형 문장 칠판 디스플레이 */
+.classroom-sentence-board {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px 36px;
+  background: radial-gradient(circle at 50% 30%, #0d2642 0%, #081a2e 100%);
+  border-bottom: 1px solid #1e3a5f;
+  min-height: 170px;
+  position: relative;
+}
+
+.classroom-sentence-top-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.classroom-speaker-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
+.classroom-speaker-badge.speaker-m {
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+}
+
+.classroom-speaker-badge.speaker-w {
+  background: #a855f7;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+}
+
+.classroom-q-type {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  font-weight: 600;
+  margin-left: 10px;
+}
+
+.classroom-text-toggles {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.classroom-toggle-chk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.classroom-toggle-chk input {
+  cursor: pointer;
+  accent-color: #8b5cf6;
+}
+
+.classroom-sentence-text {
+  font-size: 1.85rem;
+  font-weight: 800;
+  line-height: 1.45;
+  color: #ffffff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  word-break: keep-all;
+  letter-spacing: -0.3px;
+}
+
+.classroom-korean-trans {
+  margin-top: 14px;
+  padding: 10px 16px;
+  background: rgba(30, 58, 95, 0.45);
+  border-left: 4px solid #38bdf8;
+  border-radius: 4px;
+  font-size: 1.15rem;
+  color: #93c5fd;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+/* 3. 오디오 Waveform 파형 창 (첨부 이미지 100% 규격) */
+.classroom-wave-panel {
+  padding: 14px 20px;
+  background: #061322;
+  border-bottom: 1px solid #1e3a5f;
+}
+
+.classroom-wave-container {
+  position: relative;
+  width: 100%;
+  height: 140px;
+  background: linear-gradient(180deg, #072540 0%, #0b3b60 50%, #062038 100%);
+  border: 1px solid #144773;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+  user-select: none;
+  cursor: crosshair;
+}
+
+/* 상단 중앙 파일명 라벨 */
+.classroom-wave-header-label {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #00e5ff;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  pointer-events: none;
+  z-index: 5;
+  letter-spacing: 0.3px;
+}
+
+/* 파형 캔버스 */
+.classroom-wave-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 마우스 드래그 선택 영역 오버레이 */
+.classroom-region-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 255, 204, 0.22);
+  border-left: 2px solid #00ffcc;
+  border-right: 2px solid #00ffcc;
+  z-index: 4;
+  pointer-events: auto;
+}
+
+.region-highlight-box {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.region-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.65);
+  color: #00ffcc;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.region-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.region-handle-start {
+  left: -4px;
+}
+
+.region-handle-end {
+  right: -4px;
+}
+
+/* 하단 중앙 타임코드 */
+.classroom-wave-timecode {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.82rem;
+  font-family: monospace;
+  font-weight: 700;
+  color: #94a3b8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* 4. 하단 네비게이션 & 구간 반복 재생 바 */
+.classroom-footer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #061322;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.classroom-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-classroom-nav {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #1e3a5f;
+  background: #0f2744;
+  color: #f1f5f9;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-classroom-nav:hover {
+  background: #1e3a5f;
+  border-color: #38bdf8;
+  color: #fff;
+}
+
+.btn-classroom-play {
+  padding: 9px 24px;
+  border-radius: 6px;
+  border: none;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+  transition: all 0.15s ease;
+}
+
+.btn-classroom-play:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.5);
+}
+
+.classroom-loop-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-classroom-loop {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #059669;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  transition: all 0.15s ease;
+}
+
+.btn-classroom-loop:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
+}
+
+.loop-count-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.classroom-loop-badge {
+  background: #064e3b;
+  color: #34d399;
+  border: 1px solid #059669;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.btn-classroom-clear-region {
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid #475569;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-classroom-clear-region:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.classroom-audio-settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 5. 하단 단축키 가이드 팁 */
+.classroom-shortcut-tips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  background: #030a12;
+  font-size: 0.76rem;
+  color: #64748b;
+  border-top: 1px solid #0f2744;
+}
+
+.classroom-shortcut-tips kbd {
+  background: #1e293b;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 0.72rem;
+  font-family: inherit;
+}
+
+
 
 

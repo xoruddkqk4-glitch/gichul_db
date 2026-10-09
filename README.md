@@ -2810,5 +2810,26 @@ CREATE TABLE user_sentence_status (
   - `tests/test_listening_handout.py`: 6개 단위 테스트 100% 통과.
   - `pytest tests/`: 231개 전체 단위/통합 회귀 테스트 100% 통과 (0건 실패).
 
+### [2026-10-09 21:28] 업데이트 이력 (Commit ID: e8786ac8)
+- **수정 내용**:
+  - **1) 교사용 듣기 유인물 수업 진행 전용 전체화면 칠판 모달 & Audio Waveform 플레이어 구축 (`docs/plans/2026-10-09_03_listening-classroom-wave-player.md`, `static/js/listening-classroom.js`, `templates/index.html`, `static/css/handouts.css`, `gichul/routers/handouts.py`, `gichul/tts_service.py`)**:
+    - **고가시성 수업 시작 버튼**: 듣기 유인물 우측 설정 패널의 '📥 듣기 유인물 및 오디오 다운로드' 카드 아래에 바이올렛/블루 네온 그라디언트 액센트 버튼(`#btnOpenListeningClassroomModal`) 배치.
+    - **칠판형 전체화면 모달 (`#listeningClassroomModal`)**: HTML5 Fullscreen API 연동, 전자칠판/빔프로젝터에 최적화된 다크 블루 칠판 테마(`#091a2e`).
+    - **첨부 이미지 규격 Canvas 파형 렌더러**: Web Audio API PCM 디코딩 기반, 딥 블루 배경(`linear-gradient(#072540, #0b3b60)`), 네온 민트(`#00ffcc`) 대칭 파형, 백색 플레이헤드 세로선, 상단 파일명 라벨(`${프로젝트명}_${문항번호}번_문장${idx}.mp3`), 하단 정밀 분:초.밀리초 타임코드(`03:57.1 / 04:12.8`).
+    - **마우스 드래그 구간 선택 & A-B Looper 반복 재생**: 마우스 드래그로 원하는 음성 구간(`startTime ~ endTime`) 선택, 오버레이 박스 및 타임코드 표시, 원하는 횟수(1회, 2회, 3회, 5회, 무한)만큼 구간 반복 재생 엔진 구현.
+    - **문장별 분할 재생 및 수업용 토글**: 대형 영문 문장 텍스트(칠판 뷰), 이전/다음 문장 및 문항 전환, `🎯 FELS 빈칸 퀴즈 모드` (약형드랩 `[     ]` 딕테이션 훈련), `📘 해석 보기` 토글.
+    - **단축키 지원**: Space(재생/일시정지), ←/→(이전/다음 문장), R(선택 구간 반복), F(전체화면), Esc(닫기).
+    - **백엔드 고속 API**: `POST /api/handouts/listening/classroom-data` (문항별 문장 분할 데이터 일괄 반환), `GET /api/handouts/listening/sentence-audio` (단일 문장 고속 오디오 합성 및 디스크 캐싱 스트리밍).
+  - **2) 유인물 플로팅 보관함 패널과 토스트 알림 겹침 현상 원천 방지 (`static/css/base.css`, `static/js/utils.js`)**:
+    - **원인 해결**: 우측 하단(`bottom: 24px; right: 28px`)에 동일하게 위치하던 토스트 알림(`.toast-container`)을 **상단 중앙(Top Center, `top: 24px; left: 50%; transform: translateX(-50%);`)**으로 재배치하여 하단 유인물 플로팅 보관함과 공간을 100% 분리.
+    - **시각적 완성도**: 모던 글래스모피즘 캡슐 디자인, 부드러운 `slideDownToast` 애니메이션, 상태별 아이콘(`ℹ️`, `✅`, `⚠️`, `❌`) 자동 부착 및 최상위 `z-index: 100050` 부여.
+  - **3) 듣기 유인물 카드 내 출처 클릭 시 해당 지문 상세 결과창 이동 버그 수정 (`static/js/results-sentence.js`, `static/js/handout-passage.js`)**:
+    - `[고O-OOOO년-OO월-OO번]` 클릭 시 듣기 문항(1~17번)일 때도 상단 `currentExamArea`를 동기화하여 독해 18번으로 튀지 않고 해당 시험지의 듣기 문항 상세로 정확히 이동하도록 보정.
+- **검증 결과**:
+  - `node -c static/js/listening-classroom.js static/js/handout-listening.js static/js/main.js static/js/utils.js`: 자바스크립트 문법 검사 통과 (0건 오류).
+  - `python -m py_compile gichul/routers/handouts.py gichul/tts_service.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
+  - `pytest -q tests/test_listening_handout.py`: 신규 수업 데이터 및 문장 오디오 API 포함 7개 단위 테스트 100% 통과 (0건 실패).
+
+
 
 

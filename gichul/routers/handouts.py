@@ -11,10 +11,12 @@ import re
 import urllib.parse
 from typing import List, Dict, Optional, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .. import database as db
 from ..text_utils import normalize_bracket_id
+from ..fels_engine import generate_fels_blank
 from ..services.hwpx_generator import (
     generate_question_handout,
     generate_explanation_handout,
@@ -37,6 +39,7 @@ from ..tts_service import (
     cancel_listening_audio_merge,
     get_listening_audio_merge_progress,
     get_listening_audio_merge_result,
+    get_or_synthesize_sentence_audio,
 )
 from ..logging_config import get_logger
 
@@ -505,4 +508,167 @@ async def api_download_merged_audio_result(job_id: str):
         "Access-Control-Expose-Headers": "Content-Disposition",
     }
     return Response(content=audio_bytes, media_type="audio/mpeg", headers=headers)
+
+
+class ListeningClassroomDataRequest(BaseModel):
+    passage_ids: List[str] = Field(default_factory=list)
+    custom_q_nums: Dict[str, str] = Field(default_factory=dict)
+    items: Optional[List[Dict[str, Any]]] = None
+    project_title: str = Field(default="듣기 수업")
+
+
+@router.post("/listening/classroom-data")
+async def api_get_listening_classroom_data(req: ListeningClassroomDataRequest):
+    """
+    교사용 칠판형 듣기 수업 모드 전용 문항 및 문장 분할 데이터 제공
+    - 문항별 순서 유지, 문장별 화자(M/W), 영문 텍스트, FELS 빈칸, 우리말 해석, 오디오 URL 일괄 반환
+    """
+    input_items = req.items or []
+    passage_ids = list(req.passage_ids)
+    custom_q_nums = dict(req.custom_q_nums)
+
+    if input_items:
+        for it in input_items:
+            pid = it.get("id") or it.get("passage_id")
+            if pid and pid not in passage_ids:
+                passage_ids.append(pid)
+            if pid and it.get("custom_q_num"):
+                custom_q_nums[pid] = str(it.get("custom_q_num"))
+
+    if not passage_ids and not input_items:
+        raise HTTPException(status_code=400, detail="문항 목록이 비어있습니다.")
+
+    norm_ids = [normalize_bracket_id(pid) for pid in passage_ids]
+    p_rows = {}
+    s_rows: Dict[str, List[Dict[str, Any]]] = {}
+
+    if norm_ids:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in norm_ids)
+            cursor.execute(
+                f"SELECT * FROM passages WHERE id IN ({placeholders})",
+                norm_ids
+            )
+            p_rows = {r["id"]: dict(r) for r in cursor.fetchall()}
+
+            # sentences 테이블에서 문장 일괄 조회
+            cursor.execute(
+                f"SELECT passage_id, order_index, sentence_text FROM sentences WHERE passage_id IN ({placeholders}) ORDER BY passage_id, order_index",
+                norm_ids
+            )
+            for sr in cursor.fetchall():
+                pid = sr["passage_id"]
+                if pid not in s_rows:
+                    s_rows[pid] = []
+                s_rows[pid].append(dict(sr))
+
+    # input_items fallback 매핑
+    items_by_id = {normalize_bracket_id(it.get("id") or ""): it for it in input_items if it.get("id")}
+
+    items = []
+    effective_ids = norm_ids if norm_ids else [normalize_bracket_id(it.get("id") or "") for it in input_items]
+    for g_idx, pid in enumerate(effective_ids):
+        p = p_rows.get(pid) or items_by_id.get(pid)
+        if not p:
+            continue
+        custom_q = str(custom_q_nums.get(pid) or (g_idx + 1))
+        prep = _prepare_listening_item_data(p, custom_q)
+
+        # 문장 목록 구성
+        db_sents = s_rows.get(pid, [])
+        sentences_list = []
+        if db_sents:
+            last_speaker = "M"
+            for s in db_sents:
+                raw_text = (s.get("sentence_text") or "").strip()
+                if not raw_text:
+                    continue
+                m_spk = re.match(r"^\s*([MW남여])\s*:\s*", raw_text, flags=re.IGNORECASE)
+                if m_spk:
+                    spk_char = m_spk.group(1).upper()
+                    last_speaker = "W" if spk_char in ("W", "여") else "M"
+                clean_t = re.sub(r"^\s*([MW남여])\s*:\s*", "", raw_text, flags=re.IGNORECASE).strip()
+                f_blank = generate_fels_blank(clean_t, title="", question_type=p.get("question_type") or "")
+                sentences_list.append({
+                    "order_index": s.get("order_index", len(sentences_list) + 1),
+                    "speaker": last_speaker,
+                    "sentence_text": raw_text,
+                    "raw_text": raw_text,
+                    "clean_text": clean_t,
+                    "fels_blank_text": f_blank,
+                    "fels_blank": f_blank,
+                })
+        else:
+            # fallback: script_text 기반 실시간 분할
+            script = p.get("script_text") or p.get("passage_text") or ""
+            raw_splits = [l.strip() for l in script.splitlines() if l.strip()]
+            last_speaker = "M"
+            for r_idx, line in enumerate(raw_splits):
+                m_spk = re.match(r"^\s*([MW남여])\s*:\s*", line, flags=re.IGNORECASE)
+                if m_spk:
+                    spk_char = m_spk.group(1).upper()
+                    last_speaker = "W" if spk_char in ("W", "여") else "M"
+                clean_t = re.sub(r"^\s*([MW남여])\s*:\s*", "", line, flags=re.IGNORECASE).strip()
+                f_blank = generate_fels_blank(clean_t, title="", question_type=p.get("question_type") or "")
+                sentences_list.append({
+                    "order_index": r_idx + 1,
+                    "speaker": last_speaker,
+                    "sentence_text": line,
+                    "raw_text": line,
+                    "clean_text": clean_t,
+                    "fels_blank_text": f_blank,
+                    "fels_blank": f_blank,
+                })
+
+        exam_id = p.get("exam_id") or ""
+        q_num = p.get("q_num") or (g_idx + 1)
+        safe_exam = sanitize_filename(exam_id)
+        mp3_name = f"{safe_exam}_{q_num}.mp3"
+        mp3_full = os.path.join(AUDIO_DIR, mp3_name)
+        audio_url = f"/static/audio/{mp3_name}?t={int(os.path.getmtime(mp3_full))}" if os.path.exists(mp3_full) else ""
+
+        items.append({
+            "id": pid,
+            "exam_id": exam_id,
+            "q_num": q_num,
+            "custom_q_num": custom_q,
+            "question_title": prep["question_title"],
+            "question_type": p.get("question_type") or "",
+            "audio_url": audio_url,
+            "korean_translation": prep.get("korean_translation") or "",
+            "choices_text": prep.get("question_text") or "",
+            "sentences": sentences_list,
+        })
+
+    return {
+        "project_title": req.project_title,
+        "total_questions": len(items),
+        "questions": items,
+        "items": items,
+    }
+
+
+@router.get("/listening/sentence-audio")
+async def api_get_listening_sentence_audio(
+    text: str = "",
+    speaker: str = "M",
+    speed: float = 1.0
+):
+    """수업용 단일 문장 고속 음성 스트리밍 API (디스크 캐싱 지원)"""
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="텍스트가 비어있습니다.")
+    try:
+        audio_path = await get_or_synthesize_sentence_audio(text, speaker=speaker, speed=speed)
+        if not audio_path or not os.path.exists(audio_path):
+            raise HTTPException(status_code=500, detail="음성 생성에 실패했습니다.")
+        return FileResponse(
+            audio_path,
+            media_type="audio/mpeg",
+            headers={"Accept-Ranges": "bytes"}
+        )
+    except Exception as e:
+        logger.error("문장 음성 합성 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 

@@ -125,3 +125,34 @@ def test_listening_dynamic_scaling_for_long_items(sample_listening_item):
         styles = {p.get("paraPrIDRef") for p in p_list if p.get("paraPrIDRef") in ("104", "105", "106")}
         assert len(styles) > 0
         assert any(s in ("105", "106") for s in styles)
+
+
+def test_listening_classroom_endpoints(sample_listening_item):
+    client = TestClient(app)
+
+    # 1. Classroom data endpoint
+    req_body = {
+        "items": [sample_listening_item],
+        "project_title": "테스트 고등학교 듣기 수업"
+    }
+    res = client.post("/api/handouts/listening/classroom-data", json=req_body)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["project_title"] == "테스트 고등학교 듣기 수업"
+    assert data["total_questions"] == 1
+    assert len(data["questions"]) == 1
+    q0 = data["questions"][0]
+    assert len(q0["sentences"]) >= 2
+    assert "speaker" in q0["sentences"][0]
+    assert "clean_text" in q0["sentences"][0]
+    assert "fels_blank_text" in q0["sentences"][0]
+
+    # 2. Sentence audio endpoint
+    res_audio = client.get(
+        "/api/handouts/listening/sentence-audio",
+        params={"text": "Hello, how are you today?", "speaker": "W", "speed": 1.0}
+    )
+    assert res_audio.status_code == 200
+    assert res_audio.headers["content-type"] == "audio/mpeg"
+    assert len(res_audio.content) > 100
+

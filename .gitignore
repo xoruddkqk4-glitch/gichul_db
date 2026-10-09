@@ -31,6 +31,7 @@ data/answer_keys/_pass*/
 static/audio/*.mp3
 static/audio/*.wav
 static/audio/*.zip
+static/audio/sentences/
 
 # Temporary/in-use templates
 static/data/templates/default_b4-question-.hwpx

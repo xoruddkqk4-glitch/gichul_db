@@ -217,46 +217,68 @@ button {
   flex-direction: column;
 }
 
-/* --- 토스트 알림 --- */
+/* --- 토스트 알림 (상단 중앙 배치: 하단 플로팅 유인물 보관함과 절대 겹치지 않음) --- */
 .toast-container {
   position: fixed;
-  bottom: 2rem;
-  right: 2rem;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  z-index: 1000;
+  align-items: center;
+  gap: 8px;
+  z-index: 100050;
   pointer-events: none;
+  max-width: 90vw;
 }
 
 .toast {
-  background-color: #1e293b;
-  color: white;
-  padding: 0.75rem 1.25rem;
-  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.94);
+  color: #ffffff;
+  padding: 9px 18px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   font-size: 0.88rem;
   font-weight: 500;
-  box-shadow: var(--shadow-lg);
-  display: flex;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+  display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  animation: slideUp 0.25s ease-out;
+  gap: 8px;
+  animation: slideDownToast 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   pointer-events: auto;
+  max-width: 680px;
+  letter-spacing: -0.01em;
+}
+
+.toast.info {
+  background: rgba(15, 33, 64, 0.94);
+  border-color: rgba(56, 189, 248, 0.4);
 }
 
 .toast.success {
-  background-color: #065f46;
-  border-left: 4px solid #10b981;
+  background: rgba(6, 78, 59, 0.94);
+  border-color: rgba(52, 211, 153, 0.4);
 }
 
-@keyframes slideUp {
+.toast.warning {
+  background: rgba(69, 39, 10, 0.94);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.toast.error {
+  background: rgba(127, 29, 29, 0.94);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+@keyframes slideDownToast {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(-16px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 

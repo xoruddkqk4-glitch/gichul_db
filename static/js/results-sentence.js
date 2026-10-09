@@ -149,17 +149,32 @@ export function extractPassageId(str) {
 }
 
 /** 문장/유인물 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동 및 탭 포커스 */
-export async function navigateToPassageView(targetPassageId) {
+export async function navigateToPassageView(targetPassageId, forceArea = null) {
   stopAllListeningAudio();
   const pId = extractPassageId(targetPassageId);
   if (!pId) return;
 
-  // 유인물 화면이 열려 있다면 닫고 결과 화면으로 전환
+  // 1. 대상 문항 번호로부터 targetArea 판별 (1~17번: 'listening', 18~45번: 'reading')
+  const qMatch = pId.match(/-(\d{1,2})번/);
+  const qNum = qMatch ? parseInt(qMatch[1], 10) : 0;
+  const targetArea = forceArea || ((qNum >= 1 && qNum <= 17) ? "listening" : "reading");
+
+  // 2. 유인물 화면이 열려 있다면 닫고 결과 화면으로 전환
   const handoutView = document.getElementById("handoutViewContainer");
   if (handoutView && handoutView.style.display !== "none") {
     handoutView.style.display = "none";
     showResultsScreen();
   }
+
+  // 3. 영역(Area) 상태 및 상단 토글 UI 동기화
+  appState.currentArea = targetArea;
+  document.querySelectorAll(".area-toggle-btn").forEach(btn => {
+    const bArea = btn.getAttribute("data-area");
+    btn.classList.toggle("active", bArea === targetArea);
+  });
+  import("./search.js").then(m => {
+    if (m.updateQuestionTypeOptions) m.updateQuestionTypeOptions(targetArea);
+  }).catch(() => {});
 
   appState.currentPassageId = pId;
   appState.currentMode = "passage";
@@ -172,10 +187,15 @@ export async function navigateToPassageView(targetPassageId) {
   passageViewContainer.style.display = "flex";
   emptyResultsBox.style.display = "none";
 
-  // 1. 현재 passagesData 목록에 해당 지문이 이미 존재하는지 확인
+  // 4. 현재 passagesData 목록에 해당 지문이 이미 존재하는지 확인
+  // (단, passagesData 내 지문들의 영역이 targetArea와 일치해야 함)
   let idx = -1;
   if (appState.passagesData && appState.passagesData.length > 0) {
-    idx = appState.passagesData.findIndex(p => p.id === pId || (p.all_ids && p.all_ids.includes(pId)));
+    const firstP = appState.passagesData[0];
+    const dataArea = firstP.area || ((firstP.q_num >= 1 && firstP.q_num <= 17) ? "listening" : "reading");
+    if (dataArea === targetArea) {
+      idx = appState.passagesData.findIndex(p => p.id === pId || (p.all_ids && p.all_ids.includes(pId)));
+    }
   }
 
   if (idx >= 0) {
@@ -186,16 +206,18 @@ export async function navigateToPassageView(targetPassageId) {
     return;
   }
 
-  // 2. passagesData에 없을 경우(단독 문장 검색 등에서 유입된 경우)
+  // 5. passagesData에 없거나 영역이 다른 경우 -> 해당 시험지의 targetArea 지문들을 조회
   loadingIndicator.style.display = "flex";
   try {
-    // 해당 시험지 전체 지문 로드 시도
     const examId = pId.substring(0, pId.lastIndexOf("-")) + "]";
-    const res = await fetch(`/api/search/passages?exam_id=${encodeURIComponent(examId)}&limit=100`);
+    const res = await fetch(`/api/search/passages?exam_id=${encodeURIComponent(examId)}&area=${targetArea}&limit=100`);
     if (res.ok) {
       const data = await res.json();
       loadingIndicator.style.display = "none";
       if (data.items && data.items.length > 0) {
+        data.items.forEach(it => {
+          if (!it.area) it.area = targetArea;
+        });
         appState.passagesData = groupPassageItems(data.items);
         resultsTotalCount.textContent = appState.passagesData.length;
         renderPassageView(appState.passagesData, pId);
@@ -209,6 +231,7 @@ export async function navigateToPassageView(targetPassageId) {
     const singleRes = await fetch(`/api/passages/${encodeURIComponent(pId)}`);
     if (singleRes.ok) {
       const singleData = await singleRes.json();
+      if (!singleData.area) singleData.area = targetArea;
       appState.passagesData = groupPassageItems([singleData]);
       resultsTotalCount.textContent = 1;
       renderPassageView(appState.passagesData, pId);

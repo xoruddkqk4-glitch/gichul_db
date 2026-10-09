@@ -23,6 +23,7 @@ import {
   clearListeningCart,
   syncAllProjectDropdowns
 } from "./handout-cart.js";
+import { listeningClassroom } from "./listening-classroom.js";
 
 // 오디오 미리듣기 재생 상태 관리
 let currentPlayingAudio = null;
@@ -223,7 +224,7 @@ function bindListeningCardEvents(container) {
       const pid = badge.dataset.id;
       if (pid) {
         import("./results-sentence.js").then((m) => {
-          m.navigateToPassageView(pid);
+          m.navigateToPassageView(pid, "listening");
         });
       }
     });
@@ -845,6 +846,50 @@ export function initListeningHandoutEvents() {
   const btnDlZip = document.getElementById("btnDownloadListeningZip");
   if (btnDlZip) {
     btnDlZip.addEventListener("click", () => downloadListeningHandout("zip"));
+  }
+
+  // 교사용 칠판형 듣기 수업 모드 열기 버튼
+  const btnOpenClassroom = document.getElementById("btnOpenListeningClassroomModal");
+  if (btnOpenClassroom) {
+    btnOpenClassroom.addEventListener("click", async () => {
+      const items = getListeningCartItems();
+      if (!items || items.length === 0) {
+        alert("수업을 진행할 듣기 문항이 없습니다. 먼저 듣기 문항을 장바구니에 담아주세요.");
+        return;
+      }
+
+      const origText = btnOpenClassroom.innerHTML;
+      btnOpenClassroom.disabled = true;
+      btnOpenClassroom.innerHTML = "<span>⏳ 수업 데이터 준비 중...</span>";
+
+      try {
+        const curProj = getCurrentListeningProject();
+        const projectTitle = curProj ? curProj.title : "듣기 프로젝트";
+
+        const res = await fetch("/api/handouts/listening/classroom-data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items,
+            project_title: projectTitle
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `서버 응답 오류 (${res.status})`);
+        }
+
+        const data = await res.json();
+        await listeningClassroom.open(data);
+      } catch (err) {
+        console.error("Failed to load listening classroom data:", err);
+        alert(`수업 모드 실행 실패: ${err.message}`);
+      } finally {
+        btnOpenClassroom.disabled = false;
+        btnOpenClassroom.innerHTML = origText;
+      }
+    });
   }
 
   // 상단 3대 모드 선택기 탭 바 (독해 유인물 ↔ 문장 유인물 ↔ 듣기 유인물)
