@@ -32,7 +32,7 @@ import {
   tabModePassage,
   tabModeSentence,
 } from "./dom.js";
-import { setHeaderSlotState, setMode, updateGrammarFiltersVisibility, updateResultsNavHeight } from "./navigation.js";
+import { setHeaderSlotState, setMode, updateGrammarFiltersVisibility, updateResultsNavHeight, showResultsScreen } from "./navigation.js";
 import { executeSearch, highlightSentenceKeyword, loadStats } from "./search.js";
 import { groupPassageItems, renderPassageView, selectPassageTab, stopAllListeningAudio } from "./results-passage.js";
 import { copyToClipboard, cssSafeId, escapeHtml, showToast } from "./utils.js";
@@ -133,18 +133,33 @@ export function backToPassageView() {
 }
 
 /** 출처 문자열에서 순수 지문 ID 추출 (예: [고3-2026년-07월-33번-8번째 문장] -> [고3-2026년-07월-33번]) */
-function extractPassageId(str) {
+export function extractPassageId(str) {
   if (!str) return "";
-  const m = str.match(/(\[[^\]]+?-\d+번)(?:-\d+번째 문장\]|\])/);
-  if (m) return m[1] + "]";
-  return str.replace(/-\d+번째 문장\]$/, "]");
+  let clean = str.trim();
+  // 문장 번호 접미사 제거 (예: -8번째 문장)
+  clean = clean.replace(/-\d+번째\s*문장\]?$/, "");
+  const m = clean.match(/(\[?[^\]]+?-\d+번\]?)/);
+  if (m) {
+    let base = m[1].replace(/^\[/, "").replace(/\]$/, "");
+    return `[${base}]`;
+  }
+  if (!clean.startsWith("[")) clean = `[${clean}`;
+  if (!clean.endsWith("]")) clean = `${clean}]`;
+  return clean;
 }
 
-/** 문장 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동 및 탭 포커스 */
-async function navigateToPassageView(targetPassageId) {
+/** 문장/유인물 출처 클릭 시 해당 문항의 지문 결과 페이지로 즉시 이동 및 탭 포커스 */
+export async function navigateToPassageView(targetPassageId) {
   stopAllListeningAudio();
   const pId = extractPassageId(targetPassageId);
   if (!pId) return;
+
+  // 유인물 화면이 열려 있다면 닫고 결과 화면으로 전환
+  const handoutView = document.getElementById("handoutViewContainer");
+  if (handoutView && handoutView.style.display !== "none") {
+    handoutView.style.display = "none";
+    showResultsScreen();
+  }
 
   appState.currentPassageId = pId;
   appState.currentMode = "passage";

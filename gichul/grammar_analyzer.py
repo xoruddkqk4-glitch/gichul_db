@@ -1231,3 +1231,141 @@ def get_all_openrouter_models(force_refresh: bool = False) -> List[Dict[str, Any
             for m in DEFAULT_OPENROUTER_TOP_MODELS
         ]
 
+
+def translate_listening_script(script_text: str) -> str:
+    """
+    영어 듣기 대본(Script)을 설정된 AI 모델(OpenRouter, Gemini, OpenAI, Claude 등)을 통해
+    수능 표준 대화체 한국어 해설 텍스트로 고품질 1:1 번역
+    """
+    if not script_text or not script_text.strip():
+        return ""
+
+    active_configs = get_active_ai_configs()
+    valid_configs = [c for c in active_configs if c.get("api_key")]
+    if not valid_configs:
+        logger.warning("[translate_listening_script] 유효한 AI API Key가 설정되지 않았습니다.")
+        return ""
+
+    cfg = valid_configs[0]
+    provider = cfg["provider"]
+    api_key = cfg["api_key"]
+    model = cfg["model"]
+
+    system_prompt = (
+        "당신은 대한민국 대학수학능력시험 영어 듣기 평가 전문 번역가입니다.\n"
+        "주어진 영어 듣기 대본(Script)을 정밀하고 자연스러운 고품질 한국어 대화체로 1:1 번역하십시오.\n"
+        "[번역 규칙]\n"
+        "1. 화자 태그(W:, M:, Girl:, Boy:, Teacher:, Woman:, Man: 등)를 자연스러운 한국어 화자 태그('여:', '남:' 등)로 번역하십시오.\n"
+        "2. 빈칸(____)이나 밑줄은 형태를 그대로 유지하십시오.\n"
+        "3. 오직 번역된 대본 텍스트만 출력하십시오. 추가 설명, 인사말, 마크다운 코드블록(```)은 절대 출력하지 마십시오."
+    )
+    user_prompt = f"다음 영어 듣기 대본을 한국어로 번역하십시오:\n\n{script_text.strip()}"
+
+    try:
+        if provider == "openrouter":
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            payload = {
+                "model": model or "openai/gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.2
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                    "HTTP-Referer": "http://localhost:8000",
+                    "X-Title": "Gichul DB Listening Translator"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                return resp_data["choices"][0]["message"]["content"].strip()
+
+        elif provider == "openai":
+            url = "https://api.openai.com/v1/chat/completions"
+            payload = {
+                "model": model or "gpt-4o-mini",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.2
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                return resp_data["choices"][0]["message"]["content"].strip()
+
+        elif provider == "claude":
+            url = "https://api.anthropic.com/v1/messages"
+            payload = {
+                "model": model or "claude-haiku-4-5",
+                "max_tokens": 2048,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}]
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                return resp_data["content"][0]["text"].strip()
+
+        elif provider == "gemini":
+            cand_m = resolve_gemini_model(api_key, model)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand_m}:generateContent?key={api_key}"
+            payload = {
+                "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                "generationConfig": {"temperature": 0.2}
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                return resp_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+        elif provider == "lmstudio":
+            url = f"{get_lmstudio_base_url().rstrip('/')}/chat/completions"
+            payload = {
+                "model": model or "local-model",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.2
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=40) as resp:
+                resp_data = json.loads(resp.read().decode("utf-8"))
+                return resp_data["choices"][0]["message"]["content"].strip()
+
+    except Exception as e:
+        logger.error(f"[translate_listening_script] {provider} 호출 실패: {e}")
+        return ""
+
+    return ""
+
+

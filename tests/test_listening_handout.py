@@ -107,3 +107,21 @@ def test_listening_endpoints():
     # 2. Download 400 when empty
     res_down = client.post("/api/handouts/listening/download", json={"passage_ids": []})
     assert res_down.status_code == 400
+
+
+def test_listening_dynamic_scaling_for_long_items(sample_listening_item):
+    # 장문 복합 문항 2개 페어 (대본이 30줄 이상)
+    long_script = "\n".join([f"M{i}: This is a long dialogue line with lots of details to fill in blanks." for i in range(1, 20)])
+    item1 = dict(sample_listening_item, id="[고3-2026년-09월-13번]", fels_text=long_script, custom_q_num="13")
+    item2 = dict(sample_listening_item, id="[고3-2026년-09월-14번]", fels_text=long_script, custom_q_num="14")
+    
+    q_bytes = generate_listening_question_handout([item1, item2], {})
+    with zipfile.ZipFile(io.BytesIO(q_bytes), "r") as zf:
+        sec0 = ET.fromstring(zf.read("Contents/section0.xml"))
+        tbl1 = sec0.find(f".//{{{NS_HP}}}tbl[@id='1216160613']")
+        assert tbl1 is not None
+        # 1페이지 내에 Row 0과 Row 7 문단이 105 또는 106 컴팩트 스타일로 축소되었는지 검증
+        p_list = tbl1.findall(f".//{{{NS_HP}}}p")
+        styles = {p.get("paraPrIDRef") for p in p_list if p.get("paraPrIDRef") in ("104", "105", "106")}
+        assert len(styles) > 0
+        assert any(s in ("105", "106") for s in styles)

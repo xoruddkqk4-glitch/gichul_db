@@ -183,19 +183,18 @@ function renderSentenceCards(sentences) {
 
     html += `
       <div class="sentence-card-item" data-id="${escapeHtml(s.id)}" data-index="${idx}" style="${borderStyle}">
-        <div class="sentence-card-header">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <div style="display: inline-flex; align-items: center; gap: 3px;">
-              <span style="font-size: 0.82rem; font-weight: 700; color: #2563eb;">#</span>
-              <input type="number" class="input-sentence-custom-num" data-id="${escapeHtml(s.id)}" value="${escapeHtml(customNum)}" min="1" max="999" title="인쇄 문장 번호 직접 수정">
-            </div>
-            <span class="sentence-card-source">${escapeHtml(s.source_label || s.id)}</span>
+        <div class="handout-item-header">
+          <div class="handout-item-qnum-box">
+            <span style="font-size: 0.85rem; font-weight: 700; color: #475569;">인쇄 번호:</span>
+            <input type="text" class="handout-item-qnum-input input-sentence-custom-num" data-id="${escapeHtml(s.id)}" value="${escapeHtml(customNum)}" title="유인물에 실제로 인쇄될 문장 번호를 직접 입력하세요">
+            <span style="font-size: 0.85rem; font-weight: 700; color: #1d4ed8;">번</span>
+            <span class="handout-item-source-badge btn-goto-passage" data-id="${escapeHtml(s.passage_id || s.source_label || s.id)}" title="해당 지문 결과창으로 이동">[${escapeHtml(s.source_label || s.id)}]</span>
             ${isExceeded ? '<span style="font-size: 0.72rem; color: #b45309; background: #fef3c7; padding: 1px 6px; border-radius: 4px;">초과 문항</span>' : ''}
           </div>
           <div class="handout-item-controls">
             <button type="button" class="btn-card-move btn-sentence-move-up" data-index="${idx}" title="위로 이동" ${idx === 0 ? "disabled" : ""}>▲</button>
             <button type="button" class="btn-card-move btn-sentence-move-down" data-index="${idx}" title="아래로 이동" ${idx === sentences.length - 1 ? "disabled" : ""}>▼</button>
-            <button type="button" class="btn-card-delete btn-sentence-delete" data-id="${escapeHtml(s.id)}" title="이 문장 삭제">🗑️</button>
+            <button type="button" class="btn-card-delete btn-sentence-delete" data-id="${escapeHtml(s.id)}" title="이 문장 삭제">✕</button>
           </div>
         </div>
         <div class="sentence-card-body">
@@ -206,6 +205,18 @@ function renderSentenceCards(sentences) {
   });
 
   listEl.innerHTML = html;
+
+  // 출처 클릭 시 해당 지문 결과창으로 즉시 이동
+  listEl.querySelectorAll(".btn-goto-passage").forEach((badge) => {
+    badge.addEventListener("click", () => {
+      const pid = badge.dataset.id;
+      if (pid) {
+        import("./results-sentence.js").then((m) => {
+          m.navigateToPassageView(pid);
+        });
+      }
+    });
+  });
 
   // 이벤트 바인딩: 위/아래 이동 및 삭제
   listEl.querySelectorAll(".btn-sentence-move-up").forEach((btn) => {

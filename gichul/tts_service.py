@@ -25,6 +25,7 @@ import tempfile
 import logging
 import time
 import wave
+import uuid
 from typing import List, Dict, Any, Optional, Tuple
 
 import numpy as np
@@ -727,18 +728,24 @@ def _count_progress_units(script_text: str, engine: str = "xtts") -> int:
 
 
 async def generate_passage_audio(passage_id: str, job_id: Optional[str] = None,
-                                 progress: Optional[TtsProgress] = None) -> Dict[str, Any]:
+                                 progress: Optional[TtsProgress] = None,
+                                 cancel_event: Optional[asyncio.Event] = None) -> Dict[str, Any]:
     """
     단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
     (XTTS-v2 수능 성우 로컬 복제 기본 또는 Edge-TTS 무료 보조 하이브리드 지원)
     - job_id: 진행률 조회용 작업 ID (단일 생성)
-    - progress: 일괄 생성에서 넘겨받는 공용 진행 상황 (이 경우 전체 단계 수는 호출 쪽이 관리)
+    - progress: 일괄 생성에서 넘겨받는 공용 진행 상황
+    - cancel_event: 작업 즉시 중단 감지용 이벤트
     """
     owns_progress = progress is None
     if owns_progress:
         progress = TtsProgress(job_id)
     try:
-        result = await _generate_passage_audio_impl(passage_id, progress, owns_progress)
+        result = await _generate_passage_audio_impl(passage_id, progress, owns_progress, cancel_event)
+    except asyncio.CancelledError:
+        if owns_progress:
+            progress.finish(ok=False, message="작업이 취소되었습니다.")
+        raise
     except Exception as e:
         if owns_progress:
             progress.finish(ok=False, message=str(e))
@@ -748,13 +755,15 @@ async def generate_passage_audio(passage_id: str, job_id: Optional[str] = None,
     return result
 
 
-async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, owns_progress: bool) -> Dict[str, Any]:
+async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, owns_progress: bool,
+                                      cancel_event: Optional[asyncio.Event] = None) -> Dict[str, Any]:
     """
     단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
-    (XTTS-v2 수능 성우 로컬 복제 기본 또는 Edge-TTS 무료 보조 하이브리드 지원)
-    - 음성 앞뒤 종소리 및 마지막 발화 후 8초 무음 적용
-    - 1지문 2문항인 경우 2회 반복 재생 (반복 간 8초 무음, 종소리는 맨 앞/뒤만)
+    - cancel_event가 set되면 즉시 asyncio.CancelledError 발생
     """
+    if cancel_event and cancel_event.is_set():
+        raise asyncio.CancelledError("TTS 음성 생성이 취소되었습니다.")
+
     passage = db.get_passage(passage_id)
     if not passage:
         raise ValueError(f"문항을 찾을 수 없습니다: {passage_id}")
@@ -785,10 +794,13 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
                 "터미널에서 'pip install torch TTS'를 실행하거나, 상단 [AI 설정]에서 'Edge-TTS'를 선택해 주세요."
             )
         if not _lameenc_available():
-            # 긴 합성을 시작하기 전에 MP3 인코더 유무부터 확인
             raise RuntimeError(LAMEENC_INSTALL_HINT)
 
         for t_idx, turn in enumerate(turns, 1):
+            if cancel_event and cancel_event.is_set():
+                logger.info(f"[generate_passage_audio] XTTS 대사 합성 취소 감지 ({passage_id}, {t_idx}/{len(turns)})")
+                raise asyncio.CancelledError(f"문항 {passage_id} 음성 생성이 취소되었습니다.")
+
             spk = turn["speaker"]
             turn_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, turn["text"], spk)
             if turn_bytes:
@@ -803,12 +815,19 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
         rate = edge_cfg.get("rate") or DEFAULT_EDGE_TTS_RATE
 
         for t_idx, turn in enumerate(turns, 1):
+            if cancel_event and cancel_event.is_set():
+                logger.info(f"[generate_passage_audio] Edge-TTS 대사 합성 취소 감지 ({passage_id}, {t_idx}/{len(turns)})")
+                raise asyncio.CancelledError(f"문항 {passage_id} 음성 생성이 취소되었습니다.")
+
             voice = female_voice if turn["speaker"] == "female" else male_voice
             turn_bytes = await synthesize_edge_tts_turn(turn["text"], voice, rate=rate)
             if turn_bytes:
                 pcm_data = await loop.run_in_executor(None, mp3_to_pcm, turn_bytes)
                 pcm_chunks.append(pcm_data)
             progress.step(f"{passage_id} 대사 {t_idx}/{len(turns)}")
+
+    if cancel_event and cancel_event.is_set():
+        raise asyncio.CancelledError("TTS 음성 생성이 취소되었습니다.")
 
     if not pcm_chunks:
         raise RuntimeError("음성 데이터 생성에 실패했습니다.")
@@ -1075,4 +1094,318 @@ async def merge_listening_mp3s(passage_ids: List[str]) -> bytes:
     )
 
     return encoded_mp3
+
+
+# 듣기 통합 MP3 비동기 생성 작업 상태 저장소
+_AUDIO_MERGE_JOBS: Dict[str, Dict[str, Any]] = {}
+
+
+def check_listening_audio_status(passage_ids: List[str]) -> Dict[str, Any]:
+    """
+    선택된 듣기 문항들의 음원 파일 존재 여부 및 메타데이터 목록 확인
+    """
+    items = []
+    ready_count = 0
+    missing_count = 0
+
+    for idx, pid in enumerate(passage_ids):
+        clean_id = normalize_bracket_id(pid)
+        passage = db.get_passage(pid) or db.get_passage(clean_id)
+        if not passage:
+            items.append({
+                "index": idx + 1,
+                "id": pid,
+                "clean_id": clean_id,
+                "q_num": idx + 1,
+                "title": "(문항 정보 없음)",
+                "has_audio": False,
+                "audio_url": "",
+                "file_size_kb": 0,
+            })
+            missing_count += 1
+            continue
+
+        q_num = passage.get("q_num") or (idx + 1)
+        q_title = passage.get("question_title") or f"{q_num}번 문항"
+        # 1. 2. 등의 번호 분리
+        m_num = re.match(r"^\s*\d{1,2}\s*[\.\)]\s*(.*)$", q_title)
+        pure_title = m_num.group(1).strip() if m_num else q_title
+
+        # MP3 파일 경로 및 존재 여부 검사
+        mp3_path = None
+        audio_url = passage.get("audio_file_path") or passage.get("audio_url")
+        if audio_url:
+            local_rel = audio_url.replace("/static/audio/", "")
+            cand = os.path.join(AUDIO_DIR, local_rel)
+            if os.path.exists(cand) and os.path.getsize(cand) > 1000:
+                mp3_path = cand
+
+        if not mp3_path:
+            safe_id = sanitize_filename(passage["id"])
+            cand = os.path.join(AUDIO_DIR, f"{safe_id}.mp3")
+            if os.path.exists(cand) and os.path.getsize(cand) > 1000:
+                mp3_path = cand
+                audio_url = f"/static/audio/{safe_id}.mp3"
+
+        has_audio = (mp3_path is not None and os.path.exists(mp3_path))
+        file_size_kb = round(os.path.getsize(mp3_path) / 1024, 1) if has_audio else 0
+
+        if has_audio:
+            ready_count += 1
+        else:
+            missing_count += 1
+
+        items.append({
+            "index": idx + 1,
+            "id": passage["id"],
+            "clean_id": clean_id,
+            "q_num": q_num,
+            "title": pure_title,
+            "has_audio": has_audio,
+            "audio_url": audio_url if has_audio else "",
+            "file_size_kb": file_size_kb,
+        })
+
+    return {
+        "items": items,
+        "total_count": len(passage_ids),
+        "ready_count": ready_count,
+        "missing_count": missing_count,
+    }
+
+
+def start_listening_audio_merge_task(passage_ids: List[str], project_name: str = "듣기유인물") -> str:
+    """통합 MP3 생성 비동기 백그라운드 태스크 등록 및 job_id 반환"""
+    job_id = str(uuid.uuid4())
+    safe_proj = re.sub(r'[^a-zA-Z0-9가-힣_\-]', '_', (project_name or "듣기유인물").strip()) or "듣기유인물"
+    cancel_event = asyncio.Event()
+
+    job_info = {
+        "job_id": job_id,
+        "status": "processing",  # "processing", "completed", "cancelled", "failed"
+        "total": len(passage_ids),
+        "current": 0,
+        "current_passage_id": "",
+        "step": "preparing",     # "preparing", "tts", "decoding", "encoding", "completed"
+        "percent": 0,
+        "message": "음원 결합 준비 중...",
+        "cancel_requested": False,
+        "cancel_event": cancel_event,
+        "output_bytes": None,
+        "output_filename": f"{safe_proj}_전체통합듣기_{len(passage_ids)}문항.mp3",
+        "error": None,
+        "created_at": time.time(),
+        "task": None,
+    }
+    _AUDIO_MERGE_JOBS[job_id] = job_info
+
+    task = asyncio.create_task(_run_listening_audio_merge_worker(job_id, passage_ids, safe_proj, cancel_event))
+    job_info["task"] = task
+    return job_id
+
+
+async def _run_listening_audio_merge_worker(job_id: str, passage_ids: List[str], project_name: str, cancel_event: asyncio.Event) -> None:
+    """비동기 음원 결합 및 인코딩 워커 (루프 중간 즉각 취소 지원)"""
+    job = _AUDIO_MERGE_JOBS.get(job_id)
+    if not job:
+        return
+
+    sample_rate = 24000
+    channels = 1
+    pause_sec = 2.0
+    silence_gap = b"\x00" * (int(sample_rate * pause_sec) * channels * 2)
+
+    merged_pcm = bytearray()
+    loop = asyncio.get_running_loop()
+    total_items = len(passage_ids)
+
+    try:
+        for idx, pid in enumerate(passage_ids):
+            # 1. 취소 요청 확인
+            if cancel_event.is_set() or job.get("cancel_requested"):
+                logger.info(f"[_run_listening_audio_merge_worker] 작업 중단 요청 감지 (job: {job_id})")
+                job["status"] = "cancelled"
+                job["message"] = "사용자에 의해 작업이 즉각 중단되었습니다."
+                return
+
+            clean_id = normalize_bracket_id(pid)
+            passage = db.get_passage(pid) or db.get_passage(clean_id)
+            if not passage:
+                logger.warning(f"[_run_listening_audio_merge_worker] 지문을 찾을 수 없음: {pid}")
+                continue
+
+            job["current"] = idx + 1
+            job["current_passage_id"] = pid
+            q_num = passage.get("q_num") or (idx + 1)
+
+            # MP3 파일 확인
+            mp3_path = None
+            audio_url = passage.get("audio_file_path") or passage.get("audio_url")
+            if audio_url:
+                local_rel = audio_url.replace("/static/audio/", "")
+                cand = os.path.join(AUDIO_DIR, local_rel)
+                if os.path.exists(cand) and os.path.getsize(cand) > 1000:
+                    mp3_path = cand
+
+            if not mp3_path:
+                safe_id = sanitize_filename(passage["id"])
+                cand = os.path.join(AUDIO_DIR, f"{safe_id}.mp3")
+                if os.path.exists(cand) and os.path.getsize(cand) > 1000:
+                    mp3_path = cand
+
+            mp3_bytes = None
+            if mp3_path and os.path.exists(mp3_path):
+                job["step"] = "decoding"
+                job["percent"] = int(((idx) / max(1, total_items)) * 80)
+                job["message"] = f"[{idx + 1}/{total_items}] {q_num}번 문항 음원 준비됨 (디코딩 중...)"
+                with open(mp3_path, "rb") as f:
+                    mp3_bytes = f.read()
+            else:
+                # 음원이 없는 경우 자동 TTS 합성 진행
+                job["step"] = "tts"
+                job["percent"] = int(((idx) / max(1, total_items)) * 80)
+                job["message"] = f"[{idx + 1}/{total_items}] {q_num}번 문항 음원 미생성 -> AI 음성 합성 진행 중..."
+                logger.info(f"[_run_listening_audio_merge_worker] 문항 {passage['id']} 음원 부재로 즉시 합성 진행")
+
+                if cancel_event.is_set() or job.get("cancel_requested"):
+                    job["status"] = "cancelled"
+                    job["message"] = "사용자에 의해 작업이 즉각 중단되었습니다."
+                    return
+
+                try:
+                    await generate_passage_audio(passage["id"], cancel_event=cancel_event)
+                    safe_id = sanitize_filename(passage["id"])
+                    cand = os.path.join(AUDIO_DIR, f"{safe_id}.mp3")
+                    if os.path.exists(cand):
+                        with open(cand, "rb") as f:
+                            mp3_bytes = f.read()
+                except asyncio.CancelledError:
+                    logger.info(f"[_run_listening_audio_merge_worker] 문항 {passage['id']} 음성 합성 중 CancelledError 수신")
+                    job["status"] = "cancelled"
+                    job["message"] = "사용자에 의해 음성 생성이 즉각 중단되었습니다."
+                    return
+                except Exception as e:
+                    if cancel_event.is_set() or job.get("cancel_requested"):
+                        logger.info(f"[_run_listening_audio_merge_worker] 문항 {passage['id']} 작업 취소 요청 감지 후 즉시 중단")
+                        job["status"] = "cancelled"
+                        job["message"] = "사용자에 의해 음성 생성이 즉각 중단되었습니다."
+                        return
+                    logger.error(f"[_run_listening_audio_merge_worker] 문항 {passage['id']} 음성 생성 실패: {e}")
+                    continue
+
+            if cancel_event.is_set() or job.get("cancel_requested"):
+                job["status"] = "cancelled"
+                job["message"] = "사용자에 의해 작업이 즉각 중단되었습니다."
+                return
+
+            if not mp3_bytes:
+                continue
+
+            # MP3 -> PCM 디코딩
+            try:
+                pcm_chunk = await loop.run_in_executor(None, mp3_to_pcm, mp3_bytes, sample_rate)
+                if pcm_chunk:
+                    if len(merged_pcm) > 0:
+                        merged_pcm.extend(silence_gap)
+                    merged_pcm.extend(pcm_chunk)
+            except Exception as e:
+                logger.error(f"[_run_listening_audio_merge_worker] PCM 디코딩 실패 ({passage['id']}): {e}")
+
+        if cancel_event.is_set() or job.get("cancel_requested"):
+            job["status"] = "cancelled"
+            job["message"] = "사용자에 의해 작업이 즉각 중단되었습니다."
+            return
+
+        if not merged_pcm:
+            job["status"] = "failed"
+            job["error"] = "통합할 오디오 데이터가 없습니다."
+            job["message"] = "결합 가능한 오디오 데이터가 없습니다."
+            return
+
+        # 전체 통합 MP3 인코딩
+        job["step"] = "encoding"
+        job["percent"] = 85
+        job["message"] = "전체 문항을 단일 MP3로 최종 인코딩하는 중..."
+
+        encoded_mp3 = await loop.run_in_executor(
+            None,
+            encode_pcm_to_mp3,
+            bytes(merged_pcm),
+            sample_rate,
+            channels,
+            MP3_BITRATE_KBPS
+        )
+
+        if cancel_event.is_set() or job.get("cancel_requested"):
+            job["status"] = "cancelled"
+            job["message"] = "사용자에 의해 작업이 즉각 중단되었습니다."
+            return
+
+        job["output_bytes"] = encoded_mp3
+        job["percent"] = 100
+        job["step"] = "completed"
+        job["status"] = "completed"
+        job["message"] = "전체 통합 MP3 생성이 완료되었습니다!"
+        logger.info(f"[_run_listening_audio_merge_worker] 통합 MP3 생성 완료 (job: {job_id}, size: {len(encoded_mp3)} bytes)")
+
+    except asyncio.CancelledError:
+        logger.info(f"[_run_listening_audio_merge_worker] 워커가 CancelledError로 즉시 종료됨 (job: {job_id})")
+        job["status"] = "cancelled"
+        job["message"] = "사용자에 의해 음성 생성이 즉각 중단되었습니다."
+    except Exception as e:
+        if cancel_event.is_set() or (job and job.get("cancel_requested")):
+            job["status"] = "cancelled"
+            job["message"] = "사용자에 의해 음성 생성이 즉각 중단되었습니다."
+            return
+        logger.error(f"[_run_listening_audio_merge_worker] 작업 중 예외 발생: {e}", exc_info=True)
+        job["status"] = "failed"
+        job["error"] = str(e)
+        job["message"] = f"오디오 결합 중 오류가 발생했습니다: {e}"
+
+
+def cancel_listening_audio_merge(job_id: str) -> bool:
+    """진행 중인 통합 MP3 결합 작업 즉시 중단 (이벤트 플래그 및 태스크 캔슬)"""
+    job = _AUDIO_MERGE_JOBS.get(job_id)
+    if not job:
+        return False
+    # 진행 중이거나 대기 중인 모든 상태에서 즉시 취소
+    job["cancel_requested"] = True
+    job["status"] = "cancelled"
+    job["message"] = "사용자에 의해 음성 생성이 즉각 중단되었습니다."
+    cancel_evt = job.get("cancel_event")
+    if cancel_evt and not cancel_evt.is_set():
+        cancel_evt.set()
+    task = job.get("task")
+    if task and not task.done():
+        task.cancel()
+    logger.info(f"[cancel_listening_audio_merge] 작업 취소 플래그 및 태스크 cancel 호출 완료: {job_id}")
+    return True
+
+
+def get_listening_audio_merge_progress(job_id: str) -> Dict[str, Any]:
+    """통합 MP3 생성 작업 진행 상태 조회"""
+    job = _AUDIO_MERGE_JOBS.get(job_id)
+    if not job:
+        return {"status": "not_found", "message": "작업을 찾을 수 없습니다."}
+
+    return {
+        "job_id": job["job_id"],
+        "status": job["status"],
+        "percent": job["percent"],
+        "current": job["current"],
+        "total": job["total"],
+        "current_passage_id": job["current_passage_id"],
+        "step": job["step"],
+        "message": job["message"],
+        "error": job.get("error"),
+    }
+
+
+def get_listening_audio_merge_result(job_id: str) -> Tuple[Optional[bytes], Optional[str]]:
+    """완료된 작업의 MP3 바이너리 및 파일명 반환"""
+    job = _AUDIO_MERGE_JOBS.get(job_id)
+    if not job or job.get("status") != "completed":
+        return None, None
+    return job.get("output_bytes"), job.get("output_filename")
+
 

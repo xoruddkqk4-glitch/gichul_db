@@ -154,7 +154,7 @@ function renderItemList(cartItems, detailItems) {
             <span style="font-size: 0.85rem; font-weight: 700; color: #475569;">인쇄 번호:</span>
             <input type="text" class="handout-item-qnum-input" value="${escapeHtml(customNum)}" data-id="${escapeHtml(cItem.id)}" title="유인물에 실제로 인쇄될 문항 번호를 직접 입력하세요">
             <span style="font-size: 0.85rem; font-weight: 700; color: #1d4ed8;">번</span>
-            <span class="handout-item-source-badge">[원출처: ${escapeHtml(rawId)}${escapeHtml(crate)}]</span>
+            <span class="handout-item-source-badge btn-goto-passage" data-id="${escapeHtml(cItem.id)}" title="해당 지문 결과창으로 이동">[${escapeHtml(rawId)}${escapeHtml(crate)}]</span>
             <span style="font-size: 0.8rem; color: #64748b;">(${escapeHtml(qType)})</span>
           </div>
           <div class="handout-item-controls">
@@ -184,6 +184,18 @@ function bindItemEvents() {
       const pid = e.target.dataset.id;
       const val = e.target.value.trim();
       setCustomQNum(pid, val);
+    });
+  });
+
+  // 출처 클릭 시 해당 지문 결과창으로 즉시 이동
+  listContainer.querySelectorAll(".btn-goto-passage").forEach((badge) => {
+    badge.addEventListener("click", () => {
+      const pid = badge.dataset.id;
+      if (pid) {
+        import("./results-sentence.js").then((m) => {
+          m.navigateToPassageView(pid);
+        });
+      }
     });
   });
 

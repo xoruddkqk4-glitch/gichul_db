@@ -2773,5 +2773,42 @@ CREATE TABLE user_sentence_status (
   - `pytest tests/`: 231개 전체 단위/통합 회귀 테스트 100% 통과 (11.50s, 0건 실패).
   - FastAPI TestClient 실연동 검증 완료 (`/api/handouts/listening/preview-info` 200 OK, `/api/handouts/listening/download` 200 OK 17KB, `/api/handouts/listening/download-audio` 200 OK 1.58MB MP3).
 
+### [2026-10-09 21:05] 업데이트 이력 (Commit ID: c621286d)
+- **수정 내용**:
+  - **1) 듣기 유인물 B4 세로 2문항 1페이지 완벽 안착 동적 스케일링 엔진 구축 (`gichul/services/hwpx_generator.py`)**:
+    - **페이지 분리(밀림) 원인 해결**: B4 세로 가용 높이(약 285~300mm, 85,000 HWPUNIT) 대비, 긴 대본(FELS 약형드랩 25~35줄)이나 긴 선지가 포함된 문항에서 고정/부족한 폰트 스케일로 인해 셀 높이가 42,000 HWPUNIT을 초과하여 2번째 문항(Row 7)이 2페이지로 밀리던 현상을 원천 방지.
+    - **정밀 환산 라인 수 계산 (`_calculate_listening_line_count`)**: 셀 너비(약 105mm)와 한글/영문 가로폭 비율, 단어 단위 줄바꿈(Word-wrap) 특성을 정밀 반영(가용 폭 48단위 기준)하여 실제 래핑 줄 수를 정확히 산출.
+    - **세분화된 돋움체 컴팩트 스타일 체계 등록 (`_ensure_listening_styles_in_header`)**:
+      - `101`: 11.0pt / 줄간격 145% (짧은 문항: $\le$ 12줄)
+      - `102`: 10.0pt / 줄간격 135% (보통 문항: 13~17줄)
+      - `103`: 9.0pt / 줄간격 125% (다소 긴 문항: 18~22줄)
+      - `104`: 8.2pt / 줄간격 118% (긴 문항: 23~27줄)
+      - `105`: 7.5pt / 줄간격 112% (매우 긴 문항: 28~32줄)
+      - `106`: 7.0pt / 줄간격 105% (초장문/복합 문항: $\ge$ 33줄)
+      - 돋움 글씨체 100% 강제 통일 및 불필요한 번호 매기기 서식 배제(`heading=NONE`).
+    - **페이지 레벨 2문항 동적 스케일러 (`_get_page_listening_styles`)**:
+      - 한 페이지 내 문항 1과 문항 2의 개별 라인 수와 합산 라인 수(`lines1 + lines2`)를 사전 복합 분석하여, 2문항 총합 높이가 B4 1페이지 안전 한계 이내로 유지되도록 스타일 레벨을 최적 조정.
+      - 문제지(`generate_listening_question_handout`) 및 해설지(`generate_listening_explanation_handout`)에 전면 적용.
+  - **2) 유인물 3대 모드(독해·문장·듣기) UI/UX 버튼 및 스타일 완전 통일 (`static/js/handout-passage.js`, `static/js/handout-sentence.js`, `static/js/handout-listening.js`, `static/css/handouts.css`)**:
+    - **버튼 및 레이블 일원화**: 쓰레기통 이모지(`🗑️`) 및 한글 텍스트 버튼(`✕ 삭제`)을 독해 유인물과 동일한 `▲`, `▼`, `✕`(`.btn-card-move`, `.btn-card-delete`) 아이콘 버튼으로 전면 통일.
+    - **인쇄 번호 레이블 일원화**: '출제 번호:' 및 '번호:'를 '인쇄 번호: <input> 번'으로 표준화.
+    - **원출처 텍스트 제거**: 독해 유인물 화면 카드에서 '원출처:' 접두사 제거하여 깔끔한 `[${rawId}]` 배지로 통일.
+    - **출처 배지 원클릭 지문 상세 이동 연동 (`navigateToPassageView`)**: 유인물 카드 내 출처 배지(`[고O-OOOO년-OO월-OO번]`) 클릭 시 모달/오버레이가 닫히며 해당 기출 지문 결과 화면으로 부드럽게 이동하고 하이라이트 표시 (`static/js/results-sentence.js` 연동).
+  - **3) 음성 결합 및 MP3 인코딩 제어 강화 & 사전 점검 모달 구축 (`gichul/tts_service.py`, `gichul/routers/handouts.py`, `static/js/handout-listening.js`, `templates/index.html`)**:
+    - **음성 합성 진행 상황 확인 및 중단(Cancel) 안정화**:
+      - 비동기 음성 합성 및 ffmpeg 인코딩 중단 시 비동기 태스크 취소(`task.cancel()`) 및 하위 프로세스 강제 종료를 완비하여 콘솔 백그라운드 누수 차단.
+      - SSE 스트리밍 취소 시 미완성 임시 파일 자동 롤백 및 상태 동기화.
+    - **문항별 MP3 파일 존재 여부 사전 점검 모달 (`#listeningAudioStatusModal`)**:
+      - 통합 MP3 생성 전 문항별 음원 보유 여부(보유/미생성)를 시각화하고, 누락 음원만 선별 생성할 수 있는 상태 점검 창 제공.
+  - **4) 우리말 해석 자동 보강 (AI 번역) 및 문항 텍스트 인식 정밀화 (`gichul/grammar_analyzer.py`, `gichul/services/hwpx_generator.py`)**:
+    - 해설 유인물에서 우리말 해석이 누락된 문항의 경우 LLM을 통해 자동 번역하여 DB에 캐싱 영구 보관.
+    - 발문 누락 및 선지 깨짐 방지를 위한 PDF 원본 폴백 정밀화.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/hwpx_generator.py gichul/tts_service.py gichul/routers/handouts.py gichul/grammar_analyzer.py`: 파이썬 구문 검증 완료 (통과, 0건 오류).
+  - `node -c static/js/handout-listening.js static/js/handout-sentence.js static/js/handout-passage.js static/js/results-sentence.js`: 자바스크립트 문법 검사 통과 (0건 오류).
+  - `verify_listening_scale.py`: 고3 9월 최장 대본 페어(Q13: 33줄 + Q14: 28줄) 대상 B4 HWPX 생성 테스트 완료, 106(7.0pt/105%) 및 105(7.5pt/112%) 스케일 다운으로 2문항 1페이지 안착 검증.
+  - `tests/test_listening_handout.py`: 6개 단위 테스트 100% 통과.
+  - `pytest tests/`: 231개 전체 단위/통합 회귀 테스트 100% 통과 (0건 실패).
+
 
 

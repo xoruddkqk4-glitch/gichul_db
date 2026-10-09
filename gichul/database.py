@@ -2422,6 +2422,16 @@ def update_passage_audio(passage_id: str, audio_file_path: str) -> bool:
         return cursor.rowcount > 0
 
 
+def update_passage_explanation(passage_id: str, explanation_text: str) -> bool:
+    """문항 해설(우리말 해석 등) 텍스트 갱신"""
+    clean_id = normalize_bracket_id(passage_id)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (explanation_text, clean_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def update_passage_script(
     passage_id: str,
     script_text: Optional[str] = None,

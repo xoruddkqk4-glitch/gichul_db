@@ -21,7 +21,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from ..logging_config import get_logger
 from ..text_utils import extract_choices, extract_answer_num, clean_hwp_glitches
 from ..fels_engine import generate_fels_text, generate_fels_blank
-from ..paths import HANDOUT_TEMPLATES_DIR, CUSTOM_TEMPLATES_DIR
+from ..paths import HANDOUT_TEMPLATES_DIR, CUSTOM_TEMPLATES_DIR, UPLOADS_DIR
 
 logger = get_logger("gichul.hwpx_generator")
 
@@ -301,7 +301,18 @@ def _inject_char_properties(
         if b0 is not None:
             cp0.remove(b0)
 
-        # 1) 일반 본문용 charPr: 지정된 pt 크기, 볼드 없음, 검은색 글자
+        # 돋움 폰트 id 탐색 (기본값 '1')
+        dotum_id = "1"
+        fontfaces = hdr_root.find(f".//{{{NS_HH}}}fontfaces")
+        if fontfaces is not None:
+            for ff in fontfaces.findall(f".//{{{NS_HH}}}fontface"):
+                if ff.get("lang") == "HANGUL":
+                    for f in ff.findall(f".//{{{NS_HH}}}font"):
+                        if "돋움" in (f.get("face") or ""):
+                            dotum_id = f.get("id") or "1"
+                            break
+
+        # 1) 일반 본문용 charPr: 지정된 pt 크기, 볼드 없음, 검은색 글자, 돋움체 강제
         cp_norm = copy.deepcopy(cp0)
         cp_norm.set("id", normal_char_id)
         cp_norm.set("height", str(font_size_pt * 100))
@@ -310,9 +321,13 @@ def _inject_char_properties(
         b_norm = cp_norm.find(f"{{{NS_HH}}}bold")
         if b_norm is not None:
             cp_norm.remove(b_norm)
+        fn_norm = cp_norm.find(f".//{{{NS_HH}}}fontRef")
+        if fn_norm is not None:
+            for k in list(fn_norm.attrib.keys()):
+                fn_norm.set(k, dotum_id)
         cps.append(cp_norm)
 
-        # 2) 형광펜용 charPr: 지정된 pt 크기, 볼드 없음, 노란색 음영(#FFFF00)
+        # 2) 형광펜용 charPr: 지정된 pt 크기, 볼드 없음, 노란색 음영(#FFFF00), 돋움체 강제
         cp_high = copy.deepcopy(cp0)
         cp_high.set("id", highlight_char_id)
         cp_high.set("height", str(font_size_pt * 100))
@@ -321,6 +336,10 @@ def _inject_char_properties(
         b_high = cp_high.find(f"{{{NS_HH}}}bold")
         if b_high is not None:
             cp_high.remove(b_high)
+        fn_high = cp_high.find(f".//{{{NS_HH}}}fontRef")
+        if fn_high is not None:
+            for k in list(fn_high.attrib.keys()):
+                fn_high.set(k, dotum_id)
         cps.append(cp_high)
 
         cps.set("itemCnt", str(len(cps.findall(f"{{{NS_HH}}}charPr"))))
@@ -1387,22 +1406,168 @@ def get_listening_cell(tbl: ET.Element, col: int, row: int) -> Optional[ET.Eleme
     return None
 
 
+def repair_listening_question_title(title: str, question_type: str = "") -> str:
+    """잘린 듣기 문항 발문(예: '...응답으로 가장')을 온전한 표준 발문으로 복원"""
+    t = (title or "").strip()
+    if not t:
+        return "대화를 듣고, 알맞은 것을 고르시오."
+
+    # 이미 온전한 마침표나 물음표로 끝나는 경우
+    if re.search(r"[\.\?\!]$", t):
+        return t
+
+    # 1. '가장'으로 끝나는 경우
+    if re.search(r"(?:응답으로|것으로|말로|행동으로)\s*가장$", t) or t.endswith("가장"):
+        return t + " 적절한 것을 고르시오."
+
+    # 2. '것을' 또는 '것은'으로 끝나는 경우
+    if t.endswith("것을") or t.endswith("것은"):
+        return t + " 고르시오."
+
+    # 3. '고', '고르' 등으로 잘린 경우
+    if t.endswith("고"):
+        return t + "르시오."
+    if t.endswith("고르"):
+        return t + "시오."
+    if t.endswith("고르시"):
+        return t + "오."
+
+    # 4. '않는'으로 끝나는 경우
+    if t.endswith("않는"):
+        return t + " 것을 고르시오."
+
+    # 5. '적절한' 또는 '알맞은'으로 끝나는 경우
+    if t.endswith("적절한") or t.endswith("알맞은"):
+        return t + " 것을 고르시오."
+
+    # 6. '목적', '의견', '요지', '할 일', '이유' 등으로 끝나는 경우
+    if any(t.endswith(k) for k in ("목적", "의견", "요지", "할 일", "할일", "이유")):
+        return t + "으로 가장 적절한 것을 고르시오."
+
+    if not re.search(r"[\.\?\!]$", t):
+        return t + " 고르시오." if not t.endswith("시오") else t + "."
+
+    return t
+
+
+_PDF_QUESTION_CACHE: Dict[str, Dict[int, Dict[str, Any]]] = {}
+
+
+def extract_listening_question_from_pdf(exam_id: str, q_num: int) -> Dict[str, Any]:
+    """PDF 문제지에서 특정 문항(1~17번)의 온전한 전체 발문과 선지 ①~⑤ 추출"""
+    import glob
+    global _PDF_QUESTION_CACHE
+
+    clean_exam_id = exam_id.strip("[]")
+    if clean_exam_id in _PDF_QUESTION_CACHE:
+        return _PDF_QUESTION_CACHE[clean_exam_id].get(q_num, {})
+
+    uploads_dir = UPLOADS_DIR
+    m_exam = re.search(r"(고[123]|중[123])[-_](\d{4})년?[-_](\d{1,2})월?", clean_exam_id)
+    pdf_candidates = []
+    if m_exam:
+        grd, yr, mn = m_exam.group(1), m_exam.group(2), int(m_exam.group(3))
+        patt1 = os.path.join(uploads_dir, f"{grd}_{yr}_{mn:02d}_*.pdf")
+        patt2 = os.path.join(uploads_dir, f"*{yr}*{mn:02d}*.pdf")
+        pdf_candidates = [p for p in glob.glob(patt1) if "_script" not in p and "대본" not in p and "_ans" not in p and "_exp" not in p]
+        if not pdf_candidates:
+            pdf_candidates = [p for p in glob.glob(patt2) if "_script" not in p and "대본" not in p and "_ans" not in p and "_exp" not in p]
+
+    if not pdf_candidates:
+        _PDF_QUESTION_CACHE[clean_exam_id] = {}
+        return {}
+
+    target_pdf = pdf_candidates[0]
+    extracted_questions: Dict[int, Dict[str, Any]] = {}
+
+    try:
+        import pymupdf as fitz
+        doc = fitz.open(target_pdf)
+        pages_text = []
+        for p_idx in range(min(3, len(doc))):
+            pages_text.append(doc[p_idx].get_text())
+        doc.close()
+        full_text = "\n".join(pages_text)
+
+        for q in range(1, 18):
+            pattern = rf"(?:^|\n)\s*{q}\s*\.\s*(.+?)(?=(?:\n\s*{q + 1}\s*\.|\n\s*\[\d+[-~]\d+\]|\n\s*이제\s*듣기\s*문제가|\n\s*18\s*\.|$))"
+            m = re.search(pattern, full_text, re.DOTALL)
+            if not m:
+                continue
+
+            raw_block = m.group(1).strip()
+            idx_circ1 = raw_block.find("①")
+            if idx_circ1 != -1:
+                title_part = raw_block[:idx_circ1].strip()
+                choices_raw = raw_block[idx_circ1:].strip()
+            else:
+                title_part = raw_block.strip()
+                choices_raw = ""
+
+            choices = {}
+            if choices_raw:
+                c_matches = list(re.finditer(r"([①-⑤])\s*(.*?)(?=(?:[①-⑤]|$))", choices_raw, re.DOTALL))
+                for cm in c_matches:
+                    c_sym = cm.group(1)
+                    c_txt = " ".join(cm.group(2).split()).strip()
+                    c_idx = ["①", "②", "③", "④", "⑤"].index(c_sym) + 1
+                    choices[c_idx] = c_txt
+
+            clean_title = " ".join(title_part.split()).strip()
+            clean_title = re.sub(r"^\s*\d{1,2}\s*[\.\)]\s*", "", clean_title).strip()
+            clean_title = repair_listening_question_title(clean_title)
+            clean_title = re.sub(r"^\s*\d{1,2}\s*[\.\)]\s*", "", clean_title).strip()
+
+            extracted_questions[q] = {
+                "title": clean_title,
+                "choices": choices,
+                "raw_block": raw_block
+            }
+
+        _PDF_QUESTION_CACHE[clean_exam_id] = extracted_questions
+        return extracted_questions.get(q_num, {})
+    except Exception as e:
+        logger.warning("[extract_listening_question_from_pdf] 파싱 실패 (%s): %s", clean_exam_id, e)
+        _PDF_QUESTION_CACHE[clean_exam_id] = {}
+        return {}
+
+
 def _prepare_listening_item_data(p: Dict[str, Any], custom_q_num: str = "1") -> Dict[str, Any]:
     """듣기 문항 1개의 데이터 정제 (문항 텍스트, FELS 약형드랩, 우리말 해석, 영문 script, 정답)"""
     q_title = p.get("question_title") or ""
-    # 문항 번호(예: 1., 1) 등) 제거
-    m_num = re.match(r"^\s*\d{1,2}\s*[\.\)]\s*(.*)$", q_title)
-    pure_title = m_num.group(1).strip() if m_num else q_title.strip()
-    if not pure_title:
-        pure_title = "대화를 듣고, 알맞은 것을 고르시오."
-
-    full_q_title = f"{custom_q_num}. {pure_title}"
+    # 문항 번호(예: 1., 3), 03. 등) 완벽 제거 (반복 제거)
+    pure_title = (p.get("question_title") or "").strip()
+    while re.match(r"^\s*\d{1,2}\s*[\.\)]\s*", pure_title):
+        pure_title = re.sub(r"^\s*\d{1,2}\s*[\.\)]\s*", "", pure_title).strip()
+    pure_title = repair_listening_question_title(pure_title, p.get("question_type") or "")
+    while re.match(r"^\s*\d{1,2}\s*[\.\)]\s*", pure_title):
+        pure_title = re.sub(r"^\s*\d{1,2}\s*[\.\)]\s*", "", pure_title).strip()
 
     # 선지 추출 (지문 passage_text 우선, 없으면 explanation_text에서 추출)
     exp_text = p.get("explanation_text") or ""
-    choices = extract_choices(p.get("passage_text") or "")
+    passage_txt = p.get("passage_text") or ""
+    choices = extract_choices(passage_txt)
     if not choices:
         choices = extract_choices(exp_text)
+
+    # 선지가 부족하거나 없는 경우 PDF 문제지 원본에서 직접 추출 시도
+    exam_id = p.get("exam_id") or ""
+    q_num = p.get("q_num") or 0
+    if not q_num and p.get("id"):
+        m_q = re.search(r"-(\d+)번?\]?$", str(p.get("id")))
+        if m_q:
+            q_num = int(m_q.group(1))
+
+    if (not choices or len(choices) < 3) and exam_id and q_num:
+        pdf_info = extract_listening_question_from_pdf(exam_id, q_num)
+        if pdf_info:
+            if pdf_info.get("title") and len(pdf_info["title"]) >= len(pure_title):
+                p_title = pdf_info["title"].strip()
+                while re.match(r"^\s*\d{1,2}\s*[\.\)]\s*", p_title):
+                    p_title = re.sub(r"^\s*\d{1,2}\s*[\.\)]\s*", "", p_title).strip()
+                pure_title = p_title
+            if pdf_info.get("choices") and not choices:
+                choices = pdf_info["choices"]
 
     choices_lines = []
     for c_idx in range(1, 6):
@@ -1411,9 +1576,14 @@ def _prepare_listening_item_data(p: Dict[str, Any], custom_q_num: str = "1") -> 
             circ = CIRCLE_NUMS.get(c_idx, f"({c_idx})")
             choices_lines.append(f"{circ} {c_val}")
 
+    while re.match(r"^\s*\d{1,2}\s*[\.\)]\s*", pure_title):
+        pure_title = re.sub(r"^\s*\d{1,2}\s*[\.\)]\s*", "", pure_title).strip()
+    full_q_title = f"{custom_q_num}. {pure_title}"
     q_text_block = full_q_title
     if choices_lines:
         q_text_block += "\n\n" + "\n".join(choices_lines)
+    elif "그림" in pure_title or p.get("question_type") == "그림 불일치":
+        q_text_block += "\n\n[그림 참조 문항]"
 
     # 대본(script) 및 FELS 약형드랩 생성
     script_text = (p.get("script_text") or p.get("passage_text") or "").strip()
@@ -1436,7 +1606,26 @@ def _prepare_listening_item_data(p: Dict[str, Any], custom_q_num: str = "1") -> 
             kor_trans = m_trans.group(1).strip()
         else:
             lines = [l.strip() for l in exp_text.splitlines() if re.search(r"[가-힣]", l) and not l.startswith("[")]
-            kor_trans = "\n".join(lines[:10])
+            # 출제의도 라인은 제외
+            lines = [l for l in lines if not l.startswith("출제") and not l.startswith("담화") and not l.startswith("대화에서")]
+            if lines:
+                kor_trans = "\n".join(lines[:12])
+
+    # 우리말 해석 데이터가 비어있는 경우 AI를 통해 자동 해석(번역) 수행 및 DB 영구 저장
+    if not kor_trans and script_text:
+        try:
+            from ..grammar_analyzer import translate_listening_script
+            ai_trans = translate_listening_script(script_text)
+            if ai_trans:
+                kor_trans = ai_trans.strip()
+                if p.get("id"):
+                    # DB explanation_text 보강 업데이트
+                    updated_exp = (exp_text.strip() + f"\n\n[해석]\n{kor_trans}").strip()
+                    from .. import database as db
+                    db.update_passage_explanation(p["id"], updated_exp)
+                    logger.info("AI 우리말 해석 자동 생성 및 DB 저장 성공: %s", p["id"])
+        except Exception as e:
+            logger.warning("AI 우리말 해석 자동 번역 실패: %s", e)
 
     # 정답 추출
     ans_num = extract_answer_num(p.get("answer_text") or "")
@@ -1494,13 +1683,195 @@ def _set_listening_cell_paragraphs(
         t_elem.text = line
 
 
+def _calculate_listening_line_count(text: str, line_capacity: int = 48) -> int:
+    """
+    B4 세로 듣기 셀(폭 약 105mm) 너비 및 단어 단위 줄바꿈을 반영한 정밀 환산 라인 수 계산
+    - 한글/전각 문자: visual 폭 가중치 2
+    - 영문/숫자/기호/빈칸: visual 폭 가중치 1
+    - line_capacity = 48 (10pt 기준 셀 가용 폭 50~52단위 중 여백/단어줄바꿈 고려 안전치)
+    """
+    if not text:
+        return 0
+    raw_lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    total = 0
+    for l in raw_lines:
+        s = l.strip()
+        if not s:
+            total += 1
+            continue
+        # 한글/전각 문자는 가중치 2, 영문/기호는 1
+        visual_len = sum(2 if ord(c) > 127 else 1 for c in s)
+        total += max(1, math.ceil(visual_len / line_capacity))
+    return total
+
+
+def _ensure_listening_styles_in_header(hdr_root: ET.Element) -> None:
+    """
+    header.xml에 '돋움체' 전용 charPr(11.0pt~7.0pt: 101~106) 및
+    순수 줄간격 paraPr(145%~105%: 101~106) 등록
+    - 문제지/해설지 글씨체 '돋움체' 100% 강제 통일
+    - 문단 번호 매기기(heading NUMBER 등) 절대 배제 (heading type='NONE' 보장)
+    - 내용 길이에 따른 2문항 1페이지 완벽 안착 동적 스케일링 제공
+    """
+    char_props = hdr_root.find(f".//{{{NS_HH}}}charProperties")
+    para_props = hdr_root.find(f".//{{{NS_HH}}}paraProperties")
+    if char_props is None or para_props is None:
+        return
+
+    # 1. '돋움' 폰트 id 찾기 (기본값 '1')
+    dotum_id = "1"
+    fontfaces = hdr_root.find(f".//{{{NS_HH}}}fontfaces")
+    if fontfaces is not None:
+        for ff in fontfaces.findall(f".//{{{NS_HH}}}fontface"):
+            if ff.get("lang") == "HANGUL":
+                for f in ff.findall(f".//{{{NS_HH}}}font"):
+                    if "돋움" in (f.get("face") or ""):
+                        dotum_id = f.get("id") or "1"
+                        break
+
+    # 1-1. 기존 템플릿의 모든 paraPr 중 heading이 NUMBER나 OUTLINE인 항목들을 모조리 NONE으로 원천 무력화
+    for pp in para_props.findall(f".//{{{NS_HH}}}paraPr"):
+        hd = pp.find(f".//{{{NS_HH}}}heading")
+        if hd is not None and hd.get("type") in ("NUMBER", "OUTLINE"):
+            hd.set("type", "NONE")
+            hd.set("idRef", "0")
+            hd.set("level", "0")
+
+    # 2. 전용 charPr 등록 (101: 11.0pt ~ 106: 7.0pt 돋움체)
+    base_cp = char_props.find(f".//{{{NS_HH}}}charPr[@id='0']")
+    if base_cp is None:
+        all_cps = list(char_props.findall(f"{{{NS_HH}}}charPr"))
+        if all_cps:
+            base_cp = all_cps[0]
+
+    if base_cp is not None:
+        char_specs = [
+            ("101", "1100"),  # 11.0pt (아주 짧은 문항: <= 12줄)
+            ("102", "1000"),  # 10.0pt (보통 문항: 13~17줄)
+            ("103", "900"),   # 9.0pt  (다소 긴 문항: 18~22줄)
+            ("104", "820"),   # 8.2pt  (긴 문항: 23~27줄)
+            ("105", "750"),   # 7.5pt  (매우 긴 문항: 28~32줄)
+            ("106", "700"),   # 7.0pt  (초장문/복합 문항: >= 33줄)
+        ]
+        for cid, h in char_specs:
+            cp = char_props.find(f".//{{{NS_HH}}}charPr[@id='{cid}']")
+            if cp is None:
+                cp = copy.deepcopy(base_cp)
+                cp.set("id", cid)
+                char_props.append(cp)
+            cp.set("height", h)
+            # 돋움체로 fontRef 통일
+            fn = cp.find(f".//{{{NS_HH}}}fontRef")
+            if fn is not None:
+                for k in list(fn.attrib.keys()):
+                    fn.set(k, dotum_id)
+
+        char_props.set("itemCnt", str(len(char_props.findall(f".//{{{NS_HH}}}charPr"))))
+
+    # 3. 전용 순수 줄간격 paraPr 등록 (101: 145% ~ 106: 105%)
+    base_pp = para_props.find(f".//{{{NS_HH}}}paraPr[@id='0']")
+    if base_pp is None:
+        all_pps = list(para_props.findall(f"{{{NS_HH}}}paraPr"))
+        if all_pps:
+            base_pp = all_pps[0]
+
+    if base_pp is not None:
+        para_specs = [
+            ("101", "145"),  # 145% (11.0pt용)
+            ("102", "135"),  # 135% (10.0pt용)
+            ("103", "125"),  # 125% (9.0pt용)
+            ("104", "118"),  # 118% (8.2pt용)
+            ("105", "112"),  # 112% (7.5pt용)
+            ("106", "105"),  # 105% (7.0pt용)
+        ]
+        for pid, ls_val in para_specs:
+            pp = para_props.find(f".//{{{NS_HH}}}paraPr[@id='{pid}']")
+            if pp is None:
+                pp = copy.deepcopy(base_pp)
+                pp.set("id", pid)
+                para_props.append(pp)
+            # 문단 번호 매기기(heading NUMBER, OUTLINE) 절대 배제
+            heading = pp.find(f".//{{{NS_HH}}}heading")
+            if heading is not None:
+                heading.set("type", "NONE")
+                heading.set("idRef", "0")
+                heading.set("level", "0")
+            # 줄간격 설정
+            ls = pp.find(f".//{{{NS_HH}}}lineSpacing")
+            if ls is not None:
+                ls.set("value", ls_val)
+                ls.set("type", "PERCENT")
+
+        para_props.set("itemCnt", str(len(para_props.findall(f".//{{{NS_HH}}}paraPr"))))
+
+
+def _get_listening_style_for_lines(max_lines: int) -> Tuple[str, str]:
+    """
+    단일 문항 환산 라인 수에 따른 최적 (charPrID, paraPrID) 반환 (돋움체 전용)
+    - <= 12줄: 11.0pt 돋움 (101), 줄간격 145% (101)
+    - 13~17줄: 10.0pt 돋움 (102), 줄간격 135% (102)
+    - 18~22줄:  9.0pt 돋움 (103), 줄간격 125% (103)
+    - 23~27줄:  8.2pt 돋움 (104), 줄간격 118% (104)
+    - 28~32줄:  7.5pt 돋움 (105), 줄간격 112% (105)
+    - >= 33줄:  7.0pt 돋움 (106), 줄간격 105% (106)
+    """
+    if max_lines <= 12:
+        return ("101", "101")
+    elif max_lines <= 17:
+        return ("102", "102")
+    elif max_lines <= 22:
+        return ("103", "103")
+    elif max_lines <= 27:
+        return ("104", "104")
+    elif max_lines <= 32:
+        return ("105", "105")
+    else:
+        return ("106", "106")
+
+
+def _get_page_listening_styles(
+    lines1: int,
+    lines2: int
+) -> Tuple[Tuple[str, str], Tuple[str, str]]:
+    """
+    B4 세로 1페이지에 배치되는 2개 문항이 다음 페이지로 밀려나지 않고
+    반드시 1페이지에 온전히 안착되도록 개별 라인 수와 합산 라인 수를 복합 분석하여
+    최적의 ((cp1, pp1), (cp2, pp2)) 반환
+    """
+    cp1, pp1 = _get_listening_style_for_lines(lines1)
+    if lines2 <= 0:
+        return (cp1, pp1), (cp1, pp1)
+
+    cp2, pp2 = _get_listening_style_for_lines(lines2)
+
+    total_lines = lines1 + lines2
+    # 페이지 총합 기준 최소 보장 스타일 (합산 라인이 클 때 2문항이 1페이지를 넘지 못하도록 강제 하향)
+    if total_lines <= 26:
+        min_style = "101"
+    elif total_lines <= 35:
+        min_style = "102"
+    elif total_lines <= 44:
+        min_style = "103"
+    elif total_lines <= 52:
+        min_style = "104"
+    elif total_lines <= 60:
+        min_style = "105"
+    else:
+        min_style = "106"
+
+    final_cp1 = max(cp1, min_style)
+    final_cp2 = max(cp2, min_style)
+
+    return (final_cp1, final_cp1), (final_cp2, final_cp2)
+
+
 def _apply_listening_header(
     tbl0: Optional[ET.Element],
     header_left: str,
     header_center: str,
     header_right: str
 ) -> None:
-    """듣기 유인물 상단 머리말 1x3 표 (Table 0) 내용 반영"""
+    """듣기 유인물 상단 머리말 1x3 표 (Table 0) 내용 반영 (돋움체 적용)"""
     if tbl0 is None:
         return
     tc_left = get_listening_cell(tbl0, 0, 0)
@@ -1508,11 +1879,11 @@ def _apply_listening_header(
     tc_right = get_listening_cell(tbl0, 2, 0)
 
     if tc_left is not None:
-        _set_listening_cell_paragraphs(tc_left, header_left, char_pr_id="8", para_pr_id="2")
+        _set_listening_cell_paragraphs(tc_left, header_left, char_pr_id="102", para_pr_id="102")
     if tc_center is not None:
-        _set_listening_cell_paragraphs(tc_center, header_center, char_pr_id="9", para_pr_id="13")
+        _set_listening_cell_paragraphs(tc_center, header_center, char_pr_id="101", para_pr_id="101")
     if tc_right is not None:
-        _set_listening_cell_paragraphs(tc_right, header_right, char_pr_id="28", para_pr_id="33")
+        _set_listening_cell_paragraphs(tc_right, header_right, char_pr_id="102", para_pr_id="102")
 
 
 def generate_listening_question_handout(
@@ -1522,9 +1893,10 @@ def generate_listening_question_handout(
     """
     B4 세로(Portrait) 규격 듣기 문제 유인물 HWPX 생성
     - 한 페이지당 2문항 (2x3 테이블 구조)
-    - 1열: 문항 텍스트 (발문 + 선지)
-    - 2열: FELS 약형드랩 [  ]
+    - 1열: 문항 텍스트 (발문 + 선지) - 돋움체 기본
+    - 2열: FELS 약형드랩 [  ] - 돋움체 기본
     - 3열: [표현 정리] 5행 빈칸 표 (템플릿 서식 100% 보존)
+    - 문단 번호 매기기 완전 배제, 내용 길이에 따른 폰트/줄간격 자동 스케일링
     """
     template_path = get_listening_template_path(options.get("template_name"), is_explanation=False)
     file_map = {}
@@ -1535,6 +1907,12 @@ def generate_listening_question_handout(
     header_left = (options.get("header_left") or "").strip()
     header_center = (options.get("header_center") or "").strip()
     header_right = (options.get("header_right") or "").strip()
+
+    # header.xml 컴팩트 스타일 등록 (돋움체 & 순수 줄간격)
+    if "Contents/header.xml" in file_map:
+        hdr_root = ET.fromstring(file_map["Contents/header.xml"])
+        _ensure_listening_styles_in_header(hdr_root)
+        file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
 
@@ -1562,39 +1940,61 @@ def generate_listening_question_handout(
             cur_tbl.set("id", str(1216160613 + p_idx * 1000))
             p_elem = ET.Element(f"{{{NS_HP}}}p", {
                 "id": str(2000000000 + p_idx * 10),
-                "paraPrIDRef": "0",
+                "paraPrIDRef": "102",
                 "styleIDRef": "0",
                 "pageBreak": "1",
                 "columnBreak": "0",
                 "merged": "0"
             })
-            run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": "0"})
+            run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": "102"})
             run_elem.append(cur_tbl)
             sec0_root.append(p_elem)
+
+        # 1) 문항 1 & 문항 2 데이터 사전 준비 및 라인 수 정밀 산출
+        if item1:
+            q_num_1 = str(item1.get("custom_q_num") or (p_idx * 2 + 1)).strip()
+            data1 = _prepare_listening_item_data(item1, q_num_1)
+            lines1 = max(
+                _calculate_listening_line_count(data1["question_text"]),
+                _calculate_listening_line_count(data1["fels_blank"])
+            )
+        else:
+            data1 = None
+            lines1 = 0
+
+        if item2:
+            q_num_2 = str(item2.get("custom_q_num") or (p_idx * 2 + 2)).strip()
+            data2 = _prepare_listening_item_data(item2, q_num_2)
+            lines2 = max(
+                _calculate_listening_line_count(data2["question_text"]),
+                _calculate_listening_line_count(data2["fels_blank"])
+            )
+        else:
+            data2 = None
+            lines2 = 0
+
+        # 2) 두 문항이 1페이지에 반드시 함께 안착되도록 페이지 레벨 동적 스타일 쌍 도출
+        (cp1, pp1), (cp2, pp2) = _get_page_listening_styles(lines1, lines2)
 
         # Question 1 (Row 0)
         tc_q1_text = get_listening_cell(cur_tbl, 0, 0)
         tc_q1_fels = get_listening_cell(cur_tbl, 1, 0)
-        if item1:
-            q_num_1 = str(item1.get("custom_q_num") or (p_idx * 2 + 1)).strip()
-            data1 = _prepare_listening_item_data(item1, q_num_1)
-            _set_listening_cell_paragraphs(tc_q1_text, data1["question_text"], char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q1_fels, data1["fels_blank"], char_pr_id="33", para_pr_id="2")
+        if item1 and data1:
+            _set_listening_cell_paragraphs(tc_q1_text, data1["question_text"], char_pr_id=cp1, para_pr_id=pp1)
+            _set_listening_cell_paragraphs(tc_q1_fels, data1["fels_blank"], char_pr_id=cp1, para_pr_id=pp1)
         else:
-            _set_listening_cell_paragraphs(tc_q1_text, "", char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q1_fels, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_text, "", char_pr_id="102", para_pr_id="102")
+            _set_listening_cell_paragraphs(tc_q1_fels, "", char_pr_id="102", para_pr_id="102")
 
         # Question 2 (Row 7)
         tc_q2_text = get_listening_cell(cur_tbl, 0, 7)
         tc_q2_fels = get_listening_cell(cur_tbl, 1, 7)
-        if item2:
-            q_num_2 = str(item2.get("custom_q_num") or (p_idx * 2 + 2)).strip()
-            data2 = _prepare_listening_item_data(item2, q_num_2)
-            _set_listening_cell_paragraphs(tc_q2_text, data2["question_text"], char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q2_fels, data2["fels_blank"], char_pr_id="33", para_pr_id="2")
+        if item2 and data2:
+            _set_listening_cell_paragraphs(tc_q2_text, data2["question_text"], char_pr_id=cp2, para_pr_id=pp2)
+            _set_listening_cell_paragraphs(tc_q2_fels, data2["fels_blank"], char_pr_id=cp2, para_pr_id=pp2)
         else:
-            _set_listening_cell_paragraphs(tc_q2_text, "", char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q2_fels, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_text, "", char_pr_id="102", para_pr_id="102")
+            _set_listening_cell_paragraphs(tc_q2_fels, "", char_pr_id="102", para_pr_id="102")
 
     file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
 
@@ -1613,9 +2013,10 @@ def generate_listening_explanation_handout(
     """
     B4 세로(Portrait) 규격 듣기 해설 유인물 HWPX 생성
     - 한 페이지당 2문항 (2x3 테이블 구조)
-    - 1열: 문항 텍스트 + [정답] {ans}
-    - 2열: 우리말 해석 텍스트
-    - 3열: script 영문 전문
+    - 1열: 문항 텍스트 + [정답] {ans} - 돋움체 기본
+    - 2열: 우리말 해석 텍스트 (누락 시 AI 자동 번역 및 DB 캐싱) - 돋움체 기본
+    - 3열: script 영문 전문 - 돋움체 기본
+    - 문단 번호 매기기 완전 배제, 내용 길이에 따른 폰트/줄간격 자동 스케일링
     """
     template_path = get_listening_template_path(options.get("template_name"), is_explanation=True)
     file_map = {}
@@ -1626,6 +2027,12 @@ def generate_listening_explanation_handout(
     header_left = (options.get("header_left") or "").strip()
     header_center = (options.get("header_center") or "").strip()
     header_right = (options.get("header_right") or "").strip()
+
+    # header.xml 컴팩트 스타일 등록 (돋움체 & 순수 줄간격)
+    if "Contents/header.xml" in file_map:
+        hdr_root = ET.fromstring(file_map["Contents/header.xml"])
+        _ensure_listening_styles_in_header(hdr_root)
+        file_map["Contents/header.xml"] = ET.tostring(hdr_root, encoding="utf-8", xml_declaration=True)
 
     sec0_root = ET.fromstring(file_map["Contents/section0.xml"])
 
@@ -1653,47 +2060,74 @@ def generate_listening_explanation_handout(
             cur_tbl.set("id", str(1216160613 + p_idx * 1000))
             p_elem = ET.Element(f"{{{NS_HP}}}p", {
                 "id": str(2000000000 + p_idx * 10),
-                "paraPrIDRef": "0",
+                "paraPrIDRef": "102",
                 "styleIDRef": "0",
                 "pageBreak": "1",
                 "columnBreak": "0",
                 "merged": "0"
             })
-            run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": "0"})
+            run_elem = ET.SubElement(p_elem, f"{{{NS_HP}}}run", {"charPrIDRef": "102"})
             run_elem.append(cur_tbl)
             sec0_root.append(p_elem)
+
+        # 1) 문항 1 & 문항 2 데이터 사전 준비 및 라인 수 정밀 산출
+        if item1:
+            q_num_1 = str(item1.get("custom_q_num") or (p_idx * 2 + 1)).strip()
+            data1 = _prepare_listening_item_data(item1, q_num_1)
+            q_text_ans1 = f"{data1['question_text']}\n\n[정답] {data1['answer_display']}"
+            lines1 = max(
+                _calculate_listening_line_count(q_text_ans1),
+                _calculate_listening_line_count(data1["korean_translation"]),
+                _calculate_listening_line_count(data1["script_text"])
+            )
+        else:
+            data1 = None
+            q_text_ans1 = ""
+            lines1 = 0
+
+        if item2:
+            q_num_2 = str(item2.get("custom_q_num") or (p_idx * 2 + 2)).strip()
+            data2 = _prepare_listening_item_data(item2, q_num_2)
+            q_text_ans2 = f"{data2['question_text']}\n\n[정답] {data2['answer_display']}"
+            lines2 = max(
+                _calculate_listening_line_count(q_text_ans2),
+                _calculate_listening_line_count(data2["korean_translation"]),
+                _calculate_listening_line_count(data2["script_text"])
+            )
+        else:
+            data2 = None
+            q_text_ans2 = ""
+            lines2 = 0
+
+        # 2) 두 문항이 1페이지에 반드시 함께 안착되도록 페이지 레벨 동적 스타일 쌍 도출
+        (cp1, pp1), (cp2, pp2) = _get_page_listening_styles(lines1, lines2)
 
         # Question 1 (Row 0)
         tc_q1_text = get_listening_cell(cur_tbl, 0, 0)
         tc_q1_trans = get_listening_cell(cur_tbl, 1, 0)
         tc_q1_script = get_listening_cell(cur_tbl, 2, 0)
-        if item1:
-            q_num_1 = str(item1.get("custom_q_num") or (p_idx * 2 + 1)).strip()
-            data1 = _prepare_listening_item_data(item1, q_num_1)
-            q_text_ans1 = f"{data1['question_text']}\n\n[정답] {data1['answer_display']}"
-            _set_listening_cell_paragraphs(tc_q1_text, q_text_ans1, char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q1_trans, data1["korean_translation"], char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q1_script, data1["script_text"], char_pr_id="33", para_pr_id="2")
+        if item1 and data1:
+            _set_listening_cell_paragraphs(tc_q1_text, q_text_ans1, char_pr_id=cp1, para_pr_id=pp1)
+            _set_listening_cell_paragraphs(tc_q1_trans, data1["korean_translation"], char_pr_id=cp1, para_pr_id=pp1)
+            _set_listening_cell_paragraphs(tc_q1_script, data1["script_text"], char_pr_id=cp1, para_pr_id=pp1)
         else:
-            _set_listening_cell_paragraphs(tc_q1_text, "", char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q1_trans, "", char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q1_script, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q1_text, "", char_pr_id="102", para_pr_id="102")
+            _set_listening_cell_paragraphs(tc_q1_trans, "", char_pr_id="102", para_pr_id="102")
+            _set_listening_cell_paragraphs(tc_q1_script, "", char_pr_id="102", para_pr_id="102")
 
         # Question 2 (Row 1)
         tc_q2_text = get_listening_cell(cur_tbl, 0, 1)
         tc_q2_trans = get_listening_cell(cur_tbl, 1, 1)
         tc_q2_script = get_listening_cell(cur_tbl, 2, 1)
-        if item2:
-            q_num_2 = str(item2.get("custom_q_num") or (p_idx * 2 + 2)).strip()
-            data2 = _prepare_listening_item_data(item2, q_num_2)
-            q_text_ans2 = f"{data2['question_text']}\n\n[정답] {data2['answer_display']}"
-            _set_listening_cell_paragraphs(tc_q2_text, q_text_ans2, char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q2_trans, data2["korean_translation"], char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q2_script, data2["script_text"], char_pr_id="33", para_pr_id="2")
+        if item2 and data2:
+            _set_listening_cell_paragraphs(tc_q2_text, q_text_ans2, char_pr_id=cp2, para_pr_id=pp2)
+            _set_listening_cell_paragraphs(tc_q2_trans, data2["korean_translation"], char_pr_id=cp2, para_pr_id=pp2)
+            _set_listening_cell_paragraphs(tc_q2_script, data2["script_text"], char_pr_id=cp2, para_pr_id=pp2)
         else:
-            _set_listening_cell_paragraphs(tc_q2_text, "", char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q2_trans, "", char_pr_id="33", para_pr_id="2")
-            _set_listening_cell_paragraphs(tc_q2_script, "", char_pr_id="33", para_pr_id="2")
+            _set_listening_cell_paragraphs(tc_q2_text, "", char_pr_id="102", para_pr_id="102")
+            _set_listening_cell_paragraphs(tc_q2_trans, "", char_pr_id="102", para_pr_id="102")
+            _set_listening_cell_paragraphs(tc_q2_script, "", char_pr_id="102", para_pr_id="102")
+
 
     file_map["Contents/section0.xml"] = ET.tostring(sec0_root, encoding="utf-8", xml_declaration=True)
 

@@ -161,23 +161,24 @@ export async function renderListeningHandoutView() {
       html += `
         <div class="listening-card-item" data-id="${escapeHtml(item.id)}" data-idx="${globalIdx}">
           <div class="listening-card-header">
-            <div class="listening-card-left">
-              <span style="font-size: 0.8rem; font-weight: 700; color: #6d28d9;">출제 번호:</span>
-              <input type="number" class="input-listening-custom-num" data-id="${escapeHtml(item.id)}" value="${escapeHtml(qNumVal)}" min="1" max="999" title="인쇄용 문항 번호 직접 수정">
-              <span class="listening-card-source">${escapeHtml(item.id)}</span>
-              ${pInfo.question_type ? `<span style="font-size: 0.76rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px;">${escapeHtml(pInfo.question_type)}</span>` : ""}
+            <div class="handout-item-qnum-box">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #475569;">인쇄 번호:</span>
+              <input type="text" class="handout-item-qnum-input input-listening-custom-num" data-id="${escapeHtml(item.id)}" value="${escapeHtml(qNumVal)}" title="유인물에 실제로 인쇄될 문항 번호를 직접 입력하세요">
+              <span style="font-size: 0.85rem; font-weight: 700; color: #1d4ed8;">번</span>
+              <span class="handout-item-source-badge btn-goto-passage" data-id="${escapeHtml(item.id)}" title="해당 지문 결과창으로 이동">[${escapeHtml(item.id.replace(/^\[/, "").replace(/\]$/, ""))}]</span>
+              ${pInfo.question_type ? `<span style="font-size: 0.8rem; color: #64748b;">(${escapeHtml(pInfo.question_type)})</span>` : ""}
             </div>
-            <div class="listening-card-actions">
+            <div class="handout-item-controls">
               ${audioUrl ? `
-                <button type="button" class="btn-card-audio" data-url="${escapeHtml(audioUrl)}" title="문항 음성 미리듣기">
+                <button type="button" class="btn-card-audio" data-url="${escapeHtml(audioUrl)}" title="문항 음성 미리듣기" style="padding: 3px 8px; font-size: 0.76rem; border-radius: 4px; border: 1px solid #c7d2fe; background: #e0e7ff; color: #3730a3; cursor: pointer; font-weight: 600;">
                   ▶ 재생
                 </button>
               ` : `
                 <span style="font-size: 0.74rem; color: #94a3b8; padding: 2px 4px;">(음성 미생성)</span>
               `}
-              <button type="button" class="btn-card-order btn-order-up" data-idx="${globalIdx}" title="위로 이동" ${globalIdx === 0 ? "disabled" : ""}>▲</button>
-              <button type="button" class="btn-card-order btn-order-down" data-idx="${globalIdx}" title="아래로 이동" ${globalIdx === items.length - 1 ? "disabled" : ""}>▼</button>
-              <button type="button" class="btn-card-delete" data-id="${escapeHtml(item.id)}" title="유인물에서 제외">✕ 삭제</button>
+              <button type="button" class="btn-card-move btn-order-up" data-idx="${globalIdx}" title="위로 이동" ${globalIdx === 0 ? "disabled" : ""}>▲</button>
+              <button type="button" class="btn-card-move btn-order-down" data-idx="${globalIdx}" title="아래로 이동" ${globalIdx === items.length - 1 ? "disabled" : ""}>▼</button>
+              <button type="button" class="btn-card-delete" data-id="${escapeHtml(item.id)}" title="이 문항 삭제">✕</button>
             </div>
           </div>
 
@@ -216,6 +217,18 @@ export async function renderListeningHandoutView() {
 
 /** 카드 내부 인터랙션 이벤트 바인딩 */
 function bindListeningCardEvents(container) {
+  // 출처 클릭 시 해당 지문 결과창으로 즉시 이동
+  container.querySelectorAll(".btn-goto-passage").forEach((badge) => {
+    badge.addEventListener("click", () => {
+      const pid = badge.dataset.id;
+      if (pid) {
+        import("./results-sentence.js").then((m) => {
+          m.navigateToPassageView(pid);
+        });
+      }
+    });
+  });
+
   // 번호 직접 수정
   container.querySelectorAll(".input-listening-custom-num").forEach((input) => {
     input.addEventListener("change", (e) => {
@@ -407,24 +420,168 @@ async function downloadListeningHandout(handoutType) {
   }
 }
 
-/** 전체 통합 MP3 오디오 다운로드 실행 */
-async function downloadMergedAudio() {
+let currentMergeJobId = null;
+let mergeProgressTimer = null;
+
+/** 전체 통합 MP3 음원 상태 확인 모달 열기 */
+export async function openListeningAudioModal() {
   const items = getListeningCartItems();
   if (items.length === 0) {
     alert("통합 MP3로 다운로드할 듣기 문항이 없습니다. 문항을 먼저 추가해 주세요.");
     return;
   }
 
-  const curProj = getCurrentListeningProject();
-  const btnAudio = document.getElementById("btnDownloadListeningMergedAudio");
-  const origHtml = btnAudio ? btnAudio.innerHTML : "";
-  if (btnAudio) {
-    btnAudio.disabled = true;
-    btnAudio.innerHTML = `<span>⏳ 음성 결합 및 MP3 인코딩 중...</span>`;
+  const modal = document.getElementById("listeningAudioStatusModal");
+  if (!modal) return;
+
+  modal.style.display = "flex";
+
+  // 작업 상태 초기화
+  currentMergeJobId = null;
+  if (mergeProgressTimer) {
+    clearInterval(mergeProgressTimer);
+    mergeProgressTimer = null;
   }
 
+  // UI 초기화
+  const progPanel = document.getElementById("listeningAudioProgressPanel");
+  if (progPanel) progPanel.style.display = "none";
+
+  const btnStart = document.getElementById("btnStartListeningAudioMerge");
+  const btnStop = document.getElementById("btnStopListeningAudioMerge");
+  if (btnStart) {
+    btnStart.style.display = "inline-block";
+    btnStart.disabled = false;
+    btnStart.innerHTML = "▶ 음성 결합 및 MP3 다운로드 시작";
+  }
+  if (btnStop) btnStop.style.display = "none";
+
+  const tbody = document.getElementById("listeningAudioTableBody");
+  if (tbody) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; padding: 30px; color: #7c3aed; font-weight: 600;">
+          ⏳ 문항별 음원 상태를 조회하는 중입니다...
+        </td>
+      </tr>
+    `;
+  }
+
+  const curProj = getCurrentListeningProject();
+
+  // 음원 상태 API 조회
   try {
-    const res = await fetch("/api/handouts/listening/download-audio", {
+    const res = await fetch("/api/handouts/listening/audio-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        passage_ids: items.map((it) => it.id),
+        project_name: curProj.name || "듣기유인물",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error("음원 상태 조회에 실패했습니다.");
+    }
+
+    const data = await res.json();
+    renderListeningAudioStatusTable(data);
+  } catch (err) {
+    if (tbody) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="5" style="text-align: center; padding: 25px; color: #dc2626;">
+            ❌ 음원 상태 조회 실패: ${err.message}
+          </td>
+        </tr>
+      `;
+    }
+  }
+}
+
+/** 문항별 음원 상태 테이블 렌더링 */
+function renderListeningAudioStatusTable(data) {
+  const totalCountElem = document.getElementById("listeningAudioTotalCount");
+  const readyCountElem = document.getElementById("listeningAudioReadyCount");
+  const missingCountElem = document.getElementById("listeningAudioMissingCount");
+
+  if (totalCountElem) totalCountElem.textContent = data.total_count || 0;
+  if (readyCountElem) readyCountElem.textContent = data.ready_count || 0;
+  if (missingCountElem) missingCountElem.textContent = data.missing_count || 0;
+
+  const tbody = document.getElementById("listeningAudioTableBody");
+  if (!tbody) return;
+
+  const items = data.items || [];
+  if (items.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; padding: 25px; color: #9ca3af;">
+          선택된 문항이 없습니다.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  let html = "";
+  items.forEach((it, idx) => {
+    const safePid = encodeURIComponent(it.id);
+    const statusBadge = it.has_audio
+      ? `<span class="listening-badge-ready" style="display: inline-block; padding: 4px 8px; border-radius: 4px; background: #ecfdf5; color: #047857; font-weight: 700; font-size: 0.78rem;">✅ 준비됨 (${it.file_size_kb}KB)</span>`
+      : `<span class="listening-badge-missing" style="display: inline-block; padding: 4px 8px; border-radius: 4px; background: #fffbeb; color: #b45309; font-weight: 700; font-size: 0.78rem;">⚠️ 미생성 (자동 합성 예정)</span>`;
+
+    const playBtn = (it.has_audio && it.audio_url)
+      ? `<button type="button" class="btn-audio-mini-play" data-url="${it.audio_url}" style="padding: 3px 8px; font-size: 0.75rem; border-radius: 4px; border: 1px solid #c7d2fe; background: #e0e7ff; color: #3730a3; cursor: pointer; font-weight: 600;">▶ 재생</button>`
+      : `<span style="color: #9ca3af;">-</span>`;
+
+    html += `
+      <tr id="audioStatusRow_${safePid}" style="border-bottom: 1px solid #f3f4f6; transition: background 0.2s;">
+        <td style="padding: 10px 12px; text-align: center; color: #6b7280; font-weight: 600;">${idx + 1}</td>
+        <td style="padding: 10px 12px; text-align: center; font-weight: 700; color: #7c3aed;">${it.q_num}번</td>
+        <td style="padding: 10px 12px; color: #1f2937; line-height: 1.4;">${it.title || "-"}</td>
+        <td id="audioBadgeCell_${safePid}" style="padding: 10px 12px; text-align: center;">${statusBadge}</td>
+        <td style="padding: 10px 12px; text-align: center;">${playBtn}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+
+  // 미리듣기 버튼 오디오 이벤트 바인딩
+  tbody.querySelectorAll(".btn-audio-mini-play").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-url");
+      if (url) {
+        const audio = new Audio(url);
+        audio.play().catch((e) => alert("오디오 재생 실패: " + e.message));
+      }
+    });
+  });
+}
+
+/** 통합 MP3 결합 작업 시작 */
+async function startListeningAudioMerge() {
+  const items = getListeningCartItems();
+  if (items.length === 0) return;
+
+  const curProj = getCurrentListeningProject();
+  const btnStart = document.getElementById("btnStartListeningAudioMerge");
+  const btnStop = document.getElementById("btnStopListeningAudioMerge");
+  const progPanel = document.getElementById("listeningAudioProgressPanel");
+  const progMsg = document.getElementById("listeningAudioProgressMessage");
+  const progPct = document.getElementById("listeningAudioProgressPercent");
+  const progBar = document.getElementById("listeningAudioProgressBar");
+
+  if (btnStart) btnStart.style.display = "none";
+  if (btnStop) btnStop.style.display = "inline-block";
+  if (progPanel) progPanel.style.display = "block";
+  if (progMsg) progMsg.textContent = "⏳ 비동기 결합 작업을 초기화하는 중...";
+  if (progPct) progPct.textContent = "0%";
+  if (progBar) progBar.style.width = "0%";
+
+  try {
+    const res = await fetch("/api/handouts/listening/start-merge-audio", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -435,38 +592,169 @@ async function downloadMergedAudio() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || "오디오 결합에 실패했습니다.");
+      throw new Error(err.detail || "작업 시작 실패");
     }
 
-    const blob = await res.blob();
-    let filename = `${curProj.name || "듣기유인물"}_전체통합듣기.mp3`;
-    const cd = res.headers.get("Content-Disposition");
-    if (cd) {
-      const mUtf = cd.match(/filename\*=UTF-8''([^;]+)/i);
-      if (mUtf) {
-        filename = decodeURIComponent(mUtf[1]);
-      } else {
-        const mAsc = cd.match(/filename="?([^";]+)"?/i);
-        if (mAsc) filename = mAsc[1];
+    const data = await res.json();
+    currentMergeJobId = data.job_id;
+
+    if (mergeProgressTimer) clearInterval(mergeProgressTimer);
+    mergeProgressTimer = setInterval(pollMergeProgress, 1000);
+  } catch (err) {
+    alert("오디오 결합 시작 실패: " + err.message);
+    if (btnStart) btnStart.style.display = "inline-block";
+    if (btnStop) btnStop.style.display = "none";
+  }
+}
+
+/** 결합 진행률 폴링 */
+async function pollMergeProgress() {
+  if (!currentMergeJobId) return;
+
+  try {
+    const res = await fetch(`/api/handouts/listening/merge-audio-progress/${currentMergeJobId}`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const progMsg = document.getElementById("listeningAudioProgressMessage");
+    const progPct = document.getElementById("listeningAudioProgressPercent");
+    const progBar = document.getElementById("listeningAudioProgressBar");
+    const btnStart = document.getElementById("btnStartListeningAudioMerge");
+    const btnStop = document.getElementById("btnStopListeningAudioMerge");
+
+    if (progMsg) progMsg.textContent = data.message || "작업 진행 중...";
+    if (progPct) progPct.textContent = `${data.percent || 0}%`;
+    if (progBar) progBar.style.width = `${data.percent || 0}%`;
+
+    // 현재 처리 중인 문항 표시
+    if (data.current_passage_id) {
+      const safePid = encodeURIComponent(data.current_passage_id);
+      const row = document.getElementById(`audioStatusRow_${safePid}`);
+      if (row) {
+        row.style.background = "#f0fdf4";
+      }
+      const badge = document.getElementById(`audioBadgeCell_${safePid}`);
+      if (badge && data.step === "tts") {
+        badge.innerHTML = `<span style="display: inline-block; padding: 4px 8px; border-radius: 4px; background: #e0f2fe; color: #0284c7; font-weight: 700; font-size: 0.78rem;">🔄 AI 합성 중...</span>`;
       }
     }
 
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
+    // 완료된 경우
+    if (data.status === "completed") {
+      clearInterval(mergeProgressTimer);
+      mergeProgressTimer = null;
+      if (progPct) progPct.textContent = "100%";
+      if (progBar) progBar.style.width = "100%";
+      if (progMsg) progMsg.innerHTML = "🎉 <strong>전체 통합 MP3 생성이 완료되어 다운로드를 시작합니다!</strong>";
+
+      if (btnStop) btnStop.style.display = "none";
+      if (btnStart) {
+        btnStart.style.display = "inline-block";
+        btnStart.innerHTML = "🔄 다시 다운로드";
+      }
+
+      // 결과 다운로드 실행
+      downloadMergedAudioResult(currentMergeJobId);
+    }
+    // 취소된 경우
+    else if (data.status === "cancelled") {
+      clearInterval(mergeProgressTimer);
+      mergeProgressTimer = null;
+      if (progMsg) progMsg.innerHTML = "⏹ <strong>작업이 중단되었습니다.</strong>";
+      if (btnStop) btnStop.style.display = "none";
+      if (btnStart) {
+        btnStart.style.display = "inline-block";
+        btnStart.innerHTML = "▶ 다시 시작";
+      }
+    }
+    // 실패한 경우
+    else if (data.status === "failed") {
+      clearInterval(mergeProgressTimer);
+      mergeProgressTimer = null;
+      if (progMsg) progMsg.innerHTML = `❌ <strong>오류 발생:</strong> ${data.error || "실패"}`;
+      if (btnStop) btnStop.style.display = "none";
+      if (btnStart) {
+        btnStart.style.display = "inline-block";
+        btnStart.innerHTML = "▶ 다시 시도";
+      }
+    }
+  } catch (e) {
+    console.warn("진행률 폴링 중 오류:", e);
+  }
+}
+
+/** 작업 중단 */
+async function stopListeningAudioMerge() {
+  if (!currentMergeJobId) return;
+
+  const targetJobId = currentMergeJobId;
+  const btnStop = document.getElementById("btnStopListeningAudioMerge");
+  const btnStart = document.getElementById("btnStartListeningAudioMerge");
+  const progMsg = document.getElementById("listeningAudioProgressMessage");
+
+  if (mergeProgressTimer) {
+    clearInterval(mergeProgressTimer);
+    mergeProgressTimer = null;
+  }
+
+  if (btnStop) {
+    btnStop.disabled = true;
+    btnStop.textContent = "⏳ 중단하는 중...";
+  }
+
+  try {
+    await fetch(`/api/handouts/listening/cancel-merge-audio/${targetJobId}`, {
+      method: "POST",
+    });
+    if (progMsg) progMsg.innerHTML = "⏹ <strong>사용자에 의해 음성 생성이 즉각 중단되었습니다.</strong>";
   } catch (err) {
-    alert(`통합 MP3 다운로드 실패: ${err.message}`);
+    console.warn("중단 요청 실패:", err);
   } finally {
-    if (btnAudio) {
-      btnAudio.disabled = false;
-      btnAudio.innerHTML = origHtml;
+    if (btnStop) {
+      btnStop.disabled = false;
+      btnStop.style.display = "none";
+    }
+    if (btnStart) {
+      btnStart.style.display = "inline-block";
+      btnStart.innerHTML = "▶ 다시 시작";
     }
   }
 }
+
+/** 최종 MP3 파일 다운로드 브라우저 트리거 */
+function downloadMergedAudioResult(jobId) {
+  if (!jobId) return;
+  const link = document.createElement("a");
+  link.href = `/api/handouts/listening/download-merged-result/${jobId}`;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/** 모달 닫기 */
+function closeListeningAudioModal() {
+  const activeJobId = currentMergeJobId;
+  if (mergeProgressTimer || activeJobId) {
+    // 진행 중인 백엔드 비동기 작업을 백그라운드에서 즉각 강제 중단
+    if (mergeProgressTimer) {
+      clearInterval(mergeProgressTimer);
+      mergeProgressTimer = null;
+    }
+    currentMergeJobId = null;
+
+    if (activeJobId) {
+      fetch(`/api/handouts/listening/cancel-merge-audio/${activeJobId}`, {
+        method: "POST",
+        keepalive: true,
+      }).catch((e) => console.warn("모달 닫기 시 작업 취소 통신:", e));
+    }
+  }
+
+  const modal = document.getElementById("listeningAudioStatusModal");
+  if (modal) modal.style.display = "none";
+}
+
 
 /** 이벤트 초기화 및 탭 전환 연결 */
 export function initListeningHandoutEvents() {
@@ -521,7 +809,37 @@ export function initListeningHandoutEvents() {
 
   const btnDlMergedAudio = document.getElementById("btnDownloadListeningMergedAudio");
   if (btnDlMergedAudio) {
-    btnDlMergedAudio.addEventListener("click", downloadMergedAudio);
+    btnDlMergedAudio.addEventListener("click", openListeningAudioModal);
+  }
+
+  // 듣기 음원 확인 및 결합 모달 내부 버튼들
+  const btnCloseModal = document.getElementById("btnCloseListeningAudioModal");
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener("click", closeListeningAudioModal);
+  }
+
+  const btnCancelModal = document.getElementById("btnCancelListeningAudioModal");
+  if (btnCancelModal) {
+    btnCancelModal.addEventListener("click", closeListeningAudioModal);
+  }
+
+  const btnStartMerge = document.getElementById("btnStartListeningAudioMerge");
+  if (btnStartMerge) {
+    btnStartMerge.addEventListener("click", startListeningAudioMerge);
+  }
+
+  const btnStopMerge = document.getElementById("btnStopListeningAudioMerge");
+  if (btnStopMerge) {
+    btnStopMerge.addEventListener("click", stopListeningAudioMerge);
+  }
+
+  const audioModal = document.getElementById("listeningAudioStatusModal");
+  if (audioModal) {
+    audioModal.addEventListener("click", (e) => {
+      if (e.target === audioModal) {
+        closeListeningAudioModal();
+      }
+    });
   }
 
   const btnDlZip = document.getElementById("btnDownloadListeningZip");

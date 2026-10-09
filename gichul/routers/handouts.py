@@ -28,7 +28,16 @@ from ..services.hwpx_generator import (
     list_templates,
     save_uploaded_template,
 )
-from ..tts_service import merge_listening_mp3s, AUDIO_DIR, sanitize_filename
+from ..tts_service import (
+    merge_listening_mp3s,
+    AUDIO_DIR,
+    sanitize_filename,
+    check_listening_audio_status,
+    start_listening_audio_merge_task,
+    cancel_listening_audio_merge,
+    get_listening_audio_merge_progress,
+    get_listening_audio_merge_result,
+)
 from ..logging_config import get_logger
 
 logger = get_logger("gichul.routers.handouts")
@@ -432,10 +441,68 @@ async def api_download_listening_merged_audio(req: ListeningAudioDownloadRequest
         }
 
         return Response(content=audio_bytes, media_type="audio/mpeg", headers=headers)
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error("듣기 통합 MP3 생성 실패: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"듣기 통합 MP3 결합 중 오류가 발생했습니다: {e}")
+
+
+@router.post("/listening/audio-status")
+async def api_get_listening_audio_status(req: ListeningAudioDownloadRequest):
+    """선택된 듣기 문항들의 MP3 음원 파일 존재 여부 및 상세 상태 반환"""
+    if not req.passage_ids:
+        raise HTTPException(status_code=400, detail="문항 목록이 비어있습니다.")
+    try:
+        status_info = check_listening_audio_status(req.passage_ids)
+        return status_info
+    except Exception as e:
+        logger.error("듣기 음원 상태 조회 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"듣기 음원 상태 확인 중 오류가 발생했습니다: {e}")
+
+
+@router.post("/listening/start-merge-audio")
+async def api_start_merge_listening_audio(req: ListeningAudioDownloadRequest):
+    """비동기 통합 MP3 음원 결합 및 인코딩 작업 시작 (job_id 발급)"""
+    if not req.passage_ids:
+        raise HTTPException(status_code=400, detail="결합할 듣기 문항이 없습니다.")
+    try:
+        job_id = start_listening_audio_merge_task(req.passage_ids, req.project_name or "듣기유인물")
+        return {"job_id": job_id, "status": "processing", "message": "작업이 시작되었습니다."}
+    except Exception as e:
+        logger.error("통합 MP3 작업 시작 실패: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"작업 시작 실패: {e}")
+
+
+@router.get("/listening/merge-audio-progress/{job_id}")
+async def api_get_merge_audio_progress(job_id: str):
+    """통합 MP3 결합 작업의 실시간 진행률 및 상태 폴링"""
+    progress = get_listening_audio_merge_progress(job_id)
+    if progress.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="해당 작업을 찾을 수 없습니다.")
+    return progress
+
+
+@router.post("/listening/cancel-merge-audio/{job_id}")
+async def api_cancel_merge_listening_audio(job_id: str):
+    """진행 중인 통합 MP3 음원 생성/결합 작업 즉시 중단"""
+    success = cancel_listening_audio_merge(job_id)
+    return {"job_id": job_id, "cancelled": success, "message": "중단 요청이 전달되었습니다." if success else "진행 중인 작업이 아니거나 이미 완료되었습니다."}
+
+
+@router.get("/listening/download-merged-result/{job_id}")
+async def api_download_merged_audio_result(job_id: str):
+    """완료된 통합 MP3 결과 파일 스트리밍 다운로드"""
+    audio_bytes, filename = get_listening_audio_merge_result(job_id)
+    if not audio_bytes:
+        raise HTTPException(status_code=404, detail="완료된 오디오 파일이 없거나 아직 작업 중입니다.")
+
+    safe_filename = filename or f"listening_merged_{job_id[:8]}.mp3"
+    encoded_filename = urllib.parse.quote(safe_filename)
+    fallback_ascii = f"listening_merged_{job_id[:8]}.mp3"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{fallback_ascii}"; filename*=UTF-8\'\'{encoded_filename}',
+        "Access-Control-Expose-Headers": "Content-Disposition",
+    }
+    return Response(content=audio_bytes, media_type="audio/mpeg", headers=headers)
 
