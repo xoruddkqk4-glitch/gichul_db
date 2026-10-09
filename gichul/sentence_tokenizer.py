@@ -5,7 +5,7 @@
 """
 
 import re
-from typing import List, Dict
+from typing import List, Dict, Any
 
 # 보호해야 할 일반 약어 목록 (소문자 기준)
 ABBREVIATIONS = {
@@ -49,11 +49,15 @@ def clean_passage_for_sentences(text: str) -> str:
     return t.strip()
 
 
-def split_sentences(text: str) -> List[str]:
+def split_sentences(text: str, clean: bool = True) -> List[str]:
     """
     영어 지문 텍스트를 문장 단위로 정확하게 분할 (선지, 발문, 각주, 배점 표기 배제)
+    clean: True면 지문 본문 정제(clean_passage_for_sentences) 수행, False면 원문 직접 분할
     """
-    cleaned_input = clean_passage_for_sentences(text)
+    if clean:
+        cleaned_input = clean_passage_for_sentences(text)
+    else:
+        cleaned_input = (text or "").strip()
     if not cleaned_input:
         return []
 
@@ -148,3 +152,74 @@ def create_sentence_records(passage_id: str, passage_text: str) -> List[Dict]:
         })
 
     return records
+
+
+def split_script_sentences(script_text: str) -> List[Dict[str, Any]]:
+    """
+    듣기 대본(script_text)을 화자 턴 및 문장 단위로 정밀 분할
+    반환: [{"speaker": "W", "sentence_text": "W: Mike, ...", "raw_sentence": "Mike, ..."}, ...]
+    """
+    if not script_text:
+        return []
+
+    pattern = re.compile(r'(?:^|\n|\r\n)\s*([A-Za-z]+)\s*:\s*')
+    matches = list(pattern.finditer(script_text))
+    results = []
+
+    if not matches:
+        # 화자 태그가 없는 경우 (단일 담화문)
+        sents = split_sentences(script_text, clean=False)
+        for s in sents:
+            results.append({
+                "speaker": "",
+                "sentence_text": s,
+                "raw_sentence": s
+            })
+    else:
+        for i, m in enumerate(matches):
+            spk = m.group(1)
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(script_text)
+            content = script_text[start:end].strip()
+            # 발화 텍스트 문장 분할
+            sents = split_sentences(content, clean=False)
+            for k, s in enumerate(sents):
+                prefix = f"{spk}: " if k == 0 else ""
+                results.append({
+                    "speaker": spk,
+                    "sentence_text": prefix + s,
+                    "raw_sentence": s
+                })
+
+    return results
+
+
+def create_script_sentence_records(passage_id: str, script_text: str) -> List[Dict]:
+    """
+    듣기 문항 ID([고3-2024년-06월-01번])와 대본 텍스트를 받아
+    각 문장에 [고3-2024년-06월-01번-1번째 문장] 형태의 식별자를 부여한 레코드 목록 생성
+    """
+    sent_items = split_script_sentences(script_text)
+    records = []
+    base_id = passage_id.strip("[]")
+
+    for idx, item in enumerate(sent_items, 1):
+        sent_id = f"[{base_id}-{idx}번째 문장]"
+        sent_text = item["sentence_text"]
+        spk = item["speaker"]
+        remarks = f"듣기 대본 문장 ({spk})" if spk else "듣기 대본 문장"
+
+        words = re.findall(r"\b[\w'-]+\b", sent_text)
+        word_count = len(words)
+
+        records.append({
+            "id": sent_id,
+            "passage_id": passage_id if passage_id.startswith("[") else f"[{passage_id}]",
+            "order_index": idx,
+            "sentence_text": sent_text,
+            "word_count": word_count,
+            "remarks": remarks
+        })
+
+    return records
+

@@ -38,6 +38,7 @@ export const filterTag = document.getElementById("filterTag");
 // 화면 2: 결과창 화면
 export const resultsView = document.getElementById("resultsView");
 export const btnBackToSearch = document.getElementById("btnBackToSearch");
+export const btnHeaderBackToPrevious = document.getElementById("btnHeaderBackToPrevious");
 export const resultsSearchInput = document.getElementById("resultsSearchInput");
 export const btnClearResultsSearch = document.getElementById("btnClearResultsSearch");
 export const btnResultsSearch = document.getElementById("btnResultsSearch");

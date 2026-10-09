@@ -24,6 +24,7 @@ from . import paths
 from .text_utils import normalize_bracket_id, apply_answer_header
 from .exam_profiles import get_exam_profile
 from .logging_config import get_logger
+from . import sentence_tokenizer
 
 logger = get_logger("gichul.listening_parser")
 BASE_DIR = paths.ROOT_DIR
@@ -748,6 +749,13 @@ def sync_exam_listening(
             "audio_file_path": None
         }
         db.save_passage(p_data)
+        if script_txt:
+            try:
+                sent_records = sentence_tokenizer.create_script_sentence_records(p_id, script_txt)
+                if sent_records:
+                    db.replace_passage_sentences(p_id, sent_records)
+            except Exception as e:
+                logger.warning("[Sync Listening Warning] 문장 토큰화/저장 실패 (%s): %s", p_id, e)
         saved_count += 1
 
     return {

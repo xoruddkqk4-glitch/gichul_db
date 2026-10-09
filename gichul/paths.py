@@ -24,6 +24,7 @@ UPLOADS_DIR = os.path.join(ROOT_DIR, "uploads")
 CAPTURES_DIR = os.path.join(STATIC_DIR, "captures")
 AUDIO_DIR = os.path.join(STATIC_DIR, "audio")
 VOICES_DIR = os.path.join(STATIC_DIR, "voices")
+CHIME_BELL_PATH = os.path.join(AUDIO_DIR, "chime_bell.wav")
 
 # 데이터 파일
 KEYS_DIR = os.path.join(ROOT_DIR, "data", "answer_keys")

@@ -496,7 +496,18 @@ export function initSentenceHandoutEvents() {
   const hdrIcon = document.getElementById("handoutHeaderIcon");
   const hdrTitle = document.getElementById("handoutMainPageTitle");
   const hdrSubtitle = document.getElementById("handoutMainSubtitle");
-  const btnBack = document.getElementById("btnHandoutBackToResults");
+  const btnBack = document.getElementById("btnHandoutBackToResults") || document.getElementById("btnHandoutBackToPrevious");
+  const btnHome = document.getElementById("btnHandoutBackToHome");
+
+  if (btnHome) {
+    btnHome.addEventListener("click", () => {
+      import("./navigation.js").then((m) => {
+        if (typeof m.showHomeScreen === "function") {
+          m.showHomeScreen();
+        }
+      });
+    });
+  }
 
   if (tabPassage && tabSentence) {
     tabPassage.addEventListener("click", () => {
@@ -506,7 +517,10 @@ export function initSentenceHandoutEvents() {
       if (hdrIcon) hdrIcon.textContent = "📄";
       if (hdrTitle) hdrTitle.textContent = "교사용 지문 유인물 제작소";
       if (hdrSubtitle) hdrSubtitle.textContent = "선택한 기출 문항으로 B4 단면 2문항 규격의 문제지 및 해설지 HWPX 문서를 자동 생성합니다.";
-      if (btnBack) btnBack.textContent = "🔙 지문 결과 화면으로 복귀";
+      if (btnBack) {
+        btnBack.textContent = "🔙 이전 화면으로 돌아가기";
+        btnBack.title = "유인물 제작소 진입 전 이전 화면으로 복귀";
+      }
 
       if (barPassage) barPassage.style.display = "flex";
       if (barSentence) barSentence.style.display = "none";
@@ -527,7 +541,10 @@ export function initSentenceHandoutEvents() {
       if (hdrIcon) hdrIcon.textContent = "📝";
       if (hdrTitle) hdrTitle.textContent = "교사용 문장 유인물 제작소";
       if (hdrSubtitle) hdrSubtitle.textContent = "선택한 기출 문장으로 A4 단면 규격의 구문 분석 훈련용 HWPX 문서를 자동 생성합니다. (해설 유인물 불필요)";
-      if (btnBack) btnBack.textContent = "🔙 문장 결과 화면으로 복귀";
+      if (btnBack) {
+        btnBack.textContent = "🔙 이전 화면으로 돌아가기";
+        btnBack.title = "유인물 제작소 진입 전 이전 화면으로 복귀";
+      }
 
       if (barPassage) barPassage.style.display = "none";
       if (barSentence) barSentence.style.display = "flex";

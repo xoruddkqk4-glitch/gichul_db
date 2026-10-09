@@ -22,9 +22,14 @@
     </div>
 
     <div class="header-actions">
-      <!-- [← 처음 화면으로 돌아가기] 버튼 (결과창/문장창 진입 시 헤더 상단 노출) -->
-      <button type="button" class="btn btn-secondary btn-sm btn-back-search" id="btnBackToSearch" style="display: none;" title="메인 검색 화면으로 복귀">
+      <!-- [← 처음 화면으로 돌아가기] 버튼 (결과창/문장창/유인물 진입 시 헤더 상단 노출) -->
+      <button type="button" class="btn btn-secondary btn-sm btn-back-search" id="btnBackToSearch" style="display: none;" title="첫 검색 화면으로 복귀">
         <span class="back-arrow">←</span> 처음 화면으로 돌아가기
+      </button>
+
+      <!-- [🔙 이전 화면으로 돌아가기] 버튼 (유인물 제작소 진입 시 헤더 상단 노출) -->
+      <button type="button" class="btn btn-secondary btn-sm btn-back-previous" id="btnHeaderBackToPrevious" style="display: none;" title="유인물 진입 전 이전 화면으로 복귀">
+        <span class="back-arrow">🔙</span> 이전 화면으로 돌아가기
       </button>
 
       <!-- 동적 헤더 전환 슬롯 (통계 배지 <-> 전체 문장 버튼 <-> 지문 결과창 복귀 버튼) -->
@@ -791,9 +796,12 @@
           <span class="handout-page-badge" id="handoutTotalCountBadge">0개 문항</span>
           <span style="font-size: 0.85rem; font-weight: 700; color: #2563eb;" id="handoutEstimatedPages"></span>
         </div>
-        <div>
-          <button type="button" class="btn-handout-back" id="btnHandoutBackToResults">
-            🔙 결과 화면으로 복귀
+        <div class="handout-header-actions" style="display: flex; gap: 8px; align-items: center;">
+          <button type="button" class="btn-handout-back" id="btnHandoutBackToResults" title="유인물 제작소 진입 전 이전 화면으로 복귀">
+            🔙 이전 화면으로 돌아가기
+          </button>
+          <button type="button" class="btn-handout-back btn-handout-back-home" id="btnHandoutBackToHome" title="첫 검색 화면으로 복귀">
+            🏠 처음 화면으로 돌아가기
           </button>
         </div>
       </div>

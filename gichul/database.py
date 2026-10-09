@@ -1649,9 +1649,14 @@ def search_passages(
 
     if keyword:
         k_strip = keyword.strip()
+        is_listening_eng = (area == "listening" and bool(re.search(r'[a-zA-Z]', k_strip)))
         if _use_fts:
             # 1차 시도: FTS5 전문 검색 가속화 (수백 ms -> 2~5ms 단축)
-            fts_q = _build_fts_query(k_strip, whole_word)
+            fts_base = _build_fts_query(k_strip, whole_word)
+            if is_listening_eng:
+                fts_q = f"{{passage_text script_text}} : {fts_base}"
+            else:
+                fts_q = fts_base
             query += """
                 AND (
                     p.id IN (SELECT passage_id FROM passages_fts WHERE passages_fts MATCH ?) OR
@@ -1662,16 +1667,26 @@ def search_passages(
         else:
             # FTS 쿼리 실패 시 표준 LIKE 백업
             kw = f"%{k_strip}%"
-            query += """
-                AND (
-                    p.id LIKE ? OR
-                    p.passage_text LIKE ? OR
-                    p.question_title LIKE ? OR
-                    p.explanation_text LIKE ? OR
-                    p.script_text LIKE ?
-                )
-            """
-            params.extend([kw, kw, kw, kw, kw])
+            if is_listening_eng:
+                query += """
+                    AND (
+                        p.id LIKE ? OR
+                        p.passage_text LIKE ? OR
+                        p.script_text LIKE ?
+                    )
+                """
+                params.extend([kw, kw, kw])
+            else:
+                query += """
+                    AND (
+                        p.id LIKE ? OR
+                        p.passage_text LIKE ? OR
+                        p.question_title LIKE ? OR
+                        p.explanation_text LIKE ? OR
+                        p.script_text LIKE ?
+                    )
+                """
+                params.extend([kw, kw, kw, kw, kw])
 
     if area:
         if area == "listening":

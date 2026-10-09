@@ -458,8 +458,8 @@ export function initHandoutPassageView() {
     });
   }
 
-  // 뒤로 가기 버튼 (검색 화면으로 복귀)
-  const btnBack = document.getElementById("btnHandoutBackToResults");
+  // 이전 화면으로 돌아가기 버튼 (진입 전 화면으로 복귀)
+  const btnBack = document.getElementById("btnHandoutBackToResults") || document.getElementById("btnHandoutBackToPrevious");
   if (btnBack) {
     btnBack.addEventListener("click", () => {
       import("./navigation.js").then((m) => {
@@ -468,6 +468,18 @@ export function initHandoutPassageView() {
         } else if (typeof m.showResultsScreen === "function") {
           m.showResultsScreen();
         } else if (typeof m.showHomeScreen === "function") {
+          m.showHomeScreen();
+        }
+      });
+    });
+  }
+
+  // 처음 화면으로 돌아가기 버튼 (첫 검색 화면으로 복귀)
+  const btnHome = document.getElementById("btnHandoutBackToHome");
+  if (btnHome) {
+    btnHome.addEventListener("click", () => {
+      import("./navigation.js").then((m) => {
+        if (typeof m.showHomeScreen === "function") {
           m.showHomeScreen();
         }
       });

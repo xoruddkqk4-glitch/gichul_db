@@ -458,6 +458,7 @@ export function executeSearchWithinResults() {
       let kwMatch = true;
       if (kwRaw) {
         const inBody = checkTextMatch(p.passage_text, kwRaw, isWholeWordActive);
+        const inScript = checkTextMatch(p.script_text, kwRaw, isWholeWordActive);
         const inTitle = checkTextMatch(p.question_title, kwRaw, isWholeWordActive);
         const inId = (p.display_id || p.id || "").toLowerCase().includes(kw);
         const inExp = checkTextMatch(p.explanation_text, kwRaw, isWholeWordActive);
@@ -468,13 +469,13 @@ export function executeSearchWithinResults() {
         if (p.isGroup && p.subItems) {
           inSub = p.subItems.some(si => 
             checkTextMatch(si.passage_text, kwRaw, isWholeWordActive) ||
-            checkTextMatch(si.question_title, kwRaw, isWholeWordActive) ||
             checkTextMatch(si.script_text, kwRaw, isWholeWordActive) ||
+            checkTextMatch(si.question_title, kwRaw, isWholeWordActive) ||
             checkTextMatch(si.fels_text, kwRaw, isWholeWordActive)
           );
         }
 
-        kwMatch = inBody || inTitle || inId || inExp || inType || inTags || inSub;
+        kwMatch = inBody || inScript || inTitle || inId || inExp || inType || inTags || inSub;
       }
 
       return tagMatch && kwMatch;

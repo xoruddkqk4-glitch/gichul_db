@@ -6,6 +6,7 @@
 import { appState } from "./state.js";
 import {
   btnBackToSearch,
+  btnHeaderBackToPrevious,
   btnEmptyBackToSearch,
   btnEmptyResetFilters,
   btnGoHome,
@@ -98,6 +99,9 @@ export function setHeaderSlotState(state) {
 // 2. 화면 전환 및 동기화 로직
 // =========================================================================
 
+/** 유인물 제작소 진입 직전 화면 상태 ('home' | 'results') */
+let previousViewBeforeHandout = "home";
+
 /** 홈 검색 화면으로 복귀 */
 export function showHomeScreen() {
   stopAllListeningAudio();
@@ -114,6 +118,7 @@ export function showHomeScreen() {
   if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
   if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
   if (btnBackToSearch) btnBackToSearch.style.display = "none";
+  if (btnHeaderBackToPrevious) btnHeaderBackToPrevious.style.display = "none";
   
   // 헤더 상태를 통계 배지 모드로 복원
   setHeaderSlotState("home");
@@ -156,6 +161,7 @@ export function showResultsScreen() {
 
   resultsView.style.display = "flex";
   if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
+  if (btnHeaderBackToPrevious) btnHeaderBackToPrevious.style.display = "none";
   window.scrollTo({ top: 0, behavior: "smooth" });
   updateGrammarFiltersVisibility();
   if (typeof updateClearButtons === "function") updateClearButtons();
@@ -167,6 +173,14 @@ export function showResultsScreen() {
 /** 교사용 지문/문장 유인물 제작소 화면으로 전환 */
 export function switchToHandoutView(targetTab = null) {
   stopAllListeningAudio();
+
+  // 유인물 진입 직전 화면 저장 (결과창 vs 홈 첫 검색창)
+  if (resultsView && resultsView.style.display !== "none") {
+    previousViewBeforeHandout = "results";
+  } else {
+    previousViewBeforeHandout = "home";
+  }
+
   if (homeSearchView) homeSearchView.style.display = "none";
   if (resultsView) resultsView.style.display = "none";
 
@@ -180,7 +194,10 @@ export function switchToHandoutView(targetTab = null) {
 
   if (statsBadge) statsBadge.style.display = "none";
   if (btnHeaderFlow) btnHeaderFlow.style.display = "none";
+  
+  // 헤더 상단: '처음 화면으로 돌아가기' 및 '이전 화면으로 돌아가기' 버튼 노출
   if (btnBackToSearch) btnBackToSearch.style.display = "inline-flex";
+  if (btnHeaderBackToPrevious) btnHeaderBackToPrevious.style.display = "inline-flex";
 
   window.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -201,13 +218,18 @@ export function switchToHandoutView(targetTab = null) {
   }
 }
 
-/** 교사용 지문 유인물 제작소 화면에서 지문 결과 화면으로 복귀 */
+/** 교사용 지문 유인물 제작소 화면에서 이전 화면(결과창 또는 홈)으로 복귀 */
 export function backFromHandoutView() {
   stopAllListeningAudio();
   const handoutView = document.getElementById("handoutViewContainer");
   if (handoutView) handoutView.style.display = "none";
+  if (btnHeaderBackToPrevious) btnHeaderBackToPrevious.style.display = "none";
 
-  showResultsScreen();
+  if (previousViewBeforeHandout === "home") {
+    showHomeScreen();
+  } else {
+    showResultsScreen();
+  }
 }
 // =========================================================================
 // 3. 모드 전환 (지문 검색 vs 문장 검색)
@@ -261,16 +283,24 @@ export function init() {
 
   window.addEventListener("resize", updateResultsNavHeight);
 
-  // 홈으로 이동 버튼 이벤트 연결
+  // 홈으로 이동 버튼 이벤트 연결 ('처음 화면으로 돌아가기'는 항상 첫 검색 화면으로 이동)
   btnGoHome.addEventListener("click", showHomeScreen);
-  btnBackToSearch.addEventListener("click", () => {
-    const handoutView = document.getElementById("handoutViewContainer");
-    if (handoutView && handoutView.style.display !== "none") {
-      backFromHandoutView();
-    } else {
-      showHomeScreen();
-    }
-  });
+  btnBackToSearch.addEventListener("click", showHomeScreen);
+
+  // 헤더의 '이전 화면으로 돌아가기' 버튼
+  if (btnHeaderBackToPrevious) {
+    btnHeaderBackToPrevious.addEventListener("click", backFromHandoutView);
+  }
+
+  // 유인물 제작소 페이지 내부 상단 버튼 이벤트 바인딩
+  const btnHandoutHome = document.getElementById("btnHandoutBackToHome");
+  if (btnHandoutHome) {
+    btnHandoutHome.addEventListener("click", showHomeScreen);
+  }
+  const btnHandoutPrev = document.getElementById("btnHandoutBackToResults") || document.getElementById("btnHandoutBackToPrevious");
+  if (btnHandoutPrev) {
+    btnHandoutPrev.addEventListener("click", backFromHandoutView);
+  }
 
   const btnHeaderHandout = document.getElementById("btnHeaderHandout");
   if (btnHeaderHandout) {

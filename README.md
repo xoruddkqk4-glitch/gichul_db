@@ -2716,3 +2716,25 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/handout-cart.js static/js/handout-sentence.js static/js/navigation.js static/js/results-sentence.js`: 자바스크립트 문법 검사 0건 통과.
   - `pytest tests/test_sentence_hwpx.py`: 7개 단위 테스트 100% 통과 (6문장/10문장 레이아웃, 개념 테이블 유무, 제목 테두리 투명화, 마지막 엔터 2회, 높이 상한 캡 검증).
   - `pytest tests/`: 218개 전체 회귀 테스트 100% 통과.
+
+### [2026-10-09 18:15] 업데이트 이력 (Commit ID: b04a1d4f)
+- **수정 내용**:
+  - **1) 유인물 제작소 및 상단 헤더 내비게이션 명확화 ('처음 화면' vs '이전 화면' 분리) (`templates/index.html`, `static/css/search.css`, `static/css/handouts.css`, `static/js/dom.js`, `static/js/navigation.js`, `static/js/handout-passage.js`, `static/js/handout-sentence.js`)**:
+    - **요청 사항 반영**: 유인물 제작소 화면 및 상단 헤더의 '처음 화면으로 돌아가기' 버튼이 직전 화면이 아닌 첫 검색 메인 화면으로 돌아가도록 명확히 정의하고, 직전 화면(검색 결과 등)으로 복귀하는 '이전 화면으로 돌아가기' 버튼을 신설하여 두 기능을 시각적/기능적으로 분리.
+    - **내비게이션 상태 추적 최적화**: `previousScreen` 변수를 통해 직전 화면(지문 결과, 문장 결과 등)을 정확하게 추적하고, '처음 화면으로' 클릭 시에는 `showSearchScreen()`, '이전 화면으로' 클릭 시에는 `goBackToPreviousScreen()`으로 정밀 라우팅.
+  - **2) 영어 듣기 음성 MP3 생성 시 시작/종료 종소리(Chime Bell) 및 1지문 2문항 8초 무음 2회 반복 재생 구축 (`gichul/paths.py`, `gichul/tts_service.py`, `tests/test_tts_engine.py`)**:
+    - **차임벨(Chime Bell) 사운드 엔진**: `static/voices/chime_bell.wav` 경로를 표준화하고, 부재 시 440Hz+880Hz 하모닉스 및 지수 감쇠(Exponential Decay) 파형을 합성하는 `generate_chime_bell_pcm()` 탑재.
+    - **종소리 및 무음 타이밍 규격화**: 모든 듣기 문항 음성의 맨 앞과 맨 뒤에 종소리를 삽입하고, 마지막 발화 종료 후 8초 무음(Silent PCM)을 추가.
+    - **1지문 2문항(16~17번, 21~22번 등) 2회 재생**: `is_two_questions_passage()`로 복합 듣기 문항을 자동 감지하여, 전체 발화를 8초 무음 간격으로 2회 반복 재생하고 종소리는 파일의 맨 앞과 맨 뒤에만 단 1회씩 삽입되도록 `build_listening_mp3()` 엔진 완성.
+  - **3) 듣기 영역 대본(`script_text`) 기준 검색 아키텍처 개편 및 80,686건 문장 마이그레이션 (`gichul/database.py`, `static/js/search.js`, `gichul/sentence_tokenizer.py`, `gichul/listening_parser.py`, `tools/migrate_listening_sentences.py`, `tests/test_listening_sentences.py`, `docs/plans/2026-10-09_listening-script-search-architecture.md`, `docs/README.md`)**:
+    - **지문 검색 대본 기준 확립**: 듣기 영역(`area == 'listening'`)에서 영문 검색어 입력 시 한국어 문제 발문(`question_title`) 및 해설 노이즈를 배제하고 영문 대본(`script_text`) 및 지문(`passage_text`) 중심으로 FTS5(`{passage_text script_text} : query`) 및 LIKE 매칭을 수행하도록 `search_passages` 쿼리 분기 최적화.
+    - **클라이언트 결과 내 재검색 필터 누락 수정**: `search.js`의 결과 내 검색 조건에 `checkTextMatch(p.script_text, ...)`를 추가하여 대본 매칭 누락 버그 해결.
+    - **듣기 대본 문장 토큰화 파이프라인 구축**: 화자 턴(`M:`, `W:`) 및 담화문을 분할하고, 첫 문장에 화자 태그 유지 및 후속 문장은 순수 문장으로 분할하는 `split_script_sentences`, `create_script_sentence_records` 신설. 시험지 동기화(`sync_exam_listening`) 시 `db.replace_passage_sentences()`를 호출해 신규 업로드 시험지도 실시간 색인되도록 연동.
+    - **기존 DB 듣기 대본 문장 80,686건 일괄 적재 완료**: `tools/migrate_listening_sentences.py`를 통해 기존 5,257개 듣기 문항의 대본을 일괄 토큰화하여, 기존 0건이던 듣기 문장을 `sentences` 및 `sentences_fts`에 80,686건 적재 완료. 이제 상단 [🎧 듣기] 영역 선택 후 [문장] 탭에서도 듣기 대본 문장 검색, 인라인 수정, AI 어법 분석, 문장 유인물 담기를 전면 지원.
+- **검증 결과**:
+  - `python -m py_compile gichul/database.py gichul/sentence_tokenizer.py gichul/listening_parser.py gichul/paths.py gichul/tts_service.py tools/migrate_listening_sentences.py tests/test_listening_sentences.py tests/test_tts_engine.py`: 파이썬 구문 오류 0건 통과.
+  - `node -c static/js/search.js static/js/navigation.js static/js/handout-passage.js static/js/handout-sentence.js static/js/dom.js`: 자바스크립트 문법 검사 0건 통과.
+  - `pytest tests/test_listening_sentences.py`: 5개 듣기 대본 토큰화/검색 단위 테스트 100% 통과 (0.20s).
+  - `pytest tests/test_tts_engine.py`: 6개 차임벨 및 1지문 2문항 8초 무음 단위 테스트 100% 통과 (0.16s).
+  - `pytest tests/`: 226개 전체 단위/통합 회귀 테스트 100% 통과 (21.66s).
+

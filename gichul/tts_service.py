@@ -24,8 +24,10 @@ import zipfile
 import tempfile
 import logging
 import time
+import wave
 from typing import List, Dict, Any, Optional, Tuple
 
+import numpy as np
 import edge_tts
 from . import database as db
 from . import paths
@@ -91,9 +93,15 @@ FEMALE_SPEAKER_PATTERN = re.compile(
 _GLOBAL_XTTS_MODEL = None
 _HARDWARE_STATUS_CACHE: Optional[Dict[str, Any]] = None
 
-# XTTS 출력(WAV) → MP3 변환 설정
+# 듣기 평가 오디오 타이밍 및 MP3 변환 설정
 MP3_BITRATE_KBPS = 128
-TURN_PAUSE_SEC = 0.6  # 화자 턴 사이 무음 길이(초)
+BELL_POST_PAUSE_SEC = 0.6      # 시작 종소리 울린 뒤 발화 시작 전 무음 (초)
+TURN_PAUSE_SEC = 0.6           # 화자 턴 사이 무음 길이 (초)
+REPEAT_PAUSE_SEC = 8.0         # 1지문 2문항 반복 간 무음 길이 (초) - 요구사항: 8초
+FINAL_SILENT_PAUSE_SEC = 8.0   # 마지막 발화 후 종료 종소리 전 무음 길이 (초) - 요구사항: 8초
+FINAL_TAIL_SEC = 0.5           # 종료 종소리 후 끝마무리 여백 (초)
+CHIME_BELL_PATH = paths.CHIME_BELL_PATH
+
 LAMEENC_INSTALL_HINT = (
     "XTTS 음성을 MP3로 저장하려면 lameenc 패키지가 필요합니다.\n"
     "터미널에서 'pip install lameenc'를 실행해 주세요."
@@ -106,47 +114,222 @@ def _lameenc_available() -> bool:
     return importlib.util.find_spec("lameenc") is not None
 
 
-def _wav_turns_to_mp3(wav_chunks: List[bytes], pause_sec: float = TURN_PAUSE_SEC) -> bytes:
-    """XTTS 턴별 WAV를 하나의 PCM 스트림으로 잇고(턴 사이 무음) 실제 MP3로 인코딩한다.
+_CHIME_BELL_PCM_CACHE: Dict[int, bytes] = {}
 
-    예전에는 WAV 파일 바이트를 그대로 이어 붙여 .mp3로 저장해, 플레이어가 첫 턴 WAV 헤더에 적힌
-    길이만큼만 재생하거나 MP3를 기대하는 프로그램에서 열리지 않았다.
-    """
+
+def generate_chime_bell_pcm(sample_rate: int = 24000) -> bytes:
+    """수능 영어 듣기 평가 시작/종료용 청아한 차임벨 (딩동: B5 -> G5) 16비트 모노 PCM 생성"""
+    duration = 2.0
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    audio = np.zeros_like(t)
+
+    def add_tone(start_s: float, f0: float, amp: float):
+        idx0 = int(start_s * sample_rate)
+        sub_t = t[:len(audio) - idx0]
+        # 차임벨 고유의 맑은 배음 (기음 및 배음 6개)
+        partials = [
+            (1.00, 1.00, 3.2),
+            (2.00, 0.40, 4.5),
+            (2.76, 0.28, 6.0),
+            (4.07, 0.15, 7.5),
+            (5.40, 0.08, 9.0),
+            (6.80, 0.04, 11.0),
+        ]
+        sig = np.zeros_like(sub_t)
+        for mult, p_amp, decay in partials:
+            sig += p_amp * np.sin(2 * np.pi * f0 * mult * sub_t) * np.exp(-decay * sub_t)
+
+        # 클릭 노이즈 방지용 4ms 부드러운 어택
+        att_len = max(1, int(0.004 * sample_rate))
+        sig[:att_len] *= np.linspace(0, 1, att_len)
+        audio[idx0:] += amp * sig
+
+    # 수능 듣기 특유의 2음 차임 (딩: ~987.8Hz B5, 동: ~784.0Hz G5)
+    add_tone(0.02, 987.77, 0.45)
+    add_tone(0.55, 783.99, 0.50)
+
+    # 음량 정규화 (-3dBFS, 약 0.75)
+    peak = np.max(np.abs(audio))
+    if peak > 0:
+        audio = (audio / peak) * 0.75
+
+    return (audio * 32767).astype(np.int16).tobytes()
+
+
+def get_or_create_chime_bell_pcm(sample_rate: int = 24000) -> bytes:
+    """종소리 16비트 모노 PCM 바이트 반환 (메모리 캐싱 및 chime_bell.wav 파일 연동)"""
+    global _CHIME_BELL_PCM_CACHE
+    if sample_rate in _CHIME_BELL_PCM_CACHE:
+        return _CHIME_BELL_PCM_CACHE[sample_rate]
+
+    if os.path.exists(CHIME_BELL_PATH):
+        try:
+            with wave.open(CHIME_BELL_PATH, "rb") as w:
+                if w.getframerate() == sample_rate and w.getnchannels() == 1 and w.getsampwidth() == 2:
+                    pcm = w.readframes(w.getnframes())
+                    _CHIME_BELL_PCM_CACHE[sample_rate] = pcm
+                    return pcm
+        except Exception as e:
+            logger.warning(f"기존 chime_bell.wav 로드 실패: {e}")
+
+    pcm = generate_chime_bell_pcm(sample_rate)
+    try:
+        os.makedirs(os.path.dirname(CHIME_BELL_PATH), exist_ok=True)
+        with wave.open(CHIME_BELL_PATH, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sample_rate)
+            w.writeframes(pcm)
+    except Exception as e:
+        logger.warning(f"chime_bell.wav 저장 실패: {e}")
+
+    _CHIME_BELL_PCM_CACHE[sample_rate] = pcm
+    return pcm
+
+
+def wav_to_pcm(wav_bytes: bytes) -> bytes:
+    """16비트 WAV 파일 바이트에서 순수 PCM 데이터 바이트만 추출"""
+    with wave.open(io.BytesIO(wav_bytes), "rb") as w:
+        sampwidth = w.getsampwidth()
+        if sampwidth != 2:
+            raise RuntimeError(f"16비트 PCM WAV만 지원합니다 (현재 {sampwidth * 8}비트).")
+        return w.readframes(w.getnframes())
+
+
+def mp3_to_pcm(mp3_bytes: bytes, target_sr: int = 24000) -> bytes:
+    """MP3 바이트를 24000Hz 16비트 모노 PCM 바이트로 변환"""
+    try:
+        import soundfile as sf
+        audio_np, in_sr = sf.read(io.BytesIO(mp3_bytes), dtype="int16")
+        if in_sr != target_sr:
+            import scipy.signal
+            num_samples = int(len(audio_np) * target_sr / in_sr)
+            audio_np = scipy.signal.resample(audio_np, num_samples).astype(np.int16)
+        if len(audio_np.shape) > 1 and audio_np.shape[1] > 1:
+            audio_np = audio_np.mean(axis=1).astype(np.int16)
+        return audio_np.tobytes()
+    except Exception as e:
+        logger.warning(f"[mp3_to_pcm] soundfile 변환 실패, ffmpeg fallback 시도: {e}")
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y", "-i", "pipe:0", "-f", "s16le", "-ar", str(target_sr), "-ac", "1", "pipe:1"
+        ]
+        res = subprocess.run(cmd, input=mp3_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
+        raise RuntimeError(f"MP3 -> PCM 디코딩 실패: {e}")
+
+
+def encode_pcm_to_mp3(pcm_data: bytes, sample_rate: int = 24000, channels: int = 1, bitrate: int = MP3_BITRATE_KBPS) -> bytes:
+    """16비트 PCM 데이터를 고품질 MP3로 인코딩 (lameenc 우선, ffmpeg 보조)"""
+    if not pcm_data:
+        return b""
     try:
         import lameenc
-    except ImportError as e:
-        raise RuntimeError(LAMEENC_INSTALL_HINT) from e
-    import wave
+        encoder = lameenc.Encoder()
+        encoder.set_bit_rate(bitrate)
+        encoder.set_in_sample_rate(sample_rate)
+        encoder.set_channels(channels)
+        encoder.set_quality(2)
+        return bytes(encoder.encode(pcm_data)) + bytes(encoder.flush())
+    except Exception as e:
+        import subprocess
+        cmd = [
+            "ffmpeg", "-y", "-f", "s16le", "-ar", str(sample_rate), "-ac", str(channels),
+            "-i", "pipe:0", "-b:a", f"{bitrate}k", "-f", "mp3", "pipe:1"
+        ]
+        res = subprocess.run(cmd, input=pcm_data, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout
+        raise RuntimeError(f"MP3 인코딩 실패: {e}")
 
-    params = None  # (channels, sampwidth, framerate)
-    pcm = bytearray()
-    for chunk in wav_chunks:
-        if not chunk:
-            continue
-        with wave.open(io.BytesIO(chunk), "rb") as w:
-            cur = (w.getnchannels(), w.getsampwidth(), w.getframerate())
-            frames = w.readframes(w.getnframes())
-        if params is None:
-            if cur[1] != 2:
-                raise RuntimeError(f"16비트 PCM WAV만 MP3로 변환할 수 있습니다 (현재 {cur[1] * 8}비트).")
-            params = cur
-        elif cur != params:
-            raise RuntimeError(f"턴별 WAV 형식이 서로 다릅니다: {params} / {cur}")
-        else:
-            channels, sampwidth, rate = params
-            pcm.extend(b"\x00" * (int(rate * pause_sec) * channels * sampwidth))
-        pcm.extend(frames)
 
-    if params is None or not pcm:
+def is_two_questions_passage(passage: Dict[str, Any]) -> bool:
+    """1지문 2문항(1담화 2문항, 16~17번 등) 여부 판별"""
+    q_type = str(passage.get("question_type") or "")
+    if "1담화" in q_type or "2문항" in q_type:
+        return True
+    q_num = passage.get("q_num")
+    if q_num in (16, 17, 21, 22, 23):
+        return True
+    p_id = str(passage.get("id") or "")
+    m = re.search(r"-(\d+)번?\]?$", p_id)
+    if m and int(m.group(1)) in (16, 17, 21, 22, 23):
+        return True
+    return False
+
+
+def build_listening_mp3(
+    turn_pcm_chunks: List[bytes],
+    sample_rate: int = 24000,
+    channels: int = 1,
+    turn_pause_sec: float = TURN_PAUSE_SEC,
+    is_two_questions: bool = False,
+    include_chimes: bool = True
+) -> bytes:
+    """
+    수능 듣기 표준 규격으로 대사 턴들을 하나의 완성된 MP3 파일로 조립 및 인코딩
+    - include_chimes: 앞과 뒤(마지막 발화 후 8초 silent 후) 종소리 삽입
+    - is_two_questions: 1지문 2문항의 경우 음성 2번 반복 (반복 간 8초 silent, 종소리는 맨 앞/뒤만)
+    """
+    if not turn_pcm_chunks:
         return b""
 
-    channels, _, rate = params
-    encoder = lameenc.Encoder()
-    encoder.set_bit_rate(MP3_BITRATE_KBPS)
-    encoder.set_in_sample_rate(rate)
-    encoder.set_channels(channels)
-    encoder.set_quality(2)  # 2 = 고품질, 7 = 고속
-    return bytes(encoder.encode(bytes(pcm))) + bytes(encoder.flush())
+    pcm = bytearray()
+    silence = lambda sec: b"\x00" * (int(sample_rate * sec) * channels * 2)
+
+    # 1. 맨 앞 종소리 (시작 여백 0.6초)
+    if include_chimes:
+        chime_pcm = get_or_create_chime_bell_pcm(sample_rate)
+        pcm.extend(chime_pcm)
+        pcm.extend(silence(BELL_POST_PAUSE_SEC))
+
+    # 2. 1회차 발화 재생
+    for i, chunk in enumerate(turn_pcm_chunks):
+        if not chunk:
+            continue
+        if i > 0:
+            pcm.extend(silence(turn_pause_sec))
+        pcm.extend(chunk)
+
+    # 3. 1지문 2문항인 경우: 반복 간 8초 silent 후 2회차 발화 재생 (종소리는 들어가지 않음)
+    if is_two_questions:
+        pcm.extend(silence(REPEAT_PAUSE_SEC))
+        for i, chunk in enumerate(turn_pcm_chunks):
+            if not chunk:
+                continue
+            if i > 0:
+                pcm.extend(silence(turn_pause_sec))
+            pcm.extend(chunk)
+
+    # 4. 마지막 발화 후 8초 silent
+    pcm.extend(silence(FINAL_SILENT_PAUSE_SEC))
+
+    # 5. 맨 뒤 종소리
+    if include_chimes:
+        chime_pcm = get_or_create_chime_bell_pcm(sample_rate)
+        pcm.extend(chime_pcm)
+        pcm.extend(silence(FINAL_TAIL_SEC))
+
+    return encode_pcm_to_mp3(bytes(pcm), sample_rate=sample_rate, channels=channels)
+
+
+def _wav_turns_to_mp3(
+    wav_chunks: List[bytes],
+    pause_sec: float = TURN_PAUSE_SEC,
+    is_two_questions: bool = False,
+    include_chimes: bool = True
+) -> bytes:
+    """XTTS 턴별 WAV 청크들을 하나의 완성된 MP3로 조립 (하위 호환성 유지)"""
+    pcm_chunks = [wav_to_pcm(c) for c in wav_chunks if c]
+    return build_listening_mp3(
+        pcm_chunks,
+        sample_rate=24000,
+        channels=1,
+        turn_pause_sec=pause_sec,
+        is_two_questions=is_two_questions,
+        include_chimes=include_chimes
+    )
 
 
 def get_hardware_status() -> Dict[str, Any]:
@@ -534,12 +717,12 @@ def get_tts_progress(job_id: str) -> Dict[str, Any]:
     }
 
 
-def _count_progress_units(script_text: str, engine: str) -> int:
-    """문항 하나의 진행 단계 수 (대사 수 + XTTS면 MP3 인코딩 1)"""
+def _count_progress_units(script_text: str, engine: str = "xtts") -> int:
+    """문항 하나의 진행 단계 수 (대사 수 + MP3 인코딩 1)"""
     turns = split_script_by_speaker(script_text or "")
     if not turns:
         return 0
-    return len(turns) + (1 if engine == "xtts" else 0)
+    return len(turns) + 1
 
 
 async def generate_passage_audio(passage_id: str, job_id: Optional[str] = None,
@@ -568,6 +751,8 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
     """
     단일 듣기 문항의 대본(script_text)을 기반으로 남/여 듀얼 보이스 합성 후 MP3 저장
     (XTTS-v2 수능 성우 로컬 복제 기본 또는 Edge-TTS 무료 보조 하이브리드 지원)
+    - 음성 앞뒤 종소리 및 마지막 발화 후 8초 무음 적용
+    - 1지문 2문항인 경우 2회 반복 재생 (반복 간 8초 무음, 종소리는 맨 앞/뒤만)
     """
     passage = db.get_passage(passage_id)
     if not passage:
@@ -584,9 +769,12 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
     if not turns:
         raise ValueError("대본에서 추출된 발화가 없습니다.")
     if owns_progress:
-        progress.add_total(len(turns) + (1 if engine == "xtts" else 0))
+        progress.add_total(len(turns) + 1)
 
-    combined_audio = bytearray()
+    # 1지문 2문항(16~17번 등) 여부 판별
+    is_two_q = is_two_questions_passage(passage)
+    loop = asyncio.get_running_loop()
+    pcm_chunks: List[bytes] = []
 
     if engine == "xtts":
         hw = get_hardware_status()
@@ -598,21 +786,16 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
         if not _lameenc_available():
             # 긴 합성을 시작하기 전에 MP3 인코더 유무부터 확인
             raise RuntimeError(LAMEENC_INSTALL_HINT)
-        loop = asyncio.get_running_loop()
-        wav_chunks: List[bytes] = []
+
         for t_idx, turn in enumerate(turns, 1):
             spk = turn["speaker"]
             turn_bytes = await loop.run_in_executor(None, synthesize_xtts_turn, turn["text"], spk)
             if turn_bytes:
-                wav_chunks.append(turn_bytes)
+                pcm_data = wav_to_pcm(turn_bytes)
+                pcm_chunks.append(pcm_data)
             progress.step(f"{passage_id} 대사 {t_idx}/{len(turns)}")
-        if wav_chunks:
-            # 턴별 WAV를 PCM으로 잇고 실제 MP3로 인코딩 (CPU 작업이라 스레드에서 실행)
-            mp3_bytes = await loop.run_in_executor(None, _wav_turns_to_mp3, wav_chunks)
-            combined_audio.extend(mp3_bytes)
-        progress.step(f"{passage_id} MP3 인코딩")
     else:
-        # Edge-TTS (턴별 결과가 이미 MP3 프레임이라 이어 붙여도 재생됨)
+        # Edge-TTS
         edge_cfg = tts_cfg.get("edge_tts", {})
         male_voice = edge_cfg.get("voice_male") or DEFAULT_EDGE_TTS_VOICE_MALE
         female_voice = edge_cfg.get("voice_female") or DEFAULT_EDGE_TTS_VOICE_FEMALE
@@ -622,18 +805,35 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
             voice = female_voice if turn["speaker"] == "female" else male_voice
             turn_bytes = await synthesize_edge_tts_turn(turn["text"], voice, rate=rate)
             if turn_bytes:
-                combined_audio.extend(turn_bytes)
+                pcm_data = await loop.run_in_executor(None, mp3_to_pcm, turn_bytes)
+                pcm_chunks.append(pcm_data)
             progress.step(f"{passage_id} 대사 {t_idx}/{len(turns)}")
 
-    if not combined_audio:
+    if not pcm_chunks:
         raise RuntimeError("음성 데이터 생성에 실패했습니다.")
+
+    # MP3 인코딩 (앞뒤 종소리, 턴 간 무음, 1지문 2문항 8초 silent 반복, 마지막 발화 후 8초 silent 적용)
+    combined_mp3 = await loop.run_in_executor(
+        None,
+        build_listening_mp3,
+        pcm_chunks,
+        24000,
+        1,
+        TURN_PAUSE_SEC,
+        is_two_q,
+        True
+    )
+    progress.step(f"{passage_id} MP3 인코딩")
+
+    if not combined_mp3:
+        raise RuntimeError("MP3 오디오 인코딩에 실패했습니다.")
 
     # MP3 파일 저장
     safe_id = sanitize_filename(passage_id)
     filename = f"{safe_id}.mp3"
     save_path = os.path.join(AUDIO_DIR, filename)
     with open(save_path, "wb") as f:
-        f.write(combined_audio)
+        f.write(combined_mp3)
 
     relative_url = f"/static/audio/{filename}"
     db.update_passage_audio(passage_id, relative_url)
@@ -664,7 +864,8 @@ async def _generate_passage_audio_impl(passage_id: str, progress: TtsProgress, o
         "audio_url": relative_url,
         "engine": engine,
         "turns_count": len(turns),
-        "file_size": len(combined_audio)
+        "is_two_questions": is_two_q,
+        "file_size": len(combined_mp3)
     }
 
 

@@ -22,6 +22,7 @@ docs/
 
 | 날짜 | 계획서 | 상태 | 비고 |
 |---|---|---|---|
+| 2026-10-09 | [듣기 영역 대본(Script) 기준 검색 아키텍처 개편](plans/2026-10-09_listening-script-search-architecture.md) | ✅ 완료 | 듣기 지문 검색 대본(script) 기준 확립, 결과 내 재검색 script_text 누락 수정, 대본 문장 토큰화(80,686건 sentences 적재) 완료 |
 | 2026-10-07 | [교사용 유인물 제작소 화면·프로젝트 분리 및 문장 번호 부여 고도화](plans/2026-10-07_02_handout-sentence-enhancement.md) | ✅ 완료 | 화면/프로젝트 분리(지문용 vs 문장용), 문장 번호(1번/N번 재부여) 주입, 해설 불필요 단일 HWPX 확정 |
 | 2026-10-07 | [교사용 문장 유인물 자동 제작 기능 (A4 규격 default_a4_sentence.hwpx 연동)](plans/2026-10-07_01_handout-sentence-generation.md) | ✅ 완료 | 문장 담기(지문과 동일), 개념 설명 1x1 테이블 선택(6문장 vs 10문장), 12pt 글자크기 및 충분한 줄간격, A4 HWPX 스트리밍 |
 | 2026-10-06 | [교사용 B4 HWPX 유인물 템플릿 내용 주입 및 출처 표 보존 고도화](plans/2026-10-06_03_handout-template-content-injection.md) | ✅ 완료 | B4 템플릿 내 해설지 1행 4열 출처 표 보존 주입, 단락 스타일(35번) 승계, 다페이지 구조화 |
