@@ -225,6 +225,15 @@ class ListeningClassroomController {
       if (e.code === "Space") {
         e.preventDefault();
         this.togglePlayPause();
+      } else if (e.code === "BracketLeft" || e.key === "[") {
+        e.preventDefault();
+        this.setRegionStartFromCurrentTime();
+      } else if (e.code === "BracketRight" || e.key === "]") {
+        e.preventDefault();
+        this.setRegionEndFromCurrentTime();
+      } else if (e.code === "Backslash" || e.key === "\\" || e.key === "￦") {
+        e.preventDefault();
+        this.clearSelectedRegion();
       } else if (e.code === "ArrowLeft") {
         e.preventDefault();
         this.prevSentence();
@@ -347,7 +356,80 @@ class ListeningClassroomController {
     }
   }
 
-  /** 선택 영역 해제 */
+  /** 단축키 '[': 현재 재생 위치를 반복 재생 시작점으로 설정 */
+  setRegionStartFromCurrentTime() {
+    const curTime = this.audioElement.currentTime || 0;
+    const duration = this.audioDuration || this.audioElement.duration || 1;
+    const curRatio = Math.max(0, Math.min(1, curTime / duration));
+
+    let endRatio = this.selectedRegion ? this.selectedRegion.endRatio : 1.0;
+    let endTime = this.selectedRegion ? this.selectedRegion.endTime : duration;
+
+    // 현재 위치가 끝점보다 뒤에 있거나 같으면 끝점을 오디오 끝까지 확장
+    if (curTime >= endTime - 0.1) {
+      endRatio = 1.0;
+      endTime = duration;
+    }
+
+    this.selectedRegion = {
+      startRatio: curRatio,
+      endRatio: endRatio,
+      startTime: curTime,
+      endTime: endTime
+    };
+
+    // 기존 루프 모드 중지 후 새 구간으로 갱신
+    if (this.isLoopMode) {
+      this.stopRegionLoop();
+    }
+
+    this.updateRegionOverlay();
+    if (this.dom.btnClearRegion) {
+      this.dom.btnClearRegion.style.display = "inline-flex";
+    }
+    this.updatePlayButtonUi();
+  }
+
+  /** 단축키 ']': 현재 재생 위치를 반복 재생 끝점으로 설정 및 루프 반복 시작 */
+  setRegionEndFromCurrentTime() {
+    const curTime = this.audioElement.currentTime || 0;
+    const duration = this.audioDuration || this.audioElement.duration || 1;
+    let curRatio = Math.max(0, Math.min(1, curTime / duration));
+
+    let startRatio = this.selectedRegion ? this.selectedRegion.startRatio : 0.0;
+    let startTime = this.selectedRegion ? this.selectedRegion.startTime : 0.0;
+
+    // 현재 위치가 시작점보다 앞에 있거나 같으면 시작점을 0으로 설정
+    if (curTime <= startTime + 0.1) {
+      startRatio = 0.0;
+      startTime = 0.0;
+    }
+
+    // 최소 구간 0.2초 보장
+    let finalEndTime = curTime;
+    if (finalEndTime - startTime < 0.2) {
+      finalEndTime = Math.min(duration, startTime + 0.2);
+      curRatio = Math.min(1, finalEndTime / duration);
+    }
+
+    this.selectedRegion = {
+      startRatio: startRatio,
+      endRatio: curRatio,
+      startTime: startTime,
+      endTime: finalEndTime
+    };
+
+    this.updateRegionOverlay();
+    if (this.dom.btnClearRegion) {
+      this.dom.btnClearRegion.style.display = "inline-flex";
+    }
+    this.updatePlayButtonUi();
+
+    // 구간 끝점 지정 완료 시 즉시 해당 구간 반복 재생 시작
+    this.startRegionLoop();
+  }
+
+  /** 선택 영역 해제 (단축키: \) */
   clearSelectedRegion() {
     this.selectedRegion = null;
     if (this.dom.regionOverlay) {

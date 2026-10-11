@@ -2867,6 +2867,24 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/listening-classroom.js static/js/handout-listening.js`: 자바스크립트 문법 검사 통과 (0건 오류).
   - `pytest tests/test_listening_handout.py`: 7개 단위 테스트 100% 통과 (6.25s, 0건 실패).
 
+### [2026-10-11 13:06] 업데이트 이력 (Commit ID: 7558ac92)
+- **수정 내용**:
+  - **1) 교사용 듣기 수업 파형 플레이어 반복 재생 단축키([, ], \) 신설 (`static/js/listening-classroom.js`)**:
+    - **시작점 단축키 (`[`)**: 현재 오디오 재생 위치(`currentTime`)를 반복 재생 시작점(`startTime`)으로 지정하는 `setRegionStartFromCurrentTime()` 구현. 끝점이 없거나 현재 위치보다 앞에 있는 경우 끝점을 오디오 끝까지 안전하게 확장.
+    - **끝점 단축키 (`]`)**: 현재 오디오 재생 위치를 반복 재생 끝점(`endTime`)으로 지정하는 `setRegionEndFromCurrentTime()` 구현. 시작점과 끝점이 확정되는 즉시 `startRegionLoop()`를 가동하여 A-B Looper 구간 반복 재생을 자동 시작.
+    - **구간 해제 단축키 (`\`)**: 설정된 반복 재생 구간을 원클릭 해제하는 `clearSelectedRegion()` 연동.
+    - **IME(한/영 자판) 완전 호환**: `BracketLeft`, `BracketRight`, `Backslash`, `\`, `￦` 등 키코드 및 키값을 다중 매핑하여 영문/한글 입력 상태에 구애받지 않고 100% 정상 작동 보장.
+  - **2) 마우스 드래그 앤 드롭 구간 설정과 단축키 간 양방향 연동 유지 (`static/js/listening-classroom.js`)**:
+    - 캔버스 파형 위 마우스 드래그 인터랙션과 신규 단축키가 동일한 `this.selectedRegion` 데이터 모델을 공유하여, 마우스로 선택한 구간을 `[` / `]` 키로 미세 보정하거나 `\` 키로 즉시 해제할 수 있도록 완벽 결합.
+  - **3) 칠판형 수업 모달 하단 단축키 가이드 UI 갱신 (`templates/index.html`)**:
+    - 모달 하단 `classroom-shortcut-tips` 영역에 `<kbd>[</kbd> 구간 시작`, `<kbd>]</kbd> 구간 끝`, `<kbd>\</kbd> 구간 해제` 안내 배지 추가 및 스크립트 캐시 버스팅 파라미터(`?v=20261011_0001`) 갱신.
+  - **4) 구현 계획서 등록 및 완료 상태 반영 (`docs/plans/2026-10-11_listening-loop-hotkeys.md`, `docs/README.md`)**:
+    - 기술 분석 및 단계별 세부 계획서 작성 후 전체 진행 단계 `✅ 완료` 갱신.
+- **검증 결과**:
+  - `node -c static/js/listening-classroom.js static/js/handout-listening.js static/js/main.js`: 자바스크립트 문법 검사 통과 (0건 오류).
+  - `pytest tests/test_listening_handout.py`: 듣기 수업 데이터 및 문장 오디오 API 등 7개 단위 테스트 100% 통과 (5.48s, 0건 실패).
+
+
 
 
 
