@@ -1578,16 +1578,42 @@ def _apply_correct_rate_filter(range_key: str, table_alias: str = "p") -> str:
 
 
 def _build_fts_query(term: str, whole_word: bool = False) -> str:
-    """FTS5 전문 검색용 안전한 쿼리 문자열 생성 (특수문자 이스케이프 및 접두사 가속화)"""
-    clean = re.sub(r'["\*\(\)\{\}\^~:+\-]', ' ', term).strip()
-    words = [w for w in clean.split() if w]
-    if not words:
+    """FTS5 전문 검색용 안전한 쿼리 문자열 생성
+    - 큰따옴표("...") 구문: SQLite FTS5 Phrase Query("word1 word2")로 정확한 인접 구문 일치 지원
+    - 일반 단어: 접두사 검색(prefix matching) 또는 온전한 단어(whole_word) AND 결합
+    """
+    if not term:
         return '""'
-    if whole_word:
-        return " ".join(f'"{w}"' for w in words)
-    else:
-        # 단어별 접두사 검색(prefix matching)으로 부분 일치 및 풀스캔 대체 초고속 지원
-        return " ".join(f'"{w}"*' for w in words)
+
+    tokens = []
+    # 큰따옴표로 둘러싸인 구문("...")과 일반 단어 분리 파싱
+    for match in re.finditer(r'"([^"]*)"|(\S+)', term):
+        phrase_group = match.group(1)
+        word_group = match.group(2)
+
+        if phrase_group is not None:
+            # 큰따옴표 내부 구문: 내부 FTS5 제어문자 정제
+            clean_p = re.sub(r'["\*\(\)\{\}\^~:+\-]', ' ', phrase_group).strip()
+            p_words = [w for w in clean_p.split() if w]
+            if not p_words:
+                continue
+            if len(p_words) == 1:
+                tokens.append(f'"{p_words[0]}"')
+            else:
+                # 2개 이상 단어의 경우 FTS5 표준 Phrase 문법: "word1 word2"
+                tokens.append(f'\"{" ".join(p_words)}\"')
+        elif word_group is not None:
+            clean_w = re.sub(r'["\*\(\)\{\}\^~:+\-]', ' ', word_group).strip()
+            w_words = [w for w in clean_w.split() if w]
+            for w in w_words:
+                if whole_word:
+                    tokens.append(f'"{w}"')
+                else:
+                    tokens.append(f'"{w}"*')
+
+    if not tokens:
+        return '""'
+    return " ".join(tokens)
 
 
 def search_passages(
@@ -1650,6 +1676,7 @@ def search_passages(
     if keyword:
         k_strip = keyword.strip()
         is_listening_eng = (area == "listening" and bool(re.search(r'[a-zA-Z]', k_strip)))
+        clean_kw = k_strip.strip('"').strip()
         if _use_fts:
             # 1차 시도: FTS5 전문 검색 가속화 (수백 ms -> 2~5ms 단축)
             fts_base = _build_fts_query(k_strip, whole_word)
@@ -1663,10 +1690,10 @@ def search_passages(
                     p.id LIKE ?
                 )
             """
-            params.extend([fts_q, f"%{k_strip}%"])
+            params.extend([fts_q, f"%{clean_kw}%"])
         else:
             # FTS 쿼리 실패 시 표준 LIKE 백업
-            kw = f"%{k_strip}%"
+            kw = f"%{clean_kw}%"
             if is_listening_eng:
                 query += """
                     AND (
@@ -2244,14 +2271,15 @@ def search_sentences(
 
     if keyword:
         k_strip = keyword.strip()
+        clean_kw = k_strip.strip('"').strip()
         if _use_fts:
             # FTS5 전문 검색 엔진 상시 활용 (7만 문장 풀스캔 350ms -> 3~8ms 초고속화)
             fts_q = _build_fts_query(k_strip, whole_word)
             query += " AND (s.id IN (SELECT sentence_id FROM sentences_fts WHERE sentences_fts MATCH ?) OR s.id LIKE ?)"
-            params.extend([fts_q, f"%{k_strip}%"])
+            params.extend([fts_q, f"%{clean_kw}%"])
         else:
             # FTS 쿼리 실패 시 표준 LIKE 백업
-            kw = f"%{k_strip}%"
+            kw = f"%{clean_kw}%"
             query += " AND (s.sentence_text LIKE ? OR s.id LIKE ?)"
             params.extend([kw, kw])
 

@@ -2884,6 +2884,31 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/listening-classroom.js static/js/handout-listening.js static/js/main.js`: 자바스크립트 문법 검사 통과 (0건 오류).
   - `pytest tests/test_listening_handout.py`: 듣기 수업 데이터 및 문장 오디오 API 등 7개 단위 테스트 100% 통과 (5.48s, 0건 실패).
 
+### [2026-10-16 09:15] 업데이트 이력 (Commit ID: 5a2c370a)
+- **수정 내용**:
+  - **1) SQLite FTS5 전문 검색 정확한 구문(Exact Phrase) 검색 엔진 구축 (`gichul/database.py`)**:
+    - `_build_fts_query` 파서를 전면 개편하여 큰따옴표(`"..."`)로 감싸진 검색어를 FTS5 Phrase Query(`"word1 word2"`)로 정밀 분리 및 전달.
+    - 숙어 및 연어(Collocation, 예: `"in terms of"`, `"take care of"`, `"deal with"`) 등 복수 단어가 순서대로 인접해 있는 구문만 고속 검색하도록 지원.
+    - 따옴표 없는 검색어는 기존의 `AND` 접두사 검색(`"word1"* "word2"*`) 및 `whole_word` 온전한 단어 단위 매칭과의 호환성을 100% 보존.
+    - FTS 실패 시 폴백(`LIKE`) 검색에서도 따옴표를 정제하여 `LIKE '%phrase%'` 형태로 구문 연속성 보장.
+  - **2) 프론트엔드 검색어 파싱 및 구문 단위 형광펜 하이라이트 동기화 (`static/js/search.js`)**:
+    - `highlightTextKeyword` 및 `checkTextMatch`를 고도화하여 따옴표 구문(`"..."`)이 들어오면 해당 구문 덩어리에 정확히 빨간색 형광펜 하이라이트를 적용.
+    - 일반 복수 단어 검색(`climate change`) 시에도 개별 단어 단위 매칭을 동시 지원하여 "검색 결과에는 나왔는데 본문에 형광펜이 없는 현상" 원천 해결.
+  - **3) 홈 검색창 및 결과창 검색바 도움말(💡) 팝오버 및 가이드 UI 구축 (`templates/index.html`, `static/css/search.css`, `static/js/dom.js`, `static/js/search.js`)**:
+    - 홈 검색창: 단어 단위 토글 옆에 `💡 도움말` 버튼 및 클릭 시 열리는 글래스모피즘 검색 가이드 팝오버 카드 추가.
+    - 결과창 검색바: 컴팩트한 `💡` 버튼 및 미니 검색 가이드 팝오버 배치.
+    - 검색창 플레이스홀더 개편: 홈(`단어, "연속된 구문·숙어", 출처([고3-2026년...]) 또는 #태그(#빈칸)를 입력하세요...`), 결과창(`검색어, "정확한 구문" 또는 #태그를 입력하세요...`).
+    - 일반 단어 검색(AND), 큰따옴표 정확한 구문 검색(Exact Phrase), 단어 단위 토글, #태그 검색, 출처 식별자 검색의 5대 핵심 기능 상세 안내 수록.
+  - **4) 구현 계획서 작성 및 문서 보관소 갱신 (`docs/plans/2026-10-16_phrase-search-and-help-guide.md`, `docs/README.md`)**:
+    - 요구사항 분석 및 단계별 세부 계획서 등록 후 전 단계 `✅ 완료` 상태 갱신.
+- **검증 결과**:
+  - `python -m py_compile gichul/database.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
+  - `node -c static/js/dom.js static/js/search.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
+  - 로컬 HTTP API 실시간 검증 (`/api/search/passages`, `/api/search/sentences`):
+    - `"climate change"` 지문 구문 검색 5건 정상 응답.
+    - `"in terms of"` 문장 구문 검색 5건 이상 즉시 매칭 응답.
+    - 단일 단어(`climate`), 온전한 단어 토글(`it`), 복합 구문(`"take care" of`) 100% 정상 작동 확인.
+
 
 
 

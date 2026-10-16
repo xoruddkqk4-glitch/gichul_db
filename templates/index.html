@@ -92,7 +92,7 @@
             type="text" 
             class="google-search-input" 
             id="mainSearchInput" 
-            placeholder="키워드, 문장, 출처([고3-2026년...]) 또는 #태그(예: #빈칸, #어법)를 입력하세요..." 
+            placeholder="단어, &quot;연속된 구문·숙어&quot;, 출처([고3-2026년...]) 또는 #태그(#빈칸)를 입력하세요..." 
             autocomplete="off"
             autofocus
           >
@@ -101,6 +101,41 @@
             <span class="toggle-dot"></span>
             <span class="toggle-text">단어 단위</span>
           </button>
+          <!-- 홈 검색 도움말 버튼 및 팝오버 래퍼 -->
+          <div class="search-help-wrapper" id="homeSearchHelpWrapper">
+            <button type="button" class="btn-search-help" id="btnHomeSearchHelp" aria-haspopup="true" aria-expanded="false" title="검색 도움말 (일반/따옴표 구문/태그/출처)">
+              <span class="help-icon">💡</span>
+              <span class="help-text">도움말</span>
+            </button>
+            <div class="search-help-popover" id="homeSearchHelpPopover" style="display: none;">
+              <div class="search-help-header">
+                <span class="search-help-title">💡 검색 가이드</span>
+                <button type="button" class="btn-close-search-help" id="btnCloseHomeSearchHelp" title="닫기">&times;</button>
+              </div>
+              <ul class="search-help-list">
+                <li>
+                  <div class="help-item-title">🔹 일반 단어 검색</div>
+                  <div class="help-item-desc"><code>climate change</code> : 입력한 단어들이 <strong>모두 포함된</strong> 지문·문장 검색 (순서 무관 AND)</div>
+                </li>
+                <li>
+                  <div class="help-item-title">🎯 큰따옴표 정확한 구문 검색 (Exact Phrase)</div>
+                  <div class="help-item-desc"><code>&quot;take care of&quot;</code> : 단어들이 <strong>순서대로 연속해서 붙어 있는</strong> 숙어·연어만 정밀 검색</div>
+                </li>
+                <li>
+                  <div class="help-item-title">🔤 온전한 단어 단위 토글</div>
+                  <div class="help-item-desc"><code>단어 단위</code> 활성화 시 <code>it</code> 검색 시 <code>situation</code> 등의 단어 속 철자 매칭 제외</div>
+                </li>
+                <li>
+                  <div class="help-item-title">🏷️ #태그 검색</div>
+                  <div class="help-item-desc"><code>#빈칸</code>, <code>#어법</code>, <code>#순서</code> : 해당 문제 유형의 기출 문항만 즉시 필터링</div>
+                </li>
+                <li>
+                  <div class="help-item-title">📌 출처 식별자 검색</div>
+                  <div class="help-item-desc"><code>[고3-2026년-9월-31번]</code> : 특정 시험 문항 또는 문장으로 바로가기</div>
+                </li>
+              </ul>
+            </div>
+          </div>
           <button type="button" class="search-submit-btn" id="btnSearch">검색</button>
         </div>
 
@@ -255,7 +290,7 @@
               type="text" 
               class="results-search-input" 
               id="resultsSearchInput" 
-              placeholder="검색어, 출처 또는 #태그를 입력하세요..." 
+              placeholder="검색어, &quot;정확한 구문&quot; 또는 #태그를 입력하세요..." 
               autocomplete="off"
             >
             <button type="button" class="btn-clear-search-input" id="btnClearResultsSearch" style="display: none;" title="검색어 지우기">&times;</button>
@@ -268,6 +303,36 @@
               <span class="toggle-dot"></span>
               <span class="toggle-text">단어 단위</span>
             </button>
+            <!-- 결과창 검색 도움말 버튼 및 팝오버 래퍼 -->
+            <div class="search-help-wrapper compact-help-wrapper" id="resultsSearchHelpWrapper">
+              <button type="button" class="btn-search-help compact-help-btn" id="btnResultsSearchHelp" aria-haspopup="true" aria-expanded="false" title="검색 가이드 보기 (일반/따옴표/태그)">
+                <span class="help-icon">💡</span>
+              </button>
+              <div class="search-help-popover results-help-popover" id="resultsSearchHelpPopover" style="display: none;">
+                <div class="search-help-header">
+                  <span class="search-help-title">💡 검색 가이드</span>
+                  <button type="button" class="btn-close-search-help" id="btnCloseResultsSearchHelp" title="닫기">&times;</button>
+                </div>
+                <ul class="search-help-list">
+                  <li>
+                    <div class="help-item-title">🔹 일반 검색</div>
+                    <div class="help-item-desc"><code>climate change</code> : 두 단어가 모두 들어있는 지문·문장 (AND)</div>
+                  </li>
+                  <li>
+                    <div class="help-item-title">🎯 따옴표 구문 검색</div>
+                    <div class="help-item-desc"><code>&quot;take care of&quot;</code> : 단어가 연속해서 붙어 있는 숙어·관용구 정밀 검색</div>
+                  </li>
+                  <li>
+                    <div class="help-item-title">🔤 단어 단위</div>
+                    <div class="help-item-desc">온전한 단어로만 일치 (예: <code>it</code> 검색 시 <code>situation</code> 제외)</div>
+                  </li>
+                  <li>
+                    <div class="help-item-title">🏷️ 태그 / 📌 출처</div>
+                    <div class="help-item-desc"><code>#빈칸</code> (유형 필터), <code>[고3-2026년-9월-31번]</code> (출처 조회)</div>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
 

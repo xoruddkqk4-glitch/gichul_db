@@ -1061,5 +1061,161 @@
   align-self: center;
 }
 
+/* ==========================================================================
+   검색 도움말 툴팁 및 팝오버 가이드 (홈 검색창 및 결과창 공용)
+   ========================================================================== */
+.search-help-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.4rem;
+}
+
+.btn-search-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.38rem 0.65rem;
+  background-color: #f1f5f9;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: var(--radius-full, 9999px);
+  color: var(--text-muted, #64748b);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.btn-search-help:hover {
+  background-color: #e2e8f0;
+  color: var(--primary, #2563eb);
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.btn-search-help.compact-help-btn {
+  padding: 0.32rem 0.45rem;
+  font-size: 0.85rem;
+}
+
+.btn-search-help .help-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.btn-search-help .help-text {
+  font-size: 0.78rem;
+}
+
+/* 팝오버 카드 */
+.search-help-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1050;
+  width: 360px;
+  background: #ffffff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.15), 0 4px 10px -2px rgba(15, 23, 42, 0.08);
+  padding: 1rem 1.15rem;
+  text-align: left;
+  animation: popoverFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.search-help-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.btn-close-search-help {
+  background: transparent;
+  border: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0 0.2rem;
+  transition: color 0.15s;
+}
+
+.btn-close-search-help:hover {
+  color: #334155;
+}
+
+.search-help-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.search-help-list li {
+  font-size: 0.8rem;
+  color: #334155;
+  line-height: 1.4;
+}
+
+.help-item-title {
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.15rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.help-item-desc {
+  color: #64748b;
+  font-size: 0.77rem;
+  word-break: keep-all;
+}
+
+.help-item-desc code {
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  font-size: 0.76rem;
+}
+
+.help-item-desc strong {
+  color: #0f172a;
+}
+
+/* 반응형 화면 대응 */
+@media (max-width: 640px) {
+  .search-help-popover {
+    width: 290px;
+    right: -40px;
+  }
+}
+
 
 

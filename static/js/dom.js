@@ -25,6 +25,9 @@ export const mainSearchInput = document.getElementById("mainSearchInput");
 export const btnClearMainSearch = document.getElementById("btnClearMainSearch");
 export const btnSearch = document.getElementById("btnSearch");
 export const btnHomeToggleWholeWord = document.getElementById("btnHomeToggleWholeWord");
+export const btnHomeSearchHelp = document.getElementById("btnHomeSearchHelp");
+export const homeSearchHelpPopover = document.getElementById("homeSearchHelpPopover");
+export const btnCloseHomeSearchHelp = document.getElementById("btnCloseHomeSearchHelp");
 
 // 홈 필터
 export const filterGrade = document.getElementById("filterGrade");
@@ -44,6 +47,9 @@ export const btnClearResultsSearch = document.getElementById("btnClearResultsSea
 export const btnResultsSearch = document.getElementById("btnResultsSearch");
 export const btnToggleSearchWithin = document.getElementById("btnToggleSearchWithin") || document.getElementById("btnSearchWithinResults");
 export const btnToggleWholeWord = document.getElementById("btnToggleWholeWord");
+export const btnResultsSearchHelp = document.getElementById("btnResultsSearchHelp");
+export const resultsSearchHelpPopover = document.getElementById("resultsSearchHelpPopover");
+export const btnCloseResultsSearchHelp = document.getElementById("btnCloseResultsSearchHelp");
 export const resultsTabModePassage = document.getElementById("resultsTabModePassage");
 export const resultsTabModeSentence = document.getElementById("resultsTabModeSentence");
 

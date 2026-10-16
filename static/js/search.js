@@ -8,9 +8,15 @@ import {
   btnClearMainSearch,
   btnClearResultsSearch,
   btnHomeToggleWholeWord,
+  btnHomeSearchHelp,
+  homeSearchHelpPopover,
+  btnCloseHomeSearchHelp,
   btnResetHomeFilters,
   btnResetResultsFilters,
   btnResultsSearch,
+  btnResultsSearchHelp,
+  resultsSearchHelpPopover,
+  btnCloseResultsSearchHelp,
   btnSearch,
   btnToggleSearchWithin,
   btnToggleWholeWord,
@@ -131,10 +137,12 @@ function parseSearchQuery(rawQuery) {
 /** 키워드 일치 여부 검사 (부분 일치 또는 온전한 단어 일치 지원) */
 function checkTextMatch(text, kw, isWholeWord = false) {
   if (!text || !kw) return false;
+  const cleanKw = kw.replace(/^"|"$/g, "").trim();
+  if (!cleanKw) return false;
   if (!isWholeWord) {
-    return text.toLowerCase().includes(kw.toLowerCase());
+    return text.toLowerCase().includes(cleanKw.toLowerCase());
   }
-  const escapedKw = kw.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const escapedKw = cleanKw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
   const regex = new RegExp(`(?<=^|[^a-zA-Z0-9가-힣_])(${escapedKw})(?=[^a-zA-Z0-9가-힣_]|$)`, "i");
   return regex.test(text);
 }
@@ -148,12 +156,63 @@ export function highlightTextKeyword(text, rawQuery, highlightClass = "sentence-
   const { keyword } = parseSearchQuery(rawQuery);
   if (!keyword || !keyword.trim()) return cleanText;
 
-  // HTML 이스케이프된 키워드로 정규식 특수문자 이스케이프 (공백은 \s+ 처리)
-  const escapedKw = escapeHtml(keyword.trim()).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-  const pattern = isWholeWordActive
-    ? `(?<=^|[^a-zA-Z0-9가-힣_])(${escapedKw})(?=[^a-zA-Z0-9가-힣_]|$)`
-    : `(${escapedKw})`;
-  const regex = new RegExp(pattern, "gi");
+  // 1. 큰따옴표 구문("...")과 일반 단어 분리 추출
+  const phraseMatches = [];
+  const phraseRegex = /"([^"]+)"/g;
+  let m;
+  let remainingKw = keyword;
+  while ((m = phraseRegex.exec(keyword)) !== null) {
+    if (m[1].trim()) {
+      phraseMatches.push(m[1].trim());
+    }
+  }
+  remainingKw = remainingKw.replace(phraseRegex, " ").trim();
+  const wordMatches = remainingKw ? remainingKw.split(/\s+/).filter(w => w.trim().length > 0) : [];
+
+  // 매칭 정규식 패턴 빌드
+  const patterns = [];
+
+  // (A) 따옴표로 감싸진 구문: 정확히 연속된 단어 일치 (공백은 \s+ 처리)
+  for (const phrase of phraseMatches) {
+    const escPhrase = escapeHtml(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    if (escPhrase) {
+      if (isWholeWordActive) {
+        patterns.push(`(?<=^|[^a-zA-Z0-9가-힣_])${escPhrase}(?=[^a-zA-Z0-9가-힣_]|$)`);
+      } else {
+        patterns.push(escPhrase);
+      }
+    }
+  }
+
+  // (B) 따옴표 없는 일반 검색어
+  if (wordMatches.length > 0) {
+    if (phraseMatches.length === 0 && wordMatches.length > 1) {
+      // 복수 단어 전체가 연속으로 나오는 경우 우선 매칭 패턴 추가
+      const fullPhrase = escapeHtml(wordMatches.join(" ")).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      if (isWholeWordActive) {
+        patterns.push(`(?<=^|[^a-zA-Z0-9가-힣_])${fullPhrase}(?=[^a-zA-Z0-9가-힣_]|$)`);
+      } else {
+        patterns.push(fullPhrase);
+      }
+    }
+    // 개별 단어 매칭 패턴 추가
+    for (const w of wordMatches) {
+      const escW = escapeHtml(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (escW) {
+        if (isWholeWordActive) {
+          patterns.push(`(?<=^|[^a-zA-Z0-9가-힣_])${escW}(?=[^a-zA-Z0-9가-힣_]|$)`);
+        } else {
+          patterns.push(escW);
+        }
+      }
+    }
+  }
+
+  if (patterns.length === 0) return cleanText;
+
+  // 긴 패턴이 먼저 매칭되도록 정렬
+  patterns.sort((a, b) => b.length - a.length);
+  const regex = new RegExp(`(${patterns.join("|")})`, "gi");
 
   return cleanText.replace(regex, `<mark class="${highlightClass}">$1</mark>`);
 }
@@ -941,6 +1000,61 @@ export function init() {
         updateFilterResetButtonsUI();
         executeSearch("results");
       });
+    }
+  });
+
+  // 검색 도움말 팝오버 토글 및 외부 클릭 닫기 이벤트 핸들러
+  const toggleHelpPopover = (popover, btn, forceClose) => {
+    if (!popover) return;
+    const shouldClose = forceClose !== undefined ? forceClose : (popover.style.display !== "none");
+    if (shouldClose) {
+      popover.style.display = "none";
+      if (btn) btn.setAttribute("aria-expanded", "false");
+    } else {
+      popover.style.display = "block";
+      if (btn) btn.setAttribute("aria-expanded", "true");
+    }
+  };
+
+  if (btnHomeSearchHelp && homeSearchHelpPopover) {
+    btnHomeSearchHelp.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleHelpPopover(homeSearchHelpPopover, btnHomeSearchHelp);
+    });
+    if (btnCloseHomeSearchHelp) {
+      btnCloseHomeSearchHelp.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleHelpPopover(homeSearchHelpPopover, btnHomeSearchHelp, true);
+      });
+    }
+    homeSearchHelpPopover.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  if (btnResultsSearchHelp && resultsSearchHelpPopover) {
+    btnResultsSearchHelp.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleHelpPopover(resultsSearchHelpPopover, btnResultsSearchHelp);
+    });
+    if (btnCloseResultsSearchHelp) {
+      btnCloseResultsSearchHelp.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleHelpPopover(resultsSearchHelpPopover, btnResultsSearchHelp, true);
+      });
+    }
+    resultsSearchHelpPopover.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  // 화면 외부 클릭 시 모든 도움말 팝오버 닫기
+  document.addEventListener("click", () => {
+    if (homeSearchHelpPopover && homeSearchHelpPopover.style.display !== "none") {
+      toggleHelpPopover(homeSearchHelpPopover, btnHomeSearchHelp, true);
+    }
+    if (resultsSearchHelpPopover && resultsSearchHelpPopover.style.display !== "none") {
+      toggleHelpPopover(resultsSearchHelpPopover, btnResultsSearchHelp, true);
     }
   });
 }
