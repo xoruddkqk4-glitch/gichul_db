@@ -2926,6 +2926,37 @@ CREATE TABLE user_sentence_status (
   - `node --check static/js/navigation.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
   - `python -m py_compile run.py gichul/database.py gichul/routers/search.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
 
+### [2026-10-17 15:37] 업데이트 이력 (Commit ID: 08c7be91)
+- **수정 내용**:
+  - **1) 첫 페이지(홈 화면) 검색창 수직 위치 상향 조정 (`static/css/search.css`)**:
+    - 화면 정중앙에 위치하여 하단 여백이 컸던 첫 화면 검색창 레이아웃을 상단으로 약 1/3 상향 배치 (`justify-content: flex-start`, `padding: clamp(2.5rem, 8vh, 5.5rem) 1.5rem 2rem`).
+    - 화면 진입 시 사용자 시선 및 마우스 동선 최적화.
+  - **2) 오류 신고 내역 확인 및 원스톱 인라인 수정 에디터 구축 (`gichul/database.py`, `gichul/routers/passages.py`, `static/js/reports.js`, `static/css/modal.css`)**:
+    - **조회 쿼리 확장**: `get_error_reports()`에서 지문 본문(`passage_text`), 해설 텍스트(`explanation_text`), 듣기 대본(`script_text`)을 함께 SELECT하여 클라이언트에 원스톱 제공.
+    - **단독 수정 REST API 신설**: `PATCH /api/passages/{id}/explanation`, `PATCH /api/passages/{id}/text` 엔드포인트 구현 (SQLite 트리거를 통한 FTS5 전문 검색 색인 자동 즉시 동기화).
+    - **모달 내 `[✏️ 빠른 수정]` 인라인 에디터**:
+      - 오류 신고 모달의 각 카드에 `[✏️ 빠른 수정]` 버튼 추가 및 부드러운 아코디언 패널 렌더링.
+      - 신고된 오류 유형에 맞춰 해설 텍스트, 본문 텍스트, 정답 라디오(①~⑤)를 맞춤 노출.
+      - `[💾 저장만 하기]`: DB 내용만 저장하고 신고 내역 유지.
+      - `[💾 저장 및 해결 완료]`: DB 반영과 동시에 신고 항목을 삭제(해결)하고 부드러운 애니메이션과 함께 실시간 제거 및 헤더 배지 차감.
+  - **3) `[🤖 일괄 AI 분석]` 및 사용자 안전 사전 검토 패널(Diff Review Panel) 구현 (`gichul/routers/reports.py`, `templates/index.html`, `static/js/reports.js`, `static/css/modal.css`)**:
+    - **AI 및 스마트 규칙 진단 API (`POST /api/reports/batch-diagnose`)**:
+      - 접수된 신고 내용(예: "33번에 33+34번 해설이 둘 다 들어 있음")과 현재 텍스트를 분석하여 33번 해설 정돈 및 34번 해설 자동 주입 분할안을 도출.
+    - **사전 검토 패널 (Before / After Diff)**:
+      - AI가 제멋대로 DB를 덮어쓰지 않도록, 모달 내 `📋 AI 일괄 진단 결과 검토 (N건)` 패널을 띄워 변경 전(🔴 Before)과 AI 제안(🟢 After)을 나란히 시각화.
+      - After 텍스트창에서 사용자가 직접 타이핑으로 미세 수정(Fine-tune) 가능.
+      - 33/34번 연계 분할 문항에 대한 자동 주입 알림 배너 지원.
+    - **일괄 승인 적용 API (`POST /api/reports/batch-apply`)**:
+      - 사용자가 체크한 항목들만 안전하게 DB에 일괄 저장하고 해당 신고들을 일괄 삭제 완료 처리.
+  - **4) 지문 2x2 결과 뷰어 내 해설 직접 수정 연동 (`templates/index.html`, `static/js/dom.js`, `static/js/passage-events.js`)**:
+    - 좌측 하단 해설 패널에 `[✏️ 해설 수정]` 버튼을 신설하여, 수동으로 문항을 탐색할 때도 프롬프트를 통해 해설을 그 자리에서 즉시 수정·저장할 수 있도록 보강.
+  - **5) 구현 계획서 작성 및 문서 보관소 갱신 (`docs/plans/2026-10-17_01_error-report-quick-edit-and-api.md`, `docs/README.md`)**:
+    - 요구사항 분석 및 6단계 세부 계획서 등록 후 전 단계 `✅ 완료` 상태 갱신.
+- **검증 결과**:
+  - `python -m py_compile gichul/database.py gichul/routers/passages.py gichul/routers/reports.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
+  - `node -c static/js/dom.js static/js/passage-events.js static/js/reports.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
+
+
 
 
 

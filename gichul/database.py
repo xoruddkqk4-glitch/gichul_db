@@ -2517,6 +2517,58 @@ def update_passage_memo(passage_id: str, memo_text: str) -> Dict[str, Any]:
         }
 
 
+def update_passage_explanation(passage_id: str, explanation_text: str) -> Dict[str, Any]:
+    """특정 지문의 해설 텍스트 업데이트 (FTS5 트리거 자동 동기화)"""
+    if not passage_id:
+        return {"success": False, "error": "passage_id is required"}
+    clean_id = normalize_bracket_id(passage_id)
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE passages SET explanation_text = ? WHERE id = ?",
+            (explanation_text, clean_id)
+        )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                "UPDATE passages SET explanation_text = ? WHERE id = ?",
+                (explanation_text, clean_id.strip("[]"))
+            )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        return {
+            "success": updated,
+            "passage_id": clean_id,
+            "explanation_text": explanation_text
+        }
+
+
+def update_passage_text(passage_id: str, passage_text: str) -> Dict[str, Any]:
+    """특정 지문의 본문 텍스트 업데이트 (FTS5 트리거 자동 동기화)"""
+    if not passage_id:
+        return {"success": False, "error": "passage_id is required"}
+    clean_id = normalize_bracket_id(passage_id)
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE passages SET passage_text = ? WHERE id = ?",
+            (passage_text, clean_id)
+        )
+        if cursor.rowcount == 0:
+            cursor.execute(
+                "UPDATE passages SET passage_text = ? WHERE id = ?",
+                (passage_text, clean_id.strip("[]"))
+            )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        return {
+            "success": updated,
+            "passage_id": clean_id,
+            "passage_text": passage_text
+        }
+
+
 def get_db_stats() -> Dict[str, Any]:
     """데이터베이스 현황 통계 반환"""
     with get_connection() as conn:
@@ -2612,6 +2664,9 @@ def get_error_reports(target_type: Optional[str] = None, status: str = "pending"
                 p.question_type,
                 p.area,
                 p.answer_text,
+                p.passage_text,
+                p.explanation_text,
+                p.script_text,
                 s.order_index AS sentence_order,
                 s.sentence_text,
                 COALESCE(e.grade, ep.grade, es.grade) AS grade,

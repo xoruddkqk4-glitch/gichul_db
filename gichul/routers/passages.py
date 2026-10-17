@@ -40,6 +40,36 @@ class SentenceTextUpdateRequest(BaseModel):
     sentence_text: str
 
 
+class PassageExplanationRequest(BaseModel):
+    explanation_text: str
+
+
+class PassageTextRequest(BaseModel):
+    passage_text: str
+
+
+@router.patch("/api/passages/{passage_id}/explanation")
+@router.put("/api/passages/{passage_id}/explanation")
+def api_update_passage_explanation(passage_id: str, req: PassageExplanationRequest):
+    """지문의 해설 텍스트 수정 저장"""
+    clean_id = normalize_bracket_id(passage_id)
+    res = db.update_passage_explanation(clean_id, req.explanation_text)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=f"지문 '{clean_id}'를 찾을 수 없거나 갱신하지 못했습니다.")
+    return {"success": True, "passage_id": clean_id, "explanation_text": req.explanation_text}
+
+
+@router.patch("/api/passages/{passage_id}/text")
+@router.put("/api/passages/{passage_id}/text")
+def api_update_passage_text(passage_id: str, req: PassageTextRequest):
+    """지문의 본문 텍스트 수정 저장"""
+    clean_id = normalize_bracket_id(passage_id)
+    res = db.update_passage_text(clean_id, req.passage_text)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=f"지문 '{clean_id}'를 찾을 수 없거나 갱신하지 못했습니다.")
+    return {"success": True, "passage_id": clean_id, "passage_text": req.passage_text}
+
+
 @router.patch("/api/passages/{passage_id}/question-type")
 def api_update_question_type(passage_id: str, req: QuestionTypeRequest):
     """지문의 문제 유형 변경/저장"""

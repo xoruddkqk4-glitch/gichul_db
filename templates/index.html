@@ -646,6 +646,7 @@
               </div>
               <div class="panel-bottom-left-actions" id="panelActionsBottomLeft">
                 <button class="btn btn-secondary btn-sm" id="btnCopyExplanation">📋 해설 복사</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnEditExplanation" title="이 문항의 해설 텍스트 직접 수정">✏️ 해설 수정</button>
                 <div class="listening-action-group listening-bottom-left-actions" id="listeningBottomLeftActions" style="display: none;">
                   <button type="button" class="btn btn-outline-success btn-sm btn-fels-action" id="btnToggleFelsAnswer" title="학생용 빈칸 [  ] ↔ 교사용 정답 [단어] 화면 보기 전환">
                     👁️ 정답 보기
@@ -2872,6 +2873,9 @@
           </p>
         </div>
         <div class="modal-header-actions">
+          <button type="button" class="btn btn-outline-primary btn-xs" id="btnBatchAiDiagnose" title="접수된 오류들을 AI로 일괄 분석하여 해결안 제안받기">
+            🤖 일괄 AI 분석 및 해결 제안
+          </button>
           <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshReportsList" title="목록 새로고침">🔄 새로고침</button>
           <button type="button" class="btn-modal-close" id="btnCloseReportsListModal" title="닫기">&times;</button>
         </div>
@@ -2888,6 +2892,11 @@
           <button type="button" class="reports-tab-btn" data-filter="sentence" id="tabFilterSentenceReports">
             📝 문장 오류 (<span id="countTabSentence">0</span>)
           </button>
+        </div>
+
+        <!-- AI 일괄 진단 검토 패널 (사용자 확인 전용 컨테이너, 기본 숨김) -->
+        <div class="reports-batch-review-panel" id="reportsBatchReviewPanel" style="display: none;">
+          <!-- JS에서 동적 렌더링 -->
         </div>
 
         <!-- 목록 컨테이너 -->

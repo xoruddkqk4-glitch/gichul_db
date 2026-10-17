@@ -111,6 +111,7 @@ export const btnAddPassageTag = document.getElementById("btnAddPassageTag");
 export const btnCopyPassage = document.getElementById("btnCopyPassage");
 const btnCardPassageSentences = document.getElementById("btnCardPassageSentences");
 export const btnCopyExplanation = document.getElementById("btnCopyExplanation");
+export const btnEditExplanation = document.getElementById("btnEditExplanation");
 
 // 선지별 선택률 시각화 패널 요소
 export const choiceRatesContainer = document.getElementById("choiceRatesContainer");

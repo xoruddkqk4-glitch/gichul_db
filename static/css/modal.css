@@ -700,5 +700,328 @@
   color: #6b7280;
 }
 
+.btn-quick-edit-report {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4f46e5;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
 
+.btn-quick-edit-report:hover {
+  background: #4f46e5;
+  color: #ffffff;
+}
 
+/* 인라인 퀵 에디터 패널 */
+.report-inline-editor {
+  margin-top: 0.65rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.inline-editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.inline-editor-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inline-editor-ai-btn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid #d8b4fe;
+  background: #faf5ff;
+  color: #7e22ce;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inline-editor-ai-btn:hover {
+  background: #7e22ce;
+  color: #ffffff;
+}
+
+.inline-editor-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  font-family: inherit;
+  padding: 0.5rem;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: #ffffff;
+  resize: vertical;
+  min-height: 90px;
+}
+
+.inline-editor-textarea:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.inline-editor-answer-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  background: #ffffff;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+}
+
+.inline-editor-answer-group label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.inline-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+}
+
+.btn-editor-cancel {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #64748b;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-editor-cancel:hover {
+  background: #e2e8f0;
+}
+
+.btn-editor-save {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-editor-save:hover {
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
+.btn-editor-save-resolve {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid #86efac;
+  background: #22c55e;
+  color: #ffffff;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-editor-save-resolve:hover {
+  background: #16a34a;
+}
+
+/* ====================================================================
+   일괄 AI 분석 및 검토 패널 (Diff Review Panel)
+   ==================================================================== */
+.reports-batch-review-panel {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.review-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.review-panel-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.review-panel-actions-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.review-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.review-item-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.review-item-card.selected {
+  border-color: #818cf8;
+  background: #faf5ff;
+}
+
+.review-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.review-item-title-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.review-item-diff-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .review-item-diff-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.diff-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.diff-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  align-self: flex-start;
+}
+
+.diff-label-before {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.diff-label-after {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.diff-box-before {
+  font-size: 0.8rem;
+  color: #64748b;
+  background: #fdf2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 0.5rem;
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-box-after-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.8rem;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 4px;
+  padding: 0.5rem;
+  height: 120px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.diff-box-after-textarea:focus {
+  outline: none;
+  border-color: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+
+.review-chained-notice {
+  font-size: 0.78rem;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border: 1px dashed #c4b5fd;
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.review-panel-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

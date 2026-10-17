@@ -16,6 +16,7 @@ import {
   btnAddPassageTag,
   btnCancelAnswer,
   btnCopyExplanation,
+  btnEditExplanation,
   btnCopyFels,
   btnCopyFelsAnswer,
   btnCopyFelsBlank,
@@ -1076,6 +1077,39 @@ export function initPassageEvents() {
       const text = panelExplanation ? panelExplanation.textContent : "";
       if (text && text !== "-") {
         copyToClipboard(text, "정답 및 해설이 클립보드에 복사되었습니다!");
+      }
+    });
+  }
+
+  // 해설 직접 수정 버튼
+  if (btnEditExplanation) {
+    btnEditExplanation.addEventListener("click", async () => {
+      const p = getCurrentActivePassage();
+      if (!p) {
+        showToast("현재 문항 정보를 찾을 수 없습니다.", "error");
+        return;
+      }
+      const curExp = p.explanation_text || (panelExplanation ? panelExplanation.textContent : "");
+      const newExp = prompt(`[${p.id || ""}] 해설 텍스트를 수정하세요:`, curExp === "-" ? "" : curExp);
+      if (newExp === null) return; // 취소
+
+      const cleanId = (p.id || "").replace(/^\[|\]$/g, "");
+      try {
+        const res = await fetch(`/api/passages/${encodeURIComponent(cleanId)}/explanation`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ explanation_text: newExp }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.detail || "해설 갱신에 실패했습니다.");
+        }
+
+        p.explanation_text = newExp;
+        if (panelExplanation) panelExplanation.textContent = newExp;
+        showToast("해설 텍스트가 성공적으로 수정 및 저장되었습니다.", "success");
+      } catch (err) {
+        showToast(`해설 수정 실패: ${err.message}`, "error");
       }
     });
   }
