@@ -80,7 +80,6 @@ export const treeBreadcrumbHome = document.getElementById("treeBreadcrumbHome");
 export const breadcrumbTrail = document.getElementById("breadcrumbTrail");
 export const breadcrumbExamFiles = document.getElementById("breadcrumbExamFiles");
 export const btnTreeResetExam = document.getElementById("btnTreeResetExam");
-export const btnTreeChangeExam = document.getElementById("btnTreeChangeExam");
 export const treeStepSelector = document.getElementById("treeStepSelector");
 export const btnTabScrollLeft = document.getElementById("btnTabScrollLeft");
 export const btnTabScrollRight = document.getElementById("btnTabScrollRight");

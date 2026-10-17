@@ -21,7 +21,6 @@ import {
   btnEditAnswer,
   btnRecapturePdf,
   btnToggleFelsAnswer,
-  btnTreeChangeExam,
   btnTreeResetExam,
   choiceBarsList,
   choiceRatesContainer,
@@ -1211,25 +1210,6 @@ export function renderBreadcrumb(tree, allItems, totalExamsCount) {
       }
     };
   }
-
-  if (btnTreeChangeExam) {
-    if (totalExamsCount > 1 && isExamSelected) {
-      btnTreeChangeExam.style.display = "inline-flex";
-      btnTreeChangeExam.onclick = () => {
-        hideBreadcrumbExamFiles();
-        appState.treeNavState.month = null;
-        const years = Object.keys(tree[appState.treeNavState.grade] || {});
-        if (years.length <= 1) {
-          appState.treeNavState.grade = null;
-          appState.treeNavState.year = null;
-        }
-        reset2x2ContentPanels();
-        updateTreeUI(tree, allItems, totalExamsCount);
-      };
-    } else {
-      btnTreeChangeExam.style.display = "none";
-    }
-  }
 }
 
 /** 해당 시험지 5종 원본 파일 다운로드 및 교체 툴바 렌더링 */
@@ -2306,7 +2286,6 @@ export function clear2x2Panels() {
   passageTabBar.innerHTML = "";
   if (treeStepSelector) treeStepSelector.innerHTML = "";
   if (breadcrumbTrail) breadcrumbTrail.innerHTML = "";
-  if (btnTreeChangeExam) btnTreeChangeExam.style.display = "none";
   if (passageTabCount) passageTabCount.textContent = "0";
 }
 

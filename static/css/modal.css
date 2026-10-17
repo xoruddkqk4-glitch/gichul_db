@@ -350,14 +350,20 @@
 
 /* 브레드크럼 우측 오류 신고 버튼 */
 .btn-report-passage {
-  padding: 0.3rem 0.65rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 0.28rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
   border-radius: 6px;
   cursor: pointer;
-  border: 1px solid #f87171;
+  border: 1.5px solid #fca5a5;
   background: rgba(239, 68, 68, 0.08);
   color: #dc2626;
+  height: 32px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 .btn-report-passage:hover {

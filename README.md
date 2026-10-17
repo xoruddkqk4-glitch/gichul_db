@@ -2973,6 +2973,23 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/handout-cart.js static/js/reports.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
   - `python -m py_compile gichul/routers/reports.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
 
+### [2026-10-17 23:59] 업데이트 이력 (Commit ID: e1642f79)
+- **수정 내용**:
+  - **1) 브레드크럼 바 내 '다른 시험 선택'(`btnTreeChangeExam`) 버튼 삭제 및 '검색 조건 초기화'(`btnTreeResetExam`) 보존 (`templates/index.html`, `static/js/dom.js`, `static/js/passage-render.js`)**:
+    - 상단 브레드크럼 바에서 기능적으로 중복 느낌을 주던 `[🔄 다른 시험 선택]` 버튼을 완전히 제거하여 가로 폭 확보 및 불필요한 UI 단순화.
+    - 사용자 요청에 따라 `[↺ 검색 조건 초기화]` 버튼은 그대로 보존하여 시험 및 학년/연도 필터를 언제든 안전하게 초기화할 수 있도록 지원.
+    - `passage-render.js`와 `dom.js`에서 삭제된 `btnTreeChangeExam`의 DOM 참조, 이벤트 리스너, 디스플레이 제어 로직을 말끔히 정리.
+  - **2) 5종 파일 툴바 및 액션 버튼군 단일 행(Single Row) 인라인 일체화 레이아웃 개편 (`templates/index.html`, `static/css/viewer.css`, `static/css/modal.css`)**:
+    - 기존에 가로 공간 부족 및 구조적 분리로 인해 2행으로 줄바꿈되던 문제를 해결하기 위해, 원본 5종 파일 툴바(`breadcrumb-exam-files`)와 `[↺ 검색 조건 초기화]`, `[🚨 오류 신고]` 버튼을 하나의 `breadcrumb-right-actions` 인라인 플렉스 컨테이너로 통합.
+    - `.tree-breadcrumb-bar`에 `flex-wrap: nowrap;` 및 `overflow-x: auto; scrollbar-width: none;`을 적용하여 2행 줄바꿈이 원천 차단되고 부드러운 가로 스크롤을 지원하도록 개선.
+    - `btnTreeResetExam`과 `btnReportPassage` 버튼의 높이를 5종 파일 다운로드 칩과 동일한 `height: 32px;` 및 `font-size: 0.78rem;`로 맞춰 상하 정렬 밸런스와 시각적 일체감 완성.
+  - **3) 구현 계획서 수립 및 문서 보관소 갱신 (`docs/plans/2026-10-17_04_breadcrumb-toolbar-single-row-keep-reset.md`, `docs/README.md`)**:
+    - `/ask` 및 `/apply` 파이프라인에 따라 상세 계획서 신규 등록 및 전 단계 `✅ 완료` 상태 갱신. (이전 03번 계획서는 ⏸ 보류로 안전 분리)
+- **검증 결과**:
+  - `node -c static/js/main.js static/js/dom.js static/js/passage-render.js static/js/navigation.js static/js/reports.js static/js/handout-cart.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류, 정상).
+  - `python -m py_compile run.py`: 파이썬 런타임 구문 컴파일 검증 통과 (0건 오류, 정상).
+
+
 
 
 
