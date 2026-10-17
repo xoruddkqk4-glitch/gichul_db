@@ -2953,8 +2953,26 @@ CREATE TABLE user_sentence_status (
   - **5) 구현 계획서 작성 및 문서 보관소 갱신 (`docs/plans/2026-10-17_01_error-report-quick-edit-and-api.md`, `docs/README.md`)**:
     - 요구사항 분석 및 6단계 세부 계획서 등록 후 전 단계 `✅ 완료` 상태 갱신.
 - **검증 결과**:
-  - `python -m py_compile gichul/database.py gichul/routers/passages.py gichul/routers/reports.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
-  - `node -c static/js/dom.js static/js/passage-events.js static/js/reports.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
+### [2026-10-17 23:42] 업데이트 이력 (Commit ID: bd0838fc)
+- **수정 내용**:
+  - **1) 문항 오류 신고 내역 내 '2. TXT 지문 본문 텍스트' 항목 추가 및 번호 체계 재정렬 (`templates/index.html`, `static/js/reports.js`, `gichul/routers/reports.py`, `docs/plans/2026-10-17_02_error-report-passage-text-category.md`)**:
+    - 문항 오류 신고 모달에 1번(PDF 캡처 오류)과 기존 2번(해설지 오류) 사이에 `2. TXT 지문 본문 텍스트`(`value="passage_text"`) 체크박스를 신규 추가하고 전체 항목을 1~6번으로 순차 재정렬.
+    - `static/js/reports.js`: `ERROR_TYPE_LABELS`에 `passage_text: "TXT 지문 본문 텍스트"` 매핑 추가 및 인라인 퀵 에디터 오픈 시 `passage_text` 오류 항목을 감지하여 기본 수정 대상을 **지문 본문(`passage_text`)**으로 자동 타겟팅.
+    - 인라인 에디터 헤더에 `[본문]` / `[해설]` 원클릭 전환 탭을 신설하여, 본문과 해설을 실시간으로 자유롭게 넘나들며 직접 수정·저장 가능하도록 UX 고도화.
+    - `gichul/routers/reports.py`: AI 진단(`_diagnose_single_report`) 및 규칙 기반 폴백에서 `passage_text` 오류 감지 시 지문 본문(`cur_text`) 전용 교정안(`correct_passage`)을 생성하도록 프롬프트 및 필드 연동 보강.
+    - `/ask` 및 `/apply` 파이프라인을 준수하여 계획서 작성 및 소스 코드 단계별 반영 완료.
+  - **2) 유인물 보관함 플로팅 바 접힘/펼침 인터랙션 구현 (`templates/index.html`, `static/css/handouts.css`, `static/js/handout-cart.js`)**:
+    - 평상시 화면 우측 하단에 `🛒 유인물 보관함` [담긴 수 배지] `▲` 형태의 콤팩트한 **플로팅 알약(Pill) 버튼만 미니멀하게 노출**되어 화면 가림 원천 차단.
+    - 플로팅 버튼 클릭 시 가로로 부드럽게 펼쳐지며 프로젝트 선택 드롭다운, `[➕ 새 프로젝트]`, 카운트 배지, `[📄 유인물 제작소 이동 →]`, `[비우기]`, `[✕ 접기]` 컨트롤 바 전개.
+    - 플로팅 바 재클릭, 우측 `✕` 접기 버튼 클릭, 또는 바깥 영역 클릭 시 자동으로 콤팩트한 플로팅 버튼으로 안전하게 접히도록 인터랙션 구축.
+  - **3) 모달 닫기(✕) 버튼 디자인 전면 개편 (`templates/index.html`, `static/css/modal.css`)**:
+    - 브라우저 기본 직사각형 테두리 박스 및 투박한 `&times;` 폰트 렌더링을 완전히 제거.
+    - 32×32px, 8px 라운드 모서리, 은은한 배경(`background: #f8fafc`) 및 섬세한 경계선(`border: 1px solid #e2e8f0`) 적용.
+    - 윈도우 폰트 의존을 제거하고 정교한 SVG ✕ 벡터 아이콘 및 마우스 호버 시 소프트 레드 하이라이트(`background: #fee2e2; color: #ef4444; transform: scale(1.05)`) 적용.
+- **검증 결과**:
+  - `node -c static/js/handout-cart.js static/js/reports.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
+  - `python -m py_compile gichul/routers/reports.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
+
 
 
 

@@ -10,6 +10,7 @@ import { executeSearch } from "./search.js";
 // 오류 유형 영문 -> 한국어 라벨 매핑
 const ERROR_TYPE_LABELS = {
   pdf_capture: "PDF 캡처 오류",
+  passage_text: "TXT 지문 본문 텍스트",
   explanation: "해설지 오류",
   answer: "정답 오류",
   accuracy: "정답률 오류",
@@ -372,6 +373,38 @@ function renderFilteredReports() {
       await handleInlineSave(reportId, true);
     });
   });
+
+  // 8. 지문 본문 <-> 해설 전환 탭 이벤트
+  container.querySelectorAll(".btn-editor-tab").forEach((tabBtn) => {
+    tabBtn.addEventListener("click", () => {
+      const reportId = tabBtn.dataset.id;
+      const targetField = tabBtn.dataset.targetField;
+      const report = allFetchedReports.find((r) => String(r.id) === String(reportId));
+      if (!report) return;
+
+      const textarea = document.getElementById(`inlineEditTextarea-${reportId}`);
+      const labelSpan = document.getElementById(`inlineEditorLabel-${reportId}`);
+      if (!textarea) return;
+
+      // 탭 스타일 전환
+      const tabs = container.querySelectorAll(`.btn-editor-tab[data-id="${reportId}"]`);
+      tabs.forEach((t) => {
+        const isCurrent = t.dataset.targetField === targetField;
+        t.style.background = isCurrent ? "#3b82f6" : "#ffffff";
+        t.style.color = isCurrent ? "#ffffff" : "#475569";
+      });
+
+      if (targetField === "passage_text") {
+        textarea.dataset.field = "passage_text";
+        textarea.value = report.passage_text || "";
+        if (labelSpan) labelSpan.textContent = "📝 지문 본문 수정";
+      } else {
+        textarea.dataset.field = "explanation_text";
+        textarea.value = report.explanation_text || "";
+        if (labelSpan) labelSpan.textContent = "💡 해설 텍스트 수정";
+      }
+    });
+  });
 }
 
 /**
@@ -409,20 +442,24 @@ function renderReportCard(r) {
   const targetId = isPassage ? r.passage_id : r.sentence_id;
 
   // 인라인 에디터 기본 필드 결정
-  const isExplanation = (r.error_types || []).includes("explanation") || (r.comment || "").includes("해설");
+  const hasPassageTextError = (r.error_types || []).includes("passage_text") || (r.comment || "").includes("문항 텍스트") || (r.comment || "").includes("본문") || (r.comment || "").includes("지문");
+  const hasExplanationError = (r.error_types || []).includes("explanation") || (r.comment || "").includes("해설");
   const isAnswerError = (r.error_types || []).includes("answer") || (r.comment || "").includes("정답");
-  const isTextError = (r.error_types || []).includes("accuracy") || (r.comment || "").includes("문항 텍스트") || (r.comment || "").includes("본문");
+  const isTextError = hasPassageTextError || (r.error_types || []).includes("accuracy");
+
+  // 문항인 경우 지문 본문 오류가 명시되었거나 우선되는 경우 본문 모드 적용
+  const isPassageTextMode = isPassage && (hasPassageTextError || (!hasExplanationError && isTextError));
 
   const defaultText = isPassage
-    ? (isTextError && !isExplanation ? (r.passage_text || "") : (r.explanation_text || ""))
+    ? (isPassageTextMode ? (r.passage_text || "") : (r.explanation_text || ""))
     : (r.sentence_text || "");
 
   const fieldLabel = isPassage
-    ? (isTextError && !isExplanation ? "📝 지문 본문 수정" : "💡 해설 텍스트 수정")
+    ? (isPassageTextMode ? "📝 지문 본문 수정" : "💡 해설 텍스트 수정")
     : "📝 문장 텍스트 수정";
 
   const fieldKey = isPassage
-    ? (isTextError && !isExplanation ? "passage_text" : "explanation_text")
+    ? (isPassageTextMode ? "passage_text" : "explanation_text")
     : "sentence_text";
 
   // 정답 수정 라디오 (문항인 경우)
@@ -467,9 +504,15 @@ function renderReportCard(r) {
       <!-- 인라인 퀵 에디터 패널 (아코디언 형태) -->
       <div class="report-inline-editor" id="reportInlineEditor-${r.id}" style="display: none;">
         <div class="inline-editor-toolbar">
-          <span class="inline-editor-title">
-            <span>${fieldLabel}</span>
-          </span>
+          <div class="inline-editor-title">
+            <span id="inlineEditorLabel-${r.id}">${fieldLabel}</span>
+            ${isPassage ? `
+              <div class="inline-editor-tabs" style="display:inline-flex; gap:0.25rem; margin-left:0.5rem;">
+                <button type="button" class="btn-editor-tab ${isPassageTextMode ? 'active' : ''}" data-id="${r.id}" data-target-field="passage_text" style="font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:4px; border:1px solid #cbd5e1; background:${isPassageTextMode ? '#3b82f6' : '#ffffff'}; color:${isPassageTextMode ? '#ffffff' : '#475569'}; cursor:pointer; font-weight:600;">본문</button>
+                <button type="button" class="btn-editor-tab ${!isPassageTextMode ? 'active' : ''}" data-id="${r.id}" data-target-field="explanation_text" style="font-size:0.72rem; padding:0.15rem 0.45rem; border-radius:4px; border:1px solid #cbd5e1; background:${!isPassageTextMode ? '#3b82f6' : '#ffffff'}; color:${!isPassageTextMode ? '#ffffff' : '#475569'}; cursor:pointer; font-weight:600;">해설</button>
+              </div>
+            ` : ""}
+          </div>
           <button type="button" class="inline-editor-ai-btn" data-id="${r.id}" title="AI가 오류 내용을 분석하여 올바른 텍스트를 제안합니다">
             ✨ AI 자동 분리/교정 제안
           </button>

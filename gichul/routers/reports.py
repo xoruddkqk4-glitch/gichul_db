@@ -176,21 +176,45 @@ def _diagnose_single_report(report: dict) -> dict:
             except Exception:
                 pass
 
-        # 1. 해설 분리 케이스 (33번+34번 등) 확인
+        # 1. 오류 유형 및 타겟 필드 판별
+        is_passage_text_case = (
+            "passage_text" in error_types or
+            "본문" in comment or "지문" in comment or "문항 텍스트" in comment
+        )
         is_split_case = (
             "해설" in comment or "explanation" in error_types or
             bool(re.search(r'\b(3[0-9]|4[0-5]|[1-9]|[12][0-9])\s*번', comment)) or
             "둘 다" in comment or "추가" in comment or "누락" in comment
         )
 
+        target_field = "passage_text" if (is_passage_text_case and not is_split_case) else "explanation_text"
+
         # AI 호출 시도
         api_key, model = grammar_analyzer.get_provider_config("gemini")
         ai_success = False
 
-        if api_key and cur_exp:
+        if api_key and (cur_exp or cur_text):
             try:
                 import urllib.request
-                prompt = f"""당신은 수능·모의고사 기출문제 데이터베이스 교정 전문가입니다.
+                if target_field == "passage_text":
+                    prompt = f"""당신은 수능·모의고사 기출문제 데이터베이스 교정 전문가입니다.
+사용자가 다음 문항의 [지문 본문 텍스트]에 대해 오류를 신고했습니다:
+- 문항: {clean_p_id} (문항번호: {q_num}번)
+- 신고된 오류 유형: {error_types}
+- 신고 상세 내용: {comment}
+- 현재 문항의 지문 본문 텍스트:
+\"\"\"
+{cur_text}
+\"\"\"
+
+분석 후 아래 JSON 포맷으로만 답변하세요 (코드블록 없이 JSON만):
+{{
+  "diagnosis": "지문 본문 오류 내용 요약 (1문장)",
+  "action_type": "correct_passage",
+  "corrected_text": "오탈자나 줄바꿈, 특수기호가 교정된 올바른 지문 본문 텍스트"
+}}"""
+                else:
+                    prompt = f"""당신은 수능·모의고사 기출문제 데이터베이스 교정 전문가입니다.
 사용자가 다음 문항에 대해 오류를 신고했습니다:
 - 문항: {clean_p_id} (문항번호: {q_num}번)
 - 신고된 오류 유형: {error_types}
@@ -209,6 +233,7 @@ def _diagnose_single_report(report: dict) -> dict:
   "next_explanation": "다음 문항으로 이관할 해설 텍스트 (해설 분리인 경우에만, 아니면 빈 문자열)",
   "next_q_num": {next_p.get('q_num') if next_p else "null"}
 }}"""
+
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={api_key}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],
@@ -225,27 +250,41 @@ def _diagnose_single_report(report: dict) -> dict:
                     raw_ai_text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
                     ai_json = json.loads(raw_ai_text)
 
-                    result["diagnosis"] = ai_json.get("diagnosis", "AI 분석 완료")
-                    result["action_type"] = ai_json.get("action_type", "correct_explanation")
-                    result["before_text"] = cur_exp
-                    result["after_text"] = ai_json.get("current_explanation", cur_exp)
+                    if target_field == "passage_text":
+                        result["diagnosis"] = ai_json.get("diagnosis", "지문 본문 AI 분석 완료")
+                        result["action_type"] = "correct_passage"
+                        result["field_name"] = "passage_text"
+                        result["before_text"] = cur_text
+                        result["after_text"] = ai_json.get("corrected_text", cur_text)
+                    else:
+                        result["diagnosis"] = ai_json.get("diagnosis", "AI 분석 완료")
+                        result["action_type"] = ai_json.get("action_type", "correct_explanation")
+                        result["field_name"] = "explanation_text"
+                        result["before_text"] = cur_exp
+                        result["after_text"] = ai_json.get("current_explanation", cur_exp)
 
-                    if ai_json.get("next_explanation") and next_p:
-                        result["chained"] = {
-                            "passage_id": next_p["id"],
-                            "q_num": next_p["q_num"],
-                            "report_id": next_report["id"] if next_report else None,
-                            "field_name": "explanation_text",
-                            "before_text": next_p.get("explanation_text") or "",
-                            "after_text": ai_json.get("next_explanation")
-                        }
+                        if ai_json.get("next_explanation") and next_p:
+                            result["chained"] = {
+                                "passage_id": next_p["id"],
+                                "q_num": next_p["q_num"],
+                                "report_id": next_report["id"] if next_report else None,
+                                "field_name": "explanation_text",
+                                "before_text": next_p.get("explanation_text") or "",
+                                "after_text": ai_json.get("next_explanation")
+                            }
                     ai_success = True
             except Exception as e:
                 logger.warning(f"AI 진단 호출 실패: {e}")
 
         # AI 호출이 없거나 실패했을 때 휴리스틱 규칙 기반 자동 진단
         if not ai_success:
-            if is_split_case and next_p:
+            if target_field == "passage_text":
+                result["diagnosis"] = f"지문 본문 검토 필요 ({comment})"
+                result["action_type"] = "correct_passage"
+                result["field_name"] = "passage_text"
+                result["before_text"] = cur_text
+                result["after_text"] = cur_text
+            elif is_split_case and next_p:
                 # 텍스트 내에서 다음 문항 번호 패턴 탐색 (예: [34], 34., 34번 등)
                 next_q = next_p["q_num"]
                 split_pattern = rf'(?:\n\s*|\s+)(?:\[?{next_q}\]?[\.\s번]|\[?문항\s*{next_q}\]?|\[{next_q}\])'
@@ -257,6 +296,7 @@ def _diagnose_single_report(report: dict) -> dict:
 
                     result["diagnosis"] = f"{q_num}번 해설에 {next_q}번 해설이 결합되어 있어 분리 제안합니다."
                     result["action_type"] = "split_explanation"
+                    result["field_name"] = "explanation_text"
                     result["before_text"] = cur_exp
                     result["after_text"] = part1
                     result["chained"] = {
@@ -269,12 +309,13 @@ def _diagnose_single_report(report: dict) -> dict:
                     }
                 else:
                     result["diagnosis"] = f"{q_num}번 해설 검토 필요 ({comment})"
+                    result["field_name"] = "explanation_text"
                     result["before_text"] = cur_exp
                     result["after_text"] = cur_exp
             else:
                 result["diagnosis"] = f"신고 내용: {comment}"
-                result["field_name"] = "explanation_text" if "해설" in comment else "passage_text"
-                result["before_text"] = cur_exp if "해설" in comment else cur_text
+                result["field_name"] = "explanation_text" if ("해설" in comment or "explanation" in error_types) else "passage_text"
+                result["before_text"] = cur_exp if result["field_name"] == "explanation_text" else cur_text
                 result["after_text"] = result["before_text"]
 
     elif target_type == "sentence":

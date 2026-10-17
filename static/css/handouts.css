@@ -2,7 +2,7 @@
    05-gichul_db: 교사용 유인물 제작소 및 장바구니 전용 독립 스타일 (handouts.css)
    ========================================================================= */
 
-/* 하단 플로팅 장바구니 바 */
+/* 하단 플로팅 장바구니 바 (접힘/펼침 지원) */
 .handout-floating-cart {
   position: fixed;
   bottom: 24px;
@@ -10,15 +10,17 @@
   z-index: 1000;
   display: none;
   align-items: center;
-  gap: 12px;
-  padding: 10px 18px;
-  background: rgba(15, 23, 42, 0.92);
+  background: rgba(15, 23, 42, 0.94);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 9999px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(14px);
+  padding: 4px 6px;
+  box-sizing: border-box;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   animation: slideUpFloating 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  user-select: none;
 }
 
 @keyframes slideUpFloating {
@@ -30,6 +32,124 @@
     transform: translateY(0);
     opacity: 1;
   }
+}
+
+/* 1. 플로팅 트리거 알약 버튼 (접힌 상태 기본 노출) */
+.cart-floating-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  line-height: 1.2;
+}
+
+.cart-floating-trigger:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.cart-trigger-icon {
+  font-size: 1.05rem;
+}
+
+.cart-trigger-title {
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.cart-trigger-count {
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  min-width: 16px;
+  text-align: center;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.6);
+  line-height: 1;
+}
+
+.cart-trigger-arrow {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-left: 2px;
+  transition: transform 0.25s ease;
+}
+
+/* 접힌 상태 (기본): 확장 컨텐츠 숨김 */
+.handout-floating-cart:not(.expanded) .cart-expanded-content {
+  display: none !important;
+}
+
+/* 펼쳐진 상태 (.expanded): 첫번째 첨부 이미지 규격으로 전체 바 전개 */
+.handout-floating-cart.expanded {
+  padding: 8px 16px 8px 12px;
+  gap: 12px;
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* 펼쳐졌을 때는 트리거 버튼을 좌측 텍스트 라벨처럼 간결하게 표시 */
+.handout-floating-cart.expanded .cart-floating-trigger {
+  padding: 4px 6px;
+  cursor: pointer;
+  background: transparent !important;
+  transform: none !important;
+}
+
+.handout-floating-cart.expanded .cart-trigger-count,
+.handout-floating-cart.expanded .cart-trigger-arrow {
+  display: none;
+}
+
+.cart-expanded-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  animation: fadeInCartExpand 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInCartExpand {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.btn-collapse-floating-cart {
+  background: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  border: none;
+  border-radius: 9999px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0;
+  margin-left: 4px;
+  transition: all 0.15s ease;
+}
+
+.btn-collapse-floating-cart:hover {
+  background: rgba(239, 68, 68, 0.3);
+  color: #ffffff;
 }
 
 .cart-info {

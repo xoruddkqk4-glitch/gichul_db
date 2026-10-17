@@ -51,12 +51,41 @@
   font-weight: 700;
 }
 
-.modal-close {
-  background: transparent;
-  border: none;
-  font-size: 1.25rem;
+.modal-close,
+.btn-modal-close {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #64748b;
+  font-size: 1.15rem;
+  line-height: 1;
   cursor: pointer;
-  color: var(--text-light);
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.modal-close:hover,
+.btn-modal-close:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #ef4444;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.18);
+}
+
+.modal-close:active,
+.btn-modal-close:active {
+  transform: scale(0.96);
+  background: #fecaca;
 }
 
 .modal-body {

@@ -1057,6 +1057,18 @@ function escapeHtml(str) {
     .replace(/'/g, "&#039;");
 }
 
+let isFloatingCartExpanded = false;
+
+/** 플로팅 카트 바 펼침/접힘 토글 */
+export function setFloatingCartExpanded(expanded) {
+  isFloatingCartExpanded = Boolean(expanded);
+  const floatingBar = document.getElementById("handoutFloatingCart");
+  if (!floatingBar) return;
+  floatingBar.classList.toggle("expanded", isFloatingCartExpanded);
+  const arrow = document.getElementById("cartTriggerArrow");
+  if (arrow) arrow.textContent = isFloatingCartExpanded ? "▼" : "▲";
+}
+
 /** 하단 플로팅 장바구니 바 UI 갱신 (선택된 프로젝트 영역의 정보만 콤팩트하게 노출) */
 export function updateFloatingCartUI() {
   const floatingBar = document.getElementById("handoutFloatingCart");
@@ -1069,6 +1081,7 @@ export function updateFloatingCartUI() {
   const cntPassageEl = document.getElementById("floatingPassageCount");
   const cntSentenceEl = document.getElementById("floatingSentenceCount");
   const cntListeningEl = document.getElementById("floatingListeningCount");
+  const triggerCntEl = document.getElementById("cartFloatingTriggerCount");
 
   const pItems = getCartItems();
   const sItems = getSentenceCartItems();
@@ -1082,6 +1095,14 @@ export function updateFloatingCartUI() {
   if (cntPassageEl) cntPassageEl.textContent = pItems.length;
   if (cntSentenceEl) cntSentenceEl.textContent = sItems.length;
   if (cntListeningEl) cntListeningEl.textContent = lItems.length;
+
+  // 플로팅 트리거 알약 버튼 카운트 배지 갱신 (현재 선택 영역 맞춤)
+  if (triggerCntEl) {
+    let currentCount = pItems.length;
+    if (currentFloatingTargetType === "sentence") currentCount = sItems.length;
+    else if (currentFloatingTargetType === "listening") currentCount = lItems.length;
+    triggerCntEl.textContent = String(currentCount);
+  }
 
   // 선택된 프로젝트 영역에 맞춰 배지 텍스트/스타일 및 이동 버튼을 전환하여 패널 너비 축소
   if (currentFloatingTargetType === "sentence") {
@@ -1170,11 +1191,47 @@ export function syncCurrentPassageCheckbox() {
 
 /** 전체 이벤트 초기화 */
 export function initHandoutCart() {
+  const btnToggle = document.getElementById("btnToggleFloatingCart");
+  const btnCollapse = document.getElementById("btnCollapseFloatingCart");
+  const expandedContent = document.getElementById("cartExpandedContent");
   const btnOpenPassage = document.getElementById("btnOpenPassageHandoutView");
   const btnOpenSentence = document.getElementById("btnOpenSentenceHandoutView");
   const btnOpenListening = document.getElementById("btnOpenListeningHandoutView");
   const btnOpen = document.getElementById("btnOpenHandoutView");
   const btnClear = document.getElementById("btnClearFloatingCart");
+
+  // 플로팅 트리거 알약 버튼 클릭: 펼침/접힘 토글
+  if (btnToggle) {
+    btnToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setFloatingCartExpanded(!isFloatingCartExpanded);
+    });
+  }
+
+  // 우측 상단/끝 접기(X) 버튼 클릭: 접기
+  if (btnCollapse) {
+    btnCollapse.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setFloatingCartExpanded(false);
+    });
+  }
+
+  // 확장 패널 내부 클릭 시 플로팅 바가 닫히지 않도록 전파 방지
+  if (expandedContent) {
+    expandedContent.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+  }
+
+  // 플로팅 바 바깥 화면 클릭 시 자동으로 접힘
+  document.addEventListener("click", (e) => {
+    if (isFloatingCartExpanded) {
+      const floatingBar = document.getElementById("handoutFloatingCart");
+      if (floatingBar && !floatingBar.contains(e.target)) {
+        setFloatingCartExpanded(false);
+      }
+    }
+  });
 
   if (btnOpenPassage) {
     btnOpenPassage.addEventListener("click", () => {
