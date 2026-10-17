@@ -22,6 +22,7 @@ docs/
 
 | 날짜 | 계획서 | 상태 | 비고 |
 |---|---|---|---|
+| 2026-10-18 | [AI 일괄 진단 Before/After 대조창 높이 동시 리사이징 동기화](plans/2026-10-18_01_sync-before-after-diff-box-resize.md) | ✅ 완료 | After textarea 리사이즈 시 Before(현재 DB) 창 높이 실시간 1:1 동기화 (CSS flex:1 + JS ResizeObserver 연동) |
 | 2026-10-17 | [브레드크럼 바 내 '다른 시험 선택' 삭제 및 '검색 조건 초기화' 보존 단일 행(Single Row) 툴바](plans/2026-10-17_04_breadcrumb-toolbar-single-row-keep-reset.md) | ✅ 완료 | '검색 조건 초기화' 유지, '다른 시험 선택' 버튼만 삭제, 5종 파일 툴바 및 오류 신고와 함께 단일 행(Single Row) 콤팩트 정렬 |
 | 2026-10-17 | [브레드크럼 바 내 중복 버튼 제거 및 단일 행(Single Row) 툴바 배치](plans/2026-10-17_03_breadcrumb-toolbar-single-row-cleanup.md) | ⏸ 보류 | 요구사항 변경(검색 조건 초기화 보존)으로 04번 계획서로 대체 |
 | 2026-10-17 | [문항 오류 신고 내역 내 'TXT 지문 본문 텍스트' 오류 항목 추가](plans/2026-10-17_02_error-report-passage-text-category.md) | ✅ 완료 | 1번 PDF 캡처 오류와 2번 해설지 오류 사이에 '2. TXT 지문 본문 텍스트' 오류 항목 추가, 번호 체계(1~6번) 재정렬 및 인라인 에디터·AI 진단 연계 |

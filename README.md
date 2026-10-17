@@ -2989,6 +2989,21 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/main.js static/js/dom.js static/js/passage-render.js static/js/navigation.js static/js/reports.js static/js/handout-cart.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류, 정상).
   - `python -m py_compile run.py`: 파이썬 런타임 구문 컴파일 검증 통과 (0건 오류, 정상).
 
+### [2026-10-18 00:15] 업데이트 이력 (Commit ID: 80d9f209)
+- **수정 내용**:
+  - **1) AI 일괄 진단 Before/After 대조창 높이 실시간 1:1 동기화 시스템 구축 (`static/css/modal.css`, `static/js/reports.js`)**:
+    - AI 일괄 진단 결과 검토 모달에서 사용자가 우측 After 텍스트창(`textarea.diff-box-after-textarea`)의 우측 하단 리사이즈 핸들을 드래그할 때, 좌측 Before 창(`div.diff-box-before`)의 높이가 실시간으로 1:1 완벽하게 함께 확대/축소되도록 동기화 메커니즘 구축.
+    - `static/css/modal.css`: `.diff-box-before`의 고정 `max-height: 120px` 상한선을 제거하고 `min-height: 120px; height: 120px; flex: 1 1 auto; line-height: 1.45; font-family: inherit; box-sizing: border-box;`를 적용하여 폰트/줄간격/패딩을 textarea와 일체화. `.diff-col`에 `height: 100%; min-height: 0;`을 적용하여 그리드 행 확장에 맞춘 좌/우 동시 확장 보장.
+    - `static/js/reports.js`: `renderBatchDiagnosisReview` 함수 내 각 진단 카드별로 브라우저 네이티브 `ResizeObserver`를 연결하여 사용자가 마우스를 드래그하는 매 렌더링 프레임마다 textarea의 `offsetHeight`를 감지해 Before 박스 `style.height`에 즉각 주입.
+    - 모달 닫기, 취소, 또는 DB 일괄 적용 완료 시 옵저버를 자동 해제(`cleanupBatchReviewResizeObservers`)하여 메모리 누수 방지.
+    - 모바일(화면 폭 640px 이하 1열) 화면 대응: 세로로 배치될 때 Before 창이 `max-height: 160px` 내에서 독립 스크롤되도록 반응형 분기 처리.
+  - **2) 구현 계획서 작성 및 문서 보관소 갱신 (`docs/plans/2026-10-18_01_sync-before-after-diff-box-resize.md`, `docs/README.md`)**:
+    - `/ask` 및 `/apply` 파이프라인에 따라 상세 계획서 등록 및 전 단계 `✅ 완료` 상태 갱신.
+- **검증 결과**:
+  - `node -c static/js/reports.js static/js/main.js static/js/dom.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류, 정상).
+  - `python -m py_compile run.py gichul/routers/reports.py`: 파이썬 런타임 구문 컴파일 검증 통과 (0건 오류, 정상).
+
+
 
 
 

@@ -19,6 +19,14 @@ const ERROR_TYPE_LABELS = {
 
 let allFetchedReports = [];
 let currentReportsFilter = "all";
+let batchReviewResizeObservers = [];
+
+function cleanupBatchReviewResizeObservers() {
+  if (batchReviewResizeObservers && batchReviewResizeObservers.length > 0) {
+    batchReviewResizeObservers.forEach((ro) => ro.disconnect());
+    batchReviewResizeObservers = [];
+  }
+}
 
 /**
  * 헤더 우측 상단 미처리 오류 건수 배지 갱신
@@ -725,6 +733,8 @@ function renderBatchReviewPanel(diagnoses) {
   const panel = document.getElementById("reportsBatchReviewPanel");
   if (!panel) return;
 
+  cleanupBatchReviewResizeObservers();
+
   currentDiagnosesList = diagnoses;
 
   if (diagnoses.length === 0) {
@@ -807,8 +817,8 @@ function renderBatchReviewPanel(diagnoses) {
   // 이벤트 바인딩
   const closeBtn = document.getElementById("btnCloseBatchReviewPanel");
   const cancelBtn = document.getElementById("btnCancelBatchReview");
-  if (closeBtn) closeBtn.addEventListener("click", () => { panel.style.display = "none"; });
-  if (cancelBtn) cancelBtn.addEventListener("click", () => { panel.style.display = "none"; });
+  if (closeBtn) closeBtn.addEventListener("click", () => { cleanupBatchReviewResizeObservers(); panel.style.display = "none"; });
+  if (cancelBtn) cancelBtn.addEventListener("click", () => { cleanupBatchReviewResizeObservers(); panel.style.display = "none"; });
 
   // 전체 선택/해제 토글
   const toggleBtn = document.getElementById("btnToggleAllReviewItems");
@@ -827,6 +837,28 @@ function renderBatchReviewPanel(diagnoses) {
   const applyBtn = document.getElementById("btnApplyBatchReview");
   if (applyBtn) {
     applyBtn.addEventListener("click", handleApplyBatchReview);
+  }
+
+  // Before/After 대조창 높이 실시간 1:1 동기화 바인딩
+  if (window.ResizeObserver) {
+    panel.querySelectorAll(".review-item-card").forEach((card) => {
+      const textarea = card.querySelector(".diff-box-after-textarea");
+      const beforeBox = card.querySelector(".diff-box-before");
+      if (!textarea || !beforeBox) return;
+
+      const ro = new ResizeObserver(() => {
+        if (window.innerWidth > 640) {
+          const h = textarea.offsetHeight;
+          if (h > 0) {
+            beforeBox.style.height = `${h}px`;
+          }
+        } else {
+          beforeBox.style.height = "";
+        }
+      });
+      ro.observe(textarea);
+      batchReviewResizeObservers.push(ro);
+    });
   }
 }
 
@@ -893,6 +925,7 @@ async function handleApplyBatchReview() {
     }
 
     showToast(data.message || "선택한 항목들이 성공적으로 DB에 적용되고 해결되었습니다!", "success");
+    cleanupBatchReviewResizeObservers();
     panel.style.display = "none";
     loadReportsList();
     updateHeaderReportBadge();

@@ -979,12 +979,19 @@
   .review-item-diff-container {
     grid-template-columns: 1fr;
   }
+  .diff-box-before {
+    height: auto;
+    max-height: 160px;
+    flex: none;
+  }
 }
 
 .diff-col {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  height: 100%;
+  min-height: 0;
 }
 
 .diff-label {
@@ -1006,13 +1013,19 @@
 }
 
 .diff-box-before {
+  width: 100%;
+  box-sizing: border-box;
   font-size: 0.8rem;
+  font-family: inherit;
+  line-height: 1.45;
   color: #64748b;
   background: #fdf2f2;
   border: 1px solid #fecaca;
   border-radius: 4px;
   padding: 0.5rem;
-  max-height: 120px;
+  min-height: 120px;
+  height: 120px;
+  flex: 1 1 auto;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
@@ -1027,6 +1040,7 @@
   border: 1px solid #86efac;
   border-radius: 4px;
   padding: 0.5rem;
+  min-height: 120px;
   height: 120px;
   resize: vertical;
   font-family: inherit;
