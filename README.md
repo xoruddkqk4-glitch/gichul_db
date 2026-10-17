@@ -2909,6 +2909,24 @@ CREATE TABLE user_sentence_status (
     - `"in terms of"` 문장 구문 검색 5건 이상 즉시 매칭 응답.
     - 단일 단어(`climate`), 온전한 단어 토글(`it`), 복합 구문(`"take care" of`) 100% 정상 작동 확인.
 
+### [2026-10-17 14:35] 업데이트 이력 (Commit ID: 10e5f157)
+- **수정 내용**:
+  - **1) 검색어 미입력 시 필터 강제 초기화 결함 해소 및 정상 파라미터 전달 (`static/js/search.js`)**:
+    - `executeSearch()`에서 검색창이 비어 있을 때(`!mainSearchInput.value.trim()` 또는 `!resultsSearchInput.value.trim()`) 발동되던 `isNoKeywordSearch`의 모든 필터(`grade`, `year`, `month`, `examType`, `questionType`, `correctRateRange`) 일괄 빈값(`""`) 강제 리셋 로직을 제거.
+    - 검색창 키워드 입력 여부와 관계없이 첫 페이지(홈) 및 결과창에서 사용자가 선택한 드롭다운 필터 값을 정상 추출하여 API 요청 파라미터(`params`)에 반영하도록 개편.
+    - 검색어와 필터가 **모두** 비어 있는 순수 빈 검색 시에만 최상위 학년 선택 화면(Case 1: "탐색할 학년을 선택하세요")으로 진입하도록 분기 조건 정밀화.
+  - **2) 학년 필터 선택 시 트리 네비게이션 상태 동기화 및 덮어쓰기 방지 (`static/js/search.js`)**:
+    - 결과창 렌더링 직전 `appState.treeNavState`를 무조건 `null`로 리셋하던 코드를 제거하여, 선택된 학년 필터가 `appState.treeNavState.grade`로 안전하게 전달되도록 개선.
+    - 학년 필터 선택 시 즉시 해당 학년의 연도 선택 단계(Case 2: `📅 [고3] 년도 선택`)로 직행하며 드롭다운 선택 상태가 풀리지 않고 유지되도록 보장.
+  - **3) 홈 검색창 ↔ 결과창 필터 바 및 연도·월 옵션 양방향 동기화 연동 (`static/js/search.js`, `static/js/navigation.js`)**:
+    - `executeSearch` 실행 시 및 `showHomeScreen` 복귀 시 `updateMonthOptionsByGrade()`와 `updateAllYearUI()`를 상호 연동하여 학년별 동적 월 목록과 복수 연도 선택 상태가 화면 간 완벽히 일치하도록 동기화.
+    - `setSearchArea()`에서 독해 ↔ 듣기 영역 전환 시에도 기존에 선택되어 있던 필터 상태가 손실되지 않고 보존되도록 개선.
+- **검증 결과**:
+  - `node --check static/js/search.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
+  - `node --check static/js/navigation.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류).
+  - `python -m py_compile run.py gichul/database.py gichul/routers/search.py`: 파이썬 구문 컴파일 검증 통과 (0건 오류).
+
+
 
 
 

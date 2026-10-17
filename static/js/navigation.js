@@ -48,6 +48,8 @@ import {
 } from "./search.js";
 import { backToPassageView, showSentencesForPassage, showSentenceEmptyGuidance } from "./results-sentence.js";
 import { stopAllListeningAudio } from "./results-passage.js";
+import { updateMonthOptionsByGrade } from "./month-filter.js";
+import { updateAllYearUI } from "./year-filter.js";
 
 // =========================================================================
 // 1. 헤더 액션 슬롯 상태 제어 (통계 배지 <-> 전체 문장 <-> 지문 복귀)
@@ -128,15 +130,17 @@ export function showHomeScreen() {
   import("./handout-cart.js").then((m) => m.updateFloatingCartUI());
 
   // 결과창 검색어 및 필터를 홈 검색창에 동기화
-  if (resultsSearchInput && resultsSearchInput.value) {
+  if (resultsSearchInput && mainSearchInput) {
     mainSearchInput.value = resultsSearchInput.value;
   }
-  if (resultsFilterGrade) filterGrade.value = resultsFilterGrade.value;
-  if (resultsFilterYear) filterYear.value = resultsFilterYear.value;
-  if (resultsFilterMonth) filterMonth.value = resultsFilterMonth.value;
-  if (resultsFilterExamType) filterExamType.value = resultsFilterExamType.value;
-  if (resultsFilterQuestionType) filterQuestionType.value = resultsFilterQuestionType.value;
-  if (resultsFilterCorrectRate) filterCorrectRate.value = resultsFilterCorrectRate.value;
+  if (resultsFilterGrade && filterGrade) filterGrade.value = resultsFilterGrade.value;
+  if (resultsFilterYear && filterYear) filterYear.value = resultsFilterYear.value;
+  updateMonthOptionsByGrade(filterGrade ? filterGrade.value : "", true);
+  if (resultsFilterMonth && filterMonth) filterMonth.value = resultsFilterMonth.value;
+  if (resultsFilterExamType && filterExamType) filterExamType.value = resultsFilterExamType.value;
+  if (resultsFilterQuestionType && filterQuestionType) filterQuestionType.value = resultsFilterQuestionType.value;
+  if (resultsFilterCorrectRate && filterCorrectRate) filterCorrectRate.value = resultsFilterCorrectRate.value;
+  updateAllYearUI();
 
   window.scrollTo({ top: 0, behavior: "smooth" });
   mainSearchInput.focus();

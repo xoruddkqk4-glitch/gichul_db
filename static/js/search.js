@@ -55,7 +55,7 @@ import { groupPassageItems, renderPassageView, getCurrentDetailPassage, stopAllL
 import { renderSentenceView, showSentenceEmptyGuidance } from "./results-sentence.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { resetAllGrammarFilters, updateGrammarBreadcrumbFilterUI } from "./grammar.js";
-import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter, setYearSelection } from "./year-filter.js";
+import { getYearsQueryParam, isAllYearsSelected, resetYearFilter, initYearFilter, setYearSelection, updateAllYearUI, getSelectedYears, ALL_YEARS } from "./year-filter.js";
 import { updateMonthOptionsByGrade, initMonthFilter } from "./month-filter.js";
 
 // 독해 21대 문제 유형
@@ -236,15 +236,7 @@ export async function executeSearch(source = "home", targetPassageId = null) {
   let correctRateRange = "";
   let tag = "";
 
-  // targetPassageId가 없을 때만 검색어 빈값 초기화 분기 실행 (영역 전환이나 지문 직행 시 targetPassageId 보존)
-  const isHomeEmpty = source === "home" && (!mainSearchInput || !mainSearchInput.value.trim());
-  const isResultsEmpty = source !== "home" && source !== "all" && source !== "all_passages" && (!resultsSearchInput || !resultsSearchInput.value.trim());
-  const isNoKeywordSearch = !targetPassageId && ((source === "all" || source === "all_passages") || isHomeEmpty || isResultsEmpty);
-
-  if (isNoKeywordSearch) {
-    // 검색창에 아무런 검색어 입력 없이 '검색'을 누른 경우:
-    // 이전의 모든 필터, 트리 네비게이션 및 지문 선택 상태를 완전히 초기화하여
-    // 해당 영역(독해/듣기) 전체 시험지 대상 최상위 학년 선택 화면(Case 1)으로 진입
+  if (source === "all" || source === "all_passages") {
     keyword = "";
     grade = "";
     year = "";
@@ -297,47 +289,94 @@ export async function executeSearch(source = "home", targetPassageId = null) {
     questionType = "";
     correctRateRange = "";
   } else if (source === "home") {
-    const parsed = parseSearchQuery(mainSearchInput.value);
+    const parsed = parseSearchQuery(mainSearchInput ? mainSearchInput.value : "");
     keyword = parsed.keyword;
     tag = parsed.tag;
-    grade = filterGrade.value;
-    year = filterYear.value;
-    month = filterMonth.value;
+    grade = filterGrade ? filterGrade.value : "";
+    year = filterYear ? filterYear.value : "";
+    month = filterMonth ? filterMonth.value : "";
     examType = filterExamType ? filterExamType.value : "";
     questionType = filterQuestionType ? filterQuestionType.value : "";
     correctRateRange = filterCorrectRate ? filterCorrectRate.value : "";
 
-    // 결과창 바에 동기화
-    if (resultsSearchInput) resultsSearchInput.value = mainSearchInput.value.trim();
+    // 결과창 바에 양방향 동기화
+    if (resultsSearchInput) resultsSearchInput.value = mainSearchInput ? mainSearchInput.value.trim() : "";
     if (resultsFilterGrade) resultsFilterGrade.value = grade;
     if (resultsFilterYear) resultsFilterYear.value = year;
+    updateMonthOptionsByGrade(grade, true);
     if (resultsFilterMonth) resultsFilterMonth.value = month;
     if (resultsFilterExamType) resultsFilterExamType.value = examType;
     if (resultsFilterQuestionType) resultsFilterQuestionType.value = questionType;
     if (resultsFilterCorrectRate) resultsFilterCorrectRate.value = correctRateRange;
     if (resultsFilterGrammarPos && filterGrammarPos) resultsFilterGrammarPos.value = filterGrammarPos.value;
     if (resultsFilterGrammarCategory && filterGrammarCategory) resultsFilterGrammarCategory.value = filterGrammarCategory.value;
+    updateAllYearUI();
+
+    // 홈 화면에서 검색어와 모든 필터가 비어있는 상태에서 '검색'을 클릭한 경우
+    const selectedYearsList = getSelectedYears();
+    const hasSpecificYear = selectedYearsList.length > 0 && selectedYearsList.length < ALL_YEARS.length;
+    const hasAnyHomeFilterOrKeyword = !!(
+      keyword || tag || grade || hasSpecificYear || month || examType || questionType || correctRateRange ||
+      (filterGrammarPos && filterGrammarPos.value) ||
+      (filterGrammarCategory && filterGrammarCategory.value)
+    );
+
+    if (!hasAnyHomeFilterOrKeyword) {
+      appState.treeNavState = { grade: null, year: null, month: null };
+      appState.currentPassageId = null;
+      appState.currentPassageIndex = 0;
+      appState.currentExamQuestions = [];
+    } else {
+      appState.treeNavState.grade = grade || null;
+      appState.treeNavState.year = (hasSpecificYear && selectedYearsList.length === 1) ? `${selectedYearsList[0]}년` : null;
+      const mNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
+      appState.treeNavState.month = mNum ? `${String(mNum).padStart(2, "0")}월` : null;
+    }
   } else {
-    const parsed = parseSearchQuery(resultsSearchInput.value);
+    const parsed = parseSearchQuery(resultsSearchInput ? resultsSearchInput.value : "");
     keyword = parsed.keyword;
     tag = parsed.tag;
-    grade = resultsFilterGrade.value;
-    year = resultsFilterYear.value;
-    month = resultsFilterMonth.value;
-    examType = resultsFilterExamType.value;
-    questionType = resultsFilterQuestionType.value;
+    grade = resultsFilterGrade ? resultsFilterGrade.value : "";
+    year = resultsFilterYear ? resultsFilterYear.value : "";
+    month = resultsFilterMonth ? resultsFilterMonth.value : "";
+    examType = resultsFilterExamType ? resultsFilterExamType.value : "";
+    questionType = resultsFilterQuestionType ? resultsFilterQuestionType.value : "";
     correctRateRange = resultsFilterCorrectRate ? resultsFilterCorrectRate.value : "";
 
     // 홈 바에 역동기화
-    mainSearchInput.value = resultsSearchInput.value.trim();
-    filterGrade.value = grade;
-    filterYear.value = year;
-    filterMonth.value = month;
-    filterExamType.value = examType;
-    filterQuestionType.value = questionType;
+    if (mainSearchInput) mainSearchInput.value = resultsSearchInput ? resultsSearchInput.value.trim() : "";
+    if (filterGrade) filterGrade.value = grade;
+    if (filterYear) filterYear.value = year;
+    updateMonthOptionsByGrade(grade, true);
+    if (filterMonth) filterMonth.value = month;
+    if (filterExamType) filterExamType.value = examType;
+    if (filterQuestionType) filterQuestionType.value = questionType;
     if (filterCorrectRate) filterCorrectRate.value = correctRateRange;
     if (filterGrammarPos && resultsFilterGrammarPos) filterGrammarPos.value = resultsFilterGrammarPos.value;
     if (filterGrammarCategory && resultsFilterGrammarCategory) filterGrammarCategory.value = resultsFilterGrammarCategory.value;
+    updateAllYearUI();
+
+    // 결과창에서 검색어와 모든 필터가 비어있는 경우
+    const selectedYearsList = getSelectedYears();
+    const hasSpecificYear = selectedYearsList.length > 0 && selectedYearsList.length < ALL_YEARS.length;
+    const hasAnyResultsFilterOrKeyword = !!(
+      keyword || tag || grade || hasSpecificYear || month || examType || questionType || correctRateRange ||
+      (resultsFilterGrammarPos && resultsFilterGrammarPos.value) ||
+      (resultsFilterGrammarCategory && resultsFilterGrammarCategory.value) ||
+      appState.isStarredFilterActive
+    );
+
+    if (!hasAnyResultsFilterOrKeyword) {
+      appState.treeNavState = { grade: null, year: null, month: null };
+      appState.currentPassageId = null;
+      appState.currentPassageIndex = 0;
+      appState.currentExamQuestions = [];
+    } else {
+      appState.treeNavState.grade = grade || null;
+      appState.treeNavState.year = (hasSpecificYear && selectedYearsList.length === 1) ? `${selectedYearsList[0]}년` : null;
+      const mNum = parseInt(String(month).replace(/[^0-9]/g, ""), 10);
+      appState.treeNavState.month = mNum ? `${String(mNum).padStart(2, "0")}월` : null;
+    }
   }
 
   if (typeof updateGrammarBreadcrumbFilterUI === "function") {
@@ -397,10 +436,6 @@ export async function executeSearch(source = "home", targetPassageId = null) {
 
   try {
     if (appState.currentMode === "passage") {
-      if (!targetPassageId) {
-        appState.treeNavState = { grade: null, year: null, month: null };
-      }
-
       // 키워드/태그 검색어가 없는 경우(전체 조회 또는 트리 탐색) 29MB 대신 초경량 74KB 메타데이터 우선 전송 (0.03초)
       const isMetaOnly = !keyword && !tag;
       if (isMetaOnly) {
@@ -431,7 +466,8 @@ export async function executeSearch(source = "home", targetPassageId = null) {
       renderPassageView(appState.passagesData, targetPassageId);
       updateGrammarFiltersVisibility();
     } else {
-      if (isNoKeywordSearch && !hasActiveSearchFilters()) {
+      const isNoSearchOrFilter = !targetPassageId && !keyword && !tag && !hasActiveSearchFilters();
+      if (isNoSearchOrFilter) {
         loadingIndicator.style.display = "none";
         appState.sentencesData = [];
         appState.rawSentencesData = [];
@@ -816,10 +852,11 @@ export function setSearchArea(area, triggerSearch = true) {
         executeSearch("results", targetPassageId);
       } else {
         // 아직 특정 모의고사 세트가 선택되지 않은 상태(최상위 탐색 중)에서 영역을 변경하는 경우:
-        // 바뀐 영역의 최상위 학년 선택 단계로 전환
         targetPassageId = null;
-        appState.treeNavState = { grade: null, year: null, month: null };
-        executeSearch("all_passages", null);
+        if (!grade) {
+          appState.treeNavState = { grade: null, year: null, month: null };
+        }
+        executeSearch("results", null);
       }
     }
   }
