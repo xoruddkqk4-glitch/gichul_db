@@ -75,7 +75,7 @@
   border-radius: 9999px;
   min-width: 16px;
   text-align: center;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   line-height: 1;
 }
 
@@ -208,7 +208,7 @@
   background: #2563eb;
   border-color: #93c5fd;
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .cart-count-badge {
@@ -218,23 +218,23 @@
   border-radius: 12px;
   font-size: 0.82rem;
   font-weight: 700;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   transition: all 0.2s ease;
 }
 
 .cart-count-badge.badge-passage {
   background: #3b82f6;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .cart-count-badge.badge-sentence {
   background: #0d9488;
-  box-shadow: 0 0 10px rgba(13, 148, 136, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .cart-count-badge.badge-listening {
   background: #7c3aed;
-  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .floating-handout-btn-group {
@@ -266,7 +266,7 @@
 .btn-open-handout-view.btn-open-passage:hover {
   background: linear-gradient(135deg, #1d4ed8, #1e40af);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.45);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .btn-open-handout-view.btn-open-sentence {
@@ -345,12 +345,12 @@
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   border-color: #1e40af;
   color: #ffffff;
-  box-shadow: 0 3px 12px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .handout-checkbox-label.checked:hover {
   background: linear-gradient(135deg, #1d4ed8, #1e40af);
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
   transform: translateY(-1px);
 }
 
@@ -806,13 +806,13 @@
 .btn-download-handout.btn-primary {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
   color: #ffffff;
-  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
 }
 
 .btn-download-handout.btn-primary:hover {
   background: linear-gradient(135deg, #1d4ed8, #1e40af);
   transform: translateY(-1px);
-  box-shadow: 0 6px 12px -2px rgba(37, 99, 235, 0.4);
+  box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.25);
 }
 
 .btn-download-handout.btn-secondary {
@@ -1323,6 +1323,29 @@
   animation: listeningPulse 2s infinite ease-in-out;
 }
 
+.btn-start-listening-classroom {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: var(--primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-start-listening-classroom:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg);
+}
+
 /* =========================================================================
    교사용 칠판형 듣기 수업 모드 & Waveform 파형 뷰어 스타일 (#listeningClassroomModal)
    ========================================================================= */
@@ -1344,7 +1367,7 @@
   background: #091a2e;
   border: 1px solid #1e3a5f;
   border-radius: 14px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 35px rgba(56, 189, 248, 0.15);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1509,13 +1532,13 @@
 .classroom-speaker-badge.speaker-m {
   background: #2563eb;
   color: #fff;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .classroom-speaker-badge.speaker-w {
   background: #a855f7;
   color: #fff;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .classroom-q-type {
@@ -1552,7 +1575,7 @@
   background: linear-gradient(135deg, #059669 0%, #10b981 100%);
   color: #ffffff;
   border: 1px solid #34d399;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .btn-classroom-toggle-mode.active-fels:hover {
@@ -1565,7 +1588,7 @@
   background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   color: #ffffff;
   border: 1px solid #60a5fa;
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.45);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .btn-classroom-toggle-mode.active-script:hover {
@@ -1592,7 +1615,7 @@
   background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%);
   color: #ffffff;
   border: 1px solid #7dd3fc;
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .classroom-sentence-text {
@@ -1618,30 +1641,28 @@
   font-weight: 700;
   user-select: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  text-shadow: 0 0 4px rgba(250, 204, 21, 0.3);
 }
 
 .fels-blank-slot:hover {
   background: rgba(254, 240, 138, 0.28);
   border-color: #fde047;
   transform: translateY(-1px) scale(1.04);
-  box-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .fels-blank-slot.revealed {
-  background: rgba(0, 255, 204, 0.18);
-  color: #00ffcc;
-  border: 1.5px solid #00ffcc;
-  box-shadow: 0 0 10px rgba(0, 255, 204, 0.4);
-  text-shadow: 0 0 6px rgba(0, 255, 204, 0.6);
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1.5px solid #10b981;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .classroom-korean-trans {
   margin-top: 14px;
   padding: 10px 16px;
   background: rgba(30, 58, 95, 0.45);
-  border-left: 4px solid #38bdf8;
-  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 6px;
   font-size: 1.15rem;
   color: #93c5fd;
   line-height: 1.5;
@@ -1676,8 +1697,7 @@
   transform: translateX(-50%);
   font-size: 0.85rem;
   font-weight: 700;
-  color: #00e5ff;
-  text-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  color: #7dd3fc;
   pointer-events: none;
   z-index: 5;
   letter-spacing: 0.3px;
@@ -1800,36 +1820,26 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.15s ease;
 }
 
 .btn-classroom-play:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.5);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
 }
 
 /* 구간 선택 시 자동으로 바뀌는 '선택 구간 재생' 모드 버튼 */
 .btn-classroom-play.region-mode {
   background: linear-gradient(135deg, #059669 0%, #10b981 100%);
   border: 1px solid #34d399;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.55);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   color: #ffffff;
-  animation: pulseRegionPlay 2s infinite;
 }
 
 .btn-classroom-play.region-mode:hover {
   background: linear-gradient(135deg, #047857 0%, #059669 100%);
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.75);
-}
-
-@keyframes pulseRegionPlay {
-  0%, 100% {
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
-  }
-  50% {
-    box-shadow: 0 0 22px rgba(16, 185, 129, 0.85);
-  }
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
 .classroom-loop-actions {
@@ -1847,13 +1857,13 @@
   font-size: 0.92rem;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   transition: all 0.15s ease;
 }
 
 .btn-classroom-loop:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .loop-count-wrap {
@@ -1902,7 +1912,7 @@
   padding: 6px 20px;
   background: #030a12;
   font-size: 0.76rem;
-  color: #64748b;
+  color: #94a3b8;
   border-top: 1px solid #0f2744;
 }
 

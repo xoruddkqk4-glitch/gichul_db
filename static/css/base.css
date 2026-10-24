@@ -2,7 +2,8 @@
    05-gichul_db: 모던 구글 스타일 & 2x2 그리드 / 1행 테이블 UI 스타일시트
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
 
 :root {
   --primary: #2563eb;
@@ -13,14 +14,19 @@
   --secondary: #475569;
   --success: #10b981;
   --success-light: #ecfdf5;
+  --success-text: #047857;
   --warning: #f59e0b;
+  --warning-light: #fffbeb;
+  --warning-text: #92400e;
   --danger: #ef4444;
+  --danger-light: #fef2f2;
+  --danger-text: #b91c1c;
 
   --bg-main: #f8fafc;
   --bg-card: #ffffff;
   --text-main: #1e293b;
-  --text-muted: #64748b;
-  --text-light: #94a3b8;
+  --text-muted: #475569; /* WCAG 2.1 AA 4.5:1+ 대비율 충족 (기존 #64748b 대비 상향) */
+  --text-light: #64748b;
   
   --border: #e2e8f0;
   --border-focus: #3b82f6;
@@ -34,6 +40,12 @@
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-full: 9999px;
+
+  /* 최소 가독성 하한선 토큰 (12px 이상) */
+  --font-xs: 0.75rem; /* 12px */
+  --font-sm: 0.8125rem; /* 13px */
+  --font-md: 0.875rem; /* 14px */
+  --font-base: 0.9375rem; /* 15px */
 }
 
 * {
@@ -43,7 +55,7 @@
 }
 
 body {
-  font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Noto Sans KR', sans-serif;
   background-color: var(--bg-main);
   color: var(--text-main);
   line-height: 1.5;
@@ -83,12 +95,12 @@ button {
 }
 
 .brand-badge {
-  background: linear-gradient(135deg, #2563eb, #3b82f6);
-  color: white;
-  padding: 0.2rem 0.55rem;
+  background: linear-gradient(135deg, #1e40af, #2563eb);
+  color: #ffffff;
+  padding: 0.25rem 0.6rem;
   border-radius: var(--radius-sm);
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.05em;
 }
 
@@ -126,21 +138,21 @@ button {
   background-color: #dbeafe;
   border-color: var(--primary);
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .btn-header-flow {
   font-weight: 700;
   border-radius: var(--radius-full);
   padding: 0.38rem 1rem;
-  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
 }
 
 .btn-header-flow:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
 .btn-header-flow.mode-back {
@@ -175,7 +187,35 @@ button {
 }
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-hover);
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+.btn-danger {
+  background-color: var(--danger-text);
+  color: #ffffff;
+  border-color: var(--danger-text);
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: #991b1b;
+}
+
+.btn-success {
+  background-color: var(--success-text);
+  color: #ffffff;
+  border-color: var(--success-text);
+}
+.btn-success:hover:not(:disabled) {
+  background-color: #065f46;
+}
+
+.btn-outline-danger {
+  background-color: #ffffff;
+  color: var(--danger-text);
+  border-color: #fca5a5;
+}
+.btn-outline-danger:hover:not(:disabled) {
+  background-color: #fef2f2;
+  border-color: var(--danger-text);
 }
 
 /* 전역 버튼 비활성화 시각 효과 및 마우스 클릭 차단 */

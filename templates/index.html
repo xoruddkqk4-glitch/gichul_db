@@ -468,7 +468,7 @@
       <!-- 검색 결과 없음 상태 카드 -->
       <div class="empty-results-box" id="emptyResultsBox" style="display: none;">
         <div class="empty-icon">🔍</div>
-        <h3 class="empty-title">일치하는 검색 결과가 없습니다</h3>
+        <h2 class="empty-title">일치하는 검색 결과가 없습니다</h2>
         <p class="empty-desc">검색어나 필터 조건(학년, 연도, 월, 시험구분, 문제유형)을 변경하여 다시 시도해 보세요.</p>
         <div class="empty-actions">
           <button type="button" class="btn btn-secondary btn-sm" id="btnEmptyResetFilters">↺ 검색 조건 초기화</button>
@@ -479,7 +479,7 @@
       <!-- 문장 검색 안내 빈 화면 (검색어 없이 [문장] 탭 진입 시 표출) -->
       <div class="empty-results-box sentence-guidance-box" id="sentenceEmptyGuidanceBox" style="display: none;">
         <div class="empty-icon">💬</div>
-        <h3 class="empty-title">찾으시는 영어 문장이나 키워드를 검색해 보세요</h3>
+        <h2 class="empty-title">찾으시는 영어 문장이나 키워드를 검색해 보세요</h2>
         <p class="empty-desc">
           상단 검색창에 영어 단어, 구문, 출처(예: <code>[고3-2024년...]</code>)를 입력하거나,<br>
           어법 필터(어법 대분류, 세부 어법)를 선택하여 원하는 기출 문장들을 모아볼 수 있습니다.
@@ -1236,7 +1236,7 @@
           <div class="handout-panel-card">
             <h3 class="panel-card-title">📥 듣기 유인물 및 오디오 다운로드</h3>
             <div class="download-actions-wrap">
-              <button type="button" class="btn-download-handout btn-primary" id="btnDownloadListeningQuestion" style="background: #7c3aed; border-color: #6d28d9;">
+              <button type="button" class="btn-download-handout btn-primary" id="btnDownloadListeningQuestion">
                 <span>📄 듣기 문제지 다운로드 (B4 세로 2x3)</span>
               </button>
               <button type="button" class="btn-download-handout btn-secondary" id="btnDownloadListeningExplanation">
@@ -1255,15 +1255,15 @@
           </div>
 
           <!-- 카드 4: 교사용 인터랙티브 듣기 수업 진행 전용 액션 -->
-          <div class="handout-panel-card classroom-action-card" style="border: 2px solid #8b5cf6; background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); box-shadow: 0 4px 14px rgba(139, 92, 246, 0.25);">
-            <h3 class="panel-card-title" style="color: #6d28d9; display: flex; align-items: center; gap: 6px;">
+          <div class="handout-panel-card classroom-action-card" style="border: 1px solid #c7d2fe; background: #f8faff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);">
+            <h3 class="panel-card-title" style="color: #1e40af; display: flex; align-items: center; gap: 6px;">
               <span>🎯 인터랙티브 수업 모드</span>
             </h3>
-            <button type="button" class="btn-start-listening-classroom" id="btnOpenListeningClassroomModal" style="width: 100%; padding: 14px 16px; font-size: 1.05rem; font-weight: 800; color: #fff; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%); border: none; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35); display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform 0.15s ease, box-shadow 0.15s ease;">
+            <button type="button" class="btn-start-listening-classroom" id="btnOpenListeningClassroomModal">
               <span style="font-size: 1.3rem;">🎧</span>
               <span>칠판형 듣기 수업 모드 시작</span>
             </button>
-            <span class="form-help" style="text-align: center; display: block; line-height: 1.5; margin-top: 8px; color: #6b21a8; font-weight: 600;">
+            <span class="form-help" style="text-align: center; display: block; line-height: 1.5; margin-top: 8px; color: #475569; font-weight: 600;">
               * 전체화면 파형 뷰어, 문장별 분할 재생, 마우스 드래그 구간 반복 지원
             </span>
           </div>
@@ -1815,9 +1815,9 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  📁 1. 원본 파일 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #059669;">(서버 용량 절약)</span>
+                  📁 1. 원본 파일 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #047857;">(서버 용량 절약)</span>
                 </span>
-                <span class="badge-raw-size-preview" id="selDelRawSizeBadge" style="font-size: 0.74rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span class="badge-raw-size-preview" id="selDelRawSizeBadge" style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
                 <code>uploads/</code> 폴더에 저장된 원본 PDF 및 HWP 파일을 영구 삭제합니다. (이미 DB에 텍스트가 추출되어 있으므로 <strong>웹 검색·뷰어 기능은 100% 정상 작동</strong>합니다)
@@ -1831,9 +1831,9 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  📄 2. 코어 본문 데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #dc2626;">(DB 지문·문장 삭제)</span>
+                  📄 2. 코어 본문 데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #b91c1c;">(DB 지문·문장 삭제)</span>
                 </span>
-                <span id="selDelCoreBadge" style="font-size: 0.74rem; background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span id="selDelCoreBadge" style="font-size: 0.75rem; background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
                 DB의 시험지 마스터, 지문 텍스트, 분할 문장, 그리고 PDF 크롭 캡처 이미지를 영구 삭제합니다. (본문이 삭제되면 <strong>종속된 어법 메타데이터와 정답률도 함께 삭제</strong>됩니다)
@@ -1847,9 +1847,9 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  🏷️ 3. 부가 메타데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #6366f1;">(어법 분석/태그 초기화)</span>
+                  🏷️ 3. 부가 메타데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #475569;">(어법 분석/태그 초기화)</span>
                 </span>
-                <span id="selDelMetaBadge" style="font-size: 0.74rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span id="selDelMetaBadge" style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
                 지문 및 문장 본문은 그대로 보존하고, <strong>AI 어법 분석 결과와 사용자 태그만 초기화</strong>합니다. (새로운 AI 모델로 다시 분석하고 싶을 때 유용합니다)
@@ -1863,9 +1863,9 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  📊 4. 정답률 데이터 초기화 <span style="font-weight: normal; font-size: 0.76rem; color: #0284c7;">(정답률·선지 선택률 초기화)</span>
+                  📊 4. 정답률 데이터 초기화 <span style="font-weight: normal; font-size: 0.76rem; color: #0369a1;">(정답률·선지 선택률 초기화)</span>
                 </span>
-                <span id="selDelRateBadge" style="font-size: 0.74rem; background: #f0f9ff; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span id="selDelRateBadge" style="font-size: 0.75rem; background: #f0f9ff; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
                 지문 및 문장 본문, 어법 분석은 그대로 보존하고, <strong>정답률(%)과 선지별 선택률 및 CSV 원본 파일만 초기화</strong>합니다. (정답률 데이터를 재업로드하거나 정정할 때 유용합니다)
@@ -2076,7 +2076,7 @@
               <div class="openrouter-ensemble-box">
                 <div class="openrouter-ensemble-header">
                   <label class="openrouter-ensemble-toggle-label">
-                    <input type="checkbox" id="cbOpenRouterEnsemble" style="width: 17px; height: 17px; accent-color: #6366f1; cursor: pointer;">
+                    <input type="checkbox" id="cbOpenRouterEnsemble" style="width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer;">
                     <span>🔄 3개 모델 자동 교차 검토 (앙상블 모드)</span>
                   </label>
                   <span class="openrouter-ensemble-badge" id="badgeOpenRouterEnsemble">강력 추천</span>
@@ -2300,8 +2300,8 @@
                 <span style="font-size: 0.86rem; font-weight: 800; color: #0f172a;">
                   🎙️ 수능 기출 방송 실제 성우 목소리 1:1 로컬 복제 (Zero-shot Voice Cloning)
                 </span>
-                <span style="background: #e0e7ff; color: #4338ca; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">비용 0원 무제한</span>
-                <span style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">완전 오프라인</span>
+                <span style="background: #e0e7ff; color: #3730a3; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">비용 0원 무제한</span>
+                <span style="background: #dcfce7; color: #166534; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">완전 오프라인</span>
               </div>
               <div class="flex-row-center">
                 <span id="badgeTtsHardware" style="font-size: 0.76rem; font-weight: 700; background: #0284c7; color: #ffffff; padding: 2px 9px; border-radius: 9999px;">
@@ -2319,7 +2319,7 @@
               <div class="tts-col">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">👨 수능 남자 성우 (M)</span>
-                  <span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">● 음원 준비됨</span>
+                  <span style="font-size: 0.75rem; color: #047857; font-weight: 700;">● 음원 준비됨</span>
                 </div>
                 <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 8px;">
                   기준: <code>kice_male_reference.wav</code> (평가원 실전 톤)
@@ -2333,7 +2333,7 @@
               <div class="tts-col">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                   <span style="font-size: 0.82rem; font-weight: 700; color: #1e293b;">👩 수능 여자 성우 (W)</span>
-                  <span style="font-size: 0.7rem; color: #10b981; font-weight: 700;">● 음원 준비됨</span>
+                  <span style="font-size: 0.75rem; color: #047857; font-weight: 700;">● 음원 준비됨</span>
                 </div>
                 <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 8px;">
                   기준: <code>kice_female_reference.wav</code> (평가원 실전 톤)
@@ -2353,7 +2353,7 @@
                     NVIDIA GPU(CUDA) 장착 시 자동 GPU 가속(문항당 2~3초), 외장 GPU 없을 시 CPU 모드로 자동 전환됩니다.
                   </div>
                 </div>
-                <div class="provider-test-result" id="testResultXtts" style="margin-top: 6px; font-size: 0.74rem;"></div>
+                <div class="provider-test-result" id="testResultXtts" style="margin-top: 6px; font-size: 0.75rem;"></div>
               </div>
             </div>
           </div>
@@ -2365,7 +2365,7 @@
                 <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">
                   ✨ Microsoft Edge Neural 음성 (인터넷 연결 시 완전 무료 / API Key 불필요)
                 </span>
-                <span style="background: #dcfce7; color: #15803d; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">100% Free</span>
+                <span style="background: #dcfce7; color: #166534; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">100% Free</span>
               </div>
               <span style="font-size: 0.78rem; color: #15803d;">
                 💡 수능·모의고사 듣기 평가 원어민 대화에 최적화된 고품질 신경망 음성
@@ -2972,18 +2972,18 @@
 
       <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
         <!-- 상단 요약 카드 -->
-        <div id="listeningAudioSummaryCard" style="display: flex; gap: 15px; margin-bottom: 18px; padding: 14px 18px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px;">
-          <div style="flex: 1; text-align: center; border-right: 1px solid #e9d5ff;">
-            <div style="font-size: 0.8rem; color: #6b7280; font-weight: 600;">총 선택 문항</div>
-            <div id="listeningAudioTotalCount" style="font-size: 1.4rem; font-weight: 800; color: #4c1d95;">0</div>
+        <div id="listeningAudioSummaryCard" style="display: flex; gap: 15px; margin-bottom: 18px; padding: 14px 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <div style="flex: 1; text-align: center; border-right: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #475569; font-weight: 600;">총 선택 문항</div>
+            <div id="listeningAudioTotalCount" style="font-size: 1.4rem; font-weight: 800; color: #1e293b;">0</div>
           </div>
-          <div style="flex: 1; text-align: center; border-right: 1px solid #e9d5ff;">
-            <div style="font-size: 0.8rem; color: #059669; font-weight: 600;">음원 준비 완료</div>
-            <div id="listeningAudioReadyCount" style="font-size: 1.4rem; font-weight: 800; color: #059669;">0</div>
+          <div style="flex: 1; text-align: center; border-right: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #047857; font-weight: 600;">음원 준비 완료</div>
+            <div id="listeningAudioReadyCount" style="font-size: 1.4rem; font-weight: 800; color: #047857;">0</div>
           </div>
           <div style="flex: 1; text-align: center;">
-            <div style="font-size: 0.8rem; color: #d97706; font-weight: 600;">미생성 (자동 합성 예정)</div>
-            <div id="listeningAudioMissingCount" style="font-size: 1.4rem; font-weight: 800; color: #d97706;">0</div>
+            <div style="font-size: 0.8rem; color: #92400e; font-weight: 600;">미생성 (자동 합성 예정)</div>
+            <div id="listeningAudioMissingCount" style="font-size: 1.4rem; font-weight: 800; color: #92400e;">0</div>
           </div>
         </div>
 
@@ -2993,10 +2993,10 @@
             <span id="listeningAudioProgressMessage" style="font-weight: 700; color: #1e40af; font-size: 0.92rem;">
               ⏳ 음원 결합 준비 중...
             </span>
-            <span id="listeningAudioProgressPercent" style="font-weight: 800; color: #2563eb; font-size: 0.95rem;">0%</span>
+            <span id="listeningAudioProgressPercent" style="font-weight: 800; color: #1d4ed8; font-size: 0.95rem;">0%</span>
           </div>
           <div style="width: 100%; height: 10px; background: #dbeafe; border-radius: 5px; overflow: hidden;">
-            <div id="listeningAudioProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 0.3s ease;"></div>
+            <div id="listeningAudioProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); transition: width 0.3s ease;"></div>
           </div>
         </div>
 

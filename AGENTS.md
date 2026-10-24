@@ -54,3 +54,9 @@
 - '반영해줘' 등의 자연어 승인 문구 없이도 `/apply` 명령어 하나로 즉시 구현을 시작합니다.
 - 코드 수정 후에는 Rule 2에 따라 빠른 터미널 정적 검증을 수행하고 결과를 보고합니다.
 - 단, Rule 3/4에 따라 자동 커밋 및 푸시는 진행하지 않으며 명시적인 `/git-commit` 수신 시에만 커밋/푸시를 수행합니다.
+
+## 8. `/impeccable` 및 `/impeccable-all` 디자인 진단·개선 모드 정책 (Design Audit Mode)
+- 사용자로부터 `/impeccable`, `/impeccable-all`, `/action impeccable-all` 등의 명령을 수신하면 UI/UX 디자인 시스템 검증 및 25개 축 전수 평가를 수행합니다.
+- 평가 및 진단 단계에서는 소스 코드를 직접 수정하지 않고 종합 스코어카드와 우선순위별 결함 목록을 담은 계획서를 작성합니다.
+- 계획서 작성 후에는 사용자의 `/apply` 명령이 있을 때까지 대기하며 자동 실행하지 않습니다.
+- 상세는 `.agents/skills/impeccable/SKILL.md` 및 `.agents/skills/impeccable-all/SKILL.md` 참조.

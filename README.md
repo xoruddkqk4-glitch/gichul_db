@@ -3003,14 +3003,22 @@ CREATE TABLE user_sentence_status (
   - `node -c static/js/reports.js static/js/main.js static/js/dom.js`: 자바스크립트 구문 문법 검사 통과 (0건 오류, 정상).
   - `python -m py_compile run.py gichul/routers/reports.py`: 파이썬 런타임 구문 컴파일 검증 통과 (0건 오류, 정상).
 
-
-
-
-
-
-
-
-
-
-
-
+### [2026-10-24 15:45] 업데이트 이력 (Commit ID: 65b5efbc)
+- **수정 내용**:
+  - **1) `.agents` 룰 및 디자인 스킬 동기화 (`CLAUDE.md`, `.agents/rules/rules.md`, `AGENTS.md`, `GEMINI.md`, `.claude/skills/`)**:
+    - `.agents/skills/impeccable` 및 `.agents/skills/impeccable-all`을 `.claude/skills/`로 상호 미러링 및 미러링 속성 헤더 명시.
+    - AI 행동 지침 문서 4종에 `Section 8 (/impeccable 및 /impeccable-all 디자인 진단·개선 모드 정책)` 추가 동기화.
+  - **2) Impeccable 25개 전수 디자인 진단 및 계획서 수립 (`docs/plans/2026-10-24_01_impeccable-design-audit.md`, `docs/README.md`)**:
+    - `impeccable-all`을 통해 6대 도메인 25개 세부 축 전수 진단 및 144건 1차 안티패턴 식별.
+    - 우선순위(P1~P3) 및 4단계 리팩토링 로드맵을 담은 계획서 작성 및 문서 보관소 등록.
+  - **3) Impeccable 4단계 UI/UX 디자인 리팩토링 (`static/css/`, `templates/index.html`)**:
+    - **1단계 (`static/css/base.css`)**: `--text-muted` 명도 대비 상향 (`#64748b` ➔ `#475569`, WCAG AA 4.5:1+ 충족), 시맨틱 위험/성공 컬러 토큰 신설, 최소 폰트 하한선 `--font-xs: 0.75rem (12px)` 제정, 시스템 우선 폰트 스택 적용.
+    - **2단계 (`static/css/modal.css`, `static/css/viewer.css`, `static/css/grammar.css`, `static/css/handouts.css`)**: AI 슬롭 스타일의 두꺼운 좌측 보더(`border-left: 4px`) 17건 전면 제거, 다크 배경 내 유색 글로우 그림자를 단정한 중립 섀도로 교체, 네온 컬러 단정화, `.ai-status-pulse-dot` 무한 깜빡임 애니메이션 제거 및 정적 상태 인디케이터화.
+    - **3단계 (`static/css/search.css`, `static/css/upload.css`, `static/css/viewer.css`)**: 히어로 타이틀 그라디언트 텍스트(`background-clip: text`) 단색화, 음성 엔진 전환기(`.tts-engine-switcher`) 등 협소 패딩 확장 (`padding: 4px`, 최소 높이 28px), 0.7rem 미만 초소형 라벨/배지 폰트 12px(`var(--font-xs)`)로 상향 통일.
+    - **4단계 (`templates/index.html`)**: 비어 있는 검색 결과 안내 헤딩 시맨틱 위계 교정 (`h3.empty-title` ➔ `h2.empty-title`), 인라인 보라/자주 그라디언트 및 유색 그림자 단정화.
+  - **4) 계획서 및 문서 상태 갱신**:
+    - [2026-10-24_01_impeccable-design-audit.md](docs/plans/2026-10-24_01_impeccable-design-audit.md) 및 [docs/README.md](docs/README.md) 상태 `✅ 완료` 갱신.
+- **검증 결과**:
+  - `python -m py_compile run.py`: 파이썬 런타임 구문 컴파일 검증 통과 (0 오류).
+  - `node -c static/js/*.js` (총 23개 JS 모듈 전수): 자바스크립트 구문 문법 검사 통과 (0 오류).
+  - `impeccable detect templates static`: 안티패턴 144건에서 82건으로 62건 대폭 감소 (사이드 탭 17건, 초소형 UI 15건, 그라디언트 텍스트 3건, 펄스 닷, 헤딩 위계, 중복 폰트 등 완전 박멸).

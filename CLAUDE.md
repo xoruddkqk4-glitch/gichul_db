@@ -54,6 +54,11 @@
 - 코드 변경 후에는 터미널 정적 검증을 수행하며, 자동 커밋/푸시는 하지 않습니다.
 - 상세는 `.agents/skills/apply/SKILL.md` 참조.
 
-## 8. 원본 규칙 파일
+## 8. `/impeccable` 및 `/impeccable-all` 디자인 진단·개선 모드
+- 사용자가 `/impeccable`, `/impeccable-all`, `/action impeccable-all` 등의 명령어를 입력하면 UI/UX 디자인 시스템 검증 및 25개 축 평가를 수행합니다.
+- 평가 후 `implementation_plan.md` 계획서를 생성하고, 실제 코드 수정은 `/apply` 명령 수신 시까지 대기합니다.
+- 상세는 `.agents/skills/impeccable/SKILL.md` 및 `.agents/skills/impeccable-all/SKILL.md` 참조.
+
+## 9. 원본 규칙 파일
 이 문서는 `.agents/rules/rules.md`를 기반으로 구성되었습니다. 규칙을 변경할 때는 함께 갱신하세요.
-- 스킬 정의 원본은 `.agents/skills/*/SKILL.md`이며, Claude Code 슬래시 명령(`/git-commit`, `/ask`, `/scratchpad`, `/apply`)용으로 `.claude/skills/*/SKILL.md`에 미러링되어 있습니다. 스킬을 수정할 때는 두 위치를 함께 갱신하세요.
+- 스킬 정의 원본은 `.agents/skills/*/SKILL.md`이며, Claude Code 슬래시 명령(`/git-commit`, `/ask`, `/scratchpad`, `/apply`, `/impeccable`, `/impeccable-all`)용으로 `.claude/skills/*/SKILL.md`에 미러링되어 있습니다. 스킬을 수정할 때는 두 위치를 함께 갱신하세요.

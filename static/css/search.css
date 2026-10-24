@@ -24,9 +24,7 @@
   font-weight: 800;
   letter-spacing: -0.025em;
   margin-bottom: 0.5rem;
-  background: linear-gradient(135deg, #1e293b 40%, #2563eb);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-main);
 }
 
 .hero-subtitle {
@@ -913,7 +911,7 @@
 .btn-toggle-within.active .toggle-dot,
 .btn-toggle-wholeword.active .toggle-dot {
   background-color: #2563eb;
-  box-shadow: 0 0 6px rgba(37, 99, 235, 0.8);
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.4);
   transform: scale(1.15);
 }
 

@@ -22,6 +22,7 @@ docs/
 
 | 날짜 | 계획서 | 상태 | 비고 |
 |---|---|---|---|
+| 2026-10-24 | [Impeccable 25개 전수 디자인 진단 및 UI/UX 개선 로드맵](plans/2026-10-24_01_impeccable-design-audit.md) | ✅ 완료 | Impeccable 25개 전수 진단 및 4단계 리팩토링 반영 완료 (안티패턴 144건 -> 82건 대폭 정돈, 사이드 탭 17건·펄스 닷·헤딩 위계 전멸) |
 | 2026-10-18 | [AI 일괄 진단 Before/After 대조창 높이 동시 리사이징 동기화](plans/2026-10-18_01_sync-before-after-diff-box-resize.md) | ✅ 완료 | After textarea 리사이즈 시 Before(현재 DB) 창 높이 실시간 1:1 동기화 (CSS flex:1 + JS ResizeObserver 연동) |
 | 2026-10-17 | [브레드크럼 바 내 '다른 시험 선택' 삭제 및 '검색 조건 초기화' 보존 단일 행(Single Row) 툴바](plans/2026-10-17_04_breadcrumb-toolbar-single-row-keep-reset.md) | ✅ 완료 | '검색 조건 초기화' 유지, '다른 시험 선택' 버튼만 삭제, 5종 파일 툴바 및 오류 신고와 함께 단일 행(Single Row) 콤팩트 정렬 |
 | 2026-10-17 | [브레드크럼 바 내 중복 버튼 제거 및 단일 행(Single Row) 툴바 배치](plans/2026-10-17_03_breadcrumb-toolbar-single-row-cleanup.md) | ⏸ 보류 | 요구사항 변경(검색 조건 초기화 보존)으로 04번 계획서로 대체 |
