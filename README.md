@@ -3022,3 +3022,25 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile run.py`: 파이썬 런타임 구문 컴파일 검증 통과 (0 오류).
   - `node -c static/js/*.js` (총 23개 JS 모듈 전수): 자바스크립트 구문 문법 검사 통과 (0 오류).
   - `impeccable detect templates static`: 안티패턴 144건에서 82건으로 62건 대폭 감소 (사이드 탭 17건, 초소형 UI 15건, 그라디언트 텍스트 3건, 펄스 닷, 헤딩 위계, 중복 폰트 등 완전 박멸).
+
+### [2026-10-28 10:02] 업데이트 이력 (Commit ID: cf645bca)
+- **수정 내용**:
+  - **1) P0 즉시 수정 — 중복 함수/상수 정리 및 테스트 격리 명시 (`gichul/database.py`, `gichul/core/state.py`)**:
+    - `gichul/database.py`: `update_passage_explanation`의 첫 번째 정의(bool 반환)를 제거하고 라우터에서 실제로 사용하는 두 번째 정의(Dict 반환)로 단일화.
+    - `gichul/core/state.py`: 미사용 중복 상수 `_WRITE_METHODS`, `_CACHE_SAFE_WRITE_PREFIXES` 삭제.
+    - `gichul/database.py`: 모듈 레벨 `DB_PATH`의 테스트 격리(`monkeypatch.setattr(db, "DB_PATH", ...)` 및 `GICHUL_DB_PATH`) 지원 의도 주석 및 타입 힌트 명시.
+  - **2) P1 구조 개선 — database.py 9대 도메인 아키텍처 구조화 및 CSS 번들 동기화 (`gichul/database.py`, `static/css/style.css`)**:
+    - `gichul/database.py`: 모듈 상단에 9대 도메인(연결 관리, 스키마, 시험지 CRUD, 지문 CRUD, 문장 CRUD, FTS5 검색, 어법 분석, 태그, 시스템 설정) 목차(Table of Contents) 및 아키텍처 맵 정립.
+    - `static/css/style.css`: 모듈화 CSS 마스터 번들에 누락되었던 `@import url('./handouts.css');`를 추가하여 스타일 번들 완전성 동기화.
+  - **3) P2 품질 강화 — PDF 파서 단위 테스트 신설, dom.js null 안전 가드, 스키마 DDL 최신화 (`tests/test_pdf_parser.py`, `static/js/dom.js`, `gichul/database.py`, `gichul/pdf_parser.py`)**:
+    - `tests/test_pdf_parser.py`: 원문자 기호 매핑 일관성, 듣기 영역 범위 감지(표준/수준별/50문항/CID 폰트 오류 폴백), 1지문 다문항 헤더 감지, 인메모리 PDF 형광펜 주석 생성 등 10개 단위 테스트 신설.
+    - `gichul/pdf_parser.py`: `REVERSE_CIRCLED_MAP`에 정수형 키(1~5) 지원 보강.
+    - `static/js/dom.js`: null-safe 이벤트 바인딩 헬퍼 `on()` 및 `safeEl()` 구현으로 DOM 요소 부재 시 TypeError 방지.
+    - `gichul/database.py`: `exams`, `passages`, `sentences` 테이블 기본 `CREATE TABLE` DDL에 최신 컬럼(`listening_start_q`, `correct_rate`, `choice_rates`, `is_starred`, `grammar_analyzed` 등)을 직접 반영하여 신규 DB 생성 시 불필요한 `ALTER TABLE` 예외 반복 제거 (기존 DB 하위 호환 마이그레이션 유지).
+  - **4) 계획서 및 문서 상태 갱신 (`docs/plans/2026-10-28_code-review-and-feedback.md`, `docs/README.md`)**:
+    - [2026-10-28_code-review-and-feedback.md](docs/plans/2026-10-28_code-review-and-feedback.md) 및 [docs/README.md](docs/README.md) 상태 `✅ 완료` 갱신.
+- **검증 결과**:
+  - `python -c "import ast, glob; ..."`: 백엔드 파이썬 파일 23개 문법 검사 통과 (오류 0건).
+  - `node --check static/js/*.js`: 프론트엔드 ES 모듈 문법 검사 통과 (오류 0건).
+  - `pytest tests/test_pdf_parser.py`: 신규 PDF 파서 단위 테스트 10건 전건 통과 (0.22초).
+  - `pytest tests -q`: 전체 243개 테스트 전건 통과 (기존 233건 + 신규 10건, 실패 0건).

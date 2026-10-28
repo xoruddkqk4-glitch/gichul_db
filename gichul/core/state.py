@@ -65,7 +65,3 @@ def _ingest_serialized(fn):
 def get_current_role() -> str:
     """요청한 사용자의 등급 (admin / member / guest). 조회 API가 Depends로 받아 DB 함수의 user_role로 넘긴다."""
     return access.DEFAULT_ROLE
-
-
-_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-_CACHE_SAFE_WRITE_PREFIXES = ("/api/settings/",)

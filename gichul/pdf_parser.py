@@ -22,7 +22,7 @@ logger = get_logger("gichul.pdf_parser")
 os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 CIRCLED_MAP = {"1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤"}
-REVERSE_CIRCLED_MAP = {"①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5}
+REVERSE_CIRCLED_MAP = {"①": 1, "②": 2, "③": 3, "④": 4, "⑤": 5, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5}
 
 
 def extract_choice_words_geometrically(page: fitz.Page, clip_rect: fitz.Rect, ans_val: str) -> List[tuple]:

@@ -1,8 +1,16 @@
 """
-05-gichul_db: SQLite 데이터베이스 모듈
+05-gichul_db: SQLite 데이터베이스 모듈 (gichul/database.py)
 - SQLite를 활용한 로컬 단일 파일(gichul.db) 데이터베이스
-- 시험지(exams), 지문(passages), 문장(sentences), 태그(tags) 테이블 관리
-- FTS5(Full-Text Search) 전문 검색 지원
+- 9대 도메인 아키텍처 구조:
+  [Domain 1] 연결 관리 및 컨텍스트 매니저 (get_connection, transaction, _use_conn, get_db_path)
+  [Domain 2] 스키마 초기화 및 마이그레이션 (init_db, _run_blank_refill_migration)
+  [Domain 3] 시험지(exams) CRUD 및 통계 캐시 (save_exam, get_all_exams, get_exam_stats, delete_exam)
+  [Domain 4] 지문(passages) CRUD 및 메타데이터 (save_passage, get_passage, update_passage_*)
+  [Domain 5] 문장(sentences) CRUD 및 별표 관리 (save_sentences, replace_sentences, toggle_sentence_star)
+  [Domain 6] FTS5 전문 검색 및 하이라이트 엔진 (search_passages, search_sentences, get_total_stats)
+  [Domain 7] 어법 분석 어노테이션 CRUD (save_grammar_annotations, get_grammar_annotations)
+  [Domain 8] 태그(tags) 관리 (add_passage_tag, remove_passage_tag, get_all_tags)
+  [Domain 9] 시스템 설정 및 오류 신고 (app_settings, error_reports)
 """
 
 import sqlite3
@@ -24,11 +32,17 @@ from .text_utils import (
 )
 
 logger = get_logger("gichul.database")
-DB_PATH = os.environ.get("GICHUL_DB_PATH") or paths.DB_PATH
+
+# 모듈 레벨 DB_PATH: paths.DB_PATH를 기본으로 하되, 테스트 시 monkeypatch.setattr(db, "DB_PATH", ...) 지원을 위해 유지
+DB_PATH: str = os.environ.get("GICHUL_DB_PATH") or paths.DB_PATH
 
 
 def get_db_path() -> str:
-    """런타임 DB 경로 반환 (테스트 시 GICHUL_DB_PATH 환경변수로 동적 교체 지원)"""
+    """런타임 DB 경로 반환.
+    테스트 격리 지원:
+    1. GICHUL_DB_PATH 환경변수 오버라이드 우선 적용
+    2. 미설정 시 모듈 레벨 DB_PATH(단위 테스트의 monkeypatch 대상) 반환
+    """
     return os.environ.get("GICHUL_DB_PATH") or DB_PATH
 
 
@@ -114,6 +128,9 @@ def init_db():
                 exam_type TEXT DEFAULT '평가원',   -- e.g. '평가원', '교육청', '수능'
                 reading_start_q INTEGER DEFAULT 18,
                 reading_end_q INTEGER DEFAULT 45,
+                listening_start_q INTEGER DEFAULT 1,
+                listening_end_q INTEGER DEFAULT 17,
+                subtype TEXT DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
@@ -125,25 +142,35 @@ def init_db():
                 exam_id TEXT NOT NULL,
                 q_num INTEGER NOT NULL,
                 question_title TEXT,              -- 발문 (e.g. '21. 밑줄 친 부분이 의미하는 바로...')
-                question_type TEXT,               -- 문제 유형 (e.g. '빈칸', '어휘함축' 등)
+                question_type TEXT DEFAULT '기타',-- 문제 유형 (e.g. '빈칸', '어휘함축' 등)
                 passage_text TEXT NOT NULL,       -- txt 변환 순수 영문 지문 본문
                 answer_text TEXT,                 -- 정답 번호 (e.g. '③')
                 explanation_text TEXT,            -- HWP 추출 정답 및 해설/해석
                 pdf_crop_image TEXT,              -- PDF 문항 크롭 이미지 경로
                 validation_ratio REAL DEFAULT 1.0,-- HWP-PDF 일치율 (0.0 ~ 1.0)
                 remarks TEXT,                     -- 비고
+                correct_rate REAL DEFAULT NULL,
+                choice_rates TEXT DEFAULT NULL,
+                answer_source TEXT,
+                answer_verified INTEGER DEFAULT 0,
+                area TEXT DEFAULT 'reading',
+                script_crop_image TEXT DEFAULT NULL,
+                script_text TEXT DEFAULT NULL,
+                fels_text TEXT DEFAULT NULL,
+                audio_file_path TEXT DEFAULT NULL,
+                user_memo TEXT DEFAULT '',
+                user_memo_updated_at TIMESTAMP DEFAULT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (exam_id) REFERENCES exams (id) ON DELETE CASCADE
             );
         """)
 
-        # 기존 테이블에 question_type 컬럼이 없는 경우 안전 마이그레이션
+        # 기존 하위 호환 마이그레이션 (과거 스키마로 생성된 DB 보호)
         try:
             cursor.execute("ALTER TABLE passages ADD COLUMN question_type TEXT;")
         except sqlite3.OperationalError:
             pass  # 이미 컬럼이 존재함
 
-        # passages 테이블에 correct_rate 및 choice_rates 컬럼 안전 마이그레이션
         try:
             cursor.execute("ALTER TABLE passages ADD COLUMN correct_rate REAL DEFAULT NULL;")
         except sqlite3.OperationalError:
@@ -194,6 +221,8 @@ def init_db():
                 order_index INTEGER NOT NULL,     -- 1, 2, 3...
                 sentence_text TEXT NOT NULL,      -- 개별 영문 문장
                 word_count INTEGER DEFAULT 0,
+                is_starred INTEGER DEFAULT 0,
+                grammar_analyzed INTEGER DEFAULT 0,
                 remarks TEXT,
                 FOREIGN KEY (passage_id) REFERENCES passages (id) ON DELETE CASCADE
             );
@@ -2446,16 +2475,6 @@ def update_passage_audio(passage_id: str, audio_file_path: str) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE passages SET audio_file_path = ? WHERE id = ?", (audio_file_path, clean_id))
-        conn.commit()
-        return cursor.rowcount > 0
-
-
-def update_passage_explanation(passage_id: str, explanation_text: str) -> bool:
-    """문항 해설(우리말 해석 등) 텍스트 갱신"""
-    clean_id = normalize_bracket_id(passage_id)
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE passages SET explanation_text = ? WHERE id = ?", (explanation_text, clean_id))
         conn.commit()
         return cursor.rowcount > 0
 

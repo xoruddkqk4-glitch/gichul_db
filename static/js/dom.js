@@ -372,3 +372,22 @@ export const btnCopyFels = document.getElementById("btnCopyFels");
 export const btnCopyFelsBlank = document.getElementById("btnCopyFelsBlank");
 export const btnCopyFelsAnswer = document.getElementById("btnCopyFelsAnswer");
 export const btnCopyScript = document.getElementById("btnCopyScript");
+
+/**
+ * null-safe 이벤트 리스너 바인딩 헬퍼 함수
+ * DOM 요소가 존재하는 경우에만 이벤트를 바인딩하여 TypeError 방지
+ */
+export function on(el, event, handler, options) {
+  if (el && typeof el.addEventListener === "function") {
+    el.addEventListener(event, handler, options);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 안전한 DOM 요소 취득 헬퍼 (존재하지 않아도 예외 방지)
+ */
+export function safeEl(id) {
+  return document.getElementById(id);
+}
