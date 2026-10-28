@@ -82,6 +82,8 @@
   border-color: #94a3b8 !important;
   background-color: #f8fafc !important;
 }
+.grammar-filter-select:focus-visible,
+.breadcrumb-select:focus-visible,
 .grammar-filter-select:focus,
 .breadcrumb-select:focus {
   border-color: #6366f1 !important;
@@ -577,8 +579,10 @@
   transition: border-color 0.15s;
 }
 
+.sidebar-search-input:focus-visible,
 .sidebar-search-input:focus {
   border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
 
 .sidebar-tree-tools {
@@ -930,6 +934,7 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.card-text-input:focus-visible,
 .card-text-input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
@@ -1051,6 +1056,7 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.visual-item-input:focus-visible,
 .visual-item-input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
@@ -1058,7 +1064,7 @@
 
 .btn-visual-item-revert {
   padding: 3px 8px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg-surface);
@@ -1365,6 +1371,7 @@
   transition: border-color 0.15s ease;
 }
 
+.grammar-search-input:focus-visible,
 .grammar-search-input:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
@@ -2333,6 +2340,7 @@
   cursor: pointer;
   transition: all 0.2s ease;
 }
+.consensus-mode-select:focus-visible,
 .consensus-mode-select:focus {
   border-color: #6366f1;
   outline: none;

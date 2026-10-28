@@ -465,11 +465,11 @@
         <span>데이터를 검색하고 있습니다...</span>
       </div>
 
-      <!-- 검색 결과 없음 상태 카드 -->
-      <div class="empty-results-box" id="emptyResultsBox" style="display: none;">
-        <div class="empty-icon">🔍</div>
-        <h2 class="empty-title">일치하는 검색 결과가 없습니다</h2>
-        <p class="empty-desc">검색어나 필터 조건(학년, 연도, 월, 시험구분, 문제유형)을 변경하여 다시 시도해 보세요.</p>
+      <!-- 검색 결과 없음 상태 카드 (Empty State) -->
+      <div class="empty-results-box results-empty-state" id="emptyResultsBox" style="display: none;">
+        <div class="empty-icon empty-state-icon">🔍</div>
+        <h2 class="empty-title empty-state-title">일치하는 검색 결과가 없습니다</h2>
+        <p class="empty-desc empty-state-desc">검색어나 필터 조건(학년, 연도, 월, 시험구분, 문제유형)을 변경하여 다시 시도해 보세요.</p>
         <div class="empty-actions">
           <button type="button" class="btn btn-secondary btn-sm" id="btnEmptyResetFilters">↺ 검색 조건 초기화</button>
           <button type="button" class="btn btn-primary btn-sm" id="btnEmptyBackToSearch">← 검색 화면으로 돌아가기</button>

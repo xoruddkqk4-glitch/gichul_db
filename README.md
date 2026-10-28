@@ -3044,3 +3044,30 @@ CREATE TABLE user_sentence_status (
   - `node --check static/js/*.js`: 프론트엔드 ES 모듈 문법 검사 통과 (오류 0건).
   - `pytest tests/test_pdf_parser.py`: 신규 PDF 파서 단위 테스트 10건 전건 통과 (0.22초).
   - `pytest tests -q`: 전체 243개 테스트 전건 통과 (기존 233건 + 신규 10건, 실패 0건).
+
+### [2026-10-28 10:45] 업데이트 이력 (Commit ID: 214e4c5e)
+- **수정 내용**:
+  - **1) 전역 웹 접근성(WCAG 2.1 SC 2.4.7/AAA) 강화 및 디자인 토큰 확장 (`static/css/base.css`)**:
+    - 모든 대화형 인터페이스에 키보드 포커스 시 명확한 시각 피드백을 제공하는 전역 `:focus-visible` 포커스 링 스타일 정의 (`outline: 2px solid var(--border-focus); outline-offset: 2px;`).
+    - OS의 '움직임 줄이기' 환경 설정을 존중하여 애니메이션 및 전환 시간을 즉각 단축하는 `@media (prefers-reduced-motion: reduce)` 전역 규칙 추가.
+    - 초소형 컴포넌트용 `--radius-xs: 4px` 토큰 신설 및 5단계 표준 반응형 Breakpoint 가이드 주석 명시.
+  - **2) 폰트 스케일 정상화 및 서브픽셀 폰트 12px 상향 (`static/css/viewer.css`, `static/css/grammar.css`, `static/css/upload.css`)**:
+    - `.breadcrumb-item`: 기존 과대 폰트(`1.45rem`)로 인한 레이아웃 불안정을 교정하여 `0.85rem`으로 정상화.
+    - 저시력자 접근성 하한선(12px)을 위반하던 서브픽셀 폰트들을 `0.75rem`(12px) 이상으로 일괄 상향:
+      - `viewer.css`: `.choice-star`(`0.66rem`→`0.75rem`), `.choice-trap-tag`(`0.64rem`→`0.75rem`), `.memo-char-count`·`.btn-memo-save`(`0.72rem`→`0.75rem`), `.memo-footer`(`0.70rem`→`0.75rem`), `.btn-source-link`(`0.70rem`→`0.75rem`), `.sentence-inline-edit-hint`(`0.72rem`→`0.75rem`).
+      - `grammar.css`: `.btn-visual-item-revert`(`0.72rem`→`0.75rem`).
+      - `upload.css`: `.th-filter-select`(`0.72rem`→`0.75rem`).
+  - **3) 반응형 모바일 오버플로 수정 및 접근성 포커스 보완 (`static/css/search.css`, `static/css/viewer.css`, `templates/index.html`)**:
+    - `search.css`: 모바일 화면에서 가로 스크롤을 발생시키던 `.google-search-input`의 고정 폭 `min-width: 500px`를 `min-width: min(500px, 100%)`로, `.results-search-input`의 `min-width: 400px`를 `min-width: min(400px, 100%)`로 반응형 최적화.
+    - `viewer.css`: 태블릿(1024px, 브레드크럼 자동 줄바꿈) 및 모바일(768px, 패딩 및 폰트 콤팩트화) 미디어 쿼리 보강.
+    - `search.css` & `templates/index.html`: 검색 결과 0건 시 일관된 디자인 시스템 규격을 적용하는 `.results-empty-state` 컴포넌트 CSS 추가 및 마크업 클래스 매핑.
+  - **4) 4개 도메인 CSS 전반의 포커스 링 대체 보완 (`static/css/modal.css`, `static/css/grammar.css`, `static/css/handouts.css`, `static/css/upload.css`)**:
+    - `outline: none;`으로 포커스 피드백이 제거되었던 모든 폼 입력창, 셀렉트 박스, 텍스트에어리어에 `:focus-visible` 및 `box-shadow` 포커스 링 스타일 전면 보강.
+  - **5) 디자인 시스템 명세서 구축 (`DESIGN.md`)**:
+    - 프로젝트 루트에 컬러 팔레트, 타이포그래피 스케일, 모서리 곡률(`--radius-*`), 그림자 계층(`--shadow-*`), 반응형 Breakpoint, WCAG 2.1 AA 접근성 체크리스트 및 컴포넌트 패턴 가이드를 명문화한 공식 규격서 작성.
+  - **6) 계획서 수립 및 문서 보관소 갱신 (`docs/plans/2026-10-28_01_impeccable-all-design-audit.md`, `docs/README.md`)**:
+    - `/impeccable-all` 감사 기반 7단계 구현 계획서 등록 및 `/apply`를 통한 전 항목 `✅ 완료` 상태 동기화.
+- **검증 결과**:
+  - `python -m py_compile run.py`: 파이썬 런타임 구문 컴파일 검증 통과 (오류 0건).
+  - `static/css/*.css` 전체 8개 스타일시트 괄호 및 셀렉터 정합성 검사 통과 (8/8 Pass).
+

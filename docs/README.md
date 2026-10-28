@@ -22,6 +22,7 @@ docs/
 
 | 날짜 | 계획서 | 상태 | 비고 |
 |---|---|---|---|
+| 2026-10-28 | [Impeccable-All 종합 디자인 감사 및 UI/UX 접근성 개선](plans/2026-10-28_01_impeccable-all-design-audit.md) | ✅ 완료 | 25개 전수 감사 기반 WCAG 2.1 접근성 포커스 링 개선, 서브픽셀 폰트 상향(12px 보장), 브레드크럼 정상화, 반응형 모바일 오버플로 수정, Empty State UI 및 DESIGN.md 구축 |
 | 2026-10-28 | [프로젝트 기능 확인 및 코드 검증 종합 피드백](plans/2026-10-28_code-review-and-feedback.md) | ✅ 완료 | 9대 기능 전수 확인, P0 결함 3건 정리, P1 database.py 9대 도메인화 및 style.css 동기화, P2 pdf_parser 단위테스트 10건 추가 (전체 243건 테스트 통과) |
 | 2026-10-24 | [Impeccable 25개 전수 디자인 진단 및 UI/UX 개선 로드맵](plans/2026-10-24_01_impeccable-design-audit.md) | ✅ 완료 | Impeccable 25개 전수 진단 및 4단계 리팩토링 반영 완료 (안티패턴 144건 -> 82건 대폭 정돈, 사이드 탭 17건·펄스 닷·헤딩 위계 전멸) |
 | 2026-10-18 | [AI 일괄 진단 Before/After 대조창 높이 동시 리사이징 동기화](plans/2026-10-18_01_sync-before-after-diff-box-resize.md) | ✅ 완료 | After textarea 리사이즈 시 Before(현재 DB) 창 높이 실시간 1:1 동기화 (CSS flex:1 + JS ResizeObserver 연동) |

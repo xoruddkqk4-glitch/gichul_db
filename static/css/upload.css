@@ -618,7 +618,7 @@
 .th-filter-select {
   display: block;
   width: 100%;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-family: inherit;
   padding: 2px 3px;
   margin-top: 3px;
@@ -638,6 +638,7 @@
   border-color: #94a3b8;
 }
 
+.th-filter-select:focus-visible,
 .th-filter-select:focus {
   border-color: var(--primary, #2563eb);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
