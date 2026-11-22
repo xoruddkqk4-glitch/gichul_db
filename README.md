@@ -3071,3 +3071,27 @@ CREATE TABLE user_sentence_status (
   - `python -m py_compile run.py`: 파이썬 런타임 구문 컴파일 검증 통과 (오류 0건).
   - `static/css/*.css` 전체 8개 스타일시트 괄호 및 셀렉터 정합성 검사 통과 (8/8 Pass).
 
+
+### [2026-11-22 13:54] 업데이트 이력 (Commit ID: 431894c2)
+- **수정 내용**:
+  - **1) 단락 기반 다중 기준 유사 지문 검색 엔진 구축 (`gichul/services/similarity_search.py`, `gichul/routers/search.py`, `gichul/app.py`)**:
+    - 외부 패키지·외부 API 의존 없이 100% 로컬·오프라인 환경에서 동작하는 경량 인메모리 역색인(`_SimilarityIndex`) 및 TF-IDF/IDF 스코어링 파이프라인 구축.
+    - 순수 영문 본문 정제(`clean_passage_for_similarity`) 및 문장·절 경계 분리(`split_clean_segments`): 한글 발문, 선지(`①~⑤`), 각주, 화자 태그, `(A)~(E)`/`(a)~(e)` 표식·빈칸을 경계 구분자로 처리하여 `a b c` 같은 가짜 연속 구문 생성을 차단하고 약어(`Dr.`, `U.S.` 등)를 보호.
+    - **4대 검색 시그널 자동 추출** (`extract_paragraph_features`): 고유명사·복합개체명·약어·연도(`extract_proper_nouns`), 내용어 2~3-gram 표현 조합(`extract_content_phrases`), 경량 어간 정규화(`normalize_lemma`) 기반 고IDF 핵심어, 문장 경계 존중 연속 3·4단어(`extract_consecutive_ngrams`).
+    - **연속 3단어·4단어(N-gram) 전용 기준 및 2중 노이즈 필터**: 내용어 최소 포함 검사(`is_informative_ngram`) + 코퍼스 DF 상한(`3-gram ≤ 30`, `4-gram ≤ 10`, 토글 가능)으로 상투 구문(`one of the`, `on the other hand`, `the above graph shows`)을 자동 차단하고, `passages_fts` Phrase/NEAR 쿼리 + 역색인 하이브리드로 후보 회수 및 `allow_gap`(0/1/2단어 삽입 허용)·`min_ngram_hits` 필터 지원.
+    - **8대 검색 기준 프리셋**: `balanced`(종합 균형), `near_duplicate`(원문·변형), `proper_noun`(고유명사 중심), `phrase_combo`(표현 조합), `topic_broad`(주제 확장), `ngram_3`(연속 3단어), `ngram_4`(연속 4단어), `ngram_3_4`(3+4단어 혼합) 및 커스텀 가중치, 필수 포함(`required_terms`), 제외(`excluded_terms`), 직접 추가(`custom_terms`), 복합 장문(41~42/43~45) 중복 병합, 겹침 스팬 병합(`merge_overlapping_spans`), `access.py` 등급 필터링 적용.
+    - REST API 2종 신설: `POST /api/search/similar/extract`, `POST /api/search/similar` 및 `app.py` 쓰기 미들웨어 캐시 무효화(`invalidate_similarity_index`) 연동.
+  - **2) 선택적 Multi-LLM 의미 키워드 확장 옵션 (`gichul/grammar_analyzer.py`)**:
+    - 기본 OFF(로컬 무료)를 유지하되 사용자가 `🤖 AI 동의어 확장`을 켠 경우에만 설정된 활성 LLM으로 동의어·학술 표현을 보조 확장하는 `expand_similarity_keywords()` 추가 (미설정/실패 시 로컬 엔진 안전 폴백).
+  - **3) 프론트엔드 `✨ 유사 지문 검색` UI, 칩 편집기, 결과 카드 및 2×2 뷰어·유인물 연동 (`templates/index.html`, `static/css/search.css`, `static/js/similar-search.js`, `dom.js`, `state.js`, `utils.js`, `navigation.js`, `search.js`, `passage-render.js`, `results-sentence.js`, `main.js`)**:
+    - 홈·결과창 모드 탭에 `✨ 유사 지문 검색` 추가, 다중 행 단락 입력창, 8대 프리셋 바, 연속 3·4단어 옵션 바, 4종 가중치 슬라이더, 4분류 추출 검색어 칩(`★ 필수 포함` / `× 제외` / 직접 추가) 편집기 구현.
+    - 유사도 순위 카드에 점수(%), 매칭 근거 배지, 다색 형광펜(`highlightSimilarMatches`) 미리보기, 유인물 개별/일괄 담기 및 2×2 상세 뷰어 직행·복귀 배너 연동.
+  - **4) 테스트, 데이터 동기화 및 계획서 문서화 (`tests/test_similar_search.py`, `tests/conftest.py`, `docs/plans/`, `docs/README.md`, `data/answer_keys/고2_2013_06.json`, `static/captures/고2_2013_06_*.png`)**:
+    - 유사 지문 및 연속 3·4단어 N-gram 단위·통합 테스트 10건 신설 및 `tmp_db` 픽스처 유사도 인덱스 초기화 연동.
+    - 기반 계획서(`docs/plans/2026-11-22_similar-passage-search.md`) 및 추가 계획서(`docs/plans/2026-11-22_01_similar-passage-ngram-3-4-spec.md`) 작성 및 `docs/README.md` `✅ 완료` 동기화.
+    - 기존 로컬 작업본의 고2 2013년 6월 정답 키 및 문항 크롭 이미지 갱신분 함께 반영.
+- **검증 결과**:
+  - `python -m py_compile gichul/services/similarity_search.py gichul/grammar_analyzer.py gichul/routers/search.py gichul/app.py tests/conftest.py tests/test_similar_search.py`: 오류 0건 통과.
+  - `node --check static/js/similar-search.js static/js/dom.js static/js/state.js static/js/utils.js static/js/navigation.js static/js/search.js static/js/passage-render.js static/js/results-sentence.js static/js/main.js`: 오류 0건 통과.
+  - `static/css/search.css`: 중괄호 정합성 검사 통과 (223/223).
+  - `python -m pytest tests/test_similar_search.py tests/test_db_search.py tests/test_api_smoke.py tests/test_routers.py tests/test_access.py -q`: 34 passed, 0 failed (27.32s).
