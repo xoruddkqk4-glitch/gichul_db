@@ -21,6 +21,7 @@ def tmp_db(tmp_path, monkeypatch):
     from gichul import database as db
     from gichul import paths
     from gichul.core.state import search_cache
+    from gichul.services.similarity_search import invalidate_similarity_index
 
     test_db_file = str(tmp_path / "test_gichul.db")
     fake_captures = tmp_path / "captures"
@@ -40,11 +41,13 @@ def tmp_db(tmp_path, monkeypatch):
     db.init_db()
     search_cache.clear()
     db.invalidate_exams_cache()
+    invalidate_similarity_index()
 
     yield db
 
     search_cache.clear()
     db.invalidate_exams_cache()
+    invalidate_similarity_index()
 
 
 @pytest.fixture

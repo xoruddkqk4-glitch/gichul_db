@@ -3,14 +3,122 @@
 """
 
 import re
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Union
 from fastapi import APIRouter, Query, Depends, Response, HTTPException
+from pydantic import BaseModel, Field
 
 from .. import database as db
 from ..text_utils import normalize_bracket_id
 from ..core.state import search_cache, fast_json_dumps, get_current_role
+from ..services import similarity_search
 
 router = APIRouter()
+
+
+class SimilarExtractRequest(BaseModel):
+    text: str = Field(..., description="붙여 넣은 단락 텍스트")
+    area: str = Field(default="reading", description="reading | listening")
+    filter_common_ngrams: bool = True
+    max_df_3gram: int = 30
+    max_df_4gram: int = 10
+
+
+class SimilarSearchRequest(BaseModel):
+    text: str = Field(default="", description="붙여 넣은 단락 텍스트")
+    preset: str = Field(default="balanced", description="balanced | near_duplicate | proper_noun | phrase_combo | topic_broad | ngram_3 | ngram_4 | ngram_3_4")
+    weights: Optional[Dict[str, float]] = None
+    selected_proper_nouns: Optional[List[str]] = None
+    selected_phrases: Optional[List[str]] = None
+    selected_keywords: Optional[List[str]] = None
+    selected_ngrams: Optional[List[str]] = None
+    required_terms: Optional[List[str]] = None
+    required_ngrams: Optional[List[str]] = None
+    excluded_terms: Optional[List[str]] = None
+    custom_terms: Optional[List[str]] = None
+    use_ai_expansion: bool = False
+    ngram_mode: Optional[str] = None
+    min_ngram_hits: int = 1
+    filter_common_ngrams: bool = True
+    max_df_3gram: int = 30
+    max_df_4gram: int = 10
+    allow_gap: int = 0
+    min_score: float = 0.05
+    top_k: int = 30
+    area: str = "reading"
+    grade: str = ""
+    year: Optional[int] = None
+    years: Optional[Union[List[int], str]] = None
+    month: Optional[int] = None
+    exam_type: str = ""
+    question_type: str = ""
+    correct_rate_range: str = ""
+    tag: str = ""
+
+
+@router.post("/api/search/similar/extract")
+def api_extract_similar_features(req: SimilarExtractRequest):
+    """붙여 넣은 단락에서 고유명사, 표현 조합, 핵심어, 연속 3·4단어를 미리 추출한다."""
+    if not (req.text or "").strip() or len(req.text.strip()) < 5:
+        raise HTTPException(status_code=400, detail="유사 검색을 위해 최소 5자 이상의 영어 텍스트를 입력하세요.")
+    return similarity_search.extract_paragraph_features(
+        text=req.text,
+        area=req.area,
+        filter_common_ngrams=req.filter_common_ngrams,
+        max_df_3gram=req.max_df_3gram,
+        max_df_4gram=req.max_df_4gram,
+    )
+
+
+@router.post("/api/search/similar")
+def api_search_similar_passages(
+    req: SimilarSearchRequest,
+    user_role: str = Depends(get_current_role),
+):
+    """단락 텍스트 기반 다중 기준 + 연속 3·4단어 유사 지문 검색 API"""
+    has_text = bool((req.text or "").strip())
+    has_custom = bool(req.custom_terms and any(t.strip() for t in req.custom_terms))
+    if not has_text and not has_custom:
+        raise HTTPException(status_code=400, detail="검색할 단락 텍스트 또는 검색어를 입력하세요.")
+
+    years_list: Optional[List[int]] = None
+    if isinstance(req.years, list):
+        years_list = [int(y) for y in req.years if str(y).isdigit()]
+    elif isinstance(req.years, str) and req.years.strip():
+        years_list = [int(y.strip()) for y in req.years.split(",") if y.strip().isdigit()]
+
+    result = similarity_search.search_similar_passages(
+        text=req.text,
+        preset=req.preset,
+        weights=req.weights,
+        selected_proper_nouns=req.selected_proper_nouns,
+        selected_phrases=req.selected_phrases,
+        selected_keywords=req.selected_keywords,
+        selected_ngrams=req.selected_ngrams,
+        required_terms=req.required_terms,
+        required_ngrams=req.required_ngrams,
+        excluded_terms=req.excluded_terms,
+        custom_terms=req.custom_terms,
+        use_ai_expansion=req.use_ai_expansion,
+        ngram_mode=req.ngram_mode,
+        min_ngram_hits=req.min_ngram_hits,
+        filter_common_ngrams=req.filter_common_ngrams,
+        max_df_3gram=req.max_df_3gram,
+        max_df_4gram=req.max_df_4gram,
+        allow_gap=req.allow_gap,
+        min_score=req.min_score,
+        top_k=req.top_k,
+        area=req.area,
+        grade=req.grade,
+        year=req.year,
+        years=years_list,
+        month=req.month,
+        exam_type=req.exam_type,
+        question_type=req.question_type,
+        correct_rate_range=req.correct_rate_range,
+        tag=req.tag,
+        user_role=user_role,
+    )
+    return Response(content=fast_json_dumps(result), media_type="application/json")
 
 
 @router.get("/api/stats")

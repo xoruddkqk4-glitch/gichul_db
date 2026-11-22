@@ -61,7 +61,7 @@ import {
 } from "./dom.js";
 import { setHeaderSlotState } from "./navigation.js";
 import { hasActiveSearchFilters, highlightTextKeyword, resetAllSearchFilters } from "./search.js";
-import { escapeHtml } from "./utils.js";
+import { escapeHtml, highlightSimilarMatches } from "./utils.js";
 import { triggerSingleFileUpload } from "./upload.js";
 import {
   downloadExamRawFile,
@@ -1842,10 +1842,14 @@ export function loadPassageDetail(p) {
     const currentQuery =
       (resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()) || "";
 
+    const simInfo = appState.activeSimilarHighlight && appState.activeSimilarHighlight[p.id];
+
     // 1. 순수 텍스트에 검색어 하이라이트를 먼저 수행 (highlightTextKeyword 내부에서 escapeHtml 처리)
-    let formattedScript = currentQuery
-      ? highlightTextKeyword(rawScript, currentQuery, "passage-highlight")
-      : escapeHtml(rawScript);
+    let formattedScript = simInfo
+      ? highlightSimilarMatches(rawScript, simInfo)
+      : (currentQuery
+        ? highlightTextKeyword(rawScript, currentQuery, "passage-highlight")
+        : escapeHtml(rawScript));
 
     // 2. 이미 이스케이프 및 하이라이트가 완료된 안전한 HTML에 화자 배지 태그(<span>) 적용
     formattedScript = formattedScript.replace(
@@ -1893,7 +1897,14 @@ export function loadPassageDetail(p) {
     panelPassageText.dataset.rawText = rawPassageText;
     const currentQuery =
       (resultsSearchInput && resultsSearchInput.value.trim()) || (mainSearchInput && mainSearchInput.value.trim()) || "";
-    panelPassageText.innerHTML = highlightTextKeyword(rawPassageText, currentQuery, "passage-highlight");
+    const simInfo =
+      (appState.activeSimilarHighlight &&
+        (appState.activeSimilarHighlight[p.id] ||
+          (p.subItems && p.subItems.map((si) => appState.activeSimilarHighlight[si.id]).find(Boolean)))) ||
+      null;
+    panelPassageText.innerHTML = simInfo
+      ? highlightSimilarMatches(rawPassageText, simInfo)
+      : highlightTextKeyword(rawPassageText, currentQuery, "passage-highlight");
   }
 
   if (isListening) {

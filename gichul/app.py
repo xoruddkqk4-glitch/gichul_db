@@ -30,6 +30,7 @@ from .core.state import (
 from .logging_config import get_logger, setup_logging
 from .routers import exams, grammar, handouts, listening, passages, reports, search, settings
 from .services.ingest import _regenerate_exam_crops, background_auto_analyze_exam_grammar
+from .services.similarity_search import invalidate_similarity_index
 
 logger = get_logger("gichul.app")
 
@@ -90,13 +91,13 @@ async def no_cache_static_js(request: Request, call_next):
 
 
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-# 검색 결과에 영향을 주지 않는 쓰기 경로 (AI 키 저장/테스트, TTS 미리듣기 등)
-_CACHE_SAFE_WRITE_PREFIXES = ("/api/settings/", "/api/handouts/")
+# 검색 결과에 영향을 주지 않는 쓰기 경로 (AI 키 저장/테스트, 유인물 생성, 읽기 전용 유사 검색 POST 등)
+_CACHE_SAFE_WRITE_PREFIXES = ("/api/settings/", "/api/handouts/", "/api/search/similar")
 
 
 @app.middleware("http")
 async def invalidate_cache_on_write(request: Request, call_next):
-    """데이터를 바꾸는 API 요청이 끝나면 검색 캐시와 시험지 통계 캐시를 비운다."""
+    """데이터를 바꾸는 API 요청이 끝나면 검색 캐시, 시험지 통계 캐시, 유사도 인덱스를 비운다."""
     response = await call_next(request)
     path = request.url.path
     if (request.method in _WRITE_METHODS
@@ -104,6 +105,7 @@ async def invalidate_cache_on_write(request: Request, call_next):
             and not path.startswith(_CACHE_SAFE_WRITE_PREFIXES)):
         search_cache.clear()
         db.invalidate_exams_cache()
+        invalidate_similarity_index()
     return response
 
 

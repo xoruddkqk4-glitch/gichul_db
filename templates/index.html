@@ -1,17 +1,19 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gichul DB — 수능·모의고사 영어 기출 데이터베이스</title>
   <link rel="stylesheet" href="/static/css/base.css?v=20261005_1910">
-  <link rel="stylesheet" href="/static/css/search.css?v=20261005_1910">
+  <link rel="stylesheet" href="/static/css/search.css?v=20261122_0001">
   <link rel="stylesheet" href="/static/css/viewer.css?v=20261005_1910">
   <link rel="stylesheet" href="/static/css/modal.css?v=20261005_1910">
   <link rel="stylesheet" href="/static/css/grammar.css?v=20261005_1910">
   <link rel="stylesheet" href="/static/css/upload.css?v=20261005_1910">
   <link rel="stylesheet" href="/static/css/handouts.css?v=20261006_0001">
 </head>
+
 <body>
 
   <!-- 상단 글로벌 내비게이션 헤더 -->
@@ -23,12 +25,14 @@
 
     <div class="header-actions">
       <!-- [← 처음 화면으로 돌아가기] 버튼 (결과창/문장창/유인물 진입 시 헤더 상단 노출) -->
-      <button type="button" class="btn btn-secondary btn-sm btn-back-search" id="btnBackToSearch" style="display: none;" title="첫 검색 화면으로 복귀">
+      <button type="button" class="btn btn-secondary btn-sm btn-back-search" id="btnBackToSearch" style="display: none;"
+        title="첫 검색 화면으로 복귀">
         <span class="back-arrow">←</span> 처음 화면으로 돌아가기
       </button>
 
       <!-- [🔙 이전 화면으로 돌아가기] 버튼 (유인물 제작소 진입 시 헤더 상단 노출) -->
-      <button type="button" class="btn btn-secondary btn-sm btn-back-previous" id="btnHeaderBackToPrevious" style="display: none;" title="유인물 진입 전 이전 화면으로 복귀">
+      <button type="button" class="btn btn-secondary btn-sm btn-back-previous" id="btnHeaderBackToPrevious"
+        style="display: none;" title="유인물 진입 전 이전 화면으로 복귀">
         <span class="back-arrow">🔙</span> 이전 화면으로 돌아가기
       </button>
 
@@ -41,10 +45,13 @@
           📝 해당 지문의 전체 문장
         </button>
       </div>
-      <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal" onclick="window.__openAiSettingsModal && window.__openAiSettingsModal()" title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
+      <button class="btn btn-outline-ai btn-sm" id="btnOpenAiSettingsModal"
+        onclick="window.__openAiSettingsModal && window.__openAiSettingsModal()"
+        title="AI 어법 분석기 설정 (Gemini/ChatGPT/Claude)">
         🔑 AI 설정
       </button>
-      <button type="button" class="btn btn-outline-primary btn-sm btn-nav-handout" id="btnHeaderHandout" title="교사용 지문 유인물 제작소로 이동">
+      <button type="button" class="btn btn-outline-primary btn-sm btn-nav-handout" id="btnHeaderHandout"
+        title="교사용 지문 유인물 제작소로 이동">
         📄 유인물 제작소
       </button>
       <button class="btn btn-outline-danger btn-sm" id="btnOpenReportsModal" title="신고된 오류 내역 확인 및 관리">
@@ -66,7 +73,7 @@
         <h1 class="hero-title">Gichul English DB</h1>
         <p class="hero-subtitle">수능 및 모의고사 영어 독해 지문·문장 단위 초고속 검색 시스템</p>
 
-        <!-- 모드 전환 탭: 지문 검색 vs 문장 검색 -->
+        <!-- 모드 전환 탭: 지문 검색 vs 문장 검색 vs 유사 지문 검색 -->
         <div class="search-mode-tabs">
           <button type="button" class="search-mode-btn active" id="tabModePassage" data-mode="passage">
             지문 검색
@@ -74,60 +81,68 @@
           <button type="button" class="search-mode-btn" id="tabModeSentence" data-mode="sentence">
             문장 검색
           </button>
+          <button type="button" class="search-mode-btn" id="tabModeSimilar" data-mode="similar">
+            ✨ 유사 지문 검색
+          </button>
         </div>
 
         <!-- 구글 스타일 대형 검색창 -->
         <div class="google-search-box">
           <!-- 영역 선택 토글 버튼 (독해 / 듣기) -->
           <div class="area-toggle-group" id="homeAreaToggle" title="영역 선택 (독해 / 듣기)">
-            <button type="button" class="area-toggle-btn active" id="btnHomeAreaReading" data-area="reading" title="독해 영역 (기본 선택)">
+            <button type="button" class="area-toggle-btn active" id="btnHomeAreaReading" data-area="reading"
+              title="독해 영역 (기본 선택)">
               <span class="area-icon">📖</span> 독해
             </button>
-            <button type="button" class="area-toggle-btn" id="btnHomeAreaListening" data-area="listening" title="듣기 영역 (1~17번)">
+            <button type="button" class="area-toggle-btn" id="btnHomeAreaListening" data-area="listening"
+              title="듣기 영역 (1~17번)">
               <span class="area-icon">🎧</span> 듣기
             </button>
           </div>
           <span class="search-icon">🔍</span>
-          <input 
-            type="text" 
-            class="google-search-input" 
-            id="mainSearchInput" 
-            placeholder="단어, &quot;연속된 구문·숙어&quot;, 출처([고3-2026년...]) 또는 #태그(#빈칸)를 입력하세요..." 
-            autocomplete="off"
-            autofocus
-          >
-          <button type="button" class="btn-clear-search-input" id="btnClearMainSearch" style="display: none;" title="검색어 지우기">&times;</button>
-          <button type="button" class="btn-toggle-wholeword btn-home-search-wholeword" id="btnHomeToggleWholeWord" aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
+          <input type="text" class="google-search-input" id="mainSearchInput"
+            placeholder="단어, &quot;연속된 구문·숙어&quot;, 출처([고3-2026년...]) 또는 #태그(#빈칸)를 입력하세요..." autocomplete="off"
+            autofocus>
+          <button type="button" class="btn-clear-search-input" id="btnClearMainSearch" style="display: none;"
+            title="검색어 지우기">&times;</button>
+          <button type="button" class="btn-toggle-wholeword btn-home-search-wholeword" id="btnHomeToggleWholeWord"
+            aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
             <span class="toggle-dot"></span>
             <span class="toggle-text">단어 단위</span>
           </button>
           <!-- 홈 검색 도움말 버튼 및 팝오버 래퍼 -->
           <div class="search-help-wrapper" id="homeSearchHelpWrapper">
-            <button type="button" class="btn-search-help" id="btnHomeSearchHelp" aria-haspopup="true" aria-expanded="false" title="검색 도움말 (일반/따옴표 구문/태그/출처)">
+            <button type="button" class="btn-search-help" id="btnHomeSearchHelp" aria-haspopup="true"
+              aria-expanded="false" title="검색 도움말 (일반/따옴표 구문/태그/출처)">
               <span class="help-icon">💡</span>
               <span class="help-text">도움말</span>
             </button>
             <div class="search-help-popover" id="homeSearchHelpPopover" style="display: none;">
               <div class="search-help-header">
                 <span class="search-help-title">💡 검색 가이드</span>
-                <button type="button" class="btn-close-search-help" id="btnCloseHomeSearchHelp" title="닫기">&times;</button>
+                <button type="button" class="btn-close-search-help" id="btnCloseHomeSearchHelp"
+                  title="닫기">&times;</button>
               </div>
               <ul class="search-help-list">
                 <li>
                   <div class="help-item-title">🔹 일반 단어 검색</div>
-                  <div class="help-item-desc"><code>climate change</code> : 입력한 단어들이 <strong>모두 포함된</strong> 지문·문장 검색 (순서 무관 AND)</div>
+                  <div class="help-item-desc"><code>climate change</code> : 입력한 단어들이 <strong>모두 포함된</strong> 지문·문장 검색
+                    (순서 무관 AND)</div>
                 </li>
                 <li>
                   <div class="help-item-title">🎯 큰따옴표 정확한 구문 검색 (Exact Phrase)</div>
-                  <div class="help-item-desc"><code>&quot;take care of&quot;</code> : 단어들이 <strong>순서대로 연속해서 붙어 있는</strong> 숙어·연어만 정밀 검색</div>
+                  <div class="help-item-desc"><code>&quot;take care of&quot;</code> : 단어들이 <strong>순서대로 연속해서 붙어
+                      있는</strong> 숙어·연어만 정밀 검색</div>
                 </li>
                 <li>
                   <div class="help-item-title">🔤 온전한 단어 단위 토글</div>
-                  <div class="help-item-desc"><code>단어 단위</code> 활성화 시 <code>it</code> 검색 시 <code>situation</code> 등의 단어 속 철자 매칭 제외</div>
+                  <div class="help-item-desc"><code>단어 단위</code> 활성화 시 <code>it</code> 검색 시 <code>situation</code> 등의 단어
+                    속 철자 매칭 제외</div>
                 </li>
                 <li>
                   <div class="help-item-title">🏷️ #태그 검색</div>
-                  <div class="help-item-desc"><code>#빈칸</code>, <code>#어법</code>, <code>#순서</code> : 해당 문제 유형의 기출 문항만 즉시 필터링</div>
+                  <div class="help-item-desc"><code>#빈칸</code>, <code>#어법</code>, <code>#순서</code> : 해당 문제 유형의 기출 문항만 즉시
+                    필터링</div>
                 </li>
                 <li>
                   <div class="help-item-title">📌 출처 식별자 검색</div>
@@ -137,6 +152,148 @@
             </div>
           </div>
           <button type="button" class="search-submit-btn" id="btnSearch">검색</button>
+        </div>
+
+        <!-- ✨ 유사 지문 검색 전용 다중 기준 단락 입력 패널 -->
+        <div class="similar-search-box" id="homeSimilarSearchBox" style="display: none;">
+          <div class="similar-box-header">
+            <div class="area-toggle-group" id="similarAreaToggle" title="영역 선택 (독해 / 듣기)">
+              <button type="button" class="area-toggle-btn active" data-area="reading" title="독해 영역 (기본 선택)">
+                <span class="area-icon">📖</span> 독해
+              </button>
+              <button type="button" class="area-toggle-btn" data-area="listening" title="듣기 영역 (1~17번)">
+                <span class="area-icon">🎧</span> 듣기
+              </button>
+            </div>
+            <span class="similar-text-counter" id="similarTextCounter">0자 · 0단어</span>
+            <div class="similar-top-utils">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnPasteSimilarText" title="클립보드에서 단락 붙여넣기">📋
+                붙여넣기</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnClearSimilarText" title="입력 텍스트 및 칩 초기화">✕
+                비우기</button>
+            </div>
+          </div>
+
+          <textarea id="similarTextInput" class="similar-textarea" rows="5"
+            placeholder="유사 기출을 찾고 싶은 영어 단락(EBS 연계 지문, 내신 변형 지문, 원서/기사 등)을 통째로 붙여 넣으세요.&#10;고유명사, 핵심 단어, 표현 조합, 연속 3·4단어 구문을 자동으로 추출해 다중 기준으로 유사 기출을 찾아줍니다."></textarea>
+
+          <!-- 8대 검색 기준 프리셋 바 -->
+          <div class="similar-preset-bar" id="similarPresetBar" role="group" aria-label="유사 지문 검색 기준 프리셋">
+            <button type="button" class="similar-preset-btn active" data-preset="balanced"
+              title="핵심어(40%) + 표현(30%) + 고유명사(20%) + 연속구문(10%)">⚖️ 종합 균형</button>
+            <button type="button" class="similar-preset-btn" data-preset="near_duplicate"
+              title="내신/문제집 변형 지문의 원 기출 추적">🔍 원문·변형 찾기</button>
+            <button type="button" class="similar-preset-btn" data-preset="proper_noun"
+              title="인물·지명·이론·연도 등 고유명사 중심 탐색">🏷️ 고유명사 중심</button>
+            <button type="button" class="similar-preset-btn" data-preset="phrase_combo" title="핵심 연어·구문 조합 동시 출현 중심">🧩
+              표현·단어 조합</button>
+            <button type="button" class="similar-preset-btn" data-preset="topic_broad" title="주제 어휘 확장 및 패러프레이즈 탐색">💡
+              주제·어휘 확장</button>
+            <button type="button" class="similar-preset-btn" data-preset="ngram_3" title="문장 내 연속된 3단어 구문 일치 기준">🔤 연속
+              3단어</button>
+            <button type="button" class="similar-preset-btn" data-preset="ngram_4"
+              title="문장 내 연속된 4단어 구문 일치 기준 (고정밀)">🔎 연속 4단어</button>
+            <button type="button" class="similar-preset-btn" data-preset="ngram_3_4" title="연속 3단어와 4단어 구문 혼합 기준">📐
+              3+4단어 혼합</button>
+          </div>
+
+          <!-- 연속 3·4단어 전용 옵션 바 -->
+          <div class="similar-ngram-options-bar" id="similarNgramOptionsBar" style="display: none;">
+            <label class="similar-opt-item">
+              <span>최소 일치 구문 수:</span>
+              <select id="similarMinNgramHits" class="filter-select compact-select">
+                <option value="1" selected>1개 이상</option>
+                <option value="2">2개 이상</option>
+                <option value="3">3개 이상</option>
+                <option value="5">5개 이상</option>
+              </select>
+            </label>
+            <label class="similar-opt-item">
+              <span>단어 간격 허용:</span>
+              <select id="similarAllowGap" class="filter-select compact-select" title="변형 문장에서 중간에 다른 단어가 끼어든 경우 포착">
+                <option value="0" selected>완전 연속 (0단어)</option>
+                <option value="1">1단어 삽입 허용</option>
+                <option value="2">2단어 삽입 허용</option>
+              </select>
+            </label>
+            <label class="similar-opt-check">
+              <input type="checkbox" id="chkFilterCommonNgrams" checked>
+              <span>상투 구문 자동 제외</span>
+            </label>
+            <span class="similar-filtered-hint" id="similarFilteredCommonHint"></span>
+          </div>
+
+          <!-- 세부 가중치 조절 슬라이더 패널 (접힘 기본) -->
+          <div class="similar-weights-panel" id="similarWeightsPanel" style="display: none;">
+            <div class="weight-slider-item">
+              <label for="weightSliderKeyword">🟢 핵심 단어 <strong id="weightValKeyword">40%</strong></label>
+              <input type="range" id="weightSliderKeyword" min="0" max="100" value="40">
+            </div>
+            <div class="weight-slider-item">
+              <label for="weightSliderPhrase">🔵 표현 조합 <strong id="weightValPhrase">30%</strong></label>
+              <input type="range" id="weightSliderPhrase" min="0" max="100" value="30">
+            </div>
+            <div class="weight-slider-item">
+              <label for="weightSliderProperNoun">🟣 고유명사 <strong id="weightValProperNoun">20%</strong></label>
+              <input type="range" id="weightSliderProperNoun" min="0" max="100" value="20">
+            </div>
+            <div class="weight-slider-item">
+              <label for="weightSliderShingle">🟠 연속 3·4단어 <strong id="weightValShingle">10%</strong></label>
+              <input type="range" id="weightSliderShingle" min="0" max="100" value="10">
+            </div>
+          </div>
+
+          <!-- 추출된 검색어 칩 편집 패널 -->
+          <div class="similar-chips-panel" id="similarFeatureChipsPanel" style="display: none;">
+            <div class="similar-chips-guide">
+              <span>💡 추출된 검색어 클릭: <strong>★ 필수 포함</strong> 전환 · <code>×</code> 클릭: 제외</span>
+              <div class="similar-custom-add-wrap">
+                <input type="text" id="inputSimilarCustomTerm" class="similar-custom-input"
+                  placeholder="+ 직접 검색어·구문 추가 (Enter)">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnAddSimilarCustomTerm">추가</button>
+              </div>
+            </div>
+            <div class="similar-chip-row" id="rowChipsProperNouns">
+              <span class="chip-row-label entity-label">🟣 고유명사</span>
+              <div class="chip-row-list" id="similarChipsProperNouns"></div>
+            </div>
+            <div class="similar-chip-row" id="rowChipsPhrases">
+              <span class="chip-row-label phrase-label">🔵 표현·조합</span>
+              <div class="chip-row-list" id="similarChipsPhrases"></div>
+            </div>
+            <div class="similar-chip-row" id="rowChipsKeywords">
+              <span class="chip-row-label keyword-label">🟢 핵심 단어</span>
+              <div class="chip-row-list" id="similarChipsKeywords"></div>
+            </div>
+            <div class="similar-chip-row" id="rowChipsNgrams">
+              <span class="chip-row-label ngram-label">🟠 연속 3·4단어</span>
+              <div class="chip-row-list" id="similarChipsNgrams"></div>
+            </div>
+          </div>
+
+          <!-- 하단 액션 행 -->
+          <div class="similar-box-footer">
+            <div class="similar-footer-left">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnToggleSimilarWeights">🎛️ 가중치 조절</button>
+              <label class="similar-opt-check" title="현재 설정된 AI 모델을 통해 동의어·주제어까지 확장 검색합니다">
+                <input type="checkbox" id="chkSimilarAiExpand">
+                <span>🤖 AI 동의어 확장</span>
+              </label>
+              <label class="similar-opt-item">
+                <span>표시 수:</span>
+                <select id="similarTopK" class="filter-select compact-select">
+                  <option value="20">상위 20건</option>
+                  <option value="30" selected>상위 30건</option>
+                  <option value="50">상위 50건</option>
+                  <option value="100">상위 100건</option>
+                </select>
+              </label>
+            </div>
+            <div class="similar-footer-right">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnExtractSimilarFeatures">🔎 검색어 추출</button>
+              <button type="button" class="search-submit-btn" id="btnRunSimilarSearch">✨ 유사 지문 검색</button>
+            </div>
+          </div>
         </div>
 
         <!-- 필터 옵션 바 -->
@@ -150,7 +307,8 @@
 
           <!-- 연도 5대 그룹 및 개별 연도 복수 선택 드롭다운 (2006~2026 전체 연도) -->
           <div class="year-multiselect-dropdown" id="yearMultiSelectHome">
-            <button type="button" class="filter-select year-multiselect-trigger" id="btnYearMultiSelectHome" aria-haspopup="true" aria-expanded="false" title="연도 선택 (복수 선택 가능)">
+            <button type="button" class="filter-select year-multiselect-trigger" id="btnYearMultiSelectHome"
+              aria-haspopup="true" aria-expanded="false" title="연도 선택 (복수 선택 가능)">
               <span class="year-trigger-label" id="labelYearHome">전체 연도</span>
               <span class="dropdown-caret">▾</span>
             </button>
@@ -222,11 +380,13 @@
           </button>
 
           <!-- 어법 범주 필터 (문장 검색 모드 전용, 지문 검색 시 숨김: 계층형 브레드크럼 네비게이션 방식) -->
-          <div class="home-grammar-filters-group grammar-breadcrumb-filter-bar" id="homeGrammarFiltersGroup" style="display: none;">
+          <div class="home-grammar-filters-group grammar-breadcrumb-filter-bar" id="homeGrammarFiltersGroup"
+            style="display: none;">
             <span class="breadcrumb-icon" title="어법 계층 필터">📍</span>
             <div class="breadcrumb-trail grammar-breadcrumb-trail">
               <div class="breadcrumb-select-wrapper">
-                <select class="filter-select grammar-filter-select breadcrumb-select" id="filterGrammarPos" title="어법 대분류 선택">
+                <select class="filter-select grammar-filter-select breadcrumb-select" id="filterGrammarPos"
+                  title="어법 대분류 선택">
                   <option value="">전체 어법 대분류</option>
                   <option value="명사">1. 명사</option>
                   <option value="대명사">2. 대명사</option>
@@ -240,19 +400,22 @@
               </div>
               <span class="breadcrumb-separator">&gt;</span>
               <div class="breadcrumb-select-wrapper">
-                <select class="filter-select grammar-filter-select breadcrumb-select" id="filterGrammarCategory" title="세부 어법 범주 선택">
+                <select class="filter-select grammar-filter-select breadcrumb-select" id="filterGrammarCategory"
+                  title="세부 어법 범주 선택">
                   <option value="">세부 어법 전체</option>
                 </select>
               </div>
             </div>
 
             <!-- 어법 설정 초기화 버튼 (무설정 상태로 신속 복귀) -->
-            <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeGrammarFilter" style="display: none;" title="어법 필터 설정 초기화">
+            <button type="button" class="btn-breadcrumb-reset" id="btnResetHomeGrammarFilter" style="display: none;"
+              title="어법 필터 설정 초기화">
               ↺ 설정 초기화
             </button>
 
             <!-- 중요 문장(⭐) 필터 토글 버튼 -->
-            <button type="button" class="btn-toggle-starred" id="btnToggleStarred" aria-pressed="false" title="별표(⭐) 표시된 중요 문장만 모아보기">
+            <button type="button" class="btn-toggle-starred" id="btnToggleStarred" aria-pressed="false"
+              title="별표(⭐) 표시된 중요 문장만 모아보기">
               <span class="star-icon">☆</span>
               <span class="star-text">중요 문장</span>
             </button>
@@ -266,7 +429,7 @@
          검색창 화면과 완전 분리된 독립된 결과 인터페이스
          ==================================================================== -->
     <section class="results-view" id="resultsView" style="display: none;">
-      
+
       <!-- 상단 결과 내비게이션 & 빠른 검색/필터 바 -->
       <!-- 상단 결과 내비게이션 & 빠른 검색/필터 바 (2행 분리 구조) -->
       <div class="results-nav-bar">
@@ -275,43 +438,48 @@
           <div class="results-search-bar">
             <!-- 영역 선택 토글 버튼 (독해 / 듣기) -->
             <div class="area-toggle-group compact" id="resultsAreaToggle" title="영역 선택 (독해 / 듣기)">
-              <button type="button" class="area-toggle-btn active" id="btnResultsAreaReading" data-area="reading" title="독해 영역 (기본 선택)">
+              <button type="button" class="area-toggle-btn active" id="btnResultsAreaReading" data-area="reading"
+                title="독해 영역 (기본 선택)">
                 <span class="area-icon">📖</span> 독해
               </button>
-              <button type="button" class="area-toggle-btn" id="btnResultsAreaListening" data-area="listening" title="듣기 영역 (1~17번)">
+              <button type="button" class="area-toggle-btn" id="btnResultsAreaListening" data-area="listening"
+                title="듣기 영역 (1~17번)">
                 <span class="area-icon">🎧</span> 듣기
               </button>
             </div>
             <div class="results-mode-tabs">
-              <button type="button" class="mini-mode-btn active" id="resultsTabModePassage" data-mode="passage">지문</button>
+              <button type="button" class="mini-mode-btn active" id="resultsTabModePassage"
+                data-mode="passage">지문</button>
               <button type="button" class="mini-mode-btn" id="resultsTabModeSentence" data-mode="sentence">문장</button>
+              <button type="button" class="mini-mode-btn" id="resultsTabModeSimilar" data-mode="similar">✨ 유사</button>
             </div>
-            <input 
-              type="text" 
-              class="results-search-input" 
-              id="resultsSearchInput" 
-              placeholder="검색어, &quot;정확한 구문&quot; 또는 #태그를 입력하세요..." 
-              autocomplete="off"
-            >
-            <button type="button" class="btn-clear-search-input" id="btnClearResultsSearch" style="display: none;" title="검색어 지우기">&times;</button>
+            <input type="text" class="results-search-input" id="resultsSearchInput"
+              placeholder="검색어, &quot;정확한 구문&quot; 또는 #태그를 입력하세요..." autocomplete="off">
+            <button type="button" class="btn-clear-search-input" id="btnClearResultsSearch" style="display: none;"
+              title="검색어 지우기">&times;</button>
             <button type="button" class="btn btn-primary btn-sm" id="btnResultsSearch">검색</button>
-            <button type="button" class="btn-toggle-within" id="btnToggleSearchWithin" aria-pressed="false" title="클릭하여 결과 내 재검색 모드를 켜거나 끕니다">
+            <button type="button" class="btn-toggle-within" id="btnToggleSearchWithin" aria-pressed="false"
+              title="클릭하여 결과 내 재검색 모드를 켜거나 끕니다">
               <span class="toggle-dot"></span>
               <span class="toggle-text">결과 내 검색</span>
             </button>
-            <button type="button" class="btn-toggle-wholeword" id="btnToggleWholeWord" aria-pressed="false" title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
+            <button type="button" class="btn-toggle-wholeword" id="btnToggleWholeWord" aria-pressed="false"
+              title="온전한 단어 단위로만 일치하는 검색 (예: it 검색 시 situation 제외)">
               <span class="toggle-dot"></span>
               <span class="toggle-text">단어 단위</span>
             </button>
             <!-- 결과창 검색 도움말 버튼 및 팝오버 래퍼 -->
             <div class="search-help-wrapper compact-help-wrapper" id="resultsSearchHelpWrapper">
-              <button type="button" class="btn-search-help compact-help-btn" id="btnResultsSearchHelp" aria-haspopup="true" aria-expanded="false" title="검색 가이드 보기 (일반/따옴표/태그)">
+              <button type="button" class="btn-search-help compact-help-btn" id="btnResultsSearchHelp"
+                aria-haspopup="true" aria-expanded="false" title="검색 가이드 보기 (일반/따옴표/태그)">
                 <span class="help-icon">💡</span>
               </button>
-              <div class="search-help-popover results-help-popover" id="resultsSearchHelpPopover" style="display: none;">
+              <div class="search-help-popover results-help-popover" id="resultsSearchHelpPopover"
+                style="display: none;">
                 <div class="search-help-header">
                   <span class="search-help-title">💡 검색 가이드</span>
-                  <button type="button" class="btn-close-search-help" id="btnCloseResultsSearchHelp" title="닫기">&times;</button>
+                  <button type="button" class="btn-close-search-help" id="btnCloseResultsSearchHelp"
+                    title="닫기">&times;</button>
                 </div>
                 <ul class="search-help-list">
                   <li>
@@ -320,7 +488,8 @@
                   </li>
                   <li>
                     <div class="help-item-title">🎯 따옴표 구문 검색</div>
-                    <div class="help-item-desc"><code>&quot;take care of&quot;</code> : 단어가 연속해서 붙어 있는 숙어·관용구 정밀 검색</div>
+                    <div class="help-item-desc"><code>&quot;take care of&quot;</code> : 단어가 연속해서 붙어 있는 숙어·관용구 정밀 검색
+                    </div>
                   </li>
                   <li>
                     <div class="help-item-title">🔤 단어 단위</div>
@@ -348,7 +517,8 @@
 
             <!-- 연도 5대 그룹 및 개별 연도 복수 선택 드롭다운 (2006~2026 전체 연도) -->
             <div class="year-multiselect-dropdown compact" id="yearMultiSelectResults">
-              <button type="button" class="filter-select compact-select year-multiselect-trigger" id="btnYearMultiSelectResults" aria-haspopup="true" aria-expanded="false" title="연도 선택 (복수 선택 가능)">
+              <button type="button" class="filter-select compact-select year-multiselect-trigger"
+                id="btnYearMultiSelectResults" aria-haspopup="true" aria-expanded="false" title="연도 선택 (복수 선택 가능)">
                 <span class="year-trigger-label" id="labelYearResults">전체 연도</span>
                 <span class="dropdown-caret">▾</span>
               </button>
@@ -413,16 +583,20 @@
             </select>
 
             <!-- 결과창 검색 조건 초기화 버튼 (가장 긴 형태의 배열 상태 유지를 위해 자리 예약) -->
-            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters" title="모든 검색 조건(필터 및 검색어) 초기화">
+            <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsFilters"
+              title="모든 검색 조건(필터 및 검색어) 초기화">
               ↺ 검색 조건 초기화
             </button>
 
             <!-- 문장 검색 모드 전용 어법 필터 그룹 (지문 검색 시 display: none 숨김: 계층형 브레드크럼 방식) -->
-            <div class="results-grammar-filters-group grammar-breadcrumb-filter-bar compact-breadcrumb-bar" id="resultsGrammarFiltersGroup" style="display: none;">
+            <div class="results-grammar-filters-group grammar-breadcrumb-filter-bar compact-breadcrumb-bar"
+              id="resultsGrammarFiltersGroup" style="display: none;">
               <span class="breadcrumb-icon" title="어법 계층 필터">📍</span>
               <div class="breadcrumb-trail grammar-breadcrumb-trail">
                 <div class="breadcrumb-select-wrapper">
-                  <select class="filter-select compact-select grammar-filter-select breadcrumb-select compact-breadcrumb-select" id="resultsFilterGrammarPos" title="어법 대분류">
+                  <select
+                    class="filter-select compact-select grammar-filter-select breadcrumb-select compact-breadcrumb-select"
+                    id="resultsFilterGrammarPos" title="어법 대분류">
                     <option value="">어법 대분류</option>
                     <option value="명사">1. 명사</option>
                     <option value="대명사">2. 대명사</option>
@@ -436,18 +610,22 @@
                 </div>
                 <span class="breadcrumb-separator">&gt;</span>
                 <div class="breadcrumb-select-wrapper">
-                  <select class="filter-select compact-select grammar-filter-select breadcrumb-select compact-breadcrumb-select" id="resultsFilterGrammarCategory" title="세부 어법 범주">
+                  <select
+                    class="filter-select compact-select grammar-filter-select breadcrumb-select compact-breadcrumb-select"
+                    id="resultsFilterGrammarCategory" title="세부 어법 범주">
                     <option value="">세부 어법 전체</option>
                   </select>
                 </div>
               </div>
 
               <!-- 어법 설정 초기화 버튼 (결과창) -->
-              <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsGrammarFilter" style="display: none;" title="어법 필터 설정 초기화">
+              <button type="button" class="btn-breadcrumb-reset compact-reset" id="btnResetResultsGrammarFilter"
+                style="display: none;" title="어법 필터 설정 초기화">
                 ↺ 설정 초기화
               </button>
 
-              <button type="button" class="btn-toggle-starred compact-star-btn" id="btnResultsToggleStarred" aria-pressed="false" title="별표(⭐) 중요 문장만 모아보기">
+              <button type="button" class="btn-toggle-starred compact-star-btn" id="btnResultsToggleStarred"
+                aria-pressed="false" title="별표(⭐) 중요 문장만 모아보기">
                 <span class="star-icon">☆</span> 중요
               </button>
             </div>
@@ -495,7 +673,11 @@
 
       <!-- [지문 검색 결과 화면] : 상단 문항별 탭 + 2x2 그리드 레이아웃 -->
       <div class="passage-view-container" id="passageViewContainer" style="display: none;">
-        
+        <div class="similar-back-banner" id="similarBackBanner" style="display: none;">
+          <span>✨ 유사 지문 검색 결과에서 선택한 문항을 보고 있습니다.</span>
+          <button type="button" class="btn btn-secondary btn-sm" id="btnBackToSimilarResults">← 유사 지문 목록으로 돌아가기</button>
+        </div>
+
         <!-- 상단 초컴팩트 트리 계층형 문항 선택 네비게이터 -->
         <div class="passage-tab-bar-container" id="passageTabBarContainer">
           <!-- 상위 계층 브레드크럼 (인라인 경로 표시 + 시험 변경 버튼) -->
@@ -516,10 +698,12 @@
               </div>
 
               <div class="breadcrumb-right" id="breadcrumbRight">
-                <button type="button" class="btn-tree-reset-exam" id="btnTreeResetExam" style="display: none;" title="검색 조건 및 시험 선택 초기화">
+                <button type="button" class="btn-tree-reset-exam" id="btnTreeResetExam" style="display: none;"
+                  title="검색 조건 및 시험 선택 초기화">
                   ↺ 검색 조건 초기화
                 </button>
-                <button type="button" class="btn btn-outline-danger btn-sm btn-report-passage" id="btnReportPassage" title="현재 열람 중인 문항의 오류를 신고합니다">
+                <button type="button" class="btn btn-outline-danger btn-sm btn-report-passage" id="btnReportPassage"
+                  title="현재 열람 중인 문항의 오류를 신고합니다">
                   🚨 오류 신고
                 </button>
               </div>
@@ -539,7 +723,7 @@
 
         <!-- 메인 2x2 4분할 상세 패널 -->
         <main class="grid-2x2" id="grid2x2">
-          
+
           <!-- [좌측 상단]: PDF 문항 영역 자동 크롭 고화질 인쇄 이미지 (듣기 시 문제+대본 상하 수직 배열) -->
           <section class="panel-card panel-top-left">
             <div class="panel-header">
@@ -550,13 +734,16 @@
                 </label>
               </div>
               <div class="panel-header-actions" id="panelActionsTopLeft">
-                <button type="button" class="btn btn-secondary btn-sm" id="btnRecapturePdf" title="원본 PDF 파일에서 이 문항 영역을 다시 캡처하고 형광펜을 재생성합니다">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnRecapturePdf"
+                  title="원본 PDF 파일에서 이 문항 영역을 다시 캡처하고 형광펜을 재생성합니다">
                   🔄 다시 캡처
                 </button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnUploadPassageCrop" title="이 문항의 올바른 캡처 이미지를 직접 업로드하여 최신 자료로 교체합니다">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnUploadPassageCrop"
+                  title="이 문항의 올바른 캡처 이미지를 직접 업로드하여 최신 자료로 교체합니다">
                   📤 이미지 수동 업로드
                 </button>
-                <input type="file" id="inputUploadPassageCrop" accept="image/png, image/jpeg, image/webp" style="display: none;">
+                <input type="file" id="inputUploadPassageCrop" accept="image/png, image/jpeg, image/webp"
+                  style="display: none;">
                 <span class="text-muted text-hint" id="pdfImageStatus">클릭 시 새 창 원본 확대</span>
               </div>
             </div>
@@ -576,7 +763,8 @@
                 <span class="panel-title" id="panelTitleTopRight">📝 TXT 지문 본문 텍스트</span>
                 <span class="badge-source" id="badgeTopRightSource">순수 영문</span>
                 <!-- '영문 대본 & 음성' 바로 옆에 위치하는 대본 복사 버튼 (듣기 모드일 때만 노출) -->
-                <button type="button" class="tts-tool-btn tts-tool-btn--copy" id="btnCopyScript" style="display: none;" title="순수 영문 대본 텍스트를 클립보드에 복사" aria-label="대본 복사">
+                <button type="button" class="tts-tool-btn tts-tool-btn--copy" id="btnCopyScript" style="display: none;"
+                  title="순수 영문 대본 텍스트를 클립보드에 복사" aria-label="대본 복사">
                   <span class="tts-btn-icon" aria-hidden="true">📋</span>
                   <span class="tts-btn-label">대본 복사</span>
                 </button>
@@ -585,12 +773,15 @@
                 <button class="btn btn-primary btn-sm" id="btnCopyPassage">📋 지문 전체 복사</button>
                 <div class="listening-action-group tts-toolbar" id="listeningTopRightActions" style="display: none;">
                   <!-- 1. 수능 성우(XTTS) vs Edge-TTS 인라인 1행 세그먼트 스위처 -->
-                  <div class="tts-engine-switcher" id="ttsEngineSwitcher" role="radiogroup" aria-label="수능 성우 TTS 엔진 선택">
-                    <button type="button" class="tts-engine-btn active" id="btnTtsEngineXtts" data-engine="xtts" title="수능 평가원 성우 복제 (XTTS-v2 실감 음성)">
+                  <div class="tts-engine-switcher" id="ttsEngineSwitcher" role="radiogroup"
+                    aria-label="수능 성우 TTS 엔진 선택">
+                    <button type="button" class="tts-engine-btn active" id="btnTtsEngineXtts" data-engine="xtts"
+                      title="수능 평가원 성우 복제 (XTTS-v2 실감 음성)">
                       <span class="engine-dot dot-xtts"></span>
                       <span class="engine-label">수능 성우(XTTS)</span>
                     </button>
-                    <button type="button" class="tts-engine-btn" id="btnTtsEngineEdge" data-engine="edge-tts" title="Microsoft Edge-TTS (빠른 생성, 무료)">
+                    <button type="button" class="tts-engine-btn" id="btnTtsEngineEdge" data-engine="edge-tts"
+                      title="Microsoft Edge-TTS (빠른 생성, 무료)">
                       <span class="engine-dot dot-edge"></span>
                       <span class="engine-label">Edge-TTS</span>
                     </button>
@@ -598,11 +789,13 @@
 
                   <!-- 2. 음성 생성 군: [음성 생성] [전체 생성] -->
                   <div class="tts-seg tts-seg--generate" role="group" aria-label="음성 생성">
-                    <button type="button" class="tts-tool-btn tts-tool-btn--accent" id="btnGenerateListeningAudio" title="현재 문항의 대본을 남/여 듀얼 보이스로 음성 합성">
+                    <button type="button" class="tts-tool-btn tts-tool-btn--accent" id="btnGenerateListeningAudio"
+                      title="현재 문항의 대본을 남/여 듀얼 보이스로 음성 합성">
                       <span class="tts-btn-icon" aria-hidden="true">🎙️</span>
                       <span class="tts-btn-label">음성 생성</span>
                     </button>
-                    <button type="button" class="tts-tool-btn tts-tool-btn--batch" id="btnGenerateAllListeningAudio" title="이 시험지의 전체 듣기 문항 음성을 일괄 생성">
+                    <button type="button" class="tts-tool-btn tts-tool-btn--batch" id="btnGenerateAllListeningAudio"
+                      title="이 시험지의 전체 듣기 문항 음성을 일괄 생성">
                       <span class="tts-btn-icon" aria-hidden="true">⚡</span>
                       <span class="tts-btn-label">전체 생성</span>
                     </button>
@@ -610,11 +803,14 @@
 
                   <!-- 3. 오디오 다운로드 군: [문항 MP3] [전체 ZIP (1~N)] -->
                   <div class="tts-seg tts-seg--download" role="group" aria-label="오디오 다운로드">
-                    <button type="button" class="tts-tool-btn tts-tool-btn--download tts-tool-btn--mp3" id="btnDownloadListeningMp3" title="현재 문항의 MP3 오디오 단일 다운로드" aria-label="현재 문항 MP3 다운로드">
+                    <button type="button" class="tts-tool-btn tts-tool-btn--download tts-tool-btn--mp3"
+                      id="btnDownloadListeningMp3" title="현재 문항의 MP3 오디오 단일 다운로드" aria-label="현재 문항 MP3 다운로드">
                       <span class="tts-btn-icon" aria-hidden="true">⬇️</span>
                       <span class="tts-btn-label">문항 MP3</span>
                     </button>
-                    <button type="button" class="tts-tool-btn tts-tool-btn--download tts-tool-btn--zip" id="btnDownloadListeningZip" title="이 시험지 세트 전체 듣기 MP3 압축 파일(ZIP) 일괄 다운로드" aria-label="세트 전체 듣기 MP3 ZIP 다운로드">
+                    <button type="button" class="tts-tool-btn tts-tool-btn--download tts-tool-btn--zip"
+                      id="btnDownloadListeningZip" title="이 시험지 세트 전체 듣기 MP3 압축 파일(ZIP) 일괄 다운로드"
+                      aria-label="세트 전체 듣기 MP3 ZIP 다운로드">
                       <span class="tts-btn-icon" aria-hidden="true">📦</span>
                       <span class="tts-btn-label">전체 ZIP</span>
                       <span class="tts-badge-count" id="ttsListeningZipRange">1~17</span>
@@ -623,11 +819,13 @@
 
                   <!-- 4. 오디오 수동 업로드 군 -->
                   <div class="tts-seg tts-seg--upload" role="group" aria-label="오디오 수동 업로드">
-                    <button type="button" class="tts-tool-btn tts-tool-btn--upload" id="btnUploadListeningAudio" title="올바른 듣기 오디오 파일(MP3/WAV)을 직접 업로드하여 최신 음성으로 교체합니다" aria-label="음성 수동 업로드">
+                    <button type="button" class="tts-tool-btn tts-tool-btn--upload" id="btnUploadListeningAudio"
+                      title="올바른 듣기 오디오 파일(MP3/WAV)을 직접 업로드하여 최신 음성으로 교체합니다" aria-label="음성 수동 업로드">
                       <span class="tts-btn-icon" aria-hidden="true">📤</span>
                       <span class="tts-btn-label">음성 업로드</span>
                     </button>
-                    <input type="file" id="inputUploadListeningAudio" accept="audio/mpeg, audio/mp3, audio/wav, audio/m4a" style="display: none;">
+                    <input type="file" id="inputUploadListeningAudio"
+                      accept="audio/mpeg, audio/mp3, audio/wav, audio/m4a" style="display: none;">
                   </div>
                 </div>
               </div>
@@ -646,15 +844,20 @@
               </div>
               <div class="panel-bottom-left-actions" id="panelActionsBottomLeft">
                 <button class="btn btn-secondary btn-sm" id="btnCopyExplanation">📋 해설 복사</button>
-                <button type="button" class="btn btn-outline-primary btn-sm" id="btnEditExplanation" title="이 문항의 해설 텍스트 직접 수정">✏️ 해설 수정</button>
-                <div class="listening-action-group listening-bottom-left-actions" id="listeningBottomLeftActions" style="display: none;">
-                  <button type="button" class="btn btn-outline-success btn-sm btn-fels-action" id="btnToggleFelsAnswer" title="학생용 빈칸 [  ] ↔ 교사용 정답 [단어] 화면 보기 전환">
+                <button type="button" class="btn btn-outline-primary btn-sm" id="btnEditExplanation"
+                  title="이 문항의 해설 텍스트 직접 수정">✏️ 해설 수정</button>
+                <div class="listening-action-group listening-bottom-left-actions" id="listeningBottomLeftActions"
+                  style="display: none;">
+                  <button type="button" class="btn btn-outline-success btn-sm btn-fels-action" id="btnToggleFelsAnswer"
+                    title="학생용 빈칸 [  ] ↔ 교사용 정답 [단어] 화면 보기 전환">
                     👁️ 정답 보기
                   </button>
-                  <button type="button" class="btn btn-primary btn-sm btn-fels-action" id="btnCopyFelsBlank" title="[ ] 안의 단어를 빈칸으로 만든 학생용 학습지 텍스트 복사 (최장 단어 글자수 공백 일괄 적용)">
+                  <button type="button" class="btn btn-primary btn-sm btn-fels-action" id="btnCopyFelsBlank"
+                    title="[ ] 안의 단어를 빈칸으로 만든 학생용 학습지 텍스트 복사 (최장 단어 글자수 공백 일괄 적용)">
                     📝 FELS 빈칸 복사
                   </button>
-                  <button type="button" class="btn btn-outline-primary btn-sm btn-fels-action" id="btnCopyFelsAnswer" title="[단어]가 표시된 교사용 정답 텍스트 복사">
+                  <button type="button" class="btn btn-outline-primary btn-sm btn-fels-action" id="btnCopyFelsAnswer"
+                    title="[단어]가 표시된 교사용 정답 텍스트 복사">
                     🔑 FELS 정답 복사
                   </button>
                 </div>
@@ -692,10 +895,12 @@
                   <div class="meta-answer-container">
                     <div class="meta-answer-main-row">
                       <span class="meta-val meta-val-answer" id="metaAnswer">-</span>
-                      <span class="answer-status-badge" id="metaAnswerStatus" style="display: none;" title="정답 출처 및 검증 상태"></span>
+                      <span class="answer-status-badge" id="metaAnswerStatus" style="display: none;"
+                        title="정답 출처 및 검증 상태"></span>
                     </div>
                     <div class="meta-answer-action-row">
-                      <button type="button" class="btn-answer-edit" id="btnEditAnswer" title="정답 수동 정정" style="display: none;">
+                      <button type="button" class="btn-answer-edit" id="btnEditAnswer" title="정답 수동 정정"
+                        style="display: none;">
                         <span class="btn-edit-icon">✏️</span>
                         <span class="btn-edit-label">정답 정정</span>
                       </button>
@@ -703,7 +908,11 @@
                     <div class="answer-edit-form" id="answerEditForm" style="display: none;">
                       <select id="answerEditQ" class="answer-edit-select" style="display: none;"></select>
                       <select id="answerEditVal" class="answer-edit-select">
-                        <option value="①">①</option><option value="②">②</option><option value="③">③</option><option value="④">④</option><option value="⑤">⑤</option>
+                        <option value="①">①</option>
+                        <option value="②">②</option>
+                        <option value="③">③</option>
+                        <option value="④">④</option>
+                        <option value="⑤">⑤</option>
                       </select>
                       <button type="button" class="btn-answer-save" id="btnSaveAnswer">저장</button>
                       <button type="button" class="btn-answer-cancel" id="btnCancelAnswer">취소</button>
@@ -754,12 +963,8 @@
 
               <!-- 태그 입력창 -->
               <div class="tag-input-wrapper">
-                <input 
-                  type="text" 
-                  class="tag-input" 
-                  id="inputPassageTag" 
-                  placeholder="태그 입력 후 [추가] 또는 Enter (예: 킬러문항, 빈칸추론)"
-                >
+                <input type="text" class="tag-input" id="inputPassageTag"
+                  placeholder="태그 입력 후 [추가] 또는 Enter (예: 킬러문항, 빈칸추론)">
                 <button class="btn btn-primary btn-sm" id="btnAddPassageTag">추가</button>
               </div>
 
@@ -773,18 +978,15 @@
                   </div>
                   <div class="memo-actions-right">
                     <span class="memo-char-count" id="memoCharCount">0자</span>
-                    <button type="button" class="btn btn-outline-primary btn-xs btn-memo-save" id="btnSavePassageMemo" title="즉시 저장 (Ctrl+Enter)">
+                    <button type="button" class="btn btn-outline-primary btn-xs btn-memo-save" id="btnSavePassageMemo"
+                      title="즉시 저장 (Ctrl+Enter)">
                       💾 저장
                     </button>
                   </div>
                 </div>
                 <div class="memo-body">
-                  <textarea 
-                    class="memo-textarea" 
-                    id="inputPassageMemo" 
-                    placeholder="이 지문에 대한 수업 포인트, 변형 문제 출제 아이디어, 주요 어휘/구문 특이사항을 자유롭게 기록하세요..."
-                    rows="3"
-                  ></textarea>
+                  <textarea class="memo-textarea" id="inputPassageMemo"
+                    placeholder="이 지문에 대한 수업 포인트, 변형 문제 출제 아이디어, 주요 어휘/구문 특이사항을 자유롭게 기록하세요..." rows="3"></textarea>
                 </div>
                 <div class="memo-footer">
                   <span class="memo-updated-at" id="memoUpdatedAt">최근 수정: -</span>
@@ -809,13 +1011,16 @@
             </span>
           </div>
           <div class="sentence-header-actions">
-            <button type="button" class="btn btn-primary btn-sm" id="btnBatchAddSentenceHandout" title="현재 검색/표시된 문장들을 유인물 보관함에 일괄 담습니다">
+            <button type="button" class="btn btn-primary btn-sm" id="btnBatchAddSentenceHandout"
+              title="현재 검색/표시된 문장들을 유인물 보관함에 일괄 담습니다">
               📄 문장 유인물 담기
             </button>
-            <button type="button" class="btn btn-warning btn-sm" id="btnBatchAnalyzeStarred" title="별표(⭐) 표시된 중요 문장들을 일괄로 AI 어법 분석합니다">
+            <button type="button" class="btn btn-warning btn-sm" id="btnBatchAnalyzeStarred"
+              title="별표(⭐) 표시된 중요 문장들을 일괄로 AI 어법 분석합니다">
               ⭐ 중요 문장 일괄 어법 분석
             </button>
-            <button type="button" class="btn btn-primary btn-sm btn-batch-all" id="btnBatchAnalyzeAll" title="현재 검색/표시된 모든 문장들을 일괄로 AI 어법 분석합니다">
+            <button type="button" class="btn btn-primary btn-sm btn-batch-all" id="btnBatchAnalyzeAll"
+              title="현재 검색/표시된 모든 문장들을 일괄로 AI 어법 분석합니다">
               🤖 모든 문장 일괄 어법 분석
             </button>
             <button type="button" class="btn btn-secondary btn-sm" id="btnSentenceBackToPassage">
@@ -845,6 +1050,36 @@
         </div>
       </div>
 
+      <!-- [✨ 유사 지문 검색 결과 화면] : 다중 기준 랭킹 카드 리스트 -->
+      <div class="similar-results-container" id="similarResultsContainer" style="display: none;">
+        <div class="similar-results-toolbar">
+          <div class="similar-toolbar-top">
+            <span class="similar-results-summary" id="similarResultsSummary">✨ 유사 지문 검색 결과</span>
+            <div class="similar-toolbar-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnEditSimilarQuery"
+                title="단락 및 추출 검색어 칩을 다시 편집합니다">
+                ✏️ 단락·칩 편집
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnBatchAddSimilarHandout"
+                title="현재 유사 지문 목록을 모두 유인물 보관함에 담습니다">
+                📄 목록 전체 유인물 담기
+              </button>
+            </div>
+          </div>
+          <div class="similar-preset-bar" id="similarResultsPresetBar" role="group" aria-label="결과 화면 검색 기준 즉시 전환">
+            <button type="button" class="similar-preset-btn active" data-preset="balanced">⚖️ 종합 균형</button>
+            <button type="button" class="similar-preset-btn" data-preset="near_duplicate">🔍 원문·변형</button>
+            <button type="button" class="similar-preset-btn" data-preset="proper_noun">🏷️ 고유명사</button>
+            <button type="button" class="similar-preset-btn" data-preset="phrase_combo">🧩 표현 조합</button>
+            <button type="button" class="similar-preset-btn" data-preset="topic_broad">💡 주제 확장</button>
+            <button type="button" class="similar-preset-btn" data-preset="ngram_3">🔤 연속 3단어</button>
+            <button type="button" class="similar-preset-btn" data-preset="ngram_4">🔎 연속 4단어</button>
+            <button type="button" class="similar-preset-btn" data-preset="ngram_3_4">📐 3+4단어</button>
+          </div>
+        </div>
+        <div class="similar-cards-list" id="similarCardsList"></div>
+      </div>
+
     </section>
 
     <!-- ====================================================================
@@ -857,7 +1092,8 @@
           <span style="font-size: 1.5rem;" id="handoutHeaderIcon">📄</span>
           <div>
             <h2 class="handout-page-title" id="handoutMainPageTitle">교사용 유인물 제작소</h2>
-            <span style="font-size: 0.82rem; color: #64748b;" id="handoutMainSubtitle">선택한 기출 문항으로 B4 단면 2문항 규격의 문제지 및 해설지 HWPX 문서를 자동 생성합니다.</span>
+            <span style="font-size: 0.82rem; color: #64748b;" id="handoutMainSubtitle">선택한 기출 문항으로 B4 단면 2문항 규격의 문제지 및
+              해설지 HWPX 문서를 자동 생성합니다.</span>
           </div>
           <span class="handout-page-badge" id="handoutTotalCountBadge">0개 문항</span>
           <span style="font-size: 0.85rem; font-weight: 700; color: #2563eb;" id="handoutEstimatedPages"></span>
@@ -866,7 +1102,8 @@
           <button type="button" class="btn-handout-back" id="btnHandoutBackToResults" title="유인물 제작소 진입 전 이전 화면으로 복귀">
             🔙 이전 화면으로 돌아가기
           </button>
-          <button type="button" class="btn-handout-back btn-handout-back-home" id="btnHandoutBackToHome" title="첫 검색 화면으로 복귀">
+          <button type="button" class="btn-handout-back btn-handout-back-home" id="btnHandoutBackToHome"
+            title="첫 검색 화면으로 복귀">
             🏠 처음 화면으로 돌아가기
           </button>
         </div>
@@ -874,21 +1111,24 @@
 
       <!-- 상단 대형 3대 모드 선택기 (독해 유인물 ↔ 문장 유인물 ↔ 듣기 유인물) -->
       <div class="handout-mode-selector-bar" id="handoutModeSelectorBar">
-        <button type="button" class="btn-handout-mode-selector active" id="tabHandoutPassage" data-tab="passage" title="독해 유인물 제작소">
+        <button type="button" class="btn-handout-mode-selector active" id="tabHandoutPassage" data-tab="passage"
+          title="독해 유인물 제작소">
           <span class="mode-icon">📄</span>
           <div class="mode-text-wrap">
             <span class="mode-title">독해 유인물</span>
             <span class="mode-desc">B4 가로 2문항 규격 (문제지 · 해설지 선택 다운로드)</span>
           </div>
         </button>
-        <button type="button" class="btn-handout-mode-selector" id="tabHandoutSentence" data-tab="sentence" title="문장 유인물 제작소">
+        <button type="button" class="btn-handout-mode-selector" id="tabHandoutSentence" data-tab="sentence"
+          title="문장 유인물 제작소">
           <span class="mode-icon">📝</span>
           <div class="mode-text-wrap">
             <span class="mode-title">문장 유인물</span>
             <span class="mode-desc">A4 세로 구문 분석 훈련 (해설 불필요 · 단일 문제지 전용)</span>
           </div>
         </button>
-        <button type="button" class="btn-handout-mode-selector" id="tabHandoutListening" data-tab="listening" title="듣기 유인물 제작소">
+        <button type="button" class="btn-handout-mode-selector" id="tabHandoutListening" data-tab="listening"
+          title="듣기 유인물 제작소">
           <span class="mode-icon">🎧</span>
           <div class="mode-text-wrap">
             <span class="mode-title">듣기 유인물</span>
@@ -904,13 +1144,16 @@
           <select id="selectHandoutPassageProject" class="handout-project-main-select" title="작업할 독해 유인물 프로젝트를 선택하세요">
             <!-- JS 동적 렌더링 -->
           </select>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreatePassageProject" title="새로운 독해 유인물 프로젝트를 생성합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreatePassageProject"
+            title="새로운 독해 유인물 프로젝트를 생성합니다">
             ➕ 새 프로젝트
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenamePassageProject" title="현재 독해 프로젝트의 이름을 변경합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenamePassageProject"
+            title="현재 독해 프로젝트의 이름을 변경합니다">
             ✏️ 이름 변경
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeletePassageProject" style="color: #ef4444;" title="현재 독해 프로젝트를 삭제합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeletePassageProject"
+            style="color: #ef4444;" title="현재 독해 프로젝트를 삭제합니다">
             🗑️ 프로젝트 삭제
           </button>
         </div>
@@ -926,13 +1169,16 @@
           <select id="selectHandoutSentenceProject" class="handout-project-main-select" title="작업할 문장 유인물 프로젝트를 선택하세요">
             <!-- JS 동적 렌더링 -->
           </select>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreateSentenceProject" title="새로운 문장 유인물 프로젝트를 생성합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreateSentenceProject"
+            title="새로운 문장 유인물 프로젝트를 생성합니다">
             ➕ 새 프로젝트
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenameSentenceProject" title="현재 문장 프로젝트의 이름을 변경합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenameSentenceProject"
+            title="현재 문장 프로젝트의 이름을 변경합니다">
             ✏️ 이름 변경
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeleteSentenceProject" style="color: #ef4444;" title="현재 문장 프로젝트를 삭제합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeleteSentenceProject"
+            style="color: #ef4444;" title="현재 문장 프로젝트를 삭제합니다">
             🗑️ 프로젝트 삭제
           </button>
         </div>
@@ -948,13 +1194,16 @@
           <select id="selectHandoutListeningProject" class="handout-project-main-select" title="작업할 듣기 유인물 프로젝트를 선택하세요">
             <!-- JS 동적 렌더링 -->
           </select>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreateListeningProject" title="새로운 듣기 유인물 프로젝트를 생성합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnCreateListeningProject"
+            title="새로운 듣기 유인물 프로젝트를 생성합니다">
             ➕ 새 프로젝트
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenameListeningProject" title="현재 듣기 프로젝트의 이름을 변경합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnRenameListeningProject"
+            title="현재 듣기 프로젝트의 이름을 변경합니다">
             ✏️ 이름 변경
           </button>
-          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeleteListeningProject" style="color: #ef4444;" title="현재 듣기 프로젝트를 삭제합니다">
+          <button type="button" class="btn-handout-tool btn-project-action" id="btnDeleteListeningProject"
+            style="color: #ef4444;" title="현재 듣기 프로젝트를 삭제합니다">
             🗑️ 프로젝트 삭제
           </button>
         </div>
@@ -972,16 +1221,20 @@
               <span>선택된 문항 목록</span>
             </div>
             <div class="handout-toolbar-actions">
-              <button type="button" class="btn-handout-tool" id="btnHandoutRenumber1" title="모든 문항 번호를 1번부터 차례대로 다시 매깁니다">
+              <button type="button" class="btn-handout-tool" id="btnHandoutRenumber1"
+                title="모든 문항 번호를 1번부터 차례대로 다시 매깁니다">
                 🔢 1번부터 순차 재부여
               </button>
               <div style="display: inline-flex; align-items: center; gap: 4px;">
-                <input type="number" class="input-start-num" id="inputHandoutStartNum" value="1" min="1" max="99" title="시작 번호">
-                <button type="button" class="btn-handout-tool" id="btnHandoutRenumberN" title="지정한 시작 번호부터 차례대로 다시 매깁니다">
+                <input type="number" class="input-start-num" id="inputHandoutStartNum" value="1" min="1" max="99"
+                  title="시작 번호">
+                <button type="button" class="btn-handout-tool" id="btnHandoutRenumberN"
+                  title="지정한 시작 번호부터 차례대로 다시 매깁니다">
                   번부터 부여
                 </button>
               </div>
-              <button type="button" class="btn-handout-tool" id="btnHandoutClearAll" style="color: #ef4444;" title="모든 문항을 비웁니다">
+              <button type="button" class="btn-handout-tool" id="btnHandoutClearAll" style="color: #ef4444;"
+                title="모든 문항을 비웁니다">
                 🗑️ 전체 비우기
               </button>
             </div>
@@ -1005,17 +1258,20 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="handoutHeaderCenter">가운데 상단</label>
-              <input type="text" class="form-input" id="handoutHeaderCenter" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출" maxlength="60">
+              <input type="text" class="form-input" id="handoutHeaderCenter" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출"
+                maxlength="60">
               <span class="form-help">유인물 상단 표의 가운데 칸에 인쇄될 메인 제목입니다.</span>
             </div>
             <div class="form-group">
               <label class="form-label" for="handoutHeaderRight">오른쪽 상단</label>
-              <input type="text" class="form-input" id="handoutHeaderRight" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
+              <input type="text" class="form-input" id="handoutHeaderRight"
+                placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
               <span class="form-help">유인물 상단 표의 오른쪽 칸에 인쇄될 인적사항/소속입니다.</span>
             </div>
             <div class="form-group">
               <label class="form-label" for="handoutFooterText">꼬리말 텍스트</label>
-              <input type="text" class="form-input" id="handoutFooterText" placeholder="예: OO고등학교 영어과 / 무단 배포 금지" maxlength="60">
+              <input type="text" class="form-input" id="handoutFooterText" placeholder="예: OO고등학교 영어과 / 무단 배포 금지"
+                maxlength="60">
               <span class="form-help">문서 하단에 인쇄될 소속 문구입니다.</span>
             </div>
           </div>
@@ -1029,16 +1285,23 @@
                 <select class="form-select" id="handoutTemplateSelect">
                   <!-- JS에서 템플릿 목록 로드 -->
                 </select>
-                <button type="button" class="btn-template-upload" id="btnUploadHandoutTemplate" title="자체 제작한 B4 HWPX 양식을 업로드합니다">
+                <button type="button" class="btn-template-upload" id="btnUploadHandoutTemplate"
+                  title="자체 제작한 B4 HWPX 양식을 업로드합니다">
                   📤 양식 업로드
                 </button>
                 <input type="file" id="inputHandoutTemplateFile" accept=".hwpx" style="display: none;">
               </div>
               <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <a href="/static/data/templates/default_b4_question.hwpx" download="기본B4_문제지_양식.hwpx" class="btn-template-upload" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 5px 10px;" title="기본 B4 문제지 양식을 다운로드하여 한글 프로그램에서 편집 후 업로드할 수 있습니다">
+                <a href="/static/data/templates/default_b4_question.hwpx" download="기본B4_문제지_양식.hwpx"
+                  class="btn-template-upload"
+                  style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 5px 10px;"
+                  title="기본 B4 문제지 양식을 다운로드하여 한글 프로그램에서 편집 후 업로드할 수 있습니다">
                   📥 기본 문제지 양식 받기
                 </a>
-                <a href="/static/data/templates/default_b4_explanation.hwpx" download="기본B4_해설지_양식.hwpx" class="btn-template-upload" style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 5px 10px;" title="기본 B4 해설지 양식을 다운로드하여 한글 프로그램에서 편집 후 업로드할 수 있습니다">
+                <a href="/static/data/templates/default_b4_explanation.hwpx" download="기본B4_해설지_양식.hwpx"
+                  class="btn-template-upload"
+                  style="text-decoration: none; display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem; padding: 5px 10px;"
+                  title="기본 B4 해설지 양식을 다운로드하여 한글 프로그램에서 편집 후 업로드할 수 있습니다">
                   📥 기본 해설지 양식 받기
                 </a>
               </div>
@@ -1082,20 +1345,26 @@
           <div class="handout-toolbar">
             <div class="handout-toolbar-left">
               <span>선택된 문장 목록</span>
-              <span class="badge" id="sentenceCountBadge" style="margin-left: 6px; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">0개</span>
+              <span class="badge" id="sentenceCountBadge"
+                style="margin-left: 6px; background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">0개</span>
             </div>
             <div class="handout-toolbar-actions">
-              <button type="button" class="btn-handout-tool" id="btnSentenceRenumber1" title="모든 문장 번호를 1번부터 차례대로 다시 매깁니다">
+              <button type="button" class="btn-handout-tool" id="btnSentenceRenumber1"
+                title="모든 문장 번호를 1번부터 차례대로 다시 매깁니다">
                 🔢 1번부터 순차 재부여
               </button>
               <div style="display: inline-flex; align-items: center; gap: 4px;">
-                <input type="number" class="input-start-num" id="inputSentenceStartNum" value="1" min="1" max="999" title="시작 번호">
-                <button type="button" class="btn-handout-tool" id="btnSentenceRenumberN" title="지정한 시작 번호부터 차례대로 다시 매깁니다">
+                <input type="number" class="input-start-num" id="inputSentenceStartNum" value="1" min="1" max="999"
+                  title="시작 번호">
+                <button type="button" class="btn-handout-tool" id="btnSentenceRenumberN"
+                  title="지정한 시작 번호부터 차례대로 다시 매깁니다">
                   번부터 부여
                 </button>
               </div>
-              <span id="sentenceGuidanceNotice" style="font-size: 0.8rem; color: #64748b; margin: 0 4px;">권장: 6문장/10문장</span>
-              <button type="button" class="btn-handout-tool" id="btnSentenceClearAll" style="color: #ef4444;" title="모든 문장을 비웁니다">
+              <span id="sentenceGuidanceNotice" style="font-size: 0.8rem; color: #64748b; margin: 0 4px;">권장:
+                6문장/10문장</span>
+              <button type="button" class="btn-handout-tool" id="btnSentenceClearAll" style="color: #ef4444;"
+                title="모든 문장을 비웁니다">
                 🗑️ 전체 비우기
               </button>
             </div>
@@ -1119,17 +1388,20 @@
             </div>
             <div class="form-group">
               <label class="form-label" for="sentenceHeaderCenter">가운데 상단</label>
-              <input type="text" class="form-input" id="sentenceHeaderCenter" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출" maxlength="60">
+              <input type="text" class="form-input" id="sentenceHeaderCenter" placeholder="예: 2026학년도 1학기 기말고사 대비 영어 기출"
+                maxlength="60">
               <span class="form-help">상단 표의 가운데 칸에 인쇄될 문구입니다.</span>
             </div>
             <div class="form-group">
               <label class="form-label" for="sentenceHeaderRight">오른쪽 상단</label>
-              <input type="text" class="form-input" id="sentenceHeaderRight" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
+              <input type="text" class="form-input" id="sentenceHeaderRight"
+                placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="60">
               <span class="form-help">상단 표의 오른쪽 칸에 인쇄될 인적사항입니다.</span>
             </div>
             <div class="form-group">
               <label class="form-label" for="sentenceMainTitle">유인물 메인 제목</label>
-              <input type="text" class="form-input" id="sentenceMainTitle" placeholder="예: 관계대명사 that vs what 핵심 기출 뽀개기" maxlength="80">
+              <input type="text" class="form-input" id="sentenceMainTitle" placeholder="예: 관계대명사 that vs what 핵심 기출 뽀개기"
+                maxlength="80">
               <span class="form-help">상단 표 하단 [ 제목 ] 위치에 인쇄될 타이틀입니다.</span>
             </div>
           </div>
@@ -1138,11 +1410,14 @@
           <div class="handout-panel-card">
             <h3 class="panel-card-title">📐 양식 규격 및 개념 필기 박스</h3>
             <div class="form-group" style="padding-top: 4px;">
-              <label class="toggle-switch-label" title="상단에 교사/학생 필기용 1x1 개념 설명 박스를 포함합니다" style="cursor: pointer; display: flex; align-items: center; justify-content: space-between;">
+              <label class="toggle-switch-label" title="상단에 교사/학생 필기용 1x1 개념 설명 박스를 포함합니다"
+                style="cursor: pointer; display: flex; align-items: center; justify-content: space-between;">
                 <span style="font-weight: 600; color: #1e293b;">📌 '개념 설명' 1x1 테이블 포함</span>
-                <input type="checkbox" id="chkSentenceIncludeConcept" checked style="width: 18px; height: 18px; cursor: pointer;">
+                <input type="checkbox" id="chkSentenceIncludeConcept" checked
+                  style="width: 18px; height: 18px; cursor: pointer;">
               </label>
-              <div id="conceptTableNotice" style="margin-top: 8px; padding: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 0.82rem; color: #166534; line-height: 1.5;">
+              <div id="conceptTableNotice"
+                style="margin-top: 8px; padding: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; font-size: 0.82rem; color: #166534; line-height: 1.5;">
                 <strong>✔ 개념 설명 박스 사용 중</strong>: 상단 1x1 빈칸 필기 박스가 생성되며 <strong>총 6문장</strong>이 배치됩니다.
               </div>
             </div>
@@ -1158,7 +1433,8 @@
           <div class="handout-panel-card">
             <h3 class="panel-card-title">📥 문장 유인물 다운로드</h3>
             <div class="download-actions-wrap">
-              <button type="button" class="btn-download-handout btn-primary" id="btnDownloadSentenceHandout" style="width: 100%; justify-content: center;">
+              <button type="button" class="btn-download-handout btn-primary" id="btnDownloadSentenceHandout"
+                style="width: 100%; justify-content: center;">
                 <span>📝 문장 유인물 다운로드 (HWPX)</span>
               </button>
             </div>
@@ -1177,20 +1453,26 @@
           <div class="handout-toolbar">
             <div class="handout-toolbar-left">
               <span>선택된 듣기 문항 목록</span>
-              <span class="badge" id="listeningCountBadge" style="margin-left: 6px; background: #ede9fe; color: #6d28d9; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">0문항</span>
+              <span class="badge" id="listeningCountBadge"
+                style="margin-left: 6px; background: #ede9fe; color: #6d28d9; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">0문항</span>
             </div>
             <div class="handout-toolbar-actions">
-              <button type="button" class="btn-handout-tool" id="btnListeningRenumber1" title="모든 듣기 문항 번호를 1번부터 차례대로 다시 매깁니다">
+              <button type="button" class="btn-handout-tool" id="btnListeningRenumber1"
+                title="모든 듣기 문항 번호를 1번부터 차례대로 다시 매깁니다">
                 🔢 1번부터 순차 재부여
               </button>
               <div style="display: inline-flex; align-items: center; gap: 4px;">
-                <input type="number" class="input-start-num" id="inputListeningStartNum" value="1" min="1" max="999" title="시작 번호">
-                <button type="button" class="btn-handout-tool" id="btnListeningRenumberN" title="지정한 시작 번호부터 차례대로 다시 매깁니다">
+                <input type="number" class="input-start-num" id="inputListeningStartNum" value="1" min="1" max="999"
+                  title="시작 번호">
+                <button type="button" class="btn-handout-tool" id="btnListeningRenumberN"
+                  title="지정한 시작 번호부터 차례대로 다시 매깁니다">
                   번부터 부여
                 </button>
               </div>
-              <span id="listeningGuidanceNotice" style="font-size: 0.8rem; color: #6d28d9; font-weight: 600; margin: 0 4px;">B4 세로 2문항/페이지</span>
-              <button type="button" class="btn-handout-tool" id="btnListeningClearAll" style="color: #ef4444;" title="모든 듣기 문항을 비웁니다">
+              <span id="listeningGuidanceNotice"
+                style="font-size: 0.8rem; color: #6d28d9; font-weight: 600; margin: 0 4px;">B4 세로 2문항/페이지</span>
+              <button type="button" class="btn-handout-tool" id="btnListeningClearAll" style="color: #ef4444;"
+                title="모든 듣기 문항을 비웁니다">
                 🗑️ 전체 비우기
               </button>
             </div>
@@ -1209,25 +1491,29 @@
             <h3 class="panel-card-title">📝 머리말 서식 설정</h3>
             <div class="form-group">
               <label class="form-label" for="listeningHeaderLeft">왼쪽 상단 (과목명 등)</label>
-              <input type="text" class="form-input" id="listeningHeaderLeft" placeholder="예: 영어 듣기 실전 모의고사" maxlength="40">
+              <input type="text" class="form-input" id="listeningHeaderLeft" placeholder="예: 영어 듣기 실전 모의고사"
+                maxlength="40">
             </div>
             <div class="form-group">
               <label class="form-label" for="listeningHeaderCenter">가운데 상단 (학교/학원명)</label>
-              <input type="text" class="form-input" id="listeningHeaderCenter" placeholder="예: OO고등학교 1학기 듣기평가" maxlength="40">
+              <input type="text" class="form-input" id="listeningHeaderCenter" placeholder="예: OO고등학교 1학기 듣기평가"
+                maxlength="40">
             </div>
             <div class="form-group">
               <label class="form-label" for="listeningHeaderRight">오른쪽 상단 (학생 정보)</label>
-              <input type="text" class="form-input" id="listeningHeaderRight" placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="50">
+              <input type="text" class="form-input" id="listeningHeaderRight"
+                placeholder="예: 제 2 학년 (   )반 (   )번  이름: (        )" maxlength="50">
             </div>
           </div>
 
           <!-- 카드 2: 템플릿 규격 및 레이아웃 안내 -->
           <div class="handout-panel-card">
             <h3 class="panel-card-title">📐 B4 세로 2x3 테이블 규격</h3>
-            <div style="padding: 10px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px; font-size: 0.82rem; color: #581c87; line-height: 1.6;">
+            <div
+              style="padding: 10px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px; font-size: 0.82rem; color: #581c87; line-height: 1.6;">
               <strong>✔ B4 Portrait (257mm x 364mm)</strong> 규격<br>
               <strong>✔ 한 페이지당 2문항</strong> 자동 배치 (2문항 블록)<br>
-              • <strong>문제지</strong>: 1열 문항 텍스트 | 2열 FELS 약형드랩 [  ] | 3열 [표현 정리] 5행 필기 표<br>
+              • <strong>문제지</strong>: 1열 문항 텍스트 | 2열 FELS 약형드랩 [ ] | 3열 [표현 정리] 5행 필기 표<br>
               • <strong>해설지</strong>: 1열 문항 텍스트(정답) | 2열 우리말 해석 전문 | 3열 script 영문 대본
             </div>
           </div>
@@ -1242,7 +1528,8 @@
               <button type="button" class="btn-download-handout btn-secondary" id="btnDownloadListeningExplanation">
                 <span>📘 듣기 해설지 다운로드 (B4 세로 2x3)</span>
               </button>
-              <button type="button" class="btn-download-handout" id="btnDownloadListeningMergedAudio" style="background: #0284c7; color: #fff; border-color: #0369a1;">
+              <button type="button" class="btn-download-handout" id="btnDownloadListeningMergedAudio"
+                style="background: #0284c7; color: #fff; border-color: #0369a1;">
                 <span>🎵 전체 통합 MP3 다운로드 (순서 결합)</span>
               </button>
               <button type="button" class="btn-download-handout btn-zip" id="btnDownloadListeningZip">
@@ -1255,7 +1542,8 @@
           </div>
 
           <!-- 카드 4: 교사용 인터랙티브 듣기 수업 진행 전용 액션 -->
-          <div class="handout-panel-card classroom-action-card" style="border: 1px solid #c7d2fe; background: #f8faff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);">
+          <div class="handout-panel-card classroom-action-card"
+            style="border: 1px solid #c7d2fe; background: #f8faff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);">
             <h3 class="panel-card-title" style="color: #1e40af; display: flex; align-items: center; gap: 6px;">
               <span>🎯 인터랙티브 수업 모드</span>
             </h3>
@@ -1263,7 +1551,8 @@
               <span style="font-size: 1.3rem;">🎧</span>
               <span>칠판형 듣기 수업 모드 시작</span>
             </button>
-            <span class="form-help" style="text-align: center; display: block; line-height: 1.5; margin-top: 8px; color: #475569; font-weight: 600;">
+            <span class="form-help"
+              style="text-align: center; display: block; line-height: 1.5; margin-top: 8px; color: #475569; font-weight: 600;">
               * 전체화면 파형 뷰어, 문장별 분할 재생, 마우스 드래그 구간 반복 지원
             </span>
           </div>
@@ -1293,17 +1582,20 @@
         <span class="cart-count-badge" id="cartCountBadge">0문항</span>
       </div>
       <div class="floating-handout-btn-group">
-        <button type="button" class="btn-open-handout-view btn-open-passage" id="btnOpenPassageHandoutView" title="독해 유인물 제작소 이동 (B4 2문항)">
+        <button type="button" class="btn-open-handout-view btn-open-passage" id="btnOpenPassageHandoutView"
+          title="독해 유인물 제작소 이동 (B4 2문항)">
           <span>📄 독해 유인물</span>
           <span class="floating-item-cnt" id="floatingPassageCount">0</span>
           <span class="arrow">&rarr;</span>
         </button>
-        <button type="button" class="btn-open-handout-view btn-open-sentence" id="btnOpenSentenceHandoutView" title="문장 유인물 제작소 이동 (A4 구문분석)">
+        <button type="button" class="btn-open-handout-view btn-open-sentence" id="btnOpenSentenceHandoutView"
+          title="문장 유인물 제작소 이동 (A4 구문분석)">
           <span>📝 문장 유인물</span>
           <span class="floating-item-cnt" id="floatingSentenceCount">0</span>
           <span class="arrow">&rarr;</span>
         </button>
-        <button type="button" class="btn-open-handout-view btn-open-listening" id="btnOpenListeningHandoutView" title="듣기 유인물 제작소 이동 (B4 세로 2x3)">
+        <button type="button" class="btn-open-handout-view btn-open-listening" id="btnOpenListeningHandoutView"
+          title="듣기 유인물 제작소 이동 (B4 세로 2x3)">
           <span>🎧 듣기 유인물</span>
           <span class="floating-item-cnt" id="floatingListeningCount">0</span>
           <span class="arrow">&rarr;</span>
@@ -1337,9 +1629,11 @@
           </p>
         </div>
         <div class="modal-header-actions">
-          <button type="button" class="btn-modal-fullscreen" id="btnToggleUploadFullscreen" title="전체 화면으로 확대" aria-label="전체 화면 토글">⛶</button>
+          <button type="button" class="btn-modal-fullscreen" id="btnToggleUploadFullscreen" title="전체 화면으로 확대"
+            aria-label="전체 화면 토글">⛶</button>
           <button type="button" class="modal-close" id="btnCloseUploadModal" title="닫기" aria-label="닫기">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
@@ -1370,17 +1664,21 @@
             <div class="dropzone-icon">📁</div>
             <div class="dropzone-title">복수 모의고사 파일들을 이곳에 드래그&드롭하세요</div>
             <div class="dropzone-desc" style="line-height: 1.6; font-size: 0.82rem;">
-              📌 <strong>기본 필수 조합</strong>: <code>고3-[2026-06].pdf</code> (문제지) + <code>고3-[2026-06].hwp</code> (해설지)<br>
+              📌 <strong>기본 필수 조합</strong>: <code>고3-[2026-06].pdf</code> (문제지) + <code>고3-[2026-06].hwp</code>
+              (해설지)<br>
               <div style="margin-top: 4px; color: #475569; font-size: 0.78rem;">
-                • <strong>대본/해설 PDF</strong>: <code>고3-[2026-06]_script.pdf</code> 또는 <code>대본.pdf</code> / <code>-A.pdf</code> (듣기 대본 & FELS 자동 동기화, 선택)<br>
-                • <strong>정답표</strong>: <code>.json</code> (1순위 확정 정답, 권장) 또는 <code>-A.png</code> (정답 이미지) 중 1개 등록 시 형광펜 자동 연동<br>
+                • <strong>대본/해설 PDF</strong>: <code>고3-[2026-06]_script.pdf</code> 또는 <code>대본.pdf</code> /
+                <code>-A.pdf</code> (듣기 대본 & FELS 자동 동기화, 선택)<br>
+                • <strong>정답표</strong>: <code>.json</code> (1순위 확정 정답, 권장) 또는 <code>-A.png</code> (정답 이미지) 중 1개 등록 시 형광펜
+                자동 연동<br>
                 • <strong>정답률</strong>: <code>고3-[2026-06].csv</code> (정답률·선택률 통계, 선택 사항)<br>
                 • <strong>출제기관</strong>: 파일명에서 학년·연도·월 자동 추출 (3학년 6·9·11월은 평가원, 그 외는 교육청)
               </div>
             </div>
             <label class="btn btn-secondary btn-sm dropzone-btn cursor-pointer">
               📂 파일 선택하기 (PDF & HWP & 대본PDF & 정답표 & 정답률CSV 다중 선택)
-              <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg,.csv,.json" multiple style="display: none;">
+              <input type="file" id="batchFileInput" accept=".pdf,.hwp,.hwpx,.png,.jpg,.jpeg,.csv,.json" multiple
+                style="display: none;">
             </label>
           </div>
 
@@ -1468,22 +1766,29 @@
               <span class="badge-files-stat" id="statBadgeTotalExams">
                 📚 등록 모의고사: <strong id="filesTotalExamsCount">0</strong>세트
               </span>
-              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgePdf" title="클릭하여 문제지(PDF) 미등록 시험지만 모아보기">
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgePdf"
+                title="클릭하여 문제지(PDF) 미등록 시험지만 모아보기">
                 📄 문제지(PDF): <strong id="filesTotalPdfCount">0</strong> / <span class="stat-total-ref">0</span>
               </button>
-              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeHwp" title="클릭하여 해설지(HWP) 미등록 시험지만 모아보기">
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeHwp"
+                title="클릭하여 해설지(HWP) 미등록 시험지만 모아보기">
                 📝 해설지(HWP): <strong id="filesTotalHwpCount">0</strong> / <span class="stat-total-ref">0</span>
               </button>
-              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeScript" title="클릭하여 대본(PDF) 미등록 시험지만 모아보기">
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeScript"
+                title="클릭하여 대본(PDF) 미등록 시험지만 모아보기">
                 📜 대본(PDF): <strong id="filesTotalScriptCount">0</strong> / <span class="stat-total-ref">0</span>
               </button>
-              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeAns" title="클릭하여 정답표(이미지/JSON) 미등록 시험지만 모아보기">
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeAns"
+                title="클릭하여 정답표(이미지/JSON) 미등록 시험지만 모아보기">
                 🖼️ 정답표(이미지): <strong id="filesTotalAnsCount">0</strong> / <span class="stat-total-ref">0</span>
               </button>
-              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeCsv" title="클릭하여 정답률(CSV) 미등록 시험지만 모아보기">
+              <button type="button" class="badge-files-stat badge-stat-interactive" id="statBadgeCsv"
+                title="클릭하여 정답률(CSV) 미등록 시험지만 모아보기">
                 📊 정답률(CSV): <strong id="filesTotalCsvCount">0</strong> / <span class="stat-total-ref">0</span>
               </button>
-              <button type="button" class="btn btn-outline-danger btn-sm" id="btnResetMissingBadges" style="display: none; padding: 2px 8px; font-size: 0.74rem; border-radius: 6px; align-items: center; gap: 4px;" title="미등록 파일 필터 초기화">
+              <button type="button" class="btn btn-outline-danger btn-sm" id="btnResetMissingBadges"
+                style="display: none; padding: 2px 8px; font-size: 0.74rem; border-radius: 6px; align-items: center; gap: 4px;"
+                title="미등록 파일 필터 초기화">
                 ✕ 필터 해제
               </button>
             </div>
@@ -1493,7 +1798,8 @@
               <div class="dropdown-filter-container" id="missingFilterContainer" style="position: relative;">
                 <button type="button" class="btn-filter-trigger" id="btnTriggerMissingFilter">
                   <span>⚠️ 미등록 파일 필터</span>
-                  <span class="active-filter-badge" id="badgeMissingFilterCount" style="display: none; background: #be123c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 10px; font-weight: 700;">0</span>
+                  <span class="active-filter-badge" id="badgeMissingFilterCount"
+                    style="display: none; background: #be123c; color: #fff; font-size: 0.7rem; padding: 1px 5px; border-radius: 10px; font-weight: 700;">0</span>
                   <span class="arrow-icon" style="font-size: 0.7rem;">▾</span>
                 </button>
                 <div class="dropdown-filter-menu" id="menuMissingFilter" style="display: none;">
@@ -1534,7 +1840,8 @@
               <!-- 레거시 호환용 숨김 체크박스 (기존 참조 보호) -->
               <input type="checkbox" id="chkFilterMissingFiles" style="display: none;">
 
-              <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshFilesStatus" style="font-size: 0.78rem; padding: 4px 10px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshFilesStatus"
+                style="font-size: 0.78rem; padding: 4px 10px;">
                 🔄 새로고침
               </button>
             </div>
@@ -1546,7 +1853,9 @@
               <thead>
                 <tr>
                   <th class="col-center" style="width: 42px;">No.</th>
-                  <th class="sortable-th" data-table="files" data-sort="id" style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="files" data-sort="id"
+                    style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span
+                      class="sort-icon">⇅</span></th>
                   <th class="sortable-th" data-table="files" data-sort="grade">
                     <div class="th-sort-label" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterFilesGrade" title="학년 필터">
@@ -1585,7 +1894,9 @@
           </div>
 
           <div class="upload-help-box">
-            💡 <strong>원클릭 파일 업로드 안내</strong>: 각 모의고사 행에서 등록되지 않은 파일의 <strong>[➕ 업로드]</strong> 버튼을 누르면 해당 파일만 단독으로 즉시 업로드됩니다. <strong>[➕ 정답표 등록]</strong>은 정답 JSON(.json, 1순위 최우선) 또는 정답표 이미지(Vision AI 자동 추출)를 등록하며, <strong>[➕ 정답률 등록]</strong>은 1~45번 정답률(%) 및 1~5번 선지 선택률 데이터를 2x2 지문 뷰어에 즉시 시각화합니다.
+            💡 <strong>원클릭 파일 업로드 안내</strong>: 각 모의고사 행에서 등록되지 않은 파일의 <strong>[➕ 업로드]</strong> 버튼을 누르면 해당 파일만 단독으로 즉시
+            업로드됩니다. <strong>[➕ 정답표 등록]</strong>은 정답 JSON(.json, 1순위 최우선) 또는 정답표 이미지(Vision AI 자동 추출)를 등록하며, <strong>[➕
+              정답률 등록]</strong>은 1~45번 정답률(%) 및 1~5번 선지 선택률 데이터를 2x2 지문 뷰어에 즉시 시각화합니다.
           </div>
         </div>
 
@@ -1657,7 +1968,8 @@
               <label class="form-label">3. 정답표 파일 (권장, JSON 데이터 또는 정답 이미지)</label>
               <input type="file" class="form-control" name="ans_file" id="modalAnsFile" accept=".json,.png,.jpg,.jpeg">
               <small class="form-text-muted">
-                ※ 1~45번 정답 JSON 파일(.json, 1순위 최우선) 또는 정답표 이미지(.png/.jpg)를 첨부합니다. 정답 파일 등록 시 정답 확정 및 PDF 문제지 형광펜 하이라이트가 자동 생성됩니다.
+                ※ 1~45번 정답 JSON 파일(.json, 1순위 최우선) 또는 정답표 이미지(.png/.jpg)를 첨부합니다. 정답 파일 등록 시 정답 확정 및 PDF 문제지 형광펜 하이라이트가
+                자동 생성됩니다.
               </small>
             </div>
 
@@ -1690,12 +2002,13 @@
           <div class="manage-exams-toolbar">
             <div style="display: flex; gap: 8px; align-items: center;">
               <button type="button" class="btn btn-secondary btn-sm" id="btnSelectAllExams">전체 선택</button>
-              <button type="button" class="btn btn-danger btn-sm" id="btnDeleteSelectedExams" disabled style="display: inline-flex; align-items: center; gap: 4px;">
+              <button type="button" class="btn btn-danger btn-sm" id="btnDeleteSelectedExams" disabled
+                style="display: inline-flex; align-items: center; gap: 4px;">
                 🗑️ 선택 삭제 (<span id="selectedExamsCount">0</span>)
               </button>
             </div>
             <div class="manage-exams-count">
-                총 등록 시험지: <strong id="manageExamsTotalCount" class="text-primary">0</strong>개
+              총 등록 시험지: <strong id="manageExamsTotalCount" class="text-primary">0</strong>개
             </div>
           </div>
 
@@ -1706,7 +2019,9 @@
                   <th class="col-center col-chk">
                     <input type="checkbox" id="chkAllExams" class="cursor-pointer">
                   </th>
-                  <th class="sortable-th" data-table="manage" data-sort="id" style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span class="sort-icon">⇅</span></th>
+                  <th class="sortable-th" data-table="manage" data-sort="id"
+                    style="padding: 10px 12px; white-space: nowrap;" title="클릭하여 시험지 식별자 정렬">시험지 식별자 <span
+                      class="sort-icon">⇅</span></th>
                   <th class="sortable-th" data-table="manage" data-sort="grade">
                     <div class="th-sort-label" title="클릭하여 학년별 정렬">학년 <span class="sort-icon">⇅</span></div>
                     <select class="th-filter-select" id="filterManageGrade" title="학년 필터">
@@ -1748,7 +2063,10 @@
           <input type="file" id="examSingleFileInput" style="display: none;">
 
           <div class="upload-help-box">
-            💡 <strong>4종 원본 파일 및 정답률 직접 업로드 안내</strong>: 각 시험지의 <strong>[📄 문제지]</strong>, <strong>[📝 해설지]</strong>, <strong>[🖼️ 정답표]</strong>, <strong>[📊 정답률 CSV]</strong> 버튼을 클릭하면 해당 파일만 단독으로 즉시 등록하거나 교체할 수 있습니다. 특히 <strong>정답표(JSON / 이미지)</strong>를 등록하시면 JSON(최우선 Ground Truth) 또는 Vision AI로 1~45번 정답을 확정하고, <strong>정답률 CSV</strong>를 등록하시면 2x2 지문 뷰어에 문항별 정답률 및 선지 선택률이 즉시 시각화됩니다.
+            💡 <strong>4종 원본 파일 및 정답률 직접 업로드 안내</strong>: 각 시험지의 <strong>[📄 문제지]</strong>, <strong>[📝 해설지]</strong>,
+            <strong>[🖼️ 정답표]</strong>, <strong>[📊 정답률 CSV]</strong> 버튼을 클릭하면 해당 파일만 단독으로 즉시 등록하거나 교체할 수 있습니다. 특히
+            <strong>정답표(JSON / 이미지)</strong>를 등록하시면 JSON(최우선 Ground Truth) 또는 Vision AI로 1~45번 정답을 확정하고, <strong>정답률
+              CSV</strong>를 등록하시면 2x2 지문 뷰어에 문항별 정답률 및 선지 선택률이 즉시 시각화됩니다.
           </div>
         </div>
 
@@ -1792,16 +2110,20 @@
             ⚡ 빠른 선택 프리셋
           </div>
           <div class="sel-del-presets-row">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetFullWipe" style="font-size: 0.78rem;">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetFullWipe"
+              style="font-size: 0.78rem;">
               💥 전체 완전 삭제 (기본값)
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetRawOnly" style="font-size: 0.78rem;">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetRawOnly"
+              style="font-size: 0.78rem;">
               📁 원본 파일만 삭제 (용량 절약)
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetMetaOnly" style="font-size: 0.78rem;">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetMetaOnly"
+              style="font-size: 0.78rem;">
               🏷️ 메타데이터만 초기화 (어법 리셋)
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetRateOnly" style="font-size: 0.78rem;">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPresetRateOnly"
+              style="font-size: 0.78rem;">
               📊 정답률만 초기화 (재업로드 대비)
             </button>
           </div>
@@ -1815,12 +2137,15 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  📁 1. 원본 파일 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #047857;">(서버 용량 절약)</span>
+                  📁 1. 원본 파일 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #047857;">(서버 용량
+                    절약)</span>
                 </span>
-                <span class="badge-raw-size-preview" id="selDelRawSizeBadge" style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span class="badge-raw-size-preview" id="selDelRawSizeBadge"
+                  style="font-size: 0.75rem; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
-                <code>uploads/</code> 폴더에 저장된 원본 PDF 및 HWP 파일을 영구 삭제합니다. (이미 DB에 텍스트가 추출되어 있으므로 <strong>웹 검색·뷰어 기능은 100% 정상 작동</strong>합니다)
+                <code>uploads/</code> 폴더에 저장된 원본 PDF 및 HWP 파일을 영구 삭제합니다. (이미 DB에 텍스트가 추출되어 있으므로 <strong>웹 검색·뷰어 기능은 100%
+                  정상 작동</strong>합니다)
               </p>
             </div>
           </label>
@@ -1831,12 +2156,15 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  📄 2. 코어 본문 데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #b91c1c;">(DB 지문·문장 삭제)</span>
+                  📄 2. 코어 본문 데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #b91c1c;">(DB 지문·문장
+                    삭제)</span>
                 </span>
-                <span id="selDelCoreBadge" style="font-size: 0.75rem; background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span id="selDelCoreBadge"
+                  style="font-size: 0.75rem; background: #fef2f2; color: #991b1b; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
-                DB의 시험지 마스터, 지문 텍스트, 분할 문장, 그리고 PDF 크롭 캡처 이미지를 영구 삭제합니다. (본문이 삭제되면 <strong>종속된 어법 메타데이터와 정답률도 함께 삭제</strong>됩니다)
+                DB의 시험지 마스터, 지문 텍스트, 분할 문장, 그리고 PDF 크롭 캡처 이미지를 영구 삭제합니다. (본문이 삭제되면 <strong>종속된 어법 메타데이터와 정답률도 함께
+                  삭제</strong>됩니다)
               </p>
             </div>
           </label>
@@ -1847,9 +2175,11 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  🏷️ 3. 부가 메타데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #475569;">(어법 분석/태그 초기화)</span>
+                  🏷️ 3. 부가 메타데이터 삭제 <span style="font-weight: normal; font-size: 0.76rem; color: #475569;">(어법 분석/태그
+                    초기화)</span>
                 </span>
-                <span id="selDelMetaBadge" style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span id="selDelMetaBadge"
+                  style="font-size: 0.75rem; background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
                 지문 및 문장 본문은 그대로 보존하고, <strong>AI 어법 분석 결과와 사용자 태그만 초기화</strong>합니다. (새로운 AI 모델로 다시 분석하고 싶을 때 유용합니다)
@@ -1863,12 +2193,15 @@
             <div style="flex: 1;">
               <div class="sel-del-card-header">
                 <span style="font-weight: 700; font-size: 0.88rem; color: #1e293b;">
-                  📊 4. 정답률 데이터 초기화 <span style="font-weight: normal; font-size: 0.76rem; color: #0369a1;">(정답률·선지 선택률 초기화)</span>
+                  📊 4. 정답률 데이터 초기화 <span style="font-weight: normal; font-size: 0.76rem; color: #0369a1;">(정답률·선지 선택률
+                    초기화)</span>
                 </span>
-                <span id="selDelRateBadge" style="font-size: 0.75rem; background: #f0f9ff; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
+                <span id="selDelRateBadge"
+                  style="font-size: 0.75rem; background: #f0f9ff; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">-</span>
               </div>
               <p class="sel-del-card-desc">
-                지문 및 문장 본문, 어법 분석은 그대로 보존하고, <strong>정답률(%)과 선지별 선택률 및 CSV 원본 파일만 초기화</strong>합니다. (정답률 데이터를 재업로드하거나 정정할 때 유용합니다)
+                지문 및 문장 본문, 어법 분석은 그대로 보존하고, <strong>정답률(%)과 선지별 선택률 및 CSV 원본 파일만 초기화</strong>합니다. (정답률 데이터를 재업로드하거나 정정할
+                때 유용합니다)
               </p>
             </div>
           </label>
@@ -1881,7 +2214,8 @@
 
       <div class="modal-footer modal-footer-between">
         <button type="button" class="btn btn-secondary" id="btnCancelSelectiveDelete">취소</button>
-        <button type="button" class="btn btn-danger" id="btnExecuteSelectiveDelete" style="display: inline-flex; align-items: center; gap: 6px;">
+        <button type="button" class="btn btn-danger" id="btnExecuteSelectiveDelete"
+          style="display: inline-flex; align-items: center; gap: 6px;">
           🗑️ 선택한 데이터 영역 삭제 실행
         </button>
       </div>
@@ -1899,8 +2233,10 @@
             <span>🤖 AI 어법 분석기 및 영어 듣기 TTS 설정</span>
             <span class="ai-ensemble-badge" id="aiEnsembleModeBadge">🗳️ 다수결 합의 모드</span>
           </h3>
-          <p class="modal-subtitle" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-            수능·모의고사 243개 어법 기준표(<code>grammar_categories.json</code>) 분석 AI 엔진 및 영어 듣기 수능 성우 복제(XTTS-v2) / Edge-TTS 음성 합성 엔진을 설정합니다.
+          <p class="modal-subtitle"
+            style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+            수능·모의고사 243개 어법 기준표(<code>grammar_categories.json</code>) 분석 AI 엔진 및 영어 듣기 수능 성우 복제(XTTS-v2) / Edge-TTS 음성
+            합성 엔진을 설정합니다.
           </p>
         </div>
         <button class="modal-close" id="btnCloseAiSettingsModal">&times;</button>
@@ -1909,13 +2245,15 @@
       <div class="modal-body ai-multi-modal-body">
         <!-- 교차 검증 설명 안내 배너 -->
         <div class="ai-consensus-guide-box">
-          <div class="consensus-guide-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div class="consensus-guide-header"
+            style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <div class="flex-row-center">
               <span class="guide-icon">🗳️</span>
               <strong style="color: #1e293b;">복수 모델 교차 검증 (다수결 합의 / Majority Vote Consensus)</strong>
             </div>
             <div class="flex-row-center">
-              <label for="selectConsensusMode" style="font-size: 0.78rem; font-weight: 700; color: #334155; margin: 0;">합의 기준:</label>
+              <label for="selectConsensusMode"
+                style="font-size: 0.78rem; font-weight: 700; color: #334155; margin: 0;">합의 기준:</label>
               <select id="selectConsensusMode" class="consensus-mode-select">
                 <option value="majority" selected>🗳️ 다수결 합의 (과반수 찬성: 2/3, 3/4) [기본/권장]</option>
                 <option value="at_least_2">🤝 2개 모델 이상 합의 (2/3, 2/4 허용)</option>
@@ -1924,8 +2262,10 @@
             </div>
           </div>
           <p class="consensus-guide-desc">
-            • <strong>다수결 합의 모드</strong>: 활성화된 모델 중 <strong>과반수 이상이 공통 찬성한 어법 범주</strong>만 최종 채택합니다. (3개 중 2개 이상, 4개 중 3개 이상)<br>
-            • <strong>OpenRouter 3개 모델 앙상블</strong>: 단일 API 키로 DeepSeek V3 + GPT-4o-mini + Claude Sonnet 4.5를 동시 병렬 분석하여 최고 정밀도를 실현합니다.
+            • <strong>다수결 합의 모드</strong>: 활성화된 모델 중 <strong>과반수 이상이 공통 찬성한 어법 범주</strong>만 최종 채택합니다. (3개 중 2개 이상, 4개 중
+            3개 이상)<br>
+            • <strong>OpenRouter 3개 모델 앙상블</strong>: 단일 API 키로 DeepSeek V3 + GPT-4o-mini + Claude Sonnet 4.5를 동시 병렬 분석하여
+            최고 정밀도를 실현합니다.
           </p>
         </div>
 
@@ -1945,27 +2285,37 @@
               <p class="provider-card-desc">가장 빠른 처리 속도 & 하루 수천 문장 무료 티어 제공 (권장: gemini-3.6-flash)</p>
               <div class="form-group">
                 <label class="provider-field-label">모델명</label>
-                <input type="text" class="form-control provider-model-input" id="modelInputGemini" value="gemini-3.6-flash" placeholder="gemini-3.6-flash / gemini-2.5-flash-lite">
-                <div class="gemini-model-suggestions" style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
-                  <button type="button" class="btn-model-tag" data-target="modelInputGemini" data-model="gemini-3.6-flash" title="Google 추천 최신 기본 모델">gemini-3.6-flash</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputGemini" data-model="gemini-2.5-flash-lite" title="고용량/저지연 경량 모델 (503 트래픽 과부하 시 안정적)">⚡ gemini-2.5-flash-lite (안정)</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputGemini" data-model="gemini-3.7-flash" title="Gemini 3.7 플래시">gemini-3.7-flash</button>
+                <input type="text" class="form-control provider-model-input" id="modelInputGemini"
+                  value="gemini-3.6-flash" placeholder="gemini-3.6-flash / gemini-2.5-flash-lite">
+                <div class="gemini-model-suggestions"
+                  style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
+                  <button type="button" class="btn-model-tag" data-target="modelInputGemini"
+                    data-model="gemini-3.6-flash" title="Google 추천 최신 기본 모델">gemini-3.6-flash</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputGemini"
+                    data-model="gemini-2.5-flash-lite" title="고용량/저지연 경량 모델 (503 트래픽 과부하 시 안정적)">⚡ gemini-2.5-flash-lite
+                    (안정)</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputGemini"
+                    data-model="gemini-3.7-flash" title="Gemini 3.7 플래시">gemini-3.7-flash</button>
                 </div>
               </div>
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                   <label class="provider-field-label mb-0">API Key</label>
-                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="provider-key-link">무료 키 발급 ↗</a>
+                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener"
+                    class="provider-key-link">무료 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
-                  <input type="password" class="form-control provider-key-input" id="keyInputGemini" placeholder="AIzaSy... (기존 키 유지 시 비워두기)">
-                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputGemini" title="키 표시/숨김">👁️</button>
+                  <input type="password" class="form-control provider-key-input" id="keyInputGemini"
+                    placeholder="AIzaSy... (기존 키 유지 시 비워두기)">
+                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputGemini"
+                    title="키 표시/숨김">👁️</button>
                 </div>
                 <span class="provider-key-status" id="keyStatusGemini">현재 키: 미등록</span>
               </div>
               <div class="provider-card-actions">
                 <div class="provider-test-btn-row">
-                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="gemini" id="btnTestGemini">
+                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="gemini"
+                    id="btnTestGemini">
                     🧪 개별 연결 테스트
                   </button>
                   <span class="test-guide-hint">실시간 핑 테스트</span>
@@ -1988,26 +2338,33 @@
               <p class="provider-card-desc">탁월한 표준 영어 문법 이해도 및 신뢰성 높은 JSON 분석</p>
               <div class="form-group">
                 <label class="provider-field-label">모델명</label>
-                <input type="text" class="form-control provider-model-input" id="modelInputOpenai" value="gpt-4o-mini" placeholder="gpt-4o-mini / gpt-4o">
+                <input type="text" class="form-control provider-model-input" id="modelInputOpenai" value="gpt-4o-mini"
+                  placeholder="gpt-4o-mini / gpt-4o">
                 <div style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
-                  <button type="button" class="btn-model-tag" data-target="modelInputOpenai" data-model="gpt-4o-mini" title="고속 가성비 표준 모델">gpt-4o-mini</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputOpenai" data-model="gpt-4o" title="플래그십 정밀 모델">gpt-4o</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputOpenai" data-model="gpt-4o-mini"
+                    title="고속 가성비 표준 모델">gpt-4o-mini</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputOpenai" data-model="gpt-4o"
+                    title="플래그십 정밀 모델">gpt-4o</button>
                 </div>
               </div>
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                   <label class="provider-field-label mb-0">API Key</label>
-                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="provider-key-link">OpenAI 키 발급 ↗</a>
+                  <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener"
+                    class="provider-key-link">OpenAI 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
-                  <input type="password" class="form-control provider-key-input" id="keyInputOpenai" placeholder="sk-... (기존 키 유지 시 비워두기)">
-                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputOpenai" title="키 표시/숨김">👁️</button>
+                  <input type="password" class="form-control provider-key-input" id="keyInputOpenai"
+                    placeholder="sk-... (기존 키 유지 시 비워두기)">
+                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputOpenai"
+                    title="키 표시/숨김">👁️</button>
                 </div>
                 <span class="provider-key-status" id="keyStatusOpenai">현재 키: 미등록</span>
               </div>
               <div class="provider-card-actions">
                 <div class="provider-test-btn-row">
-                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="openai" id="btnTestOpenai">
+                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="openai"
+                    id="btnTestOpenai">
                     🧪 개별 연결 테스트
                   </button>
                   <span class="test-guide-hint">실시간 핑 테스트</span>
@@ -2030,27 +2387,35 @@
               <p class="provider-card-desc">최고 수준의 언어 문해력 및 가장 자연스럽고 명쾌한 어법 해설 작성</p>
               <div class="form-group">
                 <label class="provider-field-label">모델명</label>
-                <input type="text" class="form-control provider-model-input" id="modelInputClaude" value="claude-opus-5" placeholder="claude-opus-5 / claude-sonnet-5 / claude-haiku-4-5">
+                <input type="text" class="form-control provider-model-input" id="modelInputClaude" value="claude-opus-5"
+                  placeholder="claude-opus-5 / claude-sonnet-5 / claude-haiku-4-5">
                 <div style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
-                  <button type="button" class="btn-model-tag" data-target="modelInputClaude" data-model="claude-opus-5" title="최고 정밀 (정답표 판독 권장)">opus-5</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputClaude" data-model="claude-sonnet-5" title="균형형 (어법 분석 권장)">sonnet-5</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputClaude" data-model="claude-haiku-4-5" title="저비용 대량 처리">haiku-4.5</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputClaude" data-model="claude-opus-5"
+                    title="최고 정밀 (정답표 판독 권장)">opus-5</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputClaude"
+                    data-model="claude-sonnet-5" title="균형형 (어법 분석 권장)">sonnet-5</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputClaude"
+                    data-model="claude-haiku-4-5" title="저비용 대량 처리">haiku-4.5</button>
                 </div>
               </div>
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                   <label class="provider-field-label mb-0">API Key</label>
-                  <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" class="provider-key-link">Anthropic 키 발급 ↗</a>
+                  <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener"
+                    class="provider-key-link">Anthropic 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
-                  <input type="password" class="form-control provider-key-input" id="keyInputClaude" placeholder="sk-ant-... (기존 키 유지 시 비워두기)">
-                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputClaude" title="키 표시/숨김">👁️</button>
+                  <input type="password" class="form-control provider-key-input" id="keyInputClaude"
+                    placeholder="sk-ant-... (기존 키 유지 시 비워두기)">
+                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputClaude"
+                    title="키 표시/숨김">👁️</button>
                 </div>
                 <span class="provider-key-status" id="keyStatusClaude">현재 키: 미등록</span>
               </div>
               <div class="provider-card-actions">
                 <div class="provider-test-btn-row">
-                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="claude" id="btnTestClaude">
+                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="claude"
+                    id="btnTestClaude">
                     🧪 개별 연결 테스트
                   </button>
                   <span class="test-guide-hint">실시간 핑 테스트</span>
@@ -2071,18 +2436,20 @@
             </div>
             <div class="provider-card-body">
               <p class="provider-card-desc">DeepSeek, Llama, Mistral 등 글로벌 수백 개 초가성비 모델 통합 API</p>
-              
+
               <!-- OpenRouter 3개 모델 앙상블 (교차 검토) 토글 박스 -->
               <div class="openrouter-ensemble-box">
                 <div class="openrouter-ensemble-header">
                   <label class="openrouter-ensemble-toggle-label">
-                    <input type="checkbox" id="cbOpenRouterEnsemble" style="width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer;">
+                    <input type="checkbox" id="cbOpenRouterEnsemble"
+                      style="width: 17px; height: 17px; accent-color: var(--primary); cursor: pointer;">
                     <span>🔄 3개 모델 자동 교차 검토 (앙상블 모드)</span>
                   </label>
                   <span class="openrouter-ensemble-badge" id="badgeOpenRouterEnsemble">강력 추천</span>
                 </div>
                 <p class="openrouter-ensemble-desc">
-                  단일 키로 <strong>DeepSeek V3</strong>, <strong>GPT-4o-mini</strong>, <strong>Claude Sonnet 4.5</strong>를 동시 병렬 호출하여 다수결 합의를 도출합니다.
+                  단일 키로 <strong>DeepSeek V3</strong>, <strong>GPT-4o-mini</strong>, <strong>Claude Sonnet 4.5</strong>를
+                  동시 병렬 호출하여 다수결 합의를 도출합니다.
                 </p>
                 <div id="openrouterEnsembleModelsContainer" style="display: none;">
                   <div class="ensemble-models-selector-box">
@@ -2090,16 +2457,20 @@
                       <span class="ensemble-selector-title">🎯 앙상블 3개 모델 선택</span>
                       <div class="flex-row-center">
                         <span class="ensemble-models-count-badge" id="ensembleModelsCountBadge">실시간 모델 로딩 중...</span>
-                        <button type="button" class="btn-refresh-ensemble-models" id="btnRefreshOpenRouterAllModels" title="OpenRouter 전체 모델 목록 실시간 새로고침">🔄 모델 갱신</button>
+                        <button type="button" class="btn-refresh-ensemble-models" id="btnRefreshOpenRouterAllModels"
+                          title="OpenRouter 전체 모델 목록 실시간 새로고침">🔄 모델 갱신</button>
                       </div>
                     </div>
 
                     <!-- 원클릭 빠른 프리셋 버튼 -->
                     <div class="ensemble-presets-row">
                       <span class="presets-label">⚡ 빠른 조합:</span>
-                      <button type="button" class="btn-preset-ensemble" data-preset="default" title="DeepSeek V3 + GPT-4o-mini + Claude Sonnet 4.5">✨ 추천 기본</button>
-                      <button type="button" class="btn-preset-ensemble" data-preset="budget" title="DeepSeek V3 + GPT-4o-mini + Llama 3.3 70B">💸 초가성비</button>
-                      <button type="button" class="btn-preset-ensemble" data-preset="quality" title="Claude Sonnet 4.5 + GPT-4o + Gemini 2.5 Flash">🏆 최고정밀</button>
+                      <button type="button" class="btn-preset-ensemble" data-preset="default"
+                        title="DeepSeek V3 + GPT-4o-mini + Claude Sonnet 4.5">✨ 추천 기본</button>
+                      <button type="button" class="btn-preset-ensemble" data-preset="budget"
+                        title="DeepSeek V3 + GPT-4o-mini + Llama 3.3 70B">💸 초가성비</button>
+                      <button type="button" class="btn-preset-ensemble" data-preset="quality"
+                        title="Claude Sonnet 4.5 + GPT-4o + Gemini 2.5 Flash">🏆 최고정밀</button>
                     </div>
 
                     <!-- 3개 모델 슬롯 -->
@@ -2110,8 +2481,10 @@
                           <span class="slot-badge slot-1">🥇 1번 모델</span>
                           <span class="slot-spec-badge" id="openrouterSlotBadge0">$0.32/1M</span>
                         </div>
-                        <select class="form-control openrouter-slot-select" id="openrouterSlotSelect0" data-slot="0"></select>
-                        <input type="text" class="form-control openrouter-slot-custom" id="openrouterSlotCustom0" data-slot="0" placeholder="직접 모델 ID 입력 (예: deepseek/deepseek-chat)" style="display: none;">
+                        <select class="form-control openrouter-slot-select" id="openrouterSlotSelect0"
+                          data-slot="0"></select>
+                        <input type="text" class="form-control openrouter-slot-custom" id="openrouterSlotCustom0"
+                          data-slot="0" placeholder="직접 모델 ID 입력 (예: deepseek/deepseek-chat)" style="display: none;">
                       </div>
 
                       <!-- 2번 슬롯 -->
@@ -2120,8 +2493,10 @@
                           <span class="slot-badge slot-2">🥈 2번 모델</span>
                           <span class="slot-spec-badge" id="openrouterSlotBadge1">$0.15/1M</span>
                         </div>
-                        <select class="form-control openrouter-slot-select" id="openrouterSlotSelect1" data-slot="1"></select>
-                        <input type="text" class="form-control openrouter-slot-custom" id="openrouterSlotCustom1" data-slot="1" placeholder="직접 모델 ID 입력 (예: openai/gpt-4o-mini)" style="display: none;">
+                        <select class="form-control openrouter-slot-select" id="openrouterSlotSelect1"
+                          data-slot="1"></select>
+                        <input type="text" class="form-control openrouter-slot-custom" id="openrouterSlotCustom1"
+                          data-slot="1" placeholder="직접 모델 ID 입력 (예: openai/gpt-4o-mini)" style="display: none;">
                       </div>
 
                       <!-- 3번 슬롯 -->
@@ -2130,14 +2505,17 @@
                           <span class="slot-badge slot-3">🥉 3번 모델</span>
                           <span class="slot-spec-badge" id="openrouterSlotBadge2">$3.00/1M</span>
                         </div>
-                        <select class="form-control openrouter-slot-select" id="openrouterSlotSelect2" data-slot="2"></select>
-                        <input type="text" class="form-control openrouter-slot-custom" id="openrouterSlotCustom2" data-slot="2" placeholder="직접 모델 ID 입력 (예: anthropic/claude-sonnet-4.5)" style="display: none;">
+                        <select class="form-control openrouter-slot-select" id="openrouterSlotSelect2"
+                          data-slot="2"></select>
+                        <input type="text" class="form-control openrouter-slot-custom" id="openrouterSlotCustom2"
+                          data-slot="2" placeholder="직접 모델 ID 입력 (예: anthropic/claude-sonnet-4.5)"
+                          style="display: none;">
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-              
+
               <!-- OpenRouter 단일 모델 그룹 (3개 모델 앙상블 선택 시 잠금/비활성화) -->
               <div id="openrouterSingleModelGroup" class="openrouter-single-model-group">
                 <div class="ensemble-lock-notice" id="ensembleLockNotice" style="display: none;">
@@ -2148,7 +2526,8 @@
                 <div class="form-group" style="margin-bottom: 8px;">
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <label class="provider-field-label mb-0">🏆 Top 5 모델 선택</label>
-                    <button type="button" class="btn-refresh-models" id="btnRefreshOpenRouterModels" title="최신 모델 정보 새로고침">🔄 갱신</button>
+                    <button type="button" class="btn-refresh-models" id="btnRefreshOpenRouterModels"
+                      title="최신 모델 정보 새로고침">🔄 갱신</button>
                   </div>
                   <select class="form-control" id="openrouterModelSelect" style="font-size: 0.8rem;">
                     <option value="">Top 5 모델 로딩 중...</option>
@@ -2156,7 +2535,8 @@
                 </div>
 
                 <!-- 선택된 모델 카드 -->
-                <div class="openrouter-model-info-card" id="openrouterModelInfoCard" style="display: none; margin-bottom: 8px;">
+                <div class="openrouter-model-info-card" id="openrouterModelInfoCard"
+                  style="display: none; margin-bottom: 8px;">
                   <div class="info-card-header">
                     <span class="info-model-badge" id="infoModelBadge">🥇 1위</span>
                     <span class="info-model-name" id="infoModelName">DeepSeek V3</span>
@@ -2171,24 +2551,29 @@
 
                 <div class="form-group">
                   <label class="provider-field-label">모델명 직접 입력</label>
-                  <input type="text" class="form-control provider-model-input" id="modelInputOpenrouter" value="deepseek/deepseek-chat" placeholder="deepseek/deepseek-chat / openai/gpt-4o-mini">
+                  <input type="text" class="form-control provider-model-input" id="modelInputOpenrouter"
+                    value="deepseek/deepseek-chat" placeholder="deepseek/deepseek-chat / openai/gpt-4o-mini">
                 </div>
               </div>
 
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                   <label class="provider-field-label mb-0">API Key</label>
-                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" class="provider-key-link">OpenRouter 키 발급 ↗</a>
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener"
+                    class="provider-key-link">OpenRouter 키 발급 ↗</a>
                 </div>
                 <div class="provider-key-input-wrapper">
-                  <input type="password" class="form-control provider-key-input" id="keyInputOpenrouter" placeholder="sk-or-v1-... (기존 키 유지 시 비워두기)">
-                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputOpenrouter" title="키 표시/숨김">👁️</button>
+                  <input type="password" class="form-control provider-key-input" id="keyInputOpenrouter"
+                    placeholder="sk-or-v1-... (기존 키 유지 시 비워두기)">
+                  <button type="button" class="btn-toggle-key-vis" data-target="keyInputOpenrouter"
+                    title="키 표시/숨김">👁️</button>
                 </div>
                 <span class="provider-key-status" id="keyStatusOpenrouter">현재 키: 미등록</span>
               </div>
               <div class="provider-card-actions">
                 <div class="provider-test-btn-row">
-                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="openrouter" id="btnTestOpenrouter">
+                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="openrouter"
+                    id="btnTestOpenrouter">
                     🧪 개별 연결 테스트
                   </button>
                   <span class="test-guide-hint">실시간 핑 테스트</span>
@@ -2205,18 +2590,21 @@
                 <input type="checkbox" class="provider-checkbox" id="cbProviderLmstudio" data-provider="lmstudio">
                 <span class="provider-name flex-row-center">
                   🖥️ LM Studio (Local LLM)
-                  <span style="font-size: 0.7rem; font-weight: 700; background: #e0e7ff; color: #4338ca; padding: 2px 7px; border-radius: 9999px;">비용 0원 무제한</span>
+                  <span
+                    style="font-size: 0.7rem; font-weight: 700; background: #e0e7ff; color: #4338ca; padding: 2px 7px; border-radius: 9999px;">비용
+                    0원 무제한</span>
                 </span>
               </label>
               <span class="provider-status-badge" id="badgeProviderLmstudio">비활성</span>
             </div>
             <div class="provider-card-body">
               <p class="provider-card-desc">내 PC 그래픽카드(RTX 5060 16GB)를 활용하여 외부 API 요금 없이 초고속 일괄 분석을 수행합니다.</p>
-              
+
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
                 <div class="form-group mb-0">
                   <label class="provider-field-label">로컬 서버 주소 (Base URL)</label>
-                  <input type="text" class="form-control" id="urlInputLmstudio" value="http://localhost:1234/v1" placeholder="http://localhost:1234/v1" style="font-size: 0.82rem;">
+                  <input type="text" class="form-control" id="urlInputLmstudio" value="http://localhost:1234/v1"
+                    placeholder="http://localhost:1234/v1" style="font-size: 0.82rem;">
                   <span class="text-hint">LM Studio의 [Local Server] 탭에서 Start Server 실행 시 주소</span>
                 </div>
 
@@ -2226,33 +2614,45 @@
                     <span style="font-size: 0.71rem; color: #10b981; font-weight: 700;">로컬 기본: 인증 불필요</span>
                   </div>
                   <div class="provider-key-input-wrapper">
-                    <input type="password" class="form-control provider-key-input" id="keyInputLmstudio" placeholder="비워두기 (LM Studio 인증 토큰 켰을 때만 입력)">
-                    <button type="button" class="btn-toggle-key-vis" data-target="keyInputLmstudio" title="키 표시/숨김">👁️</button>
+                    <input type="password" class="form-control provider-key-input" id="keyInputLmstudio"
+                      placeholder="비워두기 (LM Studio 인증 토큰 켰을 때만 입력)">
+                    <button type="button" class="btn-toggle-key-vis" data-target="keyInputLmstudio"
+                      title="키 표시/숨김">👁️</button>
                   </div>
-                  <span class="provider-key-status" id="keyStatusLmstudio" style="color: #059669;">로컬 연결 대기 (포트: 1234)</span>
+                  <span class="provider-key-status" id="keyStatusLmstudio" style="color: #059669;">로컬 연결 대기 (포트:
+                    1234)</span>
                 </div>
               </div>
 
               <div class="form-group">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                   <label class="provider-field-label mb-0">로컬 모델 선택</label>
-                  <button type="button" class="btn-refresh-models" id="btnRefreshLmstudioModels" title="LM Studio에 다운로드된 모델 목록 실시간 불러오기">🔄 로컬 모델 불러오기</button>
+                  <button type="button" class="btn-refresh-models" id="btnRefreshLmstudioModels"
+                    title="LM Studio에 다운로드된 모델 목록 실시간 불러오기">🔄 로컬 모델 불러오기</button>
                 </div>
                 <select class="form-control" id="lmstudioModelSelect" style="font-size: 0.8rem; margin-bottom: 6px;">
                   <option value="">(LM Studio 모델 불러오기를 누르면 다운로드된 모델 목록이 표시됩니다)</option>
                 </select>
-                <input type="text" class="form-control provider-model-input" id="modelInputLmstudio" value="qwen2.5-14b-instruct" placeholder="예: qwen2.5-14b-instruct / local-model">
-                <div class="lmstudio-model-suggestions" style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
-                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="qwen2.5-14b-instruct" title="수능 어법 분석 강력 추천 1위 (5060 16GB 최적)">🏆 Qwen 2.5 14B (추천)</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="qwen2.5-7b-instruct" title="초고속 7B 모델">⚡ Qwen 2.5 7B</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="deepseek-r1-distill-qwen-14b" title="고난도 킬러 문항 추론">🧠 DeepSeek-R1 14B</button>
-                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="local-model" title="현재 로드된 기본 모델">📍 현재 로드된 모델 (local-model)</button>
+                <input type="text" class="form-control provider-model-input" id="modelInputLmstudio"
+                  value="qwen2.5-14b-instruct" placeholder="예: qwen2.5-14b-instruct / local-model">
+                <div class="lmstudio-model-suggestions"
+                  style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio"
+                    data-model="qwen2.5-14b-instruct" title="수능 어법 분석 강력 추천 1위 (5060 16GB 최적)">🏆 Qwen 2.5 14B
+                    (추천)</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio"
+                    data-model="qwen2.5-7b-instruct" title="초고속 7B 모델">⚡ Qwen 2.5 7B</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio"
+                    data-model="deepseek-r1-distill-qwen-14b" title="고난도 킬러 문항 추론">🧠 DeepSeek-R1 14B</button>
+                  <button type="button" class="btn-model-tag" data-target="modelInputLmstudio" data-model="local-model"
+                    title="현재 로드된 기본 모델">📍 현재 로드된 모델 (local-model)</button>
                 </div>
               </div>
 
               <div class="provider-card-actions">
                 <div class="provider-test-btn-row">
-                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="lmstudio" id="btnTestLmstudio">
+                  <button type="button" class="btn btn-secondary btn-sm btn-test-provider" data-provider="lmstudio"
+                    id="btnTestLmstudio">
                     🧪 개별 연결 테스트
                   </button>
                   <span class="test-guide-hint">로컬 서버 핑 및 어법 분석 JSON 통신 확인</span>
@@ -2279,11 +2679,12 @@
               </h4>
               <span class="tts-sub-tag">수능·모의고사 듣기(1~17번) 남/여 대화 분할 생성</span>
             </div>
-            
+
             <!-- TTS 엔진 선택 라디오 바 -->
             <div class="tts-engine-selector-bar">
               <label class="tts-radio-label" style="color: #3730a3;">
-                <input type="radio" name="ttsEngineRadio" id="radioTtsXtts" value="xtts" checked style="cursor: pointer;">
+                <input type="radio" name="ttsEngineRadio" id="radioTtsXtts" value="xtts" checked
+                  style="cursor: pointer;">
                 🎙️ 수능 평가원 성우 복제 (XTTS-v2, 강력 추천 ⭐)
               </label>
               <label class="tts-radio-label" style="color: #4b5563;">
@@ -2295,23 +2696,30 @@
 
           <!-- 1. XTTS-v2 수능 성우 로컬 복제 카드 (기본 활성, 100% 로컬 / 오프라인) -->
           <div class="tts-dedicated-card" id="cardXtts">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
               <div class="flex-row-center">
                 <span style="font-size: 0.86rem; font-weight: 800; color: #0f172a;">
                   🎙️ 수능 기출 방송 실제 성우 목소리 1:1 로컬 복제 (Zero-shot Voice Cloning)
                 </span>
-                <span style="background: #e0e7ff; color: #3730a3; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">비용 0원 무제한</span>
-                <span style="background: #dcfce7; color: #166534; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">완전 오프라인</span>
+                <span
+                  style="background: #e0e7ff; color: #3730a3; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">비용
+                  0원 무제한</span>
+                <span
+                  style="background: #dcfce7; color: #166534; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">완전
+                  오프라인</span>
               </div>
               <div class="flex-row-center">
-                <span id="badgeTtsHardware" style="font-size: 0.76rem; font-weight: 700; background: #0284c7; color: #ffffff; padding: 2px 9px; border-radius: 9999px;">
+                <span id="badgeTtsHardware"
+                  style="font-size: 0.76rem; font-weight: 700; background: #0284c7; color: #ffffff; padding: 2px 9px; border-radius: 9999px;">
                   🖥️ 하드웨어 감지 중...
                 </span>
               </div>
             </div>
 
             <p style="font-size: 0.79rem; color: #475569; margin: 0 0 10px 0; line-height: 1.45;">
-              실제 평가원 수능 영어 듣기 평가에 출제되는 <strong>남성 성우</strong>와 <strong>여성 성우</strong>의 실제 발화 음원을 기반으로 음색, 억양, 호흡을 1:1로 정밀 복제하여 듣기 지문을 합성합니다. (GPU 감지 시 초고속 연산, CPU 시 자동 전환)
+              실제 평가원 수능 영어 듣기 평가에 출제되는 <strong>남성 성우</strong>와 <strong>여성 성우</strong>의 실제 발화 음원을 기반으로 음색, 억양, 호흡을 1:1로
+              정밀 복제하여 듣기 지문을 합성합니다. (GPU 감지 시 초고속 연산, CPU 시 자동 전환)
             </p>
 
             <div class="tts-card-grid">
@@ -2324,7 +2732,8 @@
                 <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 8px;">
                   기준: <code>kice_male_reference.wav</code> (평가원 실전 톤)
                 </div>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewXttsMale" style="width: 100%; height: 32px; font-size: 0.78rem; font-weight: 700;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewXttsMale"
+                  style="width: 100%; height: 32px; font-size: 0.78rem; font-weight: 700;">
                   🔊 남자 성우 샘플 미리듣기
                 </button>
               </div>
@@ -2338,7 +2747,8 @@
                 <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 8px;">
                   기준: <code>kice_female_reference.wav</code> (평가원 실전 톤)
                 </div>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewXttsFemale" style="width: 100%; height: 32px; font-size: 0.78rem; font-weight: 700;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewXttsFemale"
+                  style="width: 100%; height: 32px; font-size: 0.78rem; font-weight: 700;">
                   🔊 여자 성우 샘플 미리듣기
                 </button>
               </div>
@@ -2353,19 +2763,23 @@
                     NVIDIA GPU(CUDA) 장착 시 자동 GPU 가속(문항당 2~3초), 외장 GPU 없을 시 CPU 모드로 자동 전환됩니다.
                   </div>
                 </div>
-                <div class="provider-test-result" id="testResultXtts" style="margin-top: 6px; font-size: 0.75rem;"></div>
+                <div class="provider-test-result" id="testResultXtts" style="margin-top: 6px; font-size: 0.75rem;">
+                </div>
               </div>
             </div>
           </div>
 
           <!-- 2. Edge-TTS 설정 카드 (보조 엔진, 100% 무료) -->
           <div class="tts-dedicated-card" id="cardEdgeTts" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
+            <div
+              style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;">
               <div class="flex-row-center">
                 <span style="font-size: 0.85rem; font-weight: 700; color: #166534;">
                   ✨ Microsoft Edge Neural 음성 (인터넷 연결 시 완전 무료 / API Key 불필요)
                 </span>
-                <span style="background: #dcfce7; color: #166534; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">100% Free</span>
+                <span
+                  style="background: #dcfce7; color: #166534; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: 700;">100%
+                  Free</span>
               </div>
               <span style="font-size: 0.78rem; color: #15803d;">
                 💡 수능·모의고사 듣기 평가 원어민 대화에 최적화된 고품질 신경망 음성
@@ -2413,21 +2827,28 @@
                     </select>
                   </div>
                   <div style="display: flex; gap: 4px;">
-                    <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewEdgeTtsMale" title="남성 음성 샘플 미리듣기" style="height: 34px; padding: 0 10px; font-size: 0.78rem; white-space: nowrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewEdgeTtsMale"
+                      title="남성 음성 샘플 미리듣기"
+                      style="height: 34px; padding: 0 10px; font-size: 0.78rem; white-space: nowrap;">
                       🔊 남성 샘플
                     </button>
-                    <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewEdgeTtsFemale" title="여성 음성 샘플 미리듣기" style="height: 34px; padding: 0 10px; font-size: 0.78rem; white-space: nowrap;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnPreviewEdgeTtsFemale"
+                      title="여성 음성 샘플 미리듣기"
+                      style="height: 34px; padding: 0 10px; font-size: 0.78rem; white-space: nowrap;">
                       🔊 여성 샘플
                     </button>
                   </div>
                 </div>
-                <div class="provider-test-result" id="testResultEdgeTts" style="margin-top: 5px; font-size: 0.76rem;"></div>
+                <div class="provider-test-result" id="testResultEdgeTts" style="margin-top: 5px; font-size: 0.76rem;">
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div id="aiSettingsStatus" style="display: none; padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; font-weight: 600;"></div>
+        <div id="aiSettingsStatus"
+          style="display: none; padding: 0.75rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; font-weight: 600;">
+        </div>
       </div>
 
       <div class="modal-footer modal-footer-between">
@@ -2452,9 +2873,11 @@
           <h3 class="modal-title flex-row-center">
             <span>📚 어법 범주 전체 개요 및 다중 선택</span>
             <span class="grammar-tree-badge" id="grammarTreeStatusBadge">🏛️ 표준 243개 체계</span>
-            <button type="button" class="btn btn-secondary btn-xs" id="btnManageGrammarTree" style="padding: 2px 8px; font-size: 0.75rem;">⚙️ 커스텀 체계 관리</button>
+            <button type="button" class="btn btn-secondary btn-xs" id="btnManageGrammarTree"
+              style="padding: 2px 8px; font-size: 0.75rem;">⚙️ 커스텀 체계 관리</button>
           </h3>
-          <p class="modal-subtitle" id="grammarModalSentenceInfo" style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; word-break: break-all;">
+          <p class="modal-subtitle" id="grammarModalSentenceInfo"
+            style="margin-top: 4px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; word-break: break-all;">
             문장 정보를 불러오는 중...
           </p>
         </div>
@@ -2466,14 +2889,10 @@
         <div class="grammar-modal-search-bar">
           <div class="grammar-search-wrapper">
             <span class="grammar-search-icon">🔍</span>
-            <input 
-              type="text" 
-              class="grammar-search-input" 
-              id="inputGrammarSearch" 
-              placeholder="어법 명칭 또는 경로 실시간 검색 (예: 수동태, 관계사, to부정사, 가정법...)"
-              autocomplete="off"
-            >
-            <button type="button" class="btn-clear-search" id="btnClearGrammarSearch" style="display: none;">&times;</button>
+            <input type="text" class="grammar-search-input" id="inputGrammarSearch"
+              placeholder="어법 명칭 또는 경로 실시간 검색 (예: 수동태, 관계사, to부정사, 가정법...)" autocomplete="off">
+            <button type="button" class="btn-clear-search" id="btnClearGrammarSearch"
+              style="display: none;">&times;</button>
           </div>
           <div class="grammar-quick-stats">
             선택된 어법: <strong id="grammarSelectedCount" class="text-primary">0</strong>개
@@ -2489,13 +2908,16 @@
             </div>
           </div>
           <div class="breadcrumb-right">
-            <button type="button" class="btn-grammar-reset-step" id="btnGrammarResetStep" style="display: none;" title="어법 탐색 설정 초기화 (처음 품사 선택으로 복귀)">
+            <button type="button" class="btn-grammar-reset-step" id="btnGrammarResetStep" style="display: none;"
+              title="어법 탐색 설정 초기화 (처음 품사 선택으로 복귀)">
               ↺ 설정 초기화
             </button>
-            <button type="button" class="btn-tree-change-exam btn-grammar-change-step" id="btnGrammarChangeStep" style="display: none;">
+            <button type="button" class="btn-tree-change-exam btn-grammar-change-step" id="btnGrammarChangeStep"
+              style="display: none;">
               🔄 다른 분류 선택
             </button>
-            <button type="button" class="btn-grammar-toggle-view" id="btnGrammarToggleView" title="단계별 탐색 / 전체 목록 보기 전환">
+            <button type="button" class="btn-grammar-toggle-view" id="btnGrammarToggleView"
+              title="단계별 탐색 / 전체 목록 보기 전환">
               🌐 전체 보기
             </button>
           </div>
@@ -2536,11 +2958,13 @@
             <span>⚙️ 나만의 어법 체계 관리 및 스마트 매핑</span>
           </h3>
           <p class="modal-subtitle" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-            기본 243개 표준 어법 체계를 나만의 커스텀 명칭으로 수정하고 불필요한 어법을 숨깁니다. AI 사전 분석 결과는 표준 ID(1~243)와 1:1 스마트 매핑되어 토큰 비용(0원) 없이 실시간 연동됩니다.
+            기본 243개 표준 어법 체계를 나만의 커스텀 명칭으로 수정하고 불필요한 어법을 숨깁니다. AI 사전 분석 결과는 표준 ID(1~243)와 1:1 스마트 매핑되어 토큰 비용(0원) 없이 실시간
+            연동됩니다.
           </p>
         </div>
         <div class="modal-header-actions">
-          <button type="button" class="btn-modal-fullscreen" id="btnToggleCustomTreeFullscreen" title="전체 화면으로 확대" aria-label="전체 화면 토글">⛶</button>
+          <button type="button" class="btn-modal-fullscreen" id="btnToggleCustomTreeFullscreen" title="전체 화면으로 확대"
+            aria-label="전체 화면 토글">⛶</button>
           <button type="button" class="modal-close" id="btnCloseCustomTreeModal">&times;</button>
         </div>
       </div>
@@ -2575,7 +2999,8 @@
             <button type="button" class="custom-tree-tab-btn" id="tabBtnJsonEditor">💻 JSON 직접 편집 (고급)</button>
           </div>
           <div class="custom-tree-tab-actions">
-            <button type="button" class="btn btn-secondary btn-xs" id="btnResetToStandardTree" style="color: #ef4444;" title="모든 수정을 버리고 기본 243개 표준으로 복원">
+            <button type="button" class="btn btn-secondary btn-xs" id="btnResetToStandardTree" style="color: #ef4444;"
+              title="모든 수정을 버리고 기본 243개 표준으로 복원">
               ↺ 표준 243개로 초기화
             </button>
           </div>
@@ -2589,8 +3014,10 @@
             <aside class="custom-tree-sidebar">
               <div class="sidebar-search-box">
                 <span class="sidebar-search-icon">🔍</span>
-                <input type="text" id="inputCustomTreeSearch" class="sidebar-search-input" placeholder="어법/카테고리 실시간 검색...">
-                <button type="button" class="btn-clear-search" id="btnClearCustomTreeSearch" style="display: none;">&times;</button>
+                <input type="text" id="inputCustomTreeSearch" class="sidebar-search-input"
+                  placeholder="어법/카테고리 실시간 검색...">
+                <button type="button" class="btn-clear-search" id="btnClearCustomTreeSearch"
+                  style="display: none;">&times;</button>
               </div>
 
               <div class="sidebar-tree-tools">
@@ -2622,8 +3049,10 @@
                   </div>
                 </div>
                 <div class="detail-header-right">
-                  <button type="button" class="btn btn-secondary btn-xs" id="btnBulkEnableCurrent" title="현재 선택된 카테고리의 모든 어법 사용">✔ 현재 분류 전체 사용</button>
-                  <button type="button" class="btn btn-secondary btn-xs" id="btnBulkDisableCurrent" title="현재 선택된 카테고리의 모든 어법 숨기기">🚫 현재 분류 전체 숨김</button>
+                  <button type="button" class="btn btn-secondary btn-xs" id="btnBulkEnableCurrent"
+                    title="현재 선택된 카테고리의 모든 어법 사용">✔ 현재 분류 전체 사용</button>
+                  <button type="button" class="btn btn-secondary btn-xs" id="btnBulkDisableCurrent"
+                    title="현재 선택된 카테고리의 모든 어법 숨기기">🚫 현재 분류 전체 숨김</button>
                 </div>
               </div>
 
@@ -2641,7 +3070,8 @@
             <span style="font-size: 0.8rem; color: var(--text-muted);">JSON 데이터를 직접 복사하거나 외부 체계를 가져올 수 있습니다.</span>
             <button type="button" class="btn btn-secondary btn-xs" id="btnCopyStandardTree">📋 표준 템플릿 불러오기</button>
           </div>
-          <textarea id="customTreeJsonEditor" rows="12" class="custom-tree-textarea" placeholder="표준 템플릿 JSON..."></textarea>
+          <textarea id="customTreeJsonEditor" rows="12" class="custom-tree-textarea"
+            placeholder="표준 템플릿 JSON..."></textarea>
         </div>
 
         <!-- 하단 스마트 매핑 안내 박스 -->
@@ -2767,7 +3197,8 @@
         </div>
         <div class="modal-header-actions">
           <button type="button" class="btn-modal-close" id="btnCloseReportPassageModal" title="닫기" aria-label="닫기">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
@@ -2827,12 +3258,8 @@
           <label for="inputReportPassageComment" class="report-comment-label">
             상세 내용 작성 <span class="report-comment-sub">(기타 오류 선택 시 또는 추가 설명 필요 시)</span>
           </label>
-          <textarea 
-            class="report-textarea" 
-            id="inputReportPassageComment" 
-            placeholder="구체적인 오류 내용을 적어주시면 신속하고 정확한 수정에 큰 도움이 됩니다..." 
-            rows="3"
-          ></textarea>
+          <textarea class="report-textarea" id="inputReportPassageComment"
+            placeholder="구체적인 오류 내용을 적어주시면 신속하고 정확한 수정에 큰 도움이 됩니다..." rows="3"></textarea>
         </div>
       </div>
       <div class="modal-footer report-modal-footer">
@@ -2858,7 +3285,8 @@
         </div>
         <div class="modal-header-actions">
           <button type="button" class="btn-modal-close" id="btnCloseReportSentenceModal" title="닫기" aria-label="닫기">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
@@ -2878,12 +3306,8 @@
           <label for="inputReportSentenceComment" class="report-comment-label">
             오류 내용 입력 <span class="report-comment-required">*</span>
           </label>
-          <textarea 
-            class="report-textarea" 
-            id="inputReportSentenceComment" 
-            placeholder="문장 내 오탈자, 해석 오류, 어법 태그 오분류, 끊어읽기 이상 등 오류 내용을 자세히 적어주세요..." 
-            rows="4"
-          ></textarea>
+          <textarea class="report-textarea" id="inputReportSentenceComment"
+            placeholder="문장 내 오탈자, 해석 오류, 어법 태그 오분류, 끊어읽기 이상 등 오류 내용을 자세히 적어주세요..." rows="4"></textarea>
         </div>
       </div>
       <div class="modal-footer report-modal-footer">
@@ -2908,12 +3332,15 @@
           </p>
         </div>
         <div class="modal-header-actions">
-          <button type="button" class="btn btn-outline-primary btn-xs" id="btnBatchAiDiagnose" title="접수된 오류들을 AI로 일괄 분석하여 해결안 제안받기">
+          <button type="button" class="btn btn-outline-primary btn-xs" id="btnBatchAiDiagnose"
+            title="접수된 오류들을 AI로 일괄 분석하여 해결안 제안받기">
             🤖 일괄 AI 분석 및 해결 제안
           </button>
-          <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshReportsList" title="목록 새로고침">🔄 새로고침</button>
+          <button type="button" class="btn btn-secondary btn-xs" id="btnRefreshReportsList" title="목록 새로고침">🔄
+            새로고침</button>
           <button type="button" class="btn-modal-close" id="btnCloseReportsListModal" title="닫기" aria-label="닫기">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"
+              stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
@@ -2955,8 +3382,10 @@
        듣기 유인물 문항별 MP3 음원 상태 확인 및 비동기 결합/진행률/중단 모달
        ==================================================================== -->
   <div class="modal-backdrop" id="listeningAudioStatusModal" style="display: none;">
-    <div class="modal-content" style="max-width: 840px; width: 92%; max-height: 85vh; display: flex; flex-direction: column;">
-      <div class="modal-header" style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border-bottom: 1px solid #ddd6fe;">
+    <div class="modal-content"
+      style="max-width: 840px; width: 92%; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header"
+        style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border-bottom: 1px solid #ddd6fe;">
         <div class="modal-header-info">
           <h3 class="modal-title flex-row-center" style="color: #5b21b6;">
             <span>🎵 듣기 유인물 문항별 MP3 음원 상태 확인</span>
@@ -2972,7 +3401,8 @@
 
       <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
         <!-- 상단 요약 카드 -->
-        <div id="listeningAudioSummaryCard" style="display: flex; gap: 15px; margin-bottom: 18px; padding: 14px 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <div id="listeningAudioSummaryCard"
+          style="display: flex; gap: 15px; margin-bottom: 18px; padding: 14px 18px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
           <div style="flex: 1; text-align: center; border-right: 1px solid #e2e8f0;">
             <div style="font-size: 0.8rem; color: #475569; font-weight: 600;">총 선택 문항</div>
             <div id="listeningAudioTotalCount" style="font-size: 1.4rem; font-weight: 800; color: #1e293b;">0</div>
@@ -2988,20 +3418,25 @@
         </div>
 
         <!-- 진행 상황 프로그레스 패널 (초기 숨김) -->
-        <div id="listeningAudioProgressPanel" style="display: none; margin-bottom: 18px; padding: 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
+        <div id="listeningAudioProgressPanel"
+          style="display: none; margin-bottom: 18px; padding: 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <span id="listeningAudioProgressMessage" style="font-weight: 700; color: #1e40af; font-size: 0.92rem;">
               ⏳ 음원 결합 준비 중...
             </span>
-            <span id="listeningAudioProgressPercent" style="font-weight: 800; color: #1d4ed8; font-size: 0.95rem;">0%</span>
+            <span id="listeningAudioProgressPercent"
+              style="font-weight: 800; color: #1d4ed8; font-size: 0.95rem;">0%</span>
           </div>
           <div style="width: 100%; height: 10px; background: #dbeafe; border-radius: 5px; overflow: hidden;">
-            <div id="listeningAudioProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); transition: width 0.3s ease;"></div>
+            <div id="listeningAudioProgressBar"
+              style="width: 0%; height: 100%; background: linear-gradient(90deg, #2563eb, #3b82f6); transition: width 0.3s ease;">
+            </div>
           </div>
         </div>
 
         <!-- 안내 문구 -->
-        <div id="listeningAudioNotice" style="font-size: 0.82rem; color: #6b7280; line-height: 1.5; margin-bottom: 12px;">
+        <div id="listeningAudioNotice"
+          style="font-size: 0.82rem; color: #6b7280; line-height: 1.5; margin-bottom: 12px;">
           💡 <strong>미생성 문항</strong>은 결합 시작 시 AI 고품질 성우로 자동 합성된 후 순서대로 결합됩니다.
         </div>
 
@@ -3009,7 +3444,8 @@
         <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: #fff;">
           <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
             <thead>
-              <tr style="background: #f9fafb; border-bottom: 1px solid #e5e7eb; color: #374151; font-weight: 700; text-align: left;">
+              <tr
+                style="background: #f9fafb; border-bottom: 1px solid #e5e7eb; color: #374151; font-weight: 700; text-align: left;">
                 <th style="padding: 10px 12px; width: 60px; text-align: center;">순번</th>
                 <th style="padding: 10px 12px; width: 80px; text-align: center;">문항 번호</th>
                 <th style="padding: 10px 12px;">문항 발문 / 내용</th>
@@ -3028,17 +3464,21 @@
         </div>
       </div>
 
-      <div class="modal-footer" style="padding: 14px 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #f9fafb;">
-        <button type="button" class="btn-cancel" id="btnCancelListeningAudioModal" style="padding: 8px 18px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-weight: 600;">
+      <div class="modal-footer"
+        style="padding: 14px 20px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center; background: #f9fafb;">
+        <button type="button" class="btn-cancel" id="btnCancelListeningAudioModal"
+          style="padding: 8px 18px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff; cursor: pointer; font-weight: 600;">
           닫기
         </button>
         <div style="display: flex; gap: 10px;">
           <!-- 작업 중단 버튼 (진행 중일 때만 표시) -->
-          <button type="button" id="btnStopListeningAudioMerge" style="display: none; padding: 9px 20px; border-radius: 6px; border: 1px solid #ef4444; background: #ef4444; color: #fff; font-weight: 700; cursor: pointer;">
+          <button type="button" id="btnStopListeningAudioMerge"
+            style="display: none; padding: 9px 20px; border-radius: 6px; border: 1px solid #ef4444; background: #ef4444; color: #fff; font-weight: 700; cursor: pointer;">
             ⏹ 음성 생성 멈추기
           </button>
           <!-- 결합 시작 버튼 -->
-          <button type="button" id="btnStartListeningAudioMerge" style="padding: 9px 22px; border-radius: 6px; border: 1px solid #0284c7; background: #0284c7; color: #fff; font-weight: 700; cursor: pointer;">
+          <button type="button" id="btnStartListeningAudioMerge"
+            style="padding: 9px 22px; border-radius: 6px; border: 1px solid #0284c7; background: #0284c7; color: #fff; font-weight: 700; cursor: pointer;">
             ▶ 음성 결합 및 MP3 다운로드 시작
           </button>
         </div>
@@ -3047,7 +3487,8 @@
   </div>
 
   <!-- 교사용 칠판형 듣기 수업 모드 전체화면 모달 (#listeningClassroomModal) -->
-  <div class="modal-backdrop classroom-modal-backdrop" id="listeningClassroomModal" style="display: none; z-index: 100000; background: rgba(0, 0, 0, 0.88); backdrop-filter: blur(6px);">
+  <div class="modal-backdrop classroom-modal-backdrop" id="listeningClassroomModal"
+    style="display: none; z-index: 100000; background: rgba(0, 0, 0, 0.88); backdrop-filter: blur(6px);">
     <div class="classroom-modal-window" id="classroomModalWindow">
       <!-- 1. 칠판 상단 헤더 툴바 -->
       <div class="classroom-header-toolbar">
@@ -3057,12 +3498,14 @@
           <span class="classroom-pos-badge" id="txtClassroomPosBadge">문항 1/17 · 문장 1/8</span>
         </div>
         <div class="classroom-header-controls">
-          <label for="selectClassroomQuestion" style="font-size: 0.88rem; color: #94a3b8; font-weight: 600;">문항 이동:</label>
+          <label for="selectClassroomQuestion" style="font-size: 0.88rem; color: #94a3b8; font-weight: 600;">문항
+            이동:</label>
           <select id="selectClassroomQuestion" class="classroom-select" title="다른 듣기 문항으로 바로 이동"></select>
           <button type="button" class="btn-classroom-tool" id="btnClassroomFullscreen" title="전체 화면 토글 (단축키: F)">
             <span id="txtFullscreenIcon">⛶</span> 전체화면
           </button>
-          <button type="button" class="btn-classroom-close" id="btnCloseClassroomModal" title="수업 모드 닫기 (Esc)">&times;</button>
+          <button type="button" class="btn-classroom-close" id="btnCloseClassroomModal"
+            title="수업 모드 닫기 (Esc)">&times;</button>
         </div>
       </div>
 
@@ -3071,11 +3514,13 @@
         <div class="classroom-sentence-top-meta">
           <span class="classroom-speaker-badge speaker-m" id="classroomSpeakerBadge">M</span>
           <div class="classroom-text-toggles">
-            <button type="button" class="btn-classroom-toggle-mode active-fels" id="btnToggleClassroomMode" title="약형드랩(빈칸) 모드와 Script(원문) 모드를 전환합니다">
+            <button type="button" class="btn-classroom-toggle-mode active-fels" id="btnToggleClassroomMode"
+              title="약형드랩(빈칸) 모드와 Script(원문) 모드를 전환합니다">
               <span id="txtClassroomModeIcon">🎯</span>
               <span id="txtClassroomModeLabel">약형드랩 모드</span>
             </button>
-            <button type="button" class="btn-classroom-toggle-trans" id="btnToggleClassroomTrans" title="문장의 우리말 해석을 표시하거나 숨깁니다">
+            <button type="button" class="btn-classroom-toggle-trans" id="btnToggleClassroomTrans"
+              title="문장의 우리말 해석을 표시하거나 숨깁니다">
               <span id="txtClassroomTransIcon">📘</span>
               <span id="txtClassroomTransLabel">우리말 해석 보기</span>
             </button>
@@ -3139,7 +3584,8 @@
         <!-- 중앙: 구간 선택 시 반복 설정 및 상태 -->
         <div class="classroom-loop-actions">
           <div class="loop-count-wrap" title="선택 구간 재생 시 반복할 횟수">
-            <label for="selectClassroomLoopCount" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">반복 횟수:</label>
+            <label for="selectClassroomLoopCount" style="font-size: 0.82rem; color: #94a3b8; font-weight: 600;">반복
+              횟수:</label>
             <select id="selectClassroomLoopCount" class="classroom-select-sm" title="선택 구간 반복 횟수 (반복 사이에 0.5초 무음 간격)">
               <option value="1">1회</option>
               <option value="2">2회</option>
@@ -3149,7 +3595,8 @@
             </select>
           </div>
           <span class="classroom-loop-badge" id="classroomLoopBadge" style="display: none;">반복 0/3</span>
-          <button type="button" class="btn-classroom-clear-region" id="btnClassroomClearRegion" style="display: none;" title="선택 구간 해제 (기본 전체 재생으로 복귀)">
+          <button type="button" class="btn-classroom-clear-region" id="btnClassroomClearRegion" style="display: none;"
+            title="선택 구간 해제 (기본 전체 재생으로 복귀)">
             ✕ 구간 선택 해제
           </button>
         </div>
@@ -3165,7 +3612,8 @@
             <option value="1.2">1.2x</option>
           </select>
           <span style="font-size: 0.9rem; color: #94a3b8; margin-left: 6px;">🔊</span>
-          <input type="range" id="rangeClassroomVolume" min="0" max="1" step="0.05" value="1" style="width: 70px; accent-color: #38bdf8;" title="볼륨 조절">
+          <input type="range" id="rangeClassroomVolume" min="0" max="1" step="0.05" value="1"
+            style="width: 70px; accent-color: #38bdf8;" title="볼륨 조절">
         </div>
       </div>
 
@@ -3189,4 +3637,5 @@
 
   <script type="module" src="/static/js/main.js?v=20261011_0001"></script>
 </body>
+
 </html>

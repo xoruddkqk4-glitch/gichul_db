@@ -33,4 +33,9 @@ export const appState = {
     { key: "grade", order: "asc" }
   ],
   ttsEngine: "xtts", // 'xtts' (수능 성우 복제 기본값) 또는 'edge-tts'
+  // 유사 지문 검색 상태
+  similarResultsData: [],
+  similarLastResponse: null,
+  activeSimilarHighlight: null,
+  fromSimilarResults: false,
 };

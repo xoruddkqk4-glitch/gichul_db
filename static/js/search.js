@@ -46,6 +46,8 @@ import {
   resultsView,
   sentenceEmptyGuidanceBox,
   sentenceViewContainer,
+  similarBackBanner,
+  similarResultsContainer,
   statPassages,
   statsBadge,
   statSentences,
@@ -227,6 +229,13 @@ export function highlightSentenceKeyword(text, rawQuery) {
 /** 통합 검색 실행 */
 export async function executeSearch(source = "home", targetPassageId = null) {
   stopAllListeningAudio();
+  if (similarResultsContainer) similarResultsContainer.style.display = "none";
+  if (similarBackBanner) similarBackBanner.style.display = "none";
+  appState.activeSimilarHighlight = null;
+  appState.fromSimilarResults = false;
+  if (appState.currentMode === "similar" && source !== "home") {
+    setMode("passage", false);
+  }
   let keyword = "";
   let grade = "";
   let year = "";
@@ -454,14 +463,14 @@ export async function executeSearch(source = "home", targetPassageId = null) {
         if (!appState.cachedPassageSearch) appState.cachedPassageSearch = {};
         appState.cachedPassageSearch[queryString] = data;
       }
-      
+
       // 데이터 수신 즉시 로딩 스피너를 닫아 체감 속도 극대화
       loadingIndicator.style.display = "none";
 
       appState.passagesData = groupPassageItems(data.items || []);
       appState.rawPassagesData = [...appState.passagesData]; // 원본 캐시 갱신
       resultsTotalCount.textContent = appState.passagesData.length;
-      
+
       setHeaderSlotState("passage");
       renderPassageView(appState.passagesData, targetPassageId);
       updateGrammarFiltersVisibility();
@@ -485,7 +494,7 @@ export async function executeSearch(source = "home", targetPassageId = null) {
       appState.sentencesData = allSentences;
       appState.rawSentencesData = [...allSentences]; // 원본 캐시 갱신
       resultsTotalCount.textContent = allSentences.length;
-      
+
       setHeaderSlotState("sentence");
 
       // 대량 문장(500건 이상)인 경우 첫 100건을 0.05초 만에 초고속 렌더링 후 나머지 백그라운드 병합
@@ -559,10 +568,10 @@ export function executeSearchWithinResults() {
         const inExp = checkTextMatch(p.explanation_text, kwRaw, isWholeWordActive);
         const inType = (p.question_type || "").toLowerCase().includes(kw);
         const inTags = (p.tags || []).some(t => t.toLowerCase().includes(kw));
-        
+
         let inSub = false;
         if (p.isGroup && p.subItems) {
-          inSub = p.subItems.some(si => 
+          inSub = p.subItems.some(si =>
             checkTextMatch(si.passage_text, kwRaw, isWholeWordActive) ||
             checkTextMatch(si.script_text, kwRaw, isWholeWordActive) ||
             checkTextMatch(si.question_title, kwRaw, isWholeWordActive) ||
@@ -786,7 +795,11 @@ export function resetAllSearchFilters(triggerSearch = true) {
 
   // 6. 검색 재실행 (결과 화면에서 전체 지문/문장 조회)
   if (triggerSearch) {
-    executeSearch(appState.currentMode === "passage" ? "all_passages" : "results");
+    if (appState.currentMode === "similar" && similarResultsContainer && similarResultsContainer.style.display !== "none") {
+      import("./similar-search.js").then((m) => m.executeSimilarSearch());
+    } else {
+      executeSearch(appState.currentMode === "passage" ? "all_passages" : "results");
+    }
     showToast("검색 조건이 초기화되었습니다.", "info");
   }
 }
@@ -802,6 +815,10 @@ export function setSearchArea(area, triggerSearch = true) {
   updateQuestionTypeOptions(area);
   if (triggerSearch) {
     const isResultsVisible = resultsView && (resultsView.style.display === "flex" || resultsView.style.display === "block" || resultsView.offsetHeight > 0);
+    if (isResultsVisible && appState.currentMode === "similar" && similarResultsContainer && similarResultsContainer.style.display !== "none") {
+      import("./similar-search.js").then((m) => m.executeSimilarSearch());
+      return;
+    }
     if (isResultsVisible) {
       let targetPassageId = null;
 
@@ -903,7 +920,11 @@ export function init() {
     if (resultsView && resultsView.style.display !== "none") {
       setSearchWithinState(false);
       updateFilterResetButtonsUI();
-      executeSearch("results");
+      if (appState.currentMode === "similar" && similarResultsContainer && similarResultsContainer.style.display !== "none") {
+        import("./similar-search.js").then((m) => m.executeSimilarSearch());
+      } else {
+        executeSearch("results");
+      }
     } else {
       updateFilterResetButtonsUI();
     }
@@ -1035,7 +1056,11 @@ export function init() {
       el.addEventListener("change", () => {
         setSearchWithinState(false);
         updateFilterResetButtonsUI();
-        executeSearch("results");
+        if (appState.currentMode === "similar" && similarResultsContainer && similarResultsContainer.style.display !== "none") {
+          import("./similar-search.js").then((m) => m.executeSimilarSearch());
+        } else {
+          executeSearch("results");
+        }
       });
     }
   });

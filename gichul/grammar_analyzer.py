@@ -1369,3 +1369,138 @@ def translate_listening_script(script_text: str) -> str:
     return ""
 
 
+def expand_similarity_keywords(text: str) -> Dict[str, Any]:
+    """
+    단락 텍스트에서 핵심 주제 동의어·파생어 및 관련 학술 표현(2-gram)을
+    현재 설정된 활성 AI 모델로 추출하여 유사 지문 검색 확장에 활용한다.
+    """
+    if not text or not text.strip():
+        return {"used": False, "keywords": [], "phrases": []}
+
+    active_configs = get_active_ai_configs()
+    valid_configs = [c for c in active_configs if c.get("api_key")]
+    if not valid_configs:
+        return {"used": False, "keywords": [], "phrases": [], "reason": "no_api_key"}
+
+    cfg = valid_configs[0]
+    provider = cfg["provider"]
+    api_key = cfg["api_key"]
+    model = cfg["model"]
+
+    system_prompt = (
+        "You are an English corpus and CSAT (수능) reading analysis expert. "
+        "Given an English paragraph, extract semantic search expansion terms that help find "
+        "paraphrased or topically related CSAT passages.\n"
+        "Return ONLY valid JSON with no markdown fences:\n"
+        "{\n"
+        '  "keywords": ["6 to 10 single English synonyms, derivatives, or closely related topic nouns/verbs/adjectives"],\n'
+        '  "phrases": ["3 to 5 two-word English academic collocations related to the topic"]\n'
+        "}"
+    )
+    user_prompt = f"Paragraph:\n{text.strip()[:2500]}"
+
+    raw_reply = ""
+    try:
+        if provider == "openrouter":
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            payload = {
+                "model": model or "openai/gpt-4o-mini",
+                "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                "temperature": 0.2,
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw_reply = json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
+        elif provider == "openai":
+            url = "https://api.openai.com/v1/chat/completions"
+            payload = {
+                "model": model or "gpt-4o-mini",
+                "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                "temperature": 0.2,
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw_reply = json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
+        elif provider == "claude":
+            url = "https://api.anthropic.com/v1/messages"
+            payload = {
+                "model": model or "claude-haiku-4-5",
+                "max_tokens": 512,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw_reply = json.loads(resp.read().decode("utf-8"))["content"][0]["text"]
+        elif provider == "gemini":
+            cand_m = resolve_gemini_model(api_key, model)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{cand_m}:generateContent?key={api_key}"
+            payload = {
+                "contents": [{"parts": [{"text": f"{system_prompt}\n\n{user_prompt}"}]}],
+                "generationConfig": {"response_mime_type": "application/json", "temperature": 0.2},
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw_reply = json.loads(resp.read().decode("utf-8"))["candidates"][0]["content"]["parts"][0]["text"]
+        elif provider == "lmstudio":
+            url = f"{get_lmstudio_base_url().rstrip('/')}/chat/completions"
+            payload = {
+                "model": model or "local-model",
+                "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+                "temperature": 0.2,
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=25) as resp:
+                raw_reply = json.loads(resp.read().decode("utf-8"))["choices"][0]["message"]["content"]
+    except Exception as e:
+        logger.warning("[expand_similarity_keywords] %s 호출 실패: %s", provider, e)
+        return {"used": False, "keywords": [], "phrases": [], "error": str(e)}
+
+    if not raw_reply:
+        return {"used": False, "keywords": [], "phrases": []}
+
+    cleaned_json = re.sub(r"```json\s*|```", "", raw_reply).strip()
+    m = re.search(r"\{[\s\S]*\}", cleaned_json)
+    if m:
+        cleaned_json = m.group(0)
+    try:
+        parsed = json.loads(cleaned_json)
+        kws = [str(k).strip().lower() for k in (parsed.get("keywords") or []) if re.match(r"^[a-zA-Z][a-zA-Z'-]{1,}$", str(k).strip())]
+        phrs = [str(p).strip().lower() for p in (parsed.get("phrases") or []) if len(str(p).strip().split()) >= 2]
+        return {
+            "used": True,
+            "provider": provider,
+            "model": model,
+            "keywords": kws[:10],
+            "phrases": phrs[:5],
+        }
+    except Exception as e:
+        logger.warning("[expand_similarity_keywords] JSON 파싱 실패: %s", e)
+        return {"used": False, "keywords": [], "phrases": []}
+
+

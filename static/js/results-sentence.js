@@ -64,6 +64,10 @@ export async function showSentencesForPassage(passageId) {
   appState.currentMode = "sentence";
   if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
   if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
+  const resSimBtn = document.getElementById("resultsTabModeSimilar");
+  const tabSimBtn = document.getElementById("tabModeSimilar");
+  if (resSimBtn) resSimBtn.classList.remove("active");
+  if (tabSimBtn) tabSimBtn.classList.remove("active");
   if (tabModeSentence) tabModeSentence.classList.add("active");
   if (tabModePassage) tabModePassage.classList.remove("active");
   updateGrammarFiltersVisibility();
@@ -997,6 +1001,10 @@ export function showSentenceEmptyGuidance() {
   appState.currentMode = "sentence";
   if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
   if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
+  const resSimBtn = document.getElementById("resultsTabModeSimilar");
+  const tabSimBtn = document.getElementById("tabModeSimilar");
+  if (resSimBtn) resSimBtn.classList.remove("active");
+  if (tabSimBtn) tabSimBtn.classList.remove("active");
   if (tabModeSentence) tabModeSentence.classList.add("active");
   if (tabModePassage) tabModePassage.classList.remove("active");
   updateGrammarFiltersVisibility();

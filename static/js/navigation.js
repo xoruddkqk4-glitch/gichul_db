@@ -20,6 +20,7 @@ import {
   filterYear,
   homeGrammarFiltersGroup,
   homeSearchView,
+  homeSimilarSearchBox,
   mainSearchInput,
   passageViewContainer,
   resultsFilterCorrectRate,
@@ -32,12 +33,16 @@ import {
   resultsSearchInput,
   resultsTabModePassage,
   resultsTabModeSentence,
+  resultsTabModeSimilar,
   resultsView,
   sentenceEmptyGuidanceBox,
   sentenceViewContainer,
+  similarBackBanner,
+  similarResultsContainer,
   statsBadge,
   tabModePassage,
   tabModeSentence,
+  tabModeSimilar,
 } from "./dom.js";
 import {
   executeSearch,
@@ -67,6 +72,13 @@ export function setHeaderSlotState(state) {
 
   // 1) 홈 검색 화면이 표시 중이거나 결과창이 숨겨진 경우 -> 통계 배지 표시
   if (state === "home" || isHomeVisible || !isResultsVisible) {
+    statsBadge.style.display = "flex";
+    btnHeaderFlow.style.display = "none";
+    return;
+  }
+
+  // 1-1) 유사 지문 랭킹 목록 화면 -> 통계 배지 표시
+  if (state === "similar") {
     statsBadge.style.display = "flex";
     btnHeaderFlow.style.display = "none";
     return;
@@ -119,6 +131,9 @@ export function showHomeScreen() {
   if (passageViewContainer) passageViewContainer.style.display = "none";
   if (sentenceViewContainer) sentenceViewContainer.style.display = "none";
   if (sentenceEmptyGuidanceBox) sentenceEmptyGuidanceBox.style.display = "none";
+  if (similarResultsContainer) similarResultsContainer.style.display = "none";
+  if (similarBackBanner) similarBackBanner.style.display = "none";
+  appState.fromSimilarResults = false;
   if (btnBackToSearch) btnBackToSearch.style.display = "none";
   if (btnHeaderBackToPrevious) btnHeaderBackToPrevious.style.display = "none";
   
@@ -143,7 +158,12 @@ export function showHomeScreen() {
   updateAllYearUI();
 
   window.scrollTo({ top: 0, behavior: "smooth" });
-  mainSearchInput.focus();
+  if (appState.currentMode === "similar") {
+    const simInput = document.getElementById("similarTextInput");
+    if (simInput) simInput.focus();
+  } else if (mainSearchInput) {
+    mainSearchInput.focus();
+  }
   if (typeof updateClearButtons === "function") updateClearButtons();
   if (typeof updateFilterResetButtonsUI === "function") updateFilterResetButtonsUI();
 }
@@ -253,27 +273,40 @@ export function updateGrammarFiltersVisibility() {
 export function setMode(mode, triggerSearch = false) {
   stopAllListeningAudio();
   appState.currentMode = mode;
+
+  const googleBox = document.querySelector(".google-search-box");
+  if (googleBox) {
+    googleBox.style.display = mode === "similar" ? "none" : "flex";
+  }
+  if (homeSimilarSearchBox) {
+    homeSimilarSearchBox.style.display = mode === "similar" ? "flex" : "none";
+  }
+
+  if (tabModePassage) tabModePassage.classList.toggle("active", mode === "passage");
+  if (tabModeSentence) tabModeSentence.classList.toggle("active", mode === "sentence");
+  if (tabModeSimilar) tabModeSimilar.classList.toggle("active", mode === "similar");
+  if (resultsTabModePassage) resultsTabModePassage.classList.toggle("active", mode === "passage");
+  if (resultsTabModeSentence) resultsTabModeSentence.classList.toggle("active", mode === "sentence");
+  if (resultsTabModeSimilar) resultsTabModeSimilar.classList.toggle("active", mode === "similar");
+
   if (mode === "passage") {
-    tabModePassage.classList.add("active");
-    tabModeSentence.classList.remove("active");
-    if (resultsTabModePassage) resultsTabModePassage.classList.add("active");
-    if (resultsTabModeSentence) resultsTabModeSentence.classList.remove("active");
     mainSearchInput.placeholder = "검색할 키워드, 지문 주제, 문항 번호 또는 출처([고3-2024년...])를 입력하세요...";
     if (resultsSearchInput) resultsSearchInput.placeholder = "지문 검색어 또는 출처 입력...";
-  } else {
-    tabModeSentence.classList.add("active");
-    tabModePassage.classList.remove("active");
-    if (resultsTabModeSentence) resultsTabModeSentence.classList.add("active");
-    if (resultsTabModePassage) resultsTabModePassage.classList.remove("active");
+  } else if (mode === "sentence") {
     mainSearchInput.placeholder = "검색할 영어 문장 표현 또는 출처([고3-2024년...-1번째 문장])를 입력하세요...";
     if (resultsSearchInput) resultsSearchInput.placeholder = "영어 문장 또는 출처 입력...";
+  }
+
+  if (mode !== "similar") {
+    if (similarResultsContainer) similarResultsContainer.style.display = "none";
+    if (similarBackBanner) similarBackBanner.style.display = "none";
   }
 
   updateGrammarFiltersVisibility();
 
   import("./handout-cart.js").then((m) => {
     if (m.setCurrentFloatingTargetType) {
-      m.setCurrentFloatingTargetType(mode);
+      m.setCurrentFloatingTargetType(mode === "sentence" ? "sentence" : "passage");
     }
   });
 
@@ -321,9 +354,17 @@ export function init() {
 
   tabModePassage.addEventListener("click", () => setMode("passage"));
   tabModeSentence.addEventListener("click", () => setMode("sentence"));
+  if (tabModeSimilar) {
+    tabModeSimilar.addEventListener("click", () => setMode("similar"));
+  }
   if (resultsTabModePassage) {
     resultsTabModePassage.addEventListener("click", () => {
       if (appState.currentMode === "passage") return;
+      if (appState.currentMode === "similar") {
+        setMode("passage");
+        executeSearch("results");
+        return;
+      }
       backToPassageView();
     });
   }
@@ -337,6 +378,16 @@ export function init() {
       } else {
         setMode("sentence");
         showSentenceEmptyGuidance();
+      }
+    });
+  }
+  if (resultsTabModeSimilar) {
+    resultsTabModeSimilar.addEventListener("click", () => {
+      setMode("similar");
+      if (appState.similarResultsData && appState.similarResultsData.length > 0) {
+        import("./similar-search.js").then((m) => m.showSimilarResultsView());
+      } else {
+        showHomeScreen();
       }
     });
   }

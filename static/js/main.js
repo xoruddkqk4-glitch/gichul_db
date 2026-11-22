@@ -27,6 +27,7 @@ import { initHandoutPassageView } from "./handout-passage.js";
 import { initSentenceHandoutEvents } from "./handout-sentence.js";
 import { initListeningHandoutEvents } from "./handout-listening.js";
 import { initListeningClassroom } from "./listening-classroom.js";
+import { initSimilarSearch } from "./similar-search.js";
 import { setHeaderSlotState, updateGrammarFiltersVisibility } from "./navigation.js";
 import { refreshAiStatusIndicator } from "./ai-settings.js";
 import { prefetchPassageMetadata } from "./search.js";
@@ -46,6 +47,7 @@ initHandoutPassageView();
 initSentenceHandoutEvents();
 initListeningHandoutEvents();
 initListeningClassroom();
+initSimilarSearch();
 
 // 초기 상태: 홈 검색 화면이 기본이므로 헤더 슬롯을 'home' 상태(통계 배지 노출, 해당 지문 버튼 숨김)로 명시 초기화
 setHeaderSlotState("home");

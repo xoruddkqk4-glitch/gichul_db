@@ -21,6 +21,8 @@ export const btnHeaderFlow = document.getElementById("btnHeaderFlow");
 export const homeSearchView = document.getElementById("homeSearchView");
 export const tabModePassage = document.getElementById("tabModePassage");
 export const tabModeSentence = document.getElementById("tabModeSentence");
+export const tabModeSimilar = document.getElementById("tabModeSimilar");
+export const homeSimilarSearchBox = document.getElementById("homeSimilarSearchBox");
 export const mainSearchInput = document.getElementById("mainSearchInput");
 export const btnClearMainSearch = document.getElementById("btnClearMainSearch");
 export const btnSearch = document.getElementById("btnSearch");
@@ -52,6 +54,10 @@ export const resultsSearchHelpPopover = document.getElementById("resultsSearchHe
 export const btnCloseResultsSearchHelp = document.getElementById("btnCloseResultsSearchHelp");
 export const resultsTabModePassage = document.getElementById("resultsTabModePassage");
 export const resultsTabModeSentence = document.getElementById("resultsTabModeSentence");
+export const resultsTabModeSimilar = document.getElementById("resultsTabModeSimilar");
+export const similarResultsContainer = document.getElementById("similarResultsContainer");
+export const similarBackBanner = document.getElementById("similarBackBanner");
+export const btnBackToSimilarResults = document.getElementById("btnBackToSimilarResults");
 
 // 결과창 필터
 export const resultsFilterGrade = document.getElementById("resultsFilterGrade");
